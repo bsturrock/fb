@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tackle Lab</title>
+    <style>
+      :root {
+        --bg: #101418;
+        --panel: #182028ee;
+        --text: #dfe6ec;
+        --muted: #8a99a6;
+        --accent: #f2c14e;
+        --bad: #ff5d5d;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+        overflow: hidden;
+      }
+      #view {
+        position: absolute;
+        inset: 0;
+      }
+      #ui {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        width: 400px;
+        max-height: calc(100% - 16px);
+        overflow: auto;
+        background: var(--panel);
+        border-radius: 6px;
+        padding: 8px;
+        box-sizing: border-box;
+      }
+      #ui select,
+      #ui button {
+        font: inherit;
+        background: #24303b;
+        color: var(--text);
+        border: 1px solid #3a4a58;
+        border-radius: 4px;
+        padding: 3px 6px;
+        margin: 2px 2px 2px 0;
+      }
+      #ui button.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #ui select#fixture {
+        width: 100%;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px;
+        margin: 4px 0;
+      }
+      .row label {
+        color: var(--muted);
+        margin-right: 4px;
+      }
+      #info {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 6px 0 0;
+        font-size: 11px;
+      }
+      #title {
+        color: var(--accent);
+        margin: 4px 0;
+        white-space: normal;
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .tag {
+        font: 11px/1.2 ui-monospace, Menlo, monospace;
+        color: #fff;
+        background: #000a;
+        padding: 1px 4px;
+        border-radius: 3px;
+        white-space: pre;
+        pointer-events: none;
+      }
+      .tag.bal {
+        font-size: 10px;
+        background: #0009;
+        color: #c8ffd0;
+      }
+      .tag.bal.falling {
+        color: #ff9a9a;
+      }
+      .tag.arm {
+        font-size: 10px;
+        background: #0008;
+        color: #ffe9a8;
+      }
+      @media (max-width: 600px) {
+        #ui {
+          width: calc(100% - 16px);
+          max-height: 45%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="ui">
+      <select id="fixture"></select>
+      <div id="title"></div>
+      <div class="row">
+        <button id="run">Run</button>
+        <button id="step">Step</button>
+        <button id="reset">Reset</button>
+        <label for="speed">speed</label>
+        <select id="speed">
+          <option value="0.1">0.1×</option>
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>camera</label>
+        <button data-cam="side">side</button>
+        <button data-cam="front">front</button>
+        <button data-cam="oblique">oblique</button>
+        <button data-cam="overhead">overhead</button>
+        <button id="follow" class="on">follow</button>
+      </div>
+      <div class="row">
+        <label>show</label>
+        <button id="ovl" class="on">overlays</button>
+        <button id="col">colliders</button>
+        <button id="palette">palette</button>
+        <button id="export">export JSON</button>
+      </div>
+      <div id="info"></div>
+    </div>
+    <script type="module" src="/src/lab/main.ts"></script>
+  </body>
+</html>

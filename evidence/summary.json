@@ -1,0 +1,4268 @@
+[
+ {
+  "fixtureId": "G1-F1",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "P1": {
+    "p": [
+     0,
+     0.95,
+     0.984
+    ],
+    "v": [
+     0,
+     0,
+     0.065
+    ],
+    "speed": 0.065,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F6-airborne-legacy",
+  "result": "duration",
+  "ticks": 72,
+  "t": 1.2,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "P1": {
+    "p": [
+     0,
+     0.95,
+     0.847
+    ],
+    "v": [
+     0,
+     0,
+     3.92
+    ],
+    "speed": 3.92,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F6-airborne-compound",
+  "result": "duration",
+  "ticks": 72,
+  "t": 1.2,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "P1": {
+    "p": [
+     0,
+     0.95,
+     0.847
+    ],
+    "v": [
+     0,
+     0,
+     3.92
+    ],
+    "speed": 3.92,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F2-legacy",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0,
+  "events": 4,
+  "players": {
+   "D": {
+    "p": [
+     -0.3,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.3,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F2-control-legacy",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 2.4001,
+  "events": 1,
+  "players": {
+   "D": {
+    "p": [
+     3,
+     0.95,
+     0
+    ],
+    "v": [
+     2,
+     0,
+     0
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -3,
+     0.95,
+     3
+    ],
+    "v": [
+     -2,
+     0,
+     0
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F2-compound",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0,
+  "events": 23,
+  "players": {
+   "D": {
+    "p": [
+     -0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F3-legacy",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.0011,
+  "events": 5,
+  "players": {
+   "D": {
+    "p": [
+     0.732,
+     0.95,
+     -1.488
+    ],
+    "v": [
+     0.602,
+     0,
+     -0.917
+    ],
+    "speed": 1.097,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.732,
+     0.95,
+     1.838
+    ],
+    "v": [
+     -0.602,
+     0,
+     0.917
+    ],
+    "speed": 1.097,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F3-compound",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.0033,
+  "events": 7,
+  "players": {
+   "D": {
+    "p": [
+     0.756,
+     0.95,
+     -1.347
+    ],
+    "v": [
+     0.58,
+     0,
+     -0.852
+    ],
+    "speed": 1.03,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.756,
+     0.95,
+     1.697
+    ],
+    "v": [
+     -0.58,
+     0,
+     0.852
+    ],
+    "speed": 1.03,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F4-legacy",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": -0.0007,
+  "events": 4,
+  "players": {
+   "D": {
+    "p": [
+     -0.3,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.3,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F4-compound",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": -0.0001,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     -0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F5",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": -0.0007,
+  "events": 4,
+  "players": {
+   "D": {
+    "p": [
+     0.994,
+     0.95,
+     0
+    ],
+    "v": [
+     0.512,
+     0,
+     0
+    ],
+    "speed": 0.512,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.593,
+     0.95,
+     0
+    ],
+    "v": [
+     0.512,
+     0,
+     0
+    ],
+    "speed": 0.512,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F5-swapped",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": -0.0007,
+  "events": 4,
+  "players": {
+   "D": {
+    "p": [
+     -1.593,
+     0.95,
+     0
+    ],
+    "v": [
+     -0.512,
+     0,
+     0
+    ],
+    "speed": 0.512,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.994,
+     0.95,
+     0
+    ],
+    "v": [
+     -0.512,
+     0,
+     0
+    ],
+    "speed": 0.512,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F6-impact-legacy-8",
+  "result": "duration",
+  "ticks": 60,
+  "t": 1,
+  "minPairGap": 0,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     -0.3,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.3,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F6-impact-compound-8",
+  "result": "duration",
+  "ticks": 60,
+  "t": 1,
+  "minPairGap": 0,
+  "events": 11,
+  "players": {
+   "D": {
+    "p": [
+     -0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F7",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": -0.0001,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     -0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-front-insideOut",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 28,
+  "players": {
+   "D": {
+    "p": [
+     2.455,
+     0.95,
+     2.701
+    ],
+    "v": [
+     1.81,
+     0,
+     1.727
+    ],
+    "speed": 2.502,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.12,
+     0.95,
+     2.915
+    ],
+    "v": [
+     1.875,
+     0,
+     1.26
+    ],
+    "speed": 2.259,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-front-insideOut-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     2.461,
+     0.95,
+     -2.696
+    ],
+    "v": [
+     1.82,
+     0,
+     -1.635
+    ],
+    "speed": 2.447,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.122,
+     0.95,
+     -2.928
+    ],
+    "v": [
+     1.864,
+     0,
+     -1.386
+    ],
+    "speed": 2.323,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-front-outsideIn",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0028,
+  "events": 38,
+  "players": {
+   "D": {
+    "p": [
+     3.192,
+     0.95,
+     1.252
+    ],
+    "v": [
+     1.956,
+     0,
+     -0.272
+    ],
+    "speed": 1.975,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.895,
+     0.95,
+     1.056
+    ],
+    "v": [
+     1.925,
+     0,
+     -0.239
+    ],
+    "speed": 1.939,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-front-outsideIn-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0028,
+  "events": 34,
+  "players": {
+   "D": {
+    "p": [
+     3.195,
+     0.95,
+     -1.261
+    ],
+    "v": [
+     2,
+     0,
+     0.351
+    ],
+    "speed": 2.03,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.909,
+     0.95,
+     -1.011
+    ],
+    "v": [
+     1.983,
+     0,
+     0.337
+    ],
+    "speed": 2.011,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-oblique-insideOut",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0003,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     1.955,
+     0.95,
+     2.19
+    ],
+    "v": [
+     1.492,
+     0,
+     0.958
+    ],
+    "speed": 1.773,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.63,
+     0.95,
+     2.265
+    ],
+    "v": [
+     1.492,
+     0,
+     0.958
+    ],
+    "speed": 1.773,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-oblique-insideOut-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0002,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     1.956,
+     0.95,
+     -2.194
+    ],
+    "v": [
+     1.494,
+     0,
+     -0.965
+    ],
+    "speed": 1.778,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.631,
+     0.95,
+     -2.271
+    ],
+    "v": [
+     1.493,
+     0,
+     -0.964
+    ],
+    "speed": 1.777,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-oblique-outsideIn",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 18,
+  "players": {
+   "D": {
+    "p": [
+     3.003,
+     0.95,
+     0.581
+    ],
+    "v": [
+     2.386,
+     0,
+     -0.741
+    ],
+    "speed": 2.499,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.791,
+     0.95,
+     0.221
+    ],
+    "v": [
+     2.271,
+     0,
+     -0.537
+    ],
+    "speed": 2.334,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-oblique-outsideIn-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     3.002,
+     0.95,
+     -0.579
+    ],
+    "v": [
+     2.38,
+     0,
+     0.748
+    ],
+    "speed": 2.495,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.788,
+     0.95,
+     -0.222
+    ],
+    "v": [
+     2.264,
+     0,
+     0.538
+    ],
+    "speed": 2.327,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-side-insideOut",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0003,
+  "events": 14,
+  "players": {
+   "D": {
+    "p": [
+     1.997,
+     0.95,
+     1.589
+    ],
+    "v": [
+     1.535,
+     0,
+     0.18
+    ],
+    "speed": 1.546,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.669,
+     0.95,
+     1.481
+    ],
+    "v": [
+     1.535,
+     0,
+     0.182
+    ],
+    "speed": 1.545,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-side-insideOut-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0003,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     1.997,
+     0.95,
+     -1.588
+    ],
+    "v": [
+     1.536,
+     0,
+     -0.179
+    ],
+    "speed": 1.546,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.669,
+     0.95,
+     -1.481
+    ],
+    "v": [
+     1.535,
+     0,
+     -0.181
+    ],
+    "speed": 1.545,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-side-outsideIn",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0007,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     1.902,
+     0.95,
+     0.615
+    ],
+    "v": [
+     1.704,
+     0,
+     -0.215
+    ],
+    "speed": 1.718,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.631,
+     0.95,
+     0.43
+    ],
+    "v": [
+     1.704,
+     0,
+     -0.215
+    ],
+    "speed": 1.718,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-side-outsideIn-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0002,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     1.902,
+     0.95,
+     -0.615
+    ],
+    "v": [
+     1.704,
+     0,
+     0.215
+    ],
+    "speed": 1.717,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.631,
+     0.95,
+     -0.431
+    ],
+    "v": [
+     1.704,
+     0,
+     0.215
+    ],
+    "speed": 1.717,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-rear-insideOut",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.007,
+  "events": 22,
+  "players": {
+   "D": {
+    "p": [
+     4.874,
+     0.95,
+     3.065
+    ],
+    "v": [
+     4.086,
+     0,
+     1.353
+    ],
+    "speed": 4.304,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     5.186,
+     0.95,
+     3.158
+    ],
+    "v": [
+     4.108,
+     0,
+     1.309
+    ],
+    "speed": 4.311,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-rear-insideOut-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0047,
+  "events": 30,
+  "players": {
+   "D": {
+    "p": [
+     4.809,
+     0.95,
+     -3.092
+    ],
+    "v": [
+     3.896,
+     0,
+     -1.677
+    ],
+    "speed": 4.241,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     5.086,
+     0.95,
+     -3.345
+    ],
+    "v": [
+     3.902,
+     0,
+     -1.672
+    ],
+    "speed": 4.245,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-rear-outsideIn",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0007,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     3.017,
+     0.95,
+     1.551
+    ],
+    "v": [
+     1.658,
+     0,
+     0.24
+    ],
+    "speed": 1.676,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.694,
+     0.95,
+     1.489
+    ],
+    "v": [
+     1.655,
+     0,
+     0.255
+    ],
+    "speed": 1.674,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-rear-outsideIn-mirror",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0007,
+  "events": 14,
+  "players": {
+   "D": {
+    "p": [
+     3.017,
+     0.95,
+     -1.551
+    ],
+    "v": [
+     1.658,
+     0,
+     -0.24
+    ],
+    "speed": 1.676,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.695,
+     0.95,
+     -1.489
+    ],
+    "v": [
+     1.655,
+     0,
+     -0.255
+    ],
+    "speed": 1.674,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-oblique-insideOut-turn",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0002,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     0.431,
+     0.95,
+     5.074
+    ],
+    "v": [
+     0.609,
+     0,
+     2.535
+    ],
+    "speed": 2.608,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.013,
+     0.95,
+     5.182
+    ],
+    "v": [
+     0.609,
+     0,
+     2.533
+    ],
+    "speed": 2.605,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-oblique-insideOut-mirror-turn",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0002,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     0.431,
+     0.95,
+     -5.074
+    ],
+    "v": [
+     0.609,
+     0,
+     -2.535
+    ],
+    "speed": 2.608,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.013,
+     0.95,
+     -5.182
+    ],
+    "v": [
+     0.609,
+     0,
+     -2.533
+    ],
+    "speed": 2.605,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-late-overrun",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0007,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     0.652,
+     0.95,
+     1.782
+    ],
+    "v": [
+     1.443,
+     0,
+     0.496
+    ],
+    "speed": 1.526,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.333,
+     0.95,
+     1.755
+    ],
+    "v": [
+     1.443,
+     0,
+     0.497
+    ],
+    "speed": 1.526,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F8-front-delay80ms",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.002,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     2.163,
+     0.95,
+     2.715
+    ],
+    "v": [
+     1.87,
+     0,
+     1.608
+    ],
+    "speed": 2.466,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.829,
+     0.95,
+     2.999
+    ],
+    "v": [
+     1.855,
+     0,
+     1.559
+    ],
+    "speed": 2.423,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F9-fit",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     -0.435,
+     0.95,
+     2.345
+    ],
+    "v": [
+     1.146,
+     0,
+     1.639
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.748,
+     0.95,
+     2.803
+    ],
+    "v": [
+     1.124,
+     0,
+     1.612
+    ],
+    "speed": 1.965,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F9-glance",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0024,
+  "events": 20,
+  "players": {
+   "D": {
+    "p": [
+     -0.247,
+     0.95,
+     2.411
+    ],
+    "v": [
+     1.366,
+     0,
+     1.751
+    ],
+    "speed": 2.221,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.466,
+     0.95,
+     2.921
+    ],
+    "v": [
+     1.352,
+     0,
+     1.747
+    ],
+    "speed": 2.209,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F9-poor",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0008,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     -1.346,
+     0.948,
+     1.721
+    ],
+    "v": [
+     0.484,
+     -0.003,
+     0.718
+    ],
+    "speed": 0.866,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -1.768,
+     0.95,
+     1.808
+    ],
+    "v": [
+     0.458,
+     0,
+     0.721
+    ],
+    "speed": 0.855,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F10-defender-80kg-std",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0001,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     -0.221,
+     0.95,
+     2.102
+    ],
+    "v": [
+     1.227,
+     0,
+     1.367
+    ],
+    "speed": 1.837,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.569,
+     0.95,
+     2.483
+    ],
+    "v": [
+     1.176,
+     0,
+     1.267
+    ],
+    "speed": 1.728,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F10-defender-100kg-std",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     -0.435,
+     0.95,
+     2.345
+    ],
+    "v": [
+     1.146,
+     0,
+     1.639
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.748,
+     0.95,
+     2.803
+    ],
+    "v": [
+     1.124,
+     0,
+     1.612
+    ],
+    "speed": 1.965,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F10-defender-135kg-std",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0002,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     -0.828,
+     0.95,
+     2.804
+    ],
+    "v": [
+     0.872,
+     0,
+     2.029
+    ],
+    "speed": 2.209,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -1.136,
+     0.95,
+     3.257
+    ],
+    "v": [
+     0.848,
+     0,
+     2.013
+    ],
+    "speed": 2.185,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F10-defender-135kg-wide",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     -0.766,
+     0.95,
+     2.839
+    ],
+    "v": [
+     0.932,
+     0,
+     2.059
+    ],
+    "speed": 2.26,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -1.073,
+     0.95,
+     3.313
+    ],
+    "v": [
+     0.887,
+     0,
+     2.022
+    ],
+    "speed": 2.208,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F10-defender-80kg-narrow",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0026,
+  "events": 18,
+  "players": {
+   "D": {
+    "p": [
+     -0.106,
+     0.95,
+     2.103
+    ],
+    "v": [
+     1.446,
+     0,
+     1.477
+    ],
+    "speed": 2.067,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.323,
+     0.95,
+     2.565
+    ],
+    "v": [
+     1.436,
+     0,
+     1.473
+    ],
+    "speed": 2.058,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F10-runner-135kg-wide",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 10,
+  "players": {
+   "D": {
+    "p": [
+     0.02,
+     0.95,
+     1.937
+    ],
+    "v": [
+     1.362,
+     0,
+     1.338
+    ],
+    "speed": 1.909,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.341,
+     0.95,
+     2.433
+    ],
+    "v": [
+     1.304,
+     0,
+     1.29
+    ],
+    "speed": 1.834,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G1-F10-runner-80kg-narrow",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0002,
+  "events": 16,
+  "players": {
+   "D": {
+    "p": [
+     -0.828,
+     0.95,
+     2.702
+    ],
+    "v": [
+     0.964,
+     0,
+     1.93
+    ],
+    "speed": 2.158,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -1.107,
+     0.95,
+     3.133
+    ],
+    "v": [
+     0.944,
+     0,
+     1.916
+    ],
+    "speed": 2.136,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F1",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.33,
+  "events": 3,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.95,
+     -0.65
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F2",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.1619,
+  "events": 3,
+  "players": {
+   "D": {
+    "p": [
+     1.893,
+     0.95,
+     -0.471
+    ],
+    "v": [
+     1.132,
+     0,
+     0.008
+    ],
+    "speed": 1.132,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.667,
+     0.95,
+     -0.225
+    ],
+    "v": [
+     1.119,
+     0,
+     -0.009
+    ],
+    "speed": 1.119,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F2-control",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.29,
+  "events": 1,
+  "players": {
+   "D": {
+    "p": [
+     -0.1,
+     0.95,
+     -0.7
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.321,
+     0.95,
+     0
+    ],
+    "v": [
+     2,
+     0,
+     0
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F3-separation",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": 0.2835,
+  "events": 5,
+  "players": {
+   "D": {
+    "p": [
+     -0.184,
+     0.95,
+     -0.286
+    ],
+    "v": [
+     -0.001,
+     0,
+     0.006
+    ],
+    "speed": 0.006,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.084,
+     0.95,
+     5.013
+    ],
+    "v": [
+     0.001,
+     0,
+     3.989
+    ],
+    "speed": 3.989,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F3-overload",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.1619,
+  "events": 5,
+  "players": {
+   "D": {
+    "p": [
+     0.092,
+     0.95,
+     -0.465
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.129,
+     0.95,
+     -0.235
+    ],
+    "v": [
+     2,
+     0,
+     0
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F3-turn",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.1228,
+  "events": 5,
+  "players": {
+   "D": {
+    "p": [
+     -0.091,
+     0.95,
+     -0.532
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.151,
+     0.95,
+     0.912
+    ],
+    "v": [
+     1,
+     0,
+     0.5
+    ],
+    "speed": 1.118,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F3-reacquire",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.29,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     -0.1,
+     0.95,
+     -0.7
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F4",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.28,
+  "events": 5,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.95,
+     0.001
+    ],
+    "v": [
+     0,
+     0,
+     0.5
+    ],
+    "speed": 0.5,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0.66
+    ],
+    "v": [
+     0,
+     0,
+     0.498
+    ],
+    "speed": 0.498,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F5",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.046,
+  "events": 6,
+  "players": {
+   "D": {
+    "p": [
+     2.677,
+     0.95,
+     -0.013
+    ],
+    "v": [
+     1.013,
+     0,
+     0.182
+    ],
+    "speed": 1.029,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.706,
+     0.95,
+     0.496
+    ],
+    "v": [
+     0.947,
+     0,
+     0.184
+    ],
+    "speed": 0.965,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F6-separation",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.2575,
+  "events": 7,
+  "players": {
+   "D": {
+    "p": [
+     2.497,
+     0.95,
+     -0.682
+    ],
+    "v": [
+     0.984,
+     0,
+     -0.004
+    ],
+    "speed": 0.984,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.492,
+     0.95,
+     0.056
+    ],
+    "v": [
+     0.883,
+     0,
+     0.037
+    ],
+    "speed": 0.884,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F6-far",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.3949,
+  "events": 1,
+  "players": {
+   "D": {
+    "p": [
+     2.439,
+     0.95,
+     -0.784
+    ],
+    "v": [
+     1,
+     0,
+     0
+    ],
+    "speed": 1,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.76,
+     0.95,
+     0
+    ],
+    "v": [
+     1,
+     0,
+     0
+    ],
+    "speed": 1,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F7",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.046,
+  "events": 33,
+  "players": {
+   "D": {
+    "p": [
+     6.516,
+     0.95,
+     4.24
+    ],
+    "v": [
+     3.87,
+     0,
+     3.369
+    ],
+    "speed": 5.131,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     6.852,
+     0.95,
+     4.956
+    ],
+    "v": [
+     3.823,
+     0,
+     3.386
+    ],
+    "speed": 5.107,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F8",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.28,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.95,
+     -1.373
+    ],
+    "v": [
+     0,
+     0,
+     -0.992
+    ],
+    "speed": 0.992,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0,
+     0.95,
+     3.594
+    ],
+    "v": [
+     0,
+     0,
+     2.99
+    ],
+    "speed": 2.99,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F8-mixed",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0158,
+  "events": 7,
+  "players": {
+   "D": {
+    "p": [
+     2.822,
+     0.95,
+     4.11
+    ],
+    "v": [
+     1.135,
+     0,
+     3.11
+    ],
+    "speed": 3.31,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     3.242,
+     0.95,
+     4.491
+    ],
+    "v": [
+     1.263,
+     0,
+     3.001
+    ],
+    "speed": 3.256,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F10",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.046,
+  "events": 6,
+  "players": {
+   "D": {
+    "p": [
+     2.686,
+     0.95,
+     3.497
+    ],
+    "v": [
+     1,
+     0,
+     2.699
+    ],
+    "speed": 2.878,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.683,
+     0.95,
+     4.023
+    ],
+    "v": [
+     0.962,
+     0,
+     2.694
+    ],
+    "speed": 2.861,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F10-noClose",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     2.756,
+     0.95,
+     3.645
+    ],
+    "v": [
+     1.036,
+     0,
+     2.702
+    ],
+    "speed": 2.894,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.825,
+     0.95,
+     4.066
+    ],
+    "v": [
+     1.037,
+     0,
+     2.689
+    ],
+    "speed": 2.882,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F11",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.046,
+  "events": 13,
+  "players": {
+   "D": {
+    "p": [
+     1.193,
+     0.95,
+     -0.092
+    ],
+    "v": [
+     0.002,
+     0,
+     0.003
+    ],
+    "speed": 0.003,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.889,
+     0.95,
+     3.928
+    ],
+    "v": [
+     0.498,
+     0,
+     2.988
+    ],
+    "speed": 3.029,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F11-mu0.3",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0064,
+  "events": 19,
+  "players": {
+   "D": {
+    "p": [
+     1.143,
+     0.95,
+     -0.193
+    ],
+    "v": [
+     0.001,
+     0,
+     0.001
+    ],
+    "speed": 0.002,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.997,
+     0.95,
+     4.164
+    ],
+    "v": [
+     0.5,
+     0,
+     2.994
+    ],
+    "speed": 3.035,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F12",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": 0.0538,
+  "events": 14,
+  "players": {
+   "D": {
+    "p": [
+     5.095,
+     0.95,
+     2.734
+    ],
+    "v": [
+     1.52,
+     0,
+     1.462
+    ],
+    "speed": 2.109,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.728,
+     0.95,
+     3.097
+    ],
+    "v": [
+     1.458,
+     0,
+     1.365
+    ],
+    "speed": 1.997,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F9-sweep",
+  "result": "duration",
+  "ticks": 60,
+  "t": 1,
+  "minPairGap": 0.29,
+  "events": 1,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.95,
+     -0.65
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     3.472,
+     0.95,
+     0.05
+    ],
+    "v": [
+     6.032,
+     0,
+     0
+    ],
+    "speed": 6.032,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F1",
+  "result": "duration",
+  "ticks": 510,
+  "t": 8.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     4.997,
+     0.95,
+     0
+    ],
+    "v": [
+     0.011,
+     0,
+     0
+    ],
+    "speed": 0.011,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F2",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     0.155,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F2-sr16",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     0.155,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F2-sr16-14deg",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0.342,
+     0.25,
+     0.017
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F3-side-recover",
+  "result": "duration",
+  "ticks": 105,
+  "t": 1.75,
+  "minPairGap": -0.0002,
+  "events": 18,
+  "players": {
+   "D": {
+    "p": [
+     0.175,
+     0.933,
+     4.808
+    ],
+    "v": [
+     0.012,
+     0.002,
+     5.898
+    ],
+    "speed": 5.898,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.135,
+     0.949,
+     1.472
+    ],
+    "v": [
+     1.987,
+     0.005,
+     0.104
+    ],
+    "speed": 1.99,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F3-side-loss",
+  "result": "duration",
+  "ticks": 105,
+  "t": 1.75,
+  "minPairGap": 0.0004,
+  "events": 24,
+  "players": {
+   "D": {
+    "p": [
+     0.157,
+     0.943,
+     5.952
+    ],
+    "v": [
+     0.005,
+     -0.016,
+     5.968
+    ],
+    "speed": 5.968,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     3.661,
+     0.294,
+     0.619
+    ],
+    "v": [
+     1.617,
+     0.004,
+     -0.274
+    ],
+    "speed": 1.64,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F3-collision-headOn",
+  "result": "duration",
+  "ticks": 90,
+  "t": 1.5,
+  "minPairGap": -0.0162,
+  "events": 14,
+  "players": {
+   "D": {
+    "p": [
+     -0.003,
+     0.948,
+     2.31
+    ],
+    "v": [
+     -0.003,
+     -0.001,
+     2.499
+    ],
+    "speed": 2.499,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0.003,
+     0.948,
+     2.631
+    ],
+    "v": [
+     0.003,
+     -0.001,
+     2.499
+    ],
+    "speed": 2.499,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F5-cap240",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     0.215,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F5-cap168",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0.293,
+     0.25,
+     0.011
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F9-sustained",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0001,
+  "events": 101,
+  "players": {
+   "D": {
+    "p": [
+     5.685,
+     0.947,
+     1.638
+    ],
+    "v": [
+     3.44,
+     0.005,
+     -0.216
+    ],
+    "speed": 3.447,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     6.176,
+     0.95,
+     0.929
+    ],
+    "v": [
+     3.096,
+     0.001,
+     -0.071
+    ],
+    "speed": 3.097,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F9-removed",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0,
+  "events": 17,
+  "players": {
+   "D": {
+    "p": [
+     2.383,
+     0.95,
+     0.261
+    ],
+    "v": [
+     0.923,
+     0,
+     0.298
+    ],
+    "speed": 0.97,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     5.911,
+     0.95,
+     0.153
+    ],
+    "v": [
+     2.999,
+     0,
+     0
+    ],
+    "speed": 2.999,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F9-partial-improve",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0008,
+  "events": 41,
+  "players": {
+   "D": {
+    "p": [
+     2.894,
+     0.948,
+     1.105
+    ],
+    "v": [
+     1.009,
+     -0.001,
+     1.514
+    ],
+    "speed": 1.819,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.689,
+     0.947,
+     1.475
+    ],
+    "v": [
+     0.878,
+     -0.001,
+     1.471
+    ],
+    "speed": 1.713,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F9-partial-fail",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.301,
+  "events": 21,
+  "players": {
+   "D": {
+    "p": [
+     6.15,
+     0.948,
+     -0.86
+    ],
+    "v": [
+     2.995,
+     0.007,
+     0.07
+    ],
+    "speed": 2.996,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     5.963,
+     0.95,
+     -0.029
+    ],
+    "v": [
+     2.998,
+     0,
+     0
+    ],
+    "speed": 2.998,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F10-lean0",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0001,
+  "events": 135,
+  "players": {
+   "D": {
+    "p": [
+     4.134,
+     0.95,
+     1.052
+    ],
+    "v": [
+     3.339,
+     0.001,
+     1.263
+    ],
+    "speed": 3.57,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.831,
+     0.95,
+     0.566
+    ],
+    "v": [
+     3.053,
+     0.001,
+     0.886
+    ],
+    "speed": 3.179,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F10-lean6",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0002,
+  "events": 128,
+  "players": {
+   "D": {
+    "p": [
+     4.106,
+     0.948,
+     1.04
+    ],
+    "v": [
+     3.289,
+     -0.002,
+     1.224
+    ],
+    "speed": 3.509,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.813,
+     0.95,
+     0.583
+    ],
+    "v": [
+     3.042,
+     0.001,
+     0.889
+    ],
+    "speed": 3.169,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G3-F10-lean12",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0001,
+  "events": 120,
+  "players": {
+   "D": {
+    "p": [
+     4.125,
+     0.947,
+     0.994
+    ],
+    "v": [
+     3.408,
+     0.004,
+     1.046
+    ],
+    "speed": 3.565,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.829,
+     0.95,
+     0.566
+    ],
+    "v": [
+     3.063,
+     0,
+     0.894
+    ],
+    "speed": 3.191,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F5-balanced",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0168,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     2.746,
+     0.95,
+     0.276
+    ],
+    "v": [
+     1.027,
+     0,
+     0.376
+    ],
+    "speed": 1.094,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.767,
+     0.949,
+     0.736
+    ],
+    "v": [
+     0.986,
+     0,
+     0.353
+    ],
+    "speed": 1.048,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F8-balanced",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.0568,
+  "events": 12,
+  "players": {
+   "D": {
+    "p": [
+     -0.027,
+     0.16,
+     -0.509
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0,
+     0.95,
+     3.822
+    ],
+    "v": [
+     0,
+     0,
+     2.993
+    ],
+    "speed": 2.993,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F2-balanced",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.1498,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     0.328,
+     0.25,
+     -0.587
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.042,
+     0.95,
+     -0.228
+    ],
+    "v": [
+     1.999,
+     0,
+     0
+    ],
+    "speed": 1.999,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F4-balanced",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.1944,
+  "events": 5,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.791,
+     -0.189
+    ],
+    "v": [
+     0,
+     -0.913,
+     0.171
+    ],
+    "speed": 0.171,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0.791
+    ],
+    "v": [
+     0,
+     0,
+     0.827
+    ],
+    "speed": 0.827,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F7-balanced",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0348,
+  "events": 37,
+  "players": {
+   "D": {
+    "p": [
+     6.467,
+     0.947,
+     4.083
+    ],
+    "v": [
+     3.766,
+     0.001,
+     3.059
+    ],
+    "speed": 4.852,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     6.77,
+     0.942,
+     4.746
+    ],
+    "v": [
+     3.692,
+     -0.002,
+     3.091
+    ],
+    "speed": 4.815,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F10-balanced",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0348,
+  "events": 8,
+  "players": {
+   "D": {
+    "p": [
+     2.693,
+     0.95,
+     3.493
+    ],
+    "v": [
+     1.013,
+     0,
+     2.671
+    ],
+    "speed": 2.857,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.726,
+     0.95,
+     4.005
+    ],
+    "v": [
+     0.997,
+     0,
+     2.666
+    ],
+    "speed": 2.846,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F11-balanced",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": 0.0348,
+  "events": 17,
+  "players": {
+   "D": {
+    "p": [
+     1.199,
+     0.95,
+     -0.068
+    ],
+    "v": [
+     0.002,
+     0,
+     0.003
+    ],
+    "speed": 0.003,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.914,
+     0.95,
+     3.991
+    ],
+    "v": [
+     0.499,
+     0,
+     2.989
+    ],
+    "speed": 3.03,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G2-F12-balanced",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": 0.0479,
+  "events": 18,
+  "players": {
+   "D": {
+    "p": [
+     5.14,
+     0.95,
+     2.797
+    ],
+    "v": [
+     1.558,
+     0,
+     1.489
+    ],
+    "speed": 2.155,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     4.827,
+     0.95,
+     3.221
+    ],
+    "v": [
+     1.455,
+     0,
+     1.409
+    ],
+    "speed": 2.026,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F1",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     -0.158,
+     0.16,
+     -0.107
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F2-yaw90-spin",
+  "result": "duration",
+  "ticks": 120,
+  "t": 2,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     1.195,
+     0.162,
+     0.052
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F2-yaw225-tumble",
+  "result": "duration",
+  "ticks": 120,
+  "t": 2,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     -3.317,
+     0.16,
+     -1.557
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F2-yaw0-tilt20",
+  "result": "duration",
+  "ticks": 120,
+  "t": 2,
+  "minPairGap": null,
+  "events": 5,
+  "players": {
+   "R": {
+    "p": [
+     -2.066,
+     0.166,
+     2.013
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F6-jointMismatch",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F6-crowded",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.0098,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "D": {
+    "p": [
+     0.42,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F3-twoArm",
+  "result": "groundDown",
+  "ticks": 99,
+  "t": 1.65,
+  "minPairGap": 0.0001,
+  "events": 118,
+  "players": {
+   "D": {
+    "p": [
+     2.398,
+     0.945,
+     1.991
+    ],
+    "v": [
+     0.546,
+     0.017,
+     0.212
+    ],
+    "speed": 0.585,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.595,
+     0.16,
+     1.176
+    ],
+    "v": [
+     0.085,
+     -0.01,
+     0.063
+    ],
+    "speed": 0.106,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F3-oneArm",
+  "result": "groundDown",
+  "ticks": 97,
+  "t": 1.6167,
+  "minPairGap": -0.0007,
+  "events": 110,
+  "players": {
+   "D": {
+    "p": [
+     2.667,
+     0.578,
+     1.034
+    ],
+    "v": [
+     1.421,
+     -0.939,
+     0.93
+    ],
+    "speed": 1.698,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     2.545,
+     0.161,
+     0.918
+    ],
+    "v": [
+     0.098,
+     0.003,
+     -0.161
+    ],
+    "speed": 0.189,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F3-failed",
+  "result": "practiceOutOfBounds",
+  "ticks": 160,
+  "t": 2.6667,
+  "minPairGap": -0.0036,
+  "events": 195,
+  "players": {
+   "D": {
+    "p": [
+     8.03,
+     0.945,
+     3.055
+    ],
+    "v": [
+     3.723,
+     -0.014,
+     0.51
+    ],
+    "speed": 3.758,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     7.285,
+     0.947,
+     2.527
+    ],
+    "v": [
+     3.79,
+     0.01,
+     0.193
+    ],
+    "speed": 3.795,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F4-targetOnly",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": -0.0008,
+  "events": 118,
+  "players": {
+   "D": {
+    "p": [
+     0.088,
+     0.355,
+     -0.782
+    ],
+    "v": [
+     0.01,
+     -0.074,
+     -0.007
+    ],
+    "speed": 0.013,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     0.422,
+     0.255,
+     -0.447
+    ],
+    "v": [
+     0.25,
+     -0.145,
+     0.252
+    ],
+    "speed": 0.355,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F4-ownerOnly",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": -0.007,
+  "events": 55,
+  "players": {
+   "D": {
+    "p": [
+     0.004,
+     0.16,
+     -0.81
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     -0.005,
+     0.947,
+     0.261
+    ],
+    "v": [
+     -0.002,
+     0.012,
+     0.075
+    ],
+    "speed": 0.075,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F4-simultaneous",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": -0.007,
+  "events": 38,
+  "players": {
+   "D": {
+    "p": [
+     -0.406,
+     0.263,
+     -0.849
+    ],
+    "v": [
+     -0.859,
+     -0.586,
+     0.327
+    ],
+    "speed": 0.919,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     0,
+     0.231,
+     0.333
+    ],
+    "v": [
+     0.051,
+     -0.027,
+     -0.113
+    ],
+    "speed": 0.124,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F4-invalidSurface",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": -0.0003,
+  "events": 21,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.95,
+     -0.602
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     -0.026,
+     0.217,
+     0.419
+    ],
+    "v": [
+     0.025,
+     0.14,
+     0.362
+    ],
+    "speed": 0.362,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F10-targetOnly",
+  "result": "duration",
+  "ticks": 156,
+  "t": 2.6,
+  "minPairGap": -0.0019,
+  "events": 94,
+  "players": {
+   "D": {
+    "p": [
+     1.989,
+     0.826,
+     0.359
+    ],
+    "v": [
+     0.494,
+     -0.655,
+     0.193
+    ],
+    "speed": 0.531,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.893,
+     0.176,
+     0.647
+    ],
+    "v": [
+     0.227,
+     -0.18,
+     -0.155
+    ],
+    "speed": 0.275,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F10-ownerOnly",
+  "result": "duration",
+  "ticks": 156,
+  "t": 2.6,
+  "minPairGap": 0,
+  "events": 50,
+  "players": {
+   "D": {
+    "p": [
+     1.796,
+     0.16,
+     -0.172
+    ],
+    "v": [
+     -0.039,
+     -0.084,
+     -0.02
+    ],
+    "speed": 0.043,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     2.452,
+     0.95,
+     0.259
+    ],
+    "v": [
+     1.005,
+     0,
+     0.007
+    ],
+    "speed": 1.005,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F10-simultaneous",
+  "result": "duration",
+  "ticks": 156,
+  "t": 2.6,
+  "minPairGap": -0.0066,
+  "events": 95,
+  "players": {
+   "D": {
+    "p": [
+     1.119,
+     0.212,
+     -0.3
+    ],
+    "v": [
+     -0.006,
+     -0.001,
+     -0.006
+    ],
+    "speed": 0.009,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     1.761,
+     0.251,
+     0.728
+    ],
+    "v": [
+     0.003,
+     0.001,
+     0.005
+    ],
+    "speed": 0.006,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F5-standingOpponent",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0037,
+  "events": 106,
+  "players": {
+   "R": {
+    "p": [
+     0.148,
+     0.251,
+     -0.335
+    ],
+    "v": [
+     0.011,
+     0,
+     0.003
+    ],
+    "speed": 0.012,
+    "rep": "ragdoll"
+   },
+   "D": {
+    "p": [
+     0.728,
+     0.26,
+     0.026
+    ],
+    "v": [
+     0,
+     0,
+     -0.011
+    ],
+    "speed": 0.011,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F5-twoRagdolls",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0053,
+  "events": 56,
+  "players": {
+   "R": {
+    "p": [
+     0.001,
+     0.16,
+     1.048
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   },
+   "D": {
+    "p": [
+     0.442,
+     0.164,
+     -0.354
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-labCore",
+  "result": "runnerCoreDown",
+  "ticks": 91,
+  "t": 1.5167,
+  "minPairGap": null,
+  "events": 7,
+  "players": {
+   "R": {
+    "p": [
+     -0.037,
+     0.269,
+     -0.282
+    ],
+    "v": [
+     -0.205,
+     -0.156,
+     0.186
+    ],
+    "speed": 0.277,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-untouched",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 11,
+  "players": {
+   "R": {
+    "p": [
+     -0.158,
+     0.16,
+     -0.107
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-footBrace",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": 0.28,
+  "events": 6,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.95,
+     -0.6
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-limbFirst",
+  "result": "groundDown",
+  "ticks": 125,
+  "t": 2.0833,
+  "minPairGap": -0.0015,
+  "events": 43,
+  "players": {
+   "D": {
+    "p": [
+     1.423,
+     0.944,
+     -0.101
+    ],
+    "v": [
+     0.142,
+     0.022,
+     0.059
+    ],
+    "speed": 0.154,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.609,
+     0.278,
+     0.648
+    ],
+    "v": [
+     0.698,
+     -0.219,
+     0.23
+    ],
+    "speed": 0.735,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-groundedThenTouched",
+  "result": "groundDown",
+  "ticks": 248,
+  "t": 4.1333,
+  "minPairGap": -0.0007,
+  "events": 24,
+  "players": {
+   "R": {
+    "p": [
+     -0.21,
+     0.163,
+     0.153
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   },
+   "D": {
+    "p": [
+     0.245,
+     0.948,
+     0.024
+    ],
+    "v": [
+     -0.056,
+     -0.003,
+     0.024
+    ],
+    "speed": 0.061,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-defenderFallsAlone",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": -0.0001,
+  "events": 59,
+  "players": {
+   "R": {
+    "p": [
+     2.941,
+     0.95,
+     0.599
+    ],
+    "v": [
+     1,
+     0,
+     0
+    ],
+    "speed": 1,
+    "rep": "proxy"
+   },
+   "D": {
+    "p": [
+     0.676,
+     0.25,
+     0.475
+    ],
+    "v": [
+     -0.022,
+     -0.008,
+     -0.008
+    ],
+    "speed": 0.024,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-unopposedStationary",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-wallNoOpponent",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0.34,
+     0.95,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F7-freeRun",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     4,
+     0.95,
+     0
+    ],
+    "v": [
+     4,
+     0,
+     0
+    ],
+    "speed": 4,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F11-heldUp",
+  "result": "progressStopped",
+  "ticks": 93,
+  "t": 1.55,
+  "minPairGap": -0.0001,
+  "events": 14,
+  "players": {
+   "R": {
+    "p": [
+     -0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   },
+   "D": {
+    "p": [
+     0.16,
+     0.95,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F11-resumed",
+  "result": "practiceOutOfBounds",
+  "ticks": 257,
+  "t": 4.2833,
+  "minPairGap": -0.0001,
+  "events": 99,
+  "players": {
+   "R": {
+    "p": [
+     8.023,
+     0.95,
+     0.091
+    ],
+    "v": [
+     2.5,
+     0,
+     0
+    ],
+    "speed": 2.5,
+    "rep": "proxy"
+   },
+   "D": {
+    "p": [
+     0.567,
+     0.95,
+     1.709
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F11-sidelineFoot",
+  "result": "sidelineOut",
+  "ticks": 40,
+  "t": 0.6667,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     -3.467,
+     0.95,
+     3.85
+    ],
+    "v": [
+     0.538,
+     0,
+     0
+    ],
+    "speed": 0.538,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "G4-F11-sidelineClear",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     5,
+     0.95,
+     3.75
+    ],
+    "v": [
+     4,
+     0,
+     0
+    ],
+    "speed": 4,
+    "rep": "proxy"
+   }
+  }
+ }
+]

@@ -1,0 +1,23 @@
+// Probe: per-candidate right-arm depth of R in the canonical wrap at t ~ 1.2 s (shoulder x from argv).
+import { Simulation } from '../../src/sim/simulation';
+import * as G2 from '../../src/sim/fixtures/gate2';
+import * as G3 from '../../src/sim/fixtures/gate3';
+import { RAGDOLL_G4, SOLVER_G4 } from '../../src/sim/profiles';
+import type { FixtureDef } from '../../src/sim/fixture';
+import { v3, toLocal } from '../../src/sim/vec';
+import { POSE_DEBUG } from '../../src/sim/pose';
+const sx = Number(process.argv[2] ?? 0.26);
+const def: FixtureDef = { ...G3.balancedVariant(G2.g2f5()), gate: 4, solver: SOLVER_G4, ragdoll: RAGDOLL_G4, durationS: 1.21 };
+for (const p of def.players) p.body = { ...p.body, shoulderRight: v3(sx, 0.5, 0) };
+POSE_DEBUG.on = true;
+const sim = await Simulation.create(def);
+sim.runToEnd();
+const R = sim.players.find((p) => p.id === 'R')!;
+const D = sim.players.find((p) => p.id === 'D')!;
+const rp = sim.poseOf(R);
+const dp = sim.poseOf(D);
+console.log('R pos', rp.p, 'D in R local', toLocal(rp, dp.p));
+console.log('cands R right', POSE_DEBUG.last['R:rightArm'].map((c) => c.depth.toFixed(3) + '/' + c.soft.toFixed(3)).join(' '), 'left', POSE_DEBUG.last['R:leftArm'].map((c) => c.depth.toFixed(3)).join(' '));
+const arm = sim.arms!.obs('D')!;
+for (const s of ['left', 'right'] as const) console.log('D', s, 'elbow', toLocal(rp, arm[s]!.elbowWorld), 'wrist', toLocal(rp, arm[s]!.wristWorld), 'palm', toLocal(rp, arm[s]!.palmContactWorld));
+console.log('R pose lm (R-local):', ['rightShoulder', 'rightElbow', 'rightWrist', 'rightPalm'].map((k) => `${k} ${JSON.stringify(toLocal(rp, R.pose!.jointLandmarksWorld[k]))}`).join(' | '));

@@ -1,0 +1,17 @@
+import { initPhysics, PhysicsWorld, RAPIER } from '../../src/sim/physics';
+import { SOLVER_G1, STANCE_G1_LOCKED, upperBodyCompound, legacyCapsule } from '../../src/sim/profiles';
+import { qIdentity } from '../../src/sim/vec';
+await initPhysics();
+const pw = new PhysicsWorld(SOLVER_G1);
+const a = pw.createProxy('A', upperBodyCompound(), STANCE_G1_LOCKED, { p: { x: -0.5, y: 0.95, z: 0 }, q: qIdentity() });
+const b = pw.createProxy('B', legacyCapsule(), STANCE_G1_LOCKED, { p: { x: 0.0, y: 0.95, z: 0 }, q: qIdentity() });
+console.log('massA', pw.massReport(a.body), 'massB', pw.massReport(b.body));
+for (let i = 0; i < 3; i++) pw.step();
+const cs = pw.collectContacts();
+for (const c of cs) console.log(c.a.playerId, c.a.region, '->', c.b.playerId, c.b.region, 'n', c.normalAB, 'pts', c.points.map(p => [p.pointWorld, p.dist, p.impulse]));
+console.log('support A', pw.supportContact(a.support, a.supportShape, a.body.worldCom()));
+console.log('support B', pw.supportContact(b.support, b.supportShape, b.body.worldCom()));
+const cl = pw.closestBetween(a.colliders, b.colliders);
+console.log('closest', cl && { d: cl.distance, pA: cl.pointA, pB: cl.pointB, nA: cl.normalA });
+console.log('handles', a.colliders.map(c=>c.handle), b.colliders.map(c=>c.handle), 'floor', pw.floorCollider.handle);
+console.log(Object.keys(RAPIER.CoefficientCombineRule));
