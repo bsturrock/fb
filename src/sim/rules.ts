@@ -176,9 +176,13 @@ export class RuleObserver {
     return this.profile.runnerId;
   }
 
-  /** Ball reference from the physical carry pose: a fixed offset in the runner's core frame (cosmetic ball). */
-  ballRef(corePose: Pose): Vec3 {
-    return toWorld(corePose, this.profile.ballLocal);
+  /**
+   * Ball reference from the physical carry pose: a fixed offset in the runner's core frame, or (ballSource carryPalm)
+   * the ball-arm palm of the sim-owned pose (cosmetic ball; no collision, no fumbles).
+   */
+  ballRef(corePose: Pose, pose?: PhysicalPose | null): Vec3 {
+    const palm = this.profile.ballSource === 'carryPalm' ? pose?.jointLandmarksWorld.rightPalm : undefined;
+    return palm ? { ...palm } : toWorld(corePose, this.profile.ballLocal);
   }
 
   disable(reason: string, data: Record<string, unknown>): void {
@@ -276,7 +280,7 @@ export class RuleObserver {
   // ------------------------------------------------------------------ main
   observe(f: RuleFrame): RuleEnding | null {
     const P = this.profile;
-    const ball = this.ballRef(f.corePose);
+    const ball = this.ballRef(f.corePose, f.pose);
     if (this.ending) {
       // after the event: trace only (the bodies keep settling; the stored event and spot never change)
       const gnd = [...new Set(this.groundTouches(f).map((g) => `${g.label}${g.source === 'poseQuery' ? '?' : ''}`))];

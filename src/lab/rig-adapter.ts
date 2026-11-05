@@ -6,8 +6,9 @@
 //   bindCorrection = segmentRest^-1 * boneRest   (both body-local, from the calibration record and the asset's rest).
 // World targets are converted to parent-local transforms in hierarchy order. The model root and the Armature keep
 // their rest placement; the Hips bone carries the player's placement (root placement happens once). Undriven bones
-// (spine, clavicles, feet, toes, fingers) keep their rest local transforms, so they follow their driven parents in
-// the calibrated rest pose. Twist comes from each segment quaternion (no swing-only retargeting).
+// (spine, clavicles, toes, fingers) keep their rest local transforms, so they follow their driven parents in
+// the calibrated rest pose. Twist comes from each segment quaternion (no swing-only retargeting). The feet follow the
+// shoe frame (the shin frame pitched by the pose's ankle angle; plan 06 pass 2).
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { SegmentId } from '../sim/contracts';
@@ -23,8 +24,12 @@ export function boneKey(name: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Segment driving each bone (GLB anatomical names; the model profiles use the same anatomical sides). */
-export const RIG_MAP: ReadonlyArray<{ bone: string; segment: SegmentId; restOrigin: string }> = [
+/**
+ * Segment driving each bone (GLB anatomical names; the model profiles use the same anatomical sides). A `foot` entry
+ * is driven by that side's shin frame pitched by the pose's ankle angle about the calibrated rest ankle (at pitch 0
+ * the foot is exactly its rest pose on the shin, as an undriven bone).
+ */
+export const RIG_MAP: ReadonlyArray<{ bone: string; segment: SegmentId; restOrigin: string; foot?: 'left' | 'right' }> = [
   { bone: 'Hips', segment: 'core', restOrigin: 'core' },
   { bone: 'Neck', segment: 'head', restOrigin: 'neck' },
   { bone: 'Head', segment: 'head', restOrigin: 'neck' },
@@ -36,6 +41,7 @@ export const RIG_MAP: ReadonlyArray<{ bone: string; segment: SegmentId; restOrig
       { bone: `${S}Hand`, segment: `${s}Forearm` as SegmentId, restOrigin: `${s}Elbow` },
       { bone: `${S}UpLeg`, segment: `${s}Thigh` as SegmentId, restOrigin: `${s}Hip` },
       { bone: `${S}Leg`, segment: `${s}Shin` as SegmentId, restOrigin: `${s}Knee` },
+      { bone: `${S}Foot`, segment: `${s}Shin` as SegmentId, restOrigin: `${s}Knee`, foot: s },
     ];
   }),
 ];
@@ -50,7 +56,8 @@ const tq = (a: number[]): THREE.Quaternion => new THREE.Quaternion(a[0], a[1], a
 export class RigAdapter {
   /** Bones in hierarchy order (parents first). */
   private readonly order: THREE.Bone[];
-  private readonly driven = new Map<THREE.Bone, { segment: SegmentId; correction: THREE.Matrix4 }>();
+  private readonly driven = new Map<THREE.Bone, { segment: SegmentId; correction: THREE.Matrix4; foot?: { side: 'left' | 'right'; ankle: THREE.Vector3 } }>();
+  private readonly pitch = new THREE.Matrix4();
   private readonly world = new Map<THREE.Object3D, THREE.Matrix4>();
   private readonly tmp = new THREE.Matrix4();
   private readonly seg = new THREE.Matrix4();
@@ -76,8 +83,15 @@ export class RigAdapter {
     for (const m of RIG_MAP) {
       const bone = bones[m.bone];
       const segRest = new THREE.Matrix4().compose(restOrigins[m.restOrigin], tq(cal.segmentRest[m.segment]), this.one);
+      // a foot pivots about the rest ankle, expressed in the shin segment frame
+      let foot: { side: 'left' | 'right'; ankle: THREE.Vector3 } | undefined;
+      if (m.foot) {
+        const ankle = restOrigins[`${m.foot}Ankle`].clone().applyMatrix4(segRest.clone().invert());
+        foot = { side: m.foot, ankle };
+        segRest.multiply(new THREE.Matrix4().makeTranslation(ankle.x, ankle.y, ankle.z));
+      }
       const boneRest = toBody.clone().multiply(bone.matrixWorld);
-      this.driven.set(bone, { segment: m.segment, correction: segRest.invert().multiply(boneRest) });
+      this.driven.set(bone, { segment: m.segment, correction: segRest.invert().multiply(boneRest), foot });
     }
     const all: THREE.Bone[] = [];
     bones.Hips.traverse((o) => {
@@ -106,6 +120,12 @@ export class RigAdapter {
         const o = s.originWorld;
         const q = s.rotationWorld;
         this.seg.compose(new THREE.Vector3(o.x, o.y, o.z), new THREE.Quaternion(q.x, q.y, q.z, q.w), this.one);
+        if (d.foot) {
+          const a = d.foot.ankle;
+          const rad = ((pose.anklePitchDeg?.[d.foot.side] ?? 0) * Math.PI) / 180;
+          this.seg.multiply(this.pitch.makeTranslation(a.x, a.y, a.z));
+          if (rad !== 0) this.seg.multiply(this.pitch.makeRotationX(rad));
+        }
         w.multiplyMatrices(this.seg, d.correction);
         this.inv.copy(parentWorld).invert();
         this.tmp.multiplyMatrices(this.inv, w);

@@ -21,6 +21,9 @@ import {
   projectedLean,
 } from './balance';
 import { ArmSystem, type ArmHost, type ArmHostPlayer, type WrapStatus } from './arms';
+import {
+  advanceRunPlayback, newRunPlayback, playbackArmMean, playbackLabel, sampleRunClip, playbackSample, retargetSample, runClipProfileExport, validateRunClipProfile, type RunPlayback,
+} from './run-clip';
 import { RuleObserver, ruleProfileExport, type EndingKind, type RetentionObs, type RuleEnding, type RuleTraceRow } from './rules';
 import type { ArmSide } from './contracts';
 import {
@@ -92,6 +95,8 @@ export interface PlayerRuntime {
   /** Sim-owned physical pose after the last solve (presentation, candidate source, rule queries). */
   pose: PhysicalPose | null;
   gait: GaitState;
+  /** Plan 06: run-clip playback (phase, weight) when the fixture has a run-clip profile; reset with the player. */
+  run: RunPlayback | null;
   poseMemory: PoseMemory;
   /** Gate 4 handoff outcome (accepted with audits, or rejected with reasons). */
   handoff: HandoffRecord | null;
@@ -154,6 +159,11 @@ export interface PlayerTraceRow {
   rep?: Representation;
   jsep?: number;
   hinge?: Record<string, number>;
+  /**
+   * Plan 06 run-clip playback: clip (or blend) label, phase u (0 = left touchdown), applied weight w and its target wt,
+   * playback rate r, clip blend b, solved travel speed v (m/s), sampled-request residuals (m) of the pose.
+   */
+  run?: { clip: string; u: number; w: number; wt: number; r: number; b: number; v: number; res: Record<string, number> };
 }
 
 export interface TraceRow {
@@ -279,6 +289,7 @@ export class Simulation {
   }
 
   constructor(readonly def: FixtureDef, readonly opts: SimOptions = {}) {
+    if (def.runClips) validateRunClipProfile(def.runClips, def.ragdoll ?? DEFAULT_POSE_PROFILE);
     this.build();
   }
 
@@ -391,7 +402,8 @@ export class Simulation {
         balance: EMPTY_BALANCE(),
         rag: null,
         pose: null,
-        gait: { phase: setup.role === 'runner' ? 0 : Math.PI / 2 },
+        gait: { phase: setup.initial.runPhase !== undefined ? 2 * Math.PI * (((setup.initial.runPhase % 1) + 1) % 1) : setup.role === 'runner' ? 0 : Math.PI / 2 },
+        run: def.runClips && setup.body.kind === 'upperBodyCompound' ? newRunPlayback(setup.initial.runPhase ?? (setup.role === 'runner' ? 0 : 0.25)) : null,
         poseMemory: {},
         handoff: null,
         ragStats: null,
@@ -1055,6 +1067,35 @@ export class Simulation {
       if (dt > 0 && pl.grounded && pl.controlMode === 'supported') advanceGait(pl.gait, sp, dt);
       const core = this.poseOf(pl);
       const localV = qInvRot(core.q, v3(v.x, 0, v.z));
+      const RP = R ?? DEFAULT_POSE_PROFILE;
+      // plan 06: run-clip playback from solved travel (once per substep); the procedural gait is the bounded fallback
+      let sampled: ReturnType<typeof retargetSample> | undefined;
+      const P = this.def.runClips;
+      if (pl.run && P) {
+        const st = pl.run;
+        // while the clip is off its phase follows the procedural gait (and the gait follows the clip while it plays)
+        if (st.w <= 0 && dt > 0) st.u = (((pl.gait.phase / (2 * Math.PI)) % 1) + 1) % 1;
+        advanceRunPlayback(st, P, {
+          coreP: core.p,
+          forward: forwardOf(core.q),
+          supported: pl.grounded && pl.controlMode === 'supported',
+          dt,
+          initSpeed: sp,
+          initDir: v,
+          legM: RP.lengths.thigh + RP.lengths.shin,
+        });
+        if (st.w > 0) pl.gait.phase = 2 * Math.PI * st.u;
+        // the sampled request is built at every weight (0 = the procedural targets through the same continuous leg
+        // solve), so the clip fades in and out without a solver switch
+        if (!pl.rag) {
+          sampled = retargetSample(playbackSample(st, P) ?? sampleRunClip(P.clips[st.k], st.u), st.w, pl.body, RP, core, st.heading, {
+            armSwing: P.armSwing,
+            carrySwing: P.carrySwing,
+            restToe: P.clips[st.k].restToe,
+            armMean: playbackArmMean(st, P),
+          });
+        }
+      }
       const armObs = this.arms?.obs(pl.id);
       const arms = armObs
         ? Object.fromEntries(
@@ -1067,7 +1108,7 @@ export class Simulation {
       pl.pose = buildProxyPose({
         playerId: pl.id,
         body: pl.body,
-        ragdoll: R ?? DEFAULT_POSE_PROFILE,
+        ragdoll: RP,
         pose: core,
         gait: pl.gait,
         speed: pl.grounded && pl.controlMode === 'supported' ? sp : 0,
@@ -1077,6 +1118,7 @@ export class Simulation {
         localVelDir: sp > 0.2 ? v3(localV.x / sp, 0, localV.z / sp) : v3(0, 0, 1),
         clearance: R ? this.poseClearance(pl) : undefined,
         memory: pl.poseMemory,
+        sampled,
       });
     }
   }
@@ -1224,6 +1266,19 @@ export class Simulation {
         players[pl.id].jsep = round(Math.max(...Object.values(ae)), 5);
         players[pl.id].hinge = Object.fromEntries(Object.entries(pl.pose?.hingeDeg ?? {}).map(([kk, vv]) => [kk, round(vv, 2)]));
       }
+      if (pl.run && this.def.runClips && !pl.rag) {
+        const st = pl.run;
+        players[pl.id].run = {
+          clip: playbackLabel(st, this.def.runClips),
+          u: round(st.u, 5),
+          w: round(st.w, 4),
+          wt: round(st.wTarget, 4),
+          r: round(st.rate, 4),
+          b: round(st.blend, 4),
+          v: round(st.speed, 4),
+          res: Object.fromEntries(Object.entries(pl.pose?.targetResidualM ?? {}).map(([kk, vv]) => [kk, round(vv, 4)])),
+        };
+      }
       const ao = this.arms?.obs(pl.id);
       if (ao) {
         const arm: NonNullable<PlayerTraceRow['arm']> = {};
@@ -1271,6 +1326,7 @@ export class Simulation {
         balance: this.balanced ? this.balanceProfile.id : undefined,
         ragdoll: def.ragdoll?.id,
         rule: def.rules?.id,
+        runClips: def.runClips?.id,
       },
       profiles: {
         body: bodyProfiles,
@@ -1281,6 +1337,7 @@ export class Simulation {
         balance: this.balanced ? this.balanceProfile : undefined,
         ragdoll: def.ragdoll,
         rule: def.rules ? ruleProfileExport(def.rules) : undefined,
+        runClips: def.runClips ? runClipProfileExport(def.runClips) : undefined,
       },
       diagnostics: def.diagnostics,
       obstacles: def.obstacles,

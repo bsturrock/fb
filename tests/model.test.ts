@@ -171,6 +171,39 @@ describe('rig adapter: bones from the achieved pose (bind corrections, parent-lo
     }
   });
 
+  it('an ankle pitch turns the foot about the calibrated ankle (shin and the rest of the leg unchanged)', () => {
+    const { rig, adapter } = rigFromGlb();
+    const root: Pose = { p: v3(1, 0.95, -2), q: qFromAxisAngle(v3(0, 1, 0), 0.6) };
+    const flat = restPose(root);
+    adapter.apply(flat);
+    rig.root.updateMatrixWorld(true);
+    const keep = (b: string) => {
+      const p = new THREE.Vector3();
+      const q = new THREE.Quaternion();
+      rig.bones[b].matrixWorld.decompose(p, q, new THREE.Vector3());
+      return { p, q };
+    };
+    const before = { foot: keep('LeftFoot'), toe: keep('LeftToeBase') };
+    const fixed = ['LeftLeg', 'LeftUpLeg', 'RightFoot', 'RightLeg'].map((b) => rig.bones[b].matrixWorld.clone());
+    const deg = 25;
+    adapter.apply({ ...flat, anklePitchDeg: { left: deg } });
+    rig.root.updateMatrixWorld(true);
+    const after = { foot: keep('LeftFoot'), toe: keep('LeftToeBase') };
+    ['LeftLeg', 'LeftUpLeg', 'RightFoot', 'RightLeg'].forEach((b, i) => {
+      const e = rig.bones[b].matrixWorld.elements;
+      expect(Math.max(...fixed[i].elements.map((w, j) => Math.abs(w - e[j])))).toBeLessThan(1e-6);
+    });
+    // the Foot bone sits at the ankle: it stays in place and turns by the pitch about the shin hinge axis
+    expect(after.foot.p.distanceTo(before.foot.p)).toBeLessThan(2e-3);
+    expect((after.foot.q.angleTo(before.foot.q) * 180) / Math.PI).toBeCloseTo(deg, 3);
+    const shinQ = flat.segments.leftShin.rotationWorld;
+    const axis = new THREE.Vector3(1, 0, 0).applyQuaternion(new THREE.Quaternion(shinQ.x, shinQ.y, shinQ.z, shinQ.w));
+    const rel = after.foot.q.clone().multiply(before.foot.q.clone().invert());
+    expect(Math.abs(new THREE.Vector3(rel.x, rel.y, rel.z).normalize().dot(axis))).toBeGreaterThan(0.9999);
+    // positive pitch = toe down
+    expect(after.toe.p.y).toBeLessThan(before.toe.p.y);
+  });
+
   it('driven bones land on the pose landmarks before and after a handoff; one root placement; undriven bones keep rest locals', async () => {
     const { rig, adapter } = rigFromGlb();
     const rootRest = rig.root.matrixWorld.clone();

@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "fixtures": "vite-node scripts/run-fixtures.ts"
+    "fixtures": "vite-node scripts/run-fixtures.ts",
+    "intake-clips": "vite-node scripts/intake-clips.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.21.0",

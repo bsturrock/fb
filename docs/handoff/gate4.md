@@ -1,6 +1,6 @@
 # Gate 4 handoff: ragdoll handoff, retained wraps, drill completion
 
-Date: 2026-11-02. Status: G4-A to G4-D are implemented. Review fixes 1–4 of `docs/05_Review_and_Model_Integration_Plan.md` are applied (same day, after the review), and the supplied player model runs on its own G4-M fixtures: see [Review fixes and the supplied-model fixtures](#review-fixes-and-the-supplied-model-fixtures-plan-05).
+Date: 2026-11-02. Status: G4-A to G4-D are implemented. Review fixes 1–4 of `docs/closed/05_Review_and_Model_Integration_Plan.md` are applied (same day, after the review), and the supplied player model runs on its own G4-M fixtures: see [Review fixes and the supplied-model fixtures](#review-fixes-and-the-supplied-model-fixtures-plan-05).
 
 - 49 Gate 4 tests pass, together with 17 Gate 1, 12 Gate 2, 16 Gate 3 and 19 model tests (113 in total).
 - Visual review (F9) used:
@@ -286,7 +286,7 @@ No hard failure observed:
 
 ## Review fixes and the supplied-model fixtures (plan 05)
 
-Applied 2026-11-02 from `docs/05_Review_and_Model_Integration_Plan.md`. A full evidence re-export (`npm run fixtures`) changed only the two G4-F4 passive-grip fixtures among the existing 120. Every other existing summary (result, ticks, events, final player states) is identical to the pre-fix export.
+Applied 2026-11-02 from `docs/closed/05_Review_and_Model_Integration_Plan.md`. A full evidence re-export (`npm run fixtures`) changed only the two G4-F4 passive-grip fixtures among the existing 120. Every other existing summary (result, ticks, events, final player states) is identical to the pre-fix export.
 
 **Fix 1: passive grasps pull, they don't push.** `src/sim/arms.ts` passes the anchor-to-palm direction `n` unchanged to the passive link. The F4 results above are re-measured. A test now asserts that every passive force entry is tensile (`tests/gate4.test.ts`, G4-F4).
 

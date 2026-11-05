@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { RAPIER } from '../sim/physics';
 import type { PlayerRuntime } from '../sim/simulation';
-import type { PhysicalPose } from '../sim/pose';
+import { footFrame, type PhysicalPose } from '../sim/pose';
 import { RAGDOLL_G4, shoulderLocal, type RagdollProfile } from '../sim/profiles';
 import type { PlayerModel } from './player-model';
 import type { Vec3 } from '../sim/vec';
@@ -317,7 +317,8 @@ export class PlayerView {
         const shin = pose.segments[`${s}Shin`];
         if (lm[`${s}Shoe`] && shin) {
           this.shoes[i].position.copy(tv(lm[`${s}Shoe`]));
-          this.shoes[i].quaternion.set(shin.rotationWorld.x, shin.rotationWorld.y, shin.rotationWorld.z, shin.rotationWorld.w);
+          const fq = footFrame(pose, s);
+          this.shoes[i].quaternion.set(fq.x, fq.y, fq.z, fq.w);
         }
       });
       this.joints[0].position.copy(tv(lm.leftHand ?? lm.leftPalm));

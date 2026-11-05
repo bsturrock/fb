@@ -15,6 +15,8 @@ import type { ArmSide } from '../sim/contracts';
 import { ArmOverlay, BalanceOverlay, ContactMarkers, PALETTES, PlayerView, RuleOverlay, disposeOwned, type ArmOverlaySide, type OverlayFlags } from './views';
 import { ModelAsset } from './player-model';
 import { MODEL_CALIBRATION_ID } from '../sim/model/profiles';
+import { playbackLabel } from '../sim/run-clip';
+import { followCenter } from './follow';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -96,7 +98,7 @@ let field: THREE.Group | null = null;
 const contactMarkers = new ContactMarkers();
 scene.add(contactMarkers.group);
 /** Previous solved tick per player (pose + representation) for render interpolation; reset at a handoff. */
-const prevPose = new Map<string, { core: Pose; pose: PhysicalPose | null; rep: string }>();
+const prevPose = new Map<string, { core: Pose; pose: PhysicalPose | null; rep: string; com: Vec3 }>();
 const seenRep = new Map<string, string>();
 let follow = true;
 let camPreset = params.get('cam') ?? 'oblique';
@@ -127,7 +129,16 @@ function lerpPose(a: PhysicalPose, b: PhysicalPose, t: number): PhysicalPose {
   }
   const jointLandmarksWorld: Record<string, Vec3> = {};
   for (const [k, v] of Object.entries(b.jointLandmarksWorld)) jointLandmarksWorld[k] = a.jointLandmarksWorld[k] ? lerpV(a.jointLandmarksWorld[k], v, t) : v;
-  return { ...b, segments, jointLandmarksWorld };
+  const out: PhysicalPose = { ...b, segments, jointLandmarksWorld };
+  if (b.anklePitchDeg) {
+    const ap: NonNullable<PhysicalPose['anklePitchDeg']> = {};
+    for (const s of ['left', 'right'] as const) {
+      const vb = b.anklePitchDeg[s] ?? 0;
+      ap[s] = (a.anklePitchDeg?.[s] ?? vb) + (vb - (a.anklePitchDeg?.[s] ?? vb)) * t;
+    }
+    out.anklePitchDeg = ap;
+  }
+  return out;
 }
 
 /** The supplied model draws a fixture's players only when their body carries this asset's calibration. */
@@ -192,7 +203,7 @@ function buildViews(): void {
     const v = new PlayerView(pl, palette, sim.activeColliders(pl), !sim.rules, R, model);
     views.push(v);
     scene.add(v.root);
-    prevPose.set(pl.id, { core: corePose(pl), pose: clonePose(pl.pose), rep: pl.representation });
+    prevPose.set(pl.id, { core: corePose(pl), pose: clonePose(pl.pose), rep: pl.representation, com: { ...sim.bulk(pl).com } });
     seenRep.set(pl.id, pl.representation);
     if (sim.arms?.hasArms(pl.id)) {
       const o = new ArmOverlay();
@@ -243,13 +254,17 @@ function resetSim(): void {
   updateRunButton();
 }
 
-function actionCenter(): THREE.Vector3 {
-  const c = new THREE.Vector3();
-  for (const pl of sim.players) {
-    const t = sim.bulk(pl).com;
-    c.add(new THREE.Vector3(t.x, 0.9, t.z));
-  }
-  return c.multiplyScalar(1 / Math.max(1, sim.players.length));
+/** Camera target: the players' COM interpolated like the drawn poses (alpha 1 = the current tick). */
+function actionCenter(alpha = 1): THREE.Vector3 {
+  const c = followCenter(
+    sim.players.map((pl) => {
+      const cur = sim.bulk(pl).com;
+      const pp = prevPose.get(pl.id);
+      return { prev: pp && pp.rep === pl.representation ? pp.com : cur, cur };
+    }),
+    alpha,
+  );
+  return new THREE.Vector3(c.x, c.y, c.z);
 }
 
 function setCamera(preset: string, snap = false): void {
@@ -273,7 +288,7 @@ function fillFixtureSelect(): void {
   const sel = $('fixture') as HTMLSelectElement;
   const groups = new Map<string, HTMLOptGroupElement>();
   for (const f of fixtures) {
-    const key = `Gate ${f.gate} · ${f.milestone}`;
+    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : `Gate ${f.gate} · ${f.milestone}`;
     let g = groups.get(key);
     if (!g) {
       g = document.createElement('optgroup');
@@ -301,7 +316,7 @@ function stepOnce(): void {
 }
 
 function capturePrev(): void {
-  for (const pl of sim.players) prevPose.set(pl.id, { core: corePose(pl), pose: clonePose(pl.pose), rep: pl.representation });
+  for (const pl of sim.players) prevPose.set(pl.id, { core: corePose(pl), pose: clonePose(pl.pose), rep: pl.representation, com: { ...sim.bulk(pl).com } });
 }
 
 function exportJson(): void {
@@ -491,6 +506,11 @@ function info(): void {
     lines.push(`  facing ${f2(yawDeg(q), 1)}°  req ${f2(headDeg(pl.intent.locomotion.desiredFacingWorld), 1)}°  ωy ${f2(k.w.y)}`);
     const obs = sim.contactObs[pl.id] ?? [];
     if (obs.length) lines.push(`  contact ${[...new Set(obs.map((o) => `${o.ownClass}>${o.other}:${o.otherClass}`))].join(' ')}`);
+    if (pl.run && sim.def.runClips && !pl.rag) {
+      const st = pl.run;
+      const res = Object.entries(pl.pose?.targetResidualM ?? {}).map(([kk, vv]) => `${kk.replace('left', 'L').replace('right', 'R')} ${f2(vv, 3)}`);
+      lines.push(`  run ${st.w > 0 ? playbackLabel(st, sim.def.runClips) : 'procedural gait'}  u ${f2(st.u, 3)}  w ${f2(st.w, 2)} (→${f2(st.wTarget, 2)})  rate ${f2(st.rate, 3)}  v ${f2(st.speed, 2)}${res.length ? `  res ${res.join(' ')} m` : ''}`);
+    }
     balanceInfo(pl, lines);
     armInfo(pl.id, lines);
     const d = pl.intent.debug;
@@ -573,7 +593,7 @@ function frame(now: number): void {
       // a representation change resets the interpolation history (no blend from the proxy into ten new bodies)
       if (seenRep.get(pl.id) !== pl.representation) {
         seenRep.set(pl.id, pl.representation);
-        prevPose.set(pl.id, { core: cur, pose: clonePose(pl.pose), rep: pl.representation });
+        prevPose.set(pl.id, { core: cur, pose: clonePose(pl.pose), rep: pl.representation, com: { ...sim.bulk(pl).com } });
         v.syncColliders(sim.activeColliders(pl));
       }
       const pp = prevPose.get(pl.id);
@@ -587,7 +607,11 @@ function frame(now: number): void {
     }
     const mapPt = (id: string, w: Vec3): Vec3 => toWorld(interp.get(id)!, toLocal(current.get(id)!, w));
     const mapDir = (id: string, d: Vec3): Vec3 => qRot(interp.get(id)!.q, qInvRot(current.get(id)!.q, d));
-    if (ruleOverlay && sim.rules && interp.has(sim.rules.runnerId)) ruleOverlay.update(toWorld(interp.get(sim.rules.runnerId)!, sim.rules.profile.ballLocal), sim.ending?.ballSpot ?? null);
+    if (ruleOverlay && sim.rules && interp.has(sim.rules.runnerId)) {
+      const rid = sim.rules.runnerId;
+      const palm = sim.rules.profile.ballSource === 'carryPalm' ? poses.get(rid)?.jointLandmarksWorld.rightPalm : undefined;
+      ruleOverlay.update(palm ?? toWorld(interp.get(rid)!, sim.rules.profile.ballLocal), sim.ending?.ballSpot ?? null);
+    }
     for (const v of views) {
       const pl = v.pl;
       const core = interp.get(pl.id)!;
@@ -617,7 +641,7 @@ function frame(now: number): void {
       }
     }
     if (follow) {
-      const c = actionCenter();
+      const c = actionCenter(alpha);
       const d = c.clone().sub(controls.target);
       controls.target.add(d);
       camera.position.add(d);

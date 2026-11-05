@@ -1,0 +1,32 @@
+[
+  {
+    "id": "fast-run",
+    "source": "source/fast-run.fbx",
+    "sourceSha256": "3706070da7b57fb000f3bdfc7db539ab96f19d0fc291b418561732c49e0ae210",
+    "data": "fast-run.json",
+    "fps": 30,
+    "frames": 17,
+    "sampleSpanS": 0.5333333333333333,
+    "rootMotion": "inPlace",
+    "removedTravelM": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "sprint",
+    "source": "source/sprint.fbx",
+    "sourceSha256": "6de0bb9717cff4e9926fe514422ecb9216793f7523d17453e1c7ffcdf358e073",
+    "data": "sprint.json",
+    "fps": 30,
+    "frames": 17,
+    "sampleSpanS": 0.5333333333333333,
+    "rootMotion": "inPlace",
+    "removedTravelM": [
+      0,
+      0,
+      3.4505
+    ]
+  }
+]

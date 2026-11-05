@@ -2,6 +2,7 @@
 import type { ArmSide, PlayerId, Role } from './contracts';
 import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, MotorProfile, RagdollProfile, RuleProfile, SolverProfile, StanceProfile } from './profiles';
 import type { CandidateEdit } from './ragdoll';
+import type { RunClipProfile } from './run-clip';
 import type { ScriptSpec } from './controllers/base';
 import type { CoachedEntrySpec } from './controllers/coached';
 import type { WrapSpec } from './controllers/wrap';
@@ -28,6 +29,8 @@ export interface PlayerSetup {
     leanDirWorld?: Vec3;
     /** Clearly labelled external diagnostic impulse applied once at t = 0 (N s), at a body-local point. */
     diagnosticImpulse?: { impulse: Vec3; pointLocal: Vec3 };
+    /** Initial run-clip (and procedural gait) phase, normalized (0 = left touchdown); default runner 0, defender 0.25. */
+    runPhase?: number;
   };
   /** Anatomical shoulder selected for connection (classification label "shoulder:selected"). */
   selectedShoulder?: ArmSide;
@@ -54,6 +57,11 @@ export interface FixtureDef {
   ragdoll?: RagdollProfile;
   /** Gate 4: completion rule observer profile (absent = none). */
   rules?: RuleProfile;
+  /**
+   * Plan 06: decoded supplied run clips sampled into the physical pose of every upper-body player (absent = the
+   * procedural gait only). Pose only: never read by forces, support or rules other than through the pose.
+   */
+  runClips?: RunClipProfile;
   /** Clearly labelled diagnostic interventions (never contact-driven outcomes). */
   diagnostics?: {
     conversions?: { playerId: PlayerId; atS: number; edit?: CandidateEdit }[];

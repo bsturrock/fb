@@ -467,6 +467,11 @@ export interface RuleProfile {
   /** Ball reference: fixed offset in the runner's core frame (cosmetic carried ball; no collision, no fumbles). */
   ballLocal: Vec3;
   /**
+   * Where the ball is: `coreOffset` (default) = ballLocal in the core frame; `carryPalm` = the runner's ball-arm palm in
+   * the sim-owned physical pose (plan 06: the run-clip carry arm moves the ball), ballLocal when no pose exists.
+   */
+  ballSource?: 'coreOffset' | 'carryPalm';
+  /**
    * Ground-region labels that can produce the ending (rules.ts GroundRegion). Hand/wrist, foot/ankle and the virtual
    * foot support are never eligible; the wrist/ankle band is classified per contact point, not per limb.
    */

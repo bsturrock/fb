@@ -6,9 +6,10 @@
 // (the limb extends along -Y), local X = the elbow/knee hinge axis, Z = X x Y. The hinge angle about X from the
 // proximal to the distal frame is zero for a straight limb and positive in flexion.
 import type { ArmSide, SegmentId } from './contracts';
+import type { SampledLimbs } from './run-clip';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
 import {
-  add, addScaled, clamp, cross, dot, len, neg, norm, qFromAxisAngle, qFromBasis, qMul, qRot, scale, sub, toWorld, upOf, v3,
+  add, addScaled, clamp, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qMul, qRot, scale, sub, toWorld, upOf, v3,
   type Pose, type Quat, type Vec3,
 } from './vec';
 
@@ -28,6 +29,26 @@ export interface PhysicalPose {
   straightFallback: string[];
   /** Max external penetration of the chosen procedural limbs (m), for diagnostics. */
   limbClearance: Record<string, number>;
+  /**
+   * Run-clip sampling only (plan 06): distance (m) from each sampled request (ankle target / free-arm palm target, after
+   * the clip-procedural blend) to the achieved landmark. Floor lift, reach clamp and clearance alternatives show here.
+   */
+  targetResidualM?: Record<string, number>;
+  /**
+   * Run-clip sampling only (plan 06 pass 2): ankle pitch (deg) of each shoe about its shin's hinge axis X; the shoe
+   * frame is the shin frame rotated by it (positive = toe down). Absent or 0: the shoe is rigid on the shin.
+   */
+  anklePitchDeg?: Partial<Record<ArmSide, number>>;
+}
+
+/** The shin frame pitched about its hinge axis X (the shoe frame for an ankle pitch, rad; positive = toe down). */
+export function pitchShin(shin: Quat, rad: number): Quat {
+  return rad === 0 ? shin : qMul(shin, qFromAxisAngle(v3(1, 0, 0), rad));
+}
+
+/** Shoe (foot) frame of one side of a pose: its shin frame pitched by the pose's ankle angle. */
+export function footFrame(pose: PhysicalPose, s: ArmSide): Quat {
+  return pitchShin(pose.segments[`${s}Shin` as SegmentId].rotationWorld, ((pose.anklePitchDeg?.[s] ?? 0) * Math.PI) / 180);
 }
 
 // Limb lengths and radii come from the player's ragdoll profile (the same numbers its arm profile and candidate
@@ -178,11 +199,11 @@ export function armShapes(R: RagdollProfile, s: string, sh: Vec3, elbow: Vec3, w
   ];
 }
 
-export function legShapes(R: RagdollProfile, s: string, hip: Vec3, knee: Vec3, ankle: Vec3, shinFrame: Quat): PoseShape[] {
+export function legShapes(R: RagdollProfile, s: string, hip: Vec3, knee: Vec3, ankle: Vec3, shinFrame: Quat, footQ: Quat = shinFrame): PoseShape[] {
   return [
     fittedCapsule(hip, knee, R.radii.thigh, `${s}Thigh`),
     fittedCapsule(knee, ankle, R.radii.shin, `${s}Shin`),
-    { kind: 'box', c: toWorld({ p: ankle, q: shinFrame }, v3(0, -R.shoe.belowAnkleM, R.shoe.forwardM)), q: shinFrame, he: R.shoe.halfExtents, key: `${s}Shoe` },
+    { kind: 'box', c: toWorld({ p: ankle, q: footQ }, v3(0, -R.shoe.belowAnkleM, R.shoe.forwardM)), q: footQ, he: R.shoe.halfExtents, key: `${s}Shoe` },
   ];
 }
 
@@ -214,6 +235,11 @@ export interface ProxyPoseInput {
   localVelDir?: Vec3;
   clearance?: PoseClearance;
   memory?: PoseMemory;
+  /**
+   * Run-clip limb requests (plan 06), blended with the procedural requests by `weight`. Legs: ankle target and knee pole.
+   * Arms: only free arms (no achieved arm, not the carry arm, no ready hands) take the sampled swing.
+   */
+  sampled?: SampledLimbs;
 }
 
 /** Authored procedural reference: the right shoulder and shoulder-to-palm chain the arm targets were written for. */
@@ -282,21 +308,37 @@ const LEG_ALTS = (sx: number): { off: Vec3; pole: Vec3 }[] => [
   { off: v3(0, 0.12, -0.38), pole: v3(0, 0.2, 1) },
 ];
 
+/** Run-clip ball-carry hold (authored frame, x outward): the palm beside the chest at shoulder width, clear of the torso. */
+const CLIP_CARRY = v3(0.34, 0.24, 0.2);
+/** Sampled-arm clearance: bracket step and the largest move away from the body (m). */
+const SWING_OUT_STEP = 0.02;
+const SWING_OUT_MAX = 0.3;
+/** Sampled legs: soft-reach zone below the reach limit (m) and the minimum knee flexion (x straightBendDeg). */
+const SOFT_REACH_M = 0.08;
+const MIN_FLEX = 2;
+/** Ankle range of a sampled shoe about the shin (rad): dorsiflexion (toe up) and plantarflexion (toe down). */
+const ANKLE_DORSI = (30 * Math.PI) / 180;
+const ANKLE_PLANTAR = (50 * Math.PI) / 180;
 /** Accept a procedural variant at or below this depth (m); validation tolerance is 0.015 m. */
 const CLEAR_OK = 0.004;
 /** Physical depth a candidate may have and still count as valid for the handoff (margin under 0.015 m). */
 const HARD_OK = 0.012;
 
 /** Probe-only switch: when `on`, buildProxyPose records every evaluated limb candidate's depth and worst shape. */
-export const POSE_DEBUG: { on: boolean; last: Record<string, { i: number; depth: number; soft: number }[]> } = { on: false, last: {} };
+export const POSE_DEBUG: {
+  on: boolean;
+  last: Record<string, { i: number; depth: number; soft: number }[]>;
+  legs: Record<string, { request: Vec3; ik: Vec3; lifted: Vec3; floorLeft: number }>;
+} = { on: false, last: {}, legs: {} };
 
 /**
  * Choose a limb variant (sticky: the previous choice is tried first). Physical depth (`depth`) ranks first: a variant
  * is physically valid at <= HARD_OK. Among valid variants the first fully clear one (depth and `soft` <= CLEAR_OK)
  * wins, else the least soft overlap; with no valid variant, the least physical depth.
  */
-function pick<T extends { depth: number; soft: number }>(cands: (() => T)[], prev: number | undefined): { best: T; index: number } {
-  const order = prev !== undefined && prev < cands.length ? [prev, ...cands.keys()].filter((v, i, a) => a.indexOf(v) === i) : [...cands.keys()];
+function pick<T extends { depth: number; soft: number }>(cands: (() => T)[], prev: number | undefined, primaryFirst = false): { best: T; index: number } {
+  const head = primaryFirst ? [0, prev ?? 0] : [prev ?? 0];
+  const order = prev !== undefined && prev < cands.length ? [...head, ...cands.keys()].filter((v, i, a) => a.indexOf(v) === i) : [...cands.keys()];
   let bestValid: { r: T; i: number } | null = null;
   let bestHard: { r: T; i: number } | null = null;
   for (const i of order) {
@@ -324,6 +366,13 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const mem = inp.memory ?? {};
   const ext = (shapes: PoseShape[]): number => (inp.clearance ? inp.clearance.external(shapes) : 0);
   const softExt = (shapes: PoseShape[]): number => (inp.clearance?.soft ? inp.clearance.soft(shapes) : 0);
+  // a sampled request at weight 0 still routes the legs through the continuous sampled solve (procedural targets)
+  const smp = inp.sampled ?? null;
+  const targetResidualM: Record<string, number> = {};
+  const anklePitchDeg: Partial<Record<ArmSide, number>> = {};
+  /** Blend of a procedural request toward a sampled one (unit poles are blended as directions). */
+  const toward = (a: Vec3, b: Vec3, w: number): Vec3 => lerp(a, b, clamp(w, 0, 1));
+  const towardDir = (a: Vec3, b: Vec3, w: number): Vec3 => norm(toward(norm(a), norm(b), w), norm(a));
   segs.core = { segmentId: 'core', originWorld: { ...pose.p }, rotationWorld: { ...pose.q } };
   lm.pelvisMid = W(pelvisMidLocal(body));
   lm.neck = W(body.neck);
@@ -334,14 +383,16 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const sx = sideSignX(body, s);
     const sh = W(shoulderLocal(body, s));
     const given = inp.arms?.[s];
-    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number };
+    /** `softOther`: soft overlap without the self (own torso/pelvis) term. */
+    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number };
     const build = (elbow: Vec3, palm: Vec3, wristIn?: Vec3): ArmC => {
       const wrist0 = wristIn ?? add(elbow, scale(sub(palm, elbow), R.lengths.forearm / (R.lengths.forearm + R.lengths.palmExtension)));
       const chain = hingeChain(sh, elbow, [wrist0, palm], [fwd, upB], straight);
       const [wrist, palmS] = chain.ends;
       const shapes = armShapes(R, s, sh, elbow, wrist, palmS);
       const selfD = inp.clearance?.self ? inp.clearance.self(shapes.slice(1)) : 0;
-      return { elbow, wrist, palm: palmS, chain, shapes, depth: Math.max(ext(shapes), floorDepth(shapes)), soft: Math.max(softExt(shapes), 0.5 * selfD) };
+      const so = softExt(shapes);
+      return { elbow, wrist, palm: palmS, chain, shapes, depth: Math.max(ext(shapes), floorDepth(shapes)), soft: Math.max(so, 0.5 * selfD), softOther: so };
     };
     let a: ArmC;
     if (given) a = build(given.elbow, given.palm, given.wrist);
@@ -350,12 +401,63 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const r = twoBone(sh, W(palmL), R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, qRot(pose.q, poleL));
         return build(r.mid, r.end);
       };
-      const cands = [procedural(proceduralArmTargetLocal(s, inp), v3(0.6 * sx, -0.5, -0.6)), ...ARM_ALTS(sx).map((c) => procedural(proceduralLocal(body, s, c.palm), c.pole))];
+      let palm0 = proceduralArmTargetLocal(s, inp);
+      let pole0 = v3(0.6 * sx, -0.5, -0.6);
       const k = `${s}Arm`;
+      // run-clip arms: a free arm takes the clip swing; the carry arm holds the ball beside the chest (CLIP_CARRY) and
+      // adds a share of the clip hand's excursion (the ball stays in that hand); ready hands keep their procedural
+      // assignment. The blend starts from the pose the procedural path showed (its last chosen variant, kept while
+      // the clip is off), so the clip fades in without a jump.
+      const carry = !!inp.carriesBall && s === 'right';
+      const sw = smp?.arms && !inp.readyHands ? smp.arms[s] : null;
+      const sampledArm = !!sw && smp!.weight > 0 && (!carry || smp!.carrySwing > 0);
+      if (sw && sampledArm) {
+        const from = mem[`${k}Proc`] ?? 0;
+        const alt = from > 0 ? ARM_ALTS(sx)[from - 1] : null;
+        const fromPalm = alt ? proceduralLocal(body, s, alt.palm) : palm0;
+        const fromPole = alt ? alt.pole : pole0;
+        const toPalm = carry ? addScaled(proceduralLocal(body, s, v3(CLIP_CARRY.x * sx, CLIP_CARRY.y, CLIP_CARRY.z)), sw.swingLocal, smp!.carrySwing) : sw.palmLocal;
+        const toPole = carry ? pole0 : sw.poleLocal;
+        palm0 = toward(fromPalm, toPalm, smp!.weight);
+        pole0 = towardDir(fromPole, toPole, smp!.weight);
+      }
+      const cands = [procedural(palm0, pole0), ...ARM_ALTS(sx).map((c) => procedural(proceduralLocal(body, s, c.palm), c.pole))];
       if (POSE_DEBUG.on) POSE_DEBUG.last[`${inp.playerId}:${k}`] = cands.map((c, i) => { const r = c(); return { i, depth: r.depth, soft: r.soft }; });
-      const r = pick(cands, mem[k]);
+      // a sampled arm that crosses another body moves away from the body (horizontal, radially from the body axis: a
+      // continuous direction) by the smallest clearing distance (bracketed, then bisected), so the correction changes
+      // continuously with the clip; only when nothing within SWING_OUT_MAX clears does it fall back to the
+      // alternatives. Its own torso is not a constraint: the clips were authored on this skeleton, the proxy capsules
+      // are padded, and the ragdoll has no self-collision.
+      let r: { best: ArmC; index: number } | null = null;
+      if (sampledArm) {
+        const clear = (c: ArmC) => c.depth <= CLEAR_OK && c.softOther <= CLEAR_OK;
+        const c0 = cands[0]();
+        if (clear(c0)) r = { best: c0, index: 0 };
+        else {
+          const u = norm(v3(palm0.x, 0, palm0.z), v3(sx, 0, 0));
+          const at = (d: number) => procedural(addScaled(palm0, u, d), pole0)();
+          let lo = 0;
+          for (let d = SWING_OUT_STEP; d <= SWING_OUT_MAX + 1e-9; d += SWING_OUT_STEP) {
+            if (clear(at(d))) {
+              let hi = d;
+              for (let b = 0; b < 6; b++) {
+                const m = 0.5 * (lo + hi);
+                if (clear(at(m))) hi = m;
+                else lo = m;
+              }
+              r = { best: at(hi), index: 0 };
+              break;
+            }
+            lo = d;
+          }
+        }
+      }
+      // a sampled arm returns to its primary as soon as that is clear again (no sticking in an alternative)
+      r ??= pick(cands, mem[k], sampledArm);
       mem[k] = r.index;
+      if (!sampledArm) mem[`${k}Proc`] = r.index;
       a = r.best;
+      if (sampledArm) targetResidualM[k] = dist(a.palm, W(palm0));
     }
     const pre = s;
     lm[`${pre}Shoulder`] = sh;
@@ -379,12 +481,68 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const ph = inp.gait.phase + (s === 'left' ? 0 : Math.PI);
     const swing = Math.sin(ph) > 0 ? Math.sin(ph) : 0;
     const off = Math.cos(ph) * amp;
-    const base = v3(hipL.x + vdir.x * off, (body.measured?.ankleTargetY ?? AUTHORED_ANKLE_Y) + lift * swing, hipL.z + vdir.z * off);
+    const proc = v3(hipL.x + vdir.x * off, (body.measured?.ankleTargetY ?? AUTHORED_ANKLE_Y) + lift * swing, hipL.z + vdir.z * off);
+    const sl = smp ? smp.legs[s] : null;
+    const base = sl ? toward(proc, sl.ankleLocal, smp!.weight) : proc;
     const hip = W(hipL);
-    type LegC = { knee: Vec3; ankle: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number };
+    type LegC = { knee: Vec3; ankle: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; req?: Vec3; pitch: number };
     const variant = (o: Vec3, poleL: Vec3) => (): LegC => {
       let target = W(add(base, o));
-      const pole = qRot(pose.q, poleL);
+      const pole = qRot(pose.q, sl ? towardDir(poleL, sl.poleLocal, smp!.weight) : poleL);
+      if (sl) {
+        // Sampled legs, all continuous in the clip phase (no searches or switches): soft reach (the target eases in
+        // below the reach limit, which keeps a minimum knee flexion, so the knee never snaps straight and its hinge
+        // axis never flips), the clip's foot pitch at the ankle (the shoe keeps the clip foot's angle to the floor
+        // within the ankle range, so a planted foot stays flat while the shin leans), stance foot IK, then a
+        // fixed-point floor lift for what is left (a pitch at the ankle range limit, a blend toward the procedural gait).
+        const hdir = norm(v3(pole.x, 0, pole.z), fwd);
+        const a = R.lengths.thigh;
+        const b = R.lengths.shin;
+        const reach = Math.sqrt(a * a + b * b + 2 * a * b * Math.cos(MIN_FLEX * straight));
+        const soft = (t: Vec3): Vec3 => {
+          const d = sub(t, hip);
+          const L = len(d);
+          const ds = reach - SOFT_REACH_M;
+          if (L <= ds) return t;
+          return addScaled(hip, d, (ds + SOFT_REACH_M * (1 - Math.exp(-(L - ds) / SOFT_REACH_M))) / L);
+        };
+        const solve = (t: Vec3): LegC => {
+          const r = twoBone(hip, soft(t), a, b, pole, reach);
+          const chain = hingeChain(hip, r.mid, [r.end], [neg(fwd), neg(upB)], straight);
+          const ankle = chain.ends[0];
+          // pitch about the shin hinge axis that gives the shoe the clip foot's sagittal angle (toe up positive)
+          const zw = qRot(chain.frameB, v3(0, 0, 1));
+          const want = Math.atan2(zw.y, dot(zw, hdir)) - sl.footPitch;
+          const pitch = smp!.weight * clamp(Math.atan2(Math.sin(want), Math.cos(want)), -ANKLE_DORSI, ANKLE_PLANTAR);
+          const shapes = legShapes(R, s, hip, r.mid, ankle, chain.frameB, pitchShin(chain.frameB, pitch));
+          return { knee: r.mid, ankle, chain, shapes, depth: floorDepth(shapes), soft: 0, pitch };
+        };
+        // stance foot IK (primary variant only; alternatives keep their clearance offset): the clip ankle is corrected
+        // so the shoe's planted sole point lands on the clip's contact point (fixed point over the shoe frame); the
+        // correction is added at the clip weight, so a partly blended request is not pulled to the clip's contact
+        if (sl.contact && len(o) < 1e-9) {
+          const ct = sl.contact;
+          const clipAnkle = W(sl.ankleLocal);
+          let p = clipAnkle;
+          for (let i = 0; i < 4; i++) {
+            const c0 = solve(p);
+            p = sub(ct.pointWorld, qRot(pitchShin(c0.chain.frameB, c0.pitch), ct.soleFoot));
+          }
+          target = addScaled(target, sub(p, clipAnkle), clamp(ct.weight * smp!.weight, 0, 1));
+        }
+        const ik = target;
+        let c = solve(target);
+        for (let i = 0; i < 4 && c.depth > 0.0005; i++) {
+          target = add(target, v3(0, c.depth + 0.001, 0));
+          c = solve(target);
+        }
+        c.req = target;
+        if (POSE_DEBUG.on && len(o) < 1e-9) POSE_DEBUG.legs[`${inp.playerId}:${s}`] = { request: W(base), ik, lifted: target, floorLeft: c.depth };
+        // floor depth left after the lift is a presentation residual, not a reason to switch variants
+        c.depth = ext(c.shapes);
+        c.soft = softExt(c.shapes);
+        return c;
+      }
       let c: LegC | null = null;
       for (let it = 0; it < 5; it++) {
         const r = twoBone(hip, target, R.lengths.thigh, R.lengths.shin, pole);
@@ -392,7 +550,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const ankle = chain.ends[0];
         const shapes = legShapes(R, s, hip, r.mid, ankle, chain.frameB);
         const fd = floorDepth(shapes);
-        c = { knee: r.mid, ankle, chain, shapes, depth: fd, soft: 0 };
+        c = { knee: r.mid, ankle, chain, shapes, depth: fd, soft: 0, pitch: 0 };
         if (fd <= 0.001) break;
         target = add(target, v3(0, fd + 0.003, 0));
       }
@@ -401,9 +559,10 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       return c!;
     };
     const k = `${s}Leg`;
-    const r = pick(LEG_ALTS(sx).map((v) => variant(v.off, v.pole)), mem[k]);
+    const r = pick(LEG_ALTS(sx).map((v) => variant(v.off, v.pole)), mem[k], !!sl);
     mem[k] = r.index;
     const l = r.best;
+    if (sl) targetResidualM[k] = dist(l.ankle, l.req ?? W(base));
     lm[`${s}Hip`] = hip;
     lm[`${s}Knee`] = l.knee;
     lm[`${s}Ankle`] = l.ankle;
@@ -414,6 +573,12 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     hingeDeg[`${s}Knee`] = (l.chain.angleRad * 180) / Math.PI;
     if (l.chain.fallback) straightFallback.push(`${s}Knee`);
     limbClearance[`${s}Leg`] = l.depth;
+    if (sl) anklePitchDeg[s] = (l.pitch * 180) / Math.PI;
   }
-  return { playerId: inp.playerId, segments: segs, jointLandmarksWorld: lm, hingeDeg, straightFallback, limbClearance };
+  const out: PhysicalPose = { playerId: inp.playerId, segments: segs, jointLandmarksWorld: lm, hingeDeg, straightFallback, limbClearance };
+  if (smp) {
+    out.targetResidualM = targetResidualM;
+    out.anklePitchDeg = anklePitchDeg;
+  }
+  return out;
 }

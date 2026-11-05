@@ -4,10 +4,10 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
 import type { PhysicsWorld } from './physics';
-import { pelvisMidLocal, type PhysicalPose, type SegmentPose } from './pose';
+import { pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { hipLocal, shoulderLocal, type BodyProfile, type RagdollProfile } from './profiles';
 import {
-  add, cross, dist, dot, isFiniteVec, len, m3Add, m3Inverse, m3ParallelAxis, m3Vec, qConj, qMul, round, rv, scale, sub, toLocal,
+  add, cross, dist, dot, isFiniteVec, len, m3Add, m3Inverse, m3ParallelAxis, m3Vec, qConj, qMul, qRot, round, rv, scale, sub, toLocal,
   toWorld, v3, vc, worldInertia, type Mat3, type Pose, type Quat, type Vec3,
 } from './vec';
 
@@ -49,6 +49,8 @@ export interface Ragdoll {
   landmarks: Record<string, { seg: SegmentId; local: Vec3 }>;
   massKg: Record<SegmentId, number>;
   enabled: boolean;
+  /** Ankle pitch (deg) of the pose the candidate was built from: the shoe stays fixed on the shin at that angle. */
+  anklePitchDeg?: Partial<Record<ArmSide, number>>;
 }
 
 /**
@@ -176,6 +178,11 @@ export function buildCandidate(
     colliders.push({ collider: c, segment: seg, region, side, local });
   };
   const at = (x: number, y: number, z: number): Pose => ({ p: v3(x, y, z), q: I3 });
+  // shoe on the shin at the pose's ankle pitch (plan 06 pass 2; 0 = the rigid shoe of the procedural gait)
+  const shoeLocal = (side: ArmSide): Pose => {
+    const q = pitchShin(I3, ((pose.anklePitchDeg?.[side] ?? 0) * Math.PI) / 180);
+    return { p: add(v3(0, -L.shin, 0), qRot(q, v3(0, -R.shoe.belowAnkleM, R.shoe.forwardM))), q };
+  };
   // core: torso + pelvis cuboids from the supported proxy's declared surface profile (one rigid compound)
   const g = body.compound;
   const fp = body.massFractions;
@@ -195,7 +202,7 @@ export function buildCandidate(
     capsule(`${side}Thigh`, L.thigh, R.radii.thigh, segMass[`${side}Thigh`], 'thigh');
     capsule(`${side}Shin`, L.shin, R.radii.shin, segMass[`${side}Shin`] * (1 - R.shoeMassShare), 'shin');
     const he = R.shoe.halfExtents;
-    add1(`${side}Shin`, RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z), at(0, -L.shin - R.shoe.belowAnkleM, R.shoe.forwardM), segMass[`${side}Shin`] * R.shoeMassShare, 'shoe');
+    add1(`${side}Shin`, RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z), shoeLocal(side), segMass[`${side}Shin`] * R.shoeMassShare, 'shoe');
   }
   for (const id of SEGMENTS) bodies[id].recomputeMassPropertiesFromColliders();
   // joints: anchors from the same world landmarks expressed in both frames
@@ -245,9 +252,11 @@ export function buildCandidate(
     landmarks[`${side}Hip`] = { seg: `${side}Thigh`, local: v3() };
     landmarks[`${side}Knee`] = { seg: `${side}Shin`, local: v3() };
     landmarks[`${side}Ankle`] = { seg: `${side}Shin`, local: v3(0, -L.shin, 0) };
-    landmarks[`${side}Shoe`] = { seg: `${side}Shin`, local: v3(0, -L.shin - R.shoe.belowAnkleM, R.shoe.forwardM) };
+    landmarks[`${side}Shoe`] = { seg: `${side}Shin`, local: shoeLocal(side).p };
   }
-  return { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false };
+  const rag: Ragdoll = { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false };
+  if (pose.anklePitchDeg) rag.anklePitchDeg = { ...pose.anklePitchDeg };
+  return rag;
 }
 
 /** World pose of a ragdoll collider computed from its body (valid for disabled candidates). */
@@ -548,5 +557,7 @@ export function ragdollPose(rag: Ragdoll): PhysicalPose {
   const jointLandmarksWorld: Record<string, Vec3> = {};
   for (const n of Object.keys(rag.landmarks)) jointLandmarksWorld[n] = landmarkWorld(rag, n);
   const hingeDeg = hingeAngles(rag);
-  return { playerId: rag.playerId, segments, jointLandmarksWorld, hingeDeg, straightFallback: [], limbClearance: {} };
+  const out: PhysicalPose = { playerId: rag.playerId, segments, jointLandmarksWorld, hingeDeg, straightFallback: [], limbClearance: {} };
+  if (rag.anklePitchDeg) out.anklePitchDeg = { ...rag.anklePitchDeg };
+  return out;
 }
