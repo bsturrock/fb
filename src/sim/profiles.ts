@@ -33,6 +33,24 @@ export interface BodyProfile {
   supportRadiusM: number;
   /** Shoulder-region classification radius around a shoulder landmark. */
   shoulderPatchRadiusM: number;
+  /**
+   * Measured-asset body (model-derived profiles only). Absent on the authored Gate 1-4 bodies, which keep right = +X
+   * and their historical procedural pose; present, it gives the asset's anatomical side basis and pose references.
+   */
+  measured?: MeasuredBody;
+}
+
+export interface MeasuredBody {
+  /** Calibration record identity (asset sha256 prefix). */
+  calibrationId: string;
+  /** Body-local X sign of the anatomical right side (-1: the GLB's Right* bones lie on -X while facing +Z). */
+  rightSignX: 1 | -1;
+  /** Pelvis-centre landmark (body-local). */
+  pelvisMid: Vec3;
+  /** Gait ankle target height (body-local Y). */
+  ankleTargetY: number;
+  /** Shoulder-to-palm-contact chain length; procedural arm targets are scaled by it (relative to the shoulder). */
+  armChainM: number;
 }
 
 const baseCompound: CompoundGeometry = {
@@ -105,6 +123,13 @@ export function upperBodyCompound(variant: CompoundVariant = {}): BodyProfile {
 }
 
 export const mirrorX = (p: Vec3): Vec3 => ({ x: -p.x, y: p.y, z: p.z });
+/**
+ * Body-local X sign of a side: +1 for right on the authored bodies (right = +X); a measured body uses its asset's
+ * anatomical basis. Every side-dependent target, pole and side choice reads this, never a fixed `right = +1`.
+ */
+export function sideSignX(b: BodyProfile, side: 'left' | 'right'): number {
+  return (side === 'right' ? 1 : -1) * (b.measured?.rightSignX ?? 1);
+}
 export function shoulderLocal(b: BodyProfile, side: 'left' | 'right'): Vec3 {
   return side === 'right' ? { ...b.shoulderRight } : mirrorX(b.shoulderRight);
 }

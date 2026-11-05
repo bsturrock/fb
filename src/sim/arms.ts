@@ -13,7 +13,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
 import type { ArmProfile, ArmSetup, BodyProfile, RagdollProfile, RetentionMode } from './profiles';
 import type { Ragdoll } from './ragdoll';
-import { shoulderLocal } from './profiles';
+import { shoulderLocal, sideSignX } from './profiles';
 import { twoBone } from './pose';
 import {
   add, addScaled, clamp, cross, dot, horiz, len, norm, qFromUnitVectors, qInvRot, qMul, qConj, qRot, round, rv, scale, sub,
@@ -259,7 +259,8 @@ export class ArmSystem {
       if (!pl.arms) continue;
       const rec = {} as Record<ArmSide, ArmRt>;
       for (const side of SIDES) {
-        const sx = side === 'right' ? 1 : -1;
+        // the owner body's measured side basis (authored bodies: right = +X)
+        const sx = sideSignX(pl.body, side);
         const rest = this.restLocal(side);
         rec[side] = {
           side,
@@ -479,8 +480,9 @@ export class ArmSystem {
             const sep = dot(sub(vc(rbT.velocityAtPoint(pT)), vc(rbO.velocityAtPoint(pO))), n);
             raw = Math.max(0, K.stiffness * d + K.damping * sep);
           }
-          // force on the target is toward the owner's palm (-n), the owner's palm is pulled toward the target (+n)
-          demands.push({ a, kind: 'passive', vec: scale(n, -raw), raw, normalReq: 0, ftWanted: v3(), ftCone: v3(), frictionSat: false, grip: g, n: scale(n, -1), p: pT, s: pO, target: g.targetId, id: g.id, rbT, rbO });
+          // `n` points from the owner's palm to the target point, the same sense as a hold's shoulder-to-anchor `n`: the
+          // shared allocator applies -n * actual to the target (toward the palm) and +n * actual to the owner's palm.
+          demands.push({ a, kind: 'passive', vec: scale(n, -raw), raw, normalReq: 0, ftWanted: v3(), ftCone: v3(), frictionSat: false, grip: g, n, p: pT, s: pO, target: g.targetId, id: g.id, rbT, rbO });
           continue;
         }
         const a = rec[side];

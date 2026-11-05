@@ -5,7 +5,8 @@ import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { RAPIER } from '../sim/physics';
 import type { PlayerRuntime } from '../sim/simulation';
 import type { PhysicalPose } from '../sim/pose';
-import { RAGDOLL_G4, shoulderLocal } from '../sim/profiles';
+import { RAGDOLL_G4, shoulderLocal, type RagdollProfile } from '../sim/profiles';
+import type { PlayerModel } from './player-model';
 import type { Vec3 } from '../sim/vec';
 import { toWorld } from '../sim/vec';
 
@@ -102,11 +103,32 @@ export function colliderMesh(c: RAPIER.Collider): THREE.Object3D {
 export interface OverlayFlags {
   overlays: boolean;
   colliders: boolean;
+  /** Diagnostic primitive body (capsules/boxes from the pose) instead of the supplied model, where a model exists. */
+  primitives: boolean;
+}
+
+/**
+ * Release the GPU resources a view owns: every geometry and material under `root`, except subtrees in `skip` (shared
+ * asset resources such as a cached GLB clone, released by their own owner). Removal from the scene alone frees nothing.
+ */
+export function disposeOwned(root: THREE.Object3D, skip: ReadonlySet<THREE.Object3D> = new Set()): void {
+  const visit = (o: THREE.Object3D): void => {
+    if (skip.has(o)) return;
+    const m = o as THREE.Mesh;
+    if (m.geometry) m.geometry.dispose();
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+    else mat?.dispose();
+    for (const c of o.children) visit(c);
+  };
+  visit(root);
 }
 
 /** One player's meshes and overlays. Rebuilt on every reset (engine handles change). */
 export class PlayerView {
   readonly root = new THREE.Group();
+  /** Primitive body (diagnostic view when a model is shown; the only body for the authored profiles). */
+  private readonly prim = new THREE.Group();
   private readonly core = new THREE.Group();
   private readonly head = new THREE.Group();
   private readonly shoes: THREE.Mesh[] = [];
@@ -133,11 +155,22 @@ export class PlayerView {
     readonly pl: PlayerRuntime,
     palette: string,
     colliders: RAPIER.Collider[],
+    /**
+     * Draw the runner's cosmetic ball at the achieved ball-arm palm. False whenever a rule profile exists: the rule
+     * overlay then draws the only ball, at the observer's carry reference (review finding 3).
+     */
+    ownBall = true,
+    /** Pose geometry profile (shoe box, limb radii of a measured body); the authored primitives keep their sizes. */
+    ragdoll: RagdollProfile = RAGDOLL_G4,
+    /** Supplied-model clone driven from the pose (measured bodies only); owned and disposed by this view. */
+    readonly model: PlayerModel | null = null,
   ) {
     const role = pl.setup.role;
     const pal = (PALETTES[palette] ?? PALETTES.default)[role];
     this.mats = { jersey: std(pal.jersey), pants: std(pal.pants), helmet: std(pal.helmet), skin: std(pal.skin) };
-    this.root.add(this.core);
+    this.root.add(this.prim);
+    this.prim.add(this.core);
+    if (model) this.root.add(model.root);
     const body = pl.body;
     if (body.kind === 'legacyCapsule') {
       const { radius, halfHeight } = body.legacy;
@@ -170,37 +203,50 @@ export class PlayerView {
         m.castShadow = true;
         this.head.add(m);
       }
-      this.root.add(this.head);
-      const he = RAGDOLL_G4.shoe.halfExtents;
+      this.prim.add(this.head);
+      const he = ragdoll.shoe.halfExtents;
       for (let i = 0; i < 2; i++) {
         const shoe = new THREE.Mesh(new THREE.BoxGeometry(2 * he.x, 2 * he.y, 2 * he.z), this.mats.helmet);
         shoe.castShadow = true;
         this.shoes.push(shoe);
-        this.root.add(shoe);
+        this.prim.add(shoe);
       }
-      const limbDefs: [string, number, number, THREE.Material][] = [
-        // arm radii follow the physical query capsules (ARM_G2: upper arm 0.055, forearm 0.045)
-        ['leftUpperArm', 0.058, 0.052, this.mats.jersey],
-        ['rightUpperArm', 0.058, 0.052, this.mats.jersey],
-        ['leftForearm', 0.047, 0.042, this.mats.skin],
-        ['rightForearm', 0.047, 0.042, this.mats.skin],
-        ['leftThigh', 0.085, 0.065, this.mats.pants],
-        ['rightThigh', 0.085, 0.065, this.mats.pants],
-        ['leftShin', 0.065, 0.055, this.mats.pants],
-        ['rightShin', 0.065, 0.055, this.mats.pants],
-      ];
+      const r = ragdoll.radii;
+      const measured = !!body.measured;
+      const limbDefs: [string, number, number, THREE.Material][] = measured
+        ? [
+            ['leftUpperArm', r.upperArm, r.upperArm, this.mats.jersey],
+            ['rightUpperArm', r.upperArm, r.upperArm, this.mats.jersey],
+            ['leftForearm', r.forearm, r.forearm, this.mats.skin],
+            ['rightForearm', r.forearm, r.forearm, this.mats.skin],
+            ['leftThigh', r.thigh, r.thigh, this.mats.pants],
+            ['rightThigh', r.thigh, r.thigh, this.mats.pants],
+            ['leftShin', r.shin, r.shin, this.mats.pants],
+            ['rightShin', r.shin, r.shin, this.mats.pants],
+          ]
+        : [
+            // arm radii follow the physical query capsules (ARM_G2: upper arm 0.055, forearm 0.045)
+            ['leftUpperArm', 0.058, 0.052, this.mats.jersey],
+            ['rightUpperArm', 0.058, 0.052, this.mats.jersey],
+            ['leftForearm', 0.047, 0.042, this.mats.skin],
+            ['rightForearm', 0.047, 0.042, this.mats.skin],
+            ['leftThigh', 0.085, 0.065, this.mats.pants],
+            ['rightThigh', 0.085, 0.065, this.mats.pants],
+            ['leftShin', 0.065, 0.055, this.mats.pants],
+            ['rightShin', 0.065, 0.055, this.mats.pants],
+          ];
       for (const [k, a, b, mat] of limbDefs) {
         this.limbs[k] = new Limb(a, b, mat);
-        this.root.add(this.limbs[k].mesh);
+        this.prim.add(this.limbs[k].mesh);
       }
       for (let i = 0; i < 2; i++) {
-        const hand = new THREE.Mesh(new THREE.IcosahedronGeometry(0.042, 1), this.mats.skin);
+        const hand = new THREE.Mesh(new THREE.IcosahedronGeometry(measured ? r.palm : 0.042, 1), this.mats.skin);
         this.joints.push(hand);
-        this.root.add(hand);
+        this.prim.add(hand);
       }
     }
     this.ball =
-      role === 'runner'
+      role === 'runner' && ownBall
         ? new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8).scale(0.62, 0.62, 1.0), std(0x7a4520, false))
         : null;
     if (this.ball) this.root.add(this.ball);
@@ -224,7 +270,7 @@ export class PlayerView {
   syncColliders(colliders: RAPIER.Collider[]): void {
     for (const { m } of this.colliderMeshes) {
       this.root.remove(m);
-      (m as THREE.Mesh).geometry?.dispose();
+      disposeOwned(m);
     }
     this.colliderMeshes = colliders.map((c) => {
       const m = colliderMesh(c);
@@ -235,6 +281,7 @@ export class PlayerView {
 
   setPalette(name: string): void {
     const pal = (PALETTES[name] ?? PALETTES.default)[this.pl.setup.role];
+    this.model?.setPalette(`${name}:${this.pl.setup.role}`, pal);
     this.mats.jersey.color.setHex(pal.jersey);
     this.mats.pants.color.setHex(pal.pants);
     this.mats.helmet.color.setHex(pal.helmet);
@@ -247,6 +294,12 @@ export class PlayerView {
     flags: OverlayFlags,
     bulk: { com: Vec3; v: Vec3 },
   ): void {
+    const showModel = !!this.model && !!pose && !flags.primitives;
+    this.prim.visible = !showModel;
+    if (this.model) {
+      this.model.root.visible = showModel;
+      if (showModel) this.model.update(pose!);
+    }
     this.core.position.set(core.p.x, core.p.y, core.p.z);
     this.core.quaternion.set(core.q.x, core.q.y, core.q.z, core.q.w);
     const hs = pose?.segments.head;
@@ -326,10 +379,10 @@ export class PlayerView {
   }
 
   dispose(): void {
-    this.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
-    });
+    for (const { m } of this.colliderMeshes) disposeOwned(m);
+    // the model clone's geometry and materials are the asset cache's; the clone releases its own skeletons
+    disposeOwned(this.root, this.model ? new Set([this.model.root]) : new Set());
+    this.model?.dispose();
     this.labelEl.remove();
   }
 }
@@ -458,10 +511,7 @@ export class ArmOverlay {
     for (const s of ['left', 'right'] as const) this.sides[s].set(visible ? (d[s] ?? null) : null);
   }
   dispose(): void {
-    this.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
-    });
+    disposeOwned(this.root);
     this.sides.left.dispose();
     this.sides.right.dispose();
   }
@@ -507,18 +557,16 @@ export class BalanceOverlay {
     this.label.position.set(d.com.x, d.com.y + 0.85, d.com.z);
   }
   dispose(): void {
-    this.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
-    });
+    disposeOwned(this.root);
     this.labelEl.remove();
   }
 }
 
 // ---------------------------------------------------------------- Gate 4 rule observer overlay (cosmetic)
 /**
- * Cosmetic ball at the runner's carry reference (no collision, no fumble authority), the frozen official event spot
- * once a referee ending is recorded, and the configured sideline plane as a ground line.
+ * The only cosmetic ball whenever a rule profile exists, drawn at the observer's simulation-owned carry reference (no
+ * collision, no fumble authority); the frozen official event spot once a referee ending is recorded (never moved
+ * afterwards); and the configured sideline plane as a ground line.
  */
 export class RuleOverlay {
   readonly root = new THREE.Group();
@@ -557,9 +605,6 @@ export class RuleOverlay {
   }
 
   dispose(): void {
-    this.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
-    });
+    disposeOwned(this.root);
   }
 }

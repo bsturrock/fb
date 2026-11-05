@@ -10,7 +10,7 @@ import { observePlayerContacts, type ClassifyInput } from './contact';
 import type { FixtureDef, PlayerSetup } from './fixture';
 import { computeDrive, computeYaw } from './motors';
 import { initPhysics, PhysicsWorld, RAPIER, RAPIER_VERSION, type MassReport, type ProxyBody } from './physics';
-import { ARM_G2, BALANCE_G3, RAGDOLL_G4, SCHEMA_VERSION, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile } from './profiles';
+import { ARM_G2, BALANCE_G3, RAGDOLL_G4, SCHEMA_VERSION, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile } from './profiles';
 import { buildProxyPose, advanceGait, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape } from './pose';
 import {
   anchorErrors, buildCandidate, hingeAngles, bulkOf, externalFromColliders, externalFromRagdoll, ragdollPose, removeRagdoll, switchToRagdoll,
@@ -30,9 +30,10 @@ import {
 
 /**
  * Trial labels. Referee endings (rule observer) are distinct from non-success stops: duration (timeout), the
- * practice safety edge, numerical failure and an invalid (rejected) runner handoff.
+ * practice safety edge, numerical failure, an invalid (rejected) runner handoff, and an invalid transfer (a switched
+ * player whose momentum/energy transfer audit failed: its physical evidence is invalid, so no referee completion).
  */
-export type TrialResult = 'running' | 'duration' | 'practiceOutOfBounds' | 'numericalFailure' | 'invalidHandoff' | EndingKind;
+export type TrialResult = 'running' | 'duration' | 'practiceOutOfBounds' | 'numericalFailure' | 'invalidHandoff' | 'invalidTransfer' | EndingKind;
 
 export interface AppliedRecord {
   requestedVelocity: Vec3;
@@ -112,7 +113,13 @@ export interface RagStats {
 }
 
 export interface HandoffRecord {
+  /** Candidate validated, switched and its transfer audit passed (a valid handoff). */
   accepted: boolean;
+  /**
+   * accepted; rejected (candidate failed validation, proxy kept); transferFailed (the candidate was switched in but the
+   * transfer audit failed: the assembly stays as diagnostic state, the trial is labelled invalidTransfer).
+   */
+  outcome: 'accepted' | 'rejected' | 'transferFailed';
   t: number;
   step: number;
   reason: 'lossOfSupport' | 'diagnostic';
@@ -203,6 +210,24 @@ const EMPTY_BALANCE = (): BalanceRuntime => ({
 /** Pose blueprint used for presentation when no ragdoll profile is configured (Gate 1-3 fixtures). */
 const DEFAULT_POSE_PROFILE = RAGDOLL_G4;
 
+/**
+ * One limb geometry contract: the arm queries (ArmSystem), the physical pose, candidate bodies and ground-region
+ * classification all read the same lengths and radii. A fixture pairing an arm profile with a ragdoll/pose profile of
+ * different geometry is rejected at construction.
+ */
+export function checkLimbContract(A: ArmProfile, R: RagdollProfile): void {
+  const pairs: [string, number, number][] = [
+    ['upperArm', A.upperArmM, R.lengths.upperArm],
+    ['forearm', A.forearmM, R.lengths.forearm],
+    ['palmExtension', A.palmExtensionM, R.lengths.palmExtension],
+    ['upperArmRadius', A.upperArmRadiusM, R.radii.upperArm],
+    ['forearmRadius', A.forearmRadiusM, R.radii.forearm],
+    ['palmRadius', A.palmRadiusM, R.radii.palm],
+  ];
+  const bad = pairs.filter(([, a, r]) => Math.abs(a - r) > 1e-9);
+  if (bad.length) throw new Error(`limb contract: arm profile ${A.id} and ragdoll profile ${R.id} differ (${bad.map(([k, a, r]) => `${k} ${a} vs ${r}`).join(', ')})`);
+}
+
 function capsuleShape(a: Vec3, b: Vec3, r: number): { shape: RAPIER.Shape; pose: { p: Vec3; q: Quat } } | null {
   const d = sub(b, a);
   const l = len(d);
@@ -245,6 +270,8 @@ export class Simulation {
   rules: RuleObserver | null = null;
   /** After a referee ending: physics settles until this time, then the trial stops with the ending's label. */
   private settleUntil: number | null = null;
+  /** First failed transfer audit (review finding 2): the trial ends labelled invalidTransfer, never a completion. */
+  invalidTransfer: { playerId: PlayerId; reasons: string[]; t: number } | null = null;
 
   static async create(def: FixtureDef, opts: SimOptions = {}): Promise<Simulation> {
     await initPhysics();
@@ -398,9 +425,11 @@ export class Simulation {
     }
     // Colliders follow bodies only during a step; publish the reset-time placement to queries now.
     this.physics.world.propagateModifiedBodyPositionsToColliders();
-    if (def.players.some((p) => p.arms))
+    if (def.players.some((p) => p.arms)) {
+      checkLimbContract(def.armProfile ?? ARM_G2, def.ragdoll ?? DEFAULT_POSE_PROFILE);
       this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip);
-    this.rules = def.rules ? new RuleObserver(def.rules, def.ragdoll ?? RAGDOLL_G4, (type, id, data) => this.emit(type, id, data)) : null;
+    }
+    this.rules = def.rules ? new RuleObserver(def.rules, def.ragdoll ?? DEFAULT_POSE_PROFILE, (type, id, data) => this.emit(type, id, data)) : null;
     this.settleUntil = null;
     this.postStep(true);
     if (this.balanced) this.evaluateBalance(true);
@@ -447,6 +476,7 @@ export class Simulation {
     this.obstacleColliders = [];
     this.rules = null;
     this.settleUntil = null;
+    this.invalidTransfer = null;
     this.build();
   }
 
@@ -888,13 +918,13 @@ export class Simulation {
     for (const pl of this.players) {
       const c = this.bulk(pl).com;
       if (Math.abs(c.x) > area.halfX || Math.abs(c.z) > area.halfZ) {
-        this.result = 'practiceOutOfBounds';
+        this.result = this.invalidTransfer ? 'invalidTransfer' : 'practiceOutOfBounds';
         this.emit('practiceOutOfBounds', pl.id, { com: rv(c) });
         return;
       }
     }
     if (this.t >= this.def.durationS - 1e-9) {
-      this.result = this.rules?.disabledReason === 'invalidHandoff' ? 'invalidHandoff' : 'duration';
+      this.result = this.invalidTransfer ? 'invalidTransfer' : this.rules?.disabledReason === 'invalidHandoff' ? 'invalidHandoff' : 'duration';
       this.emit('trialEnd', undefined, { reason: this.result });
     }
   }
@@ -943,7 +973,7 @@ export class Simulation {
       if (accepted.includes(c)) continue;
       removeRagdoll(this.physics, c.rag);
       const rep = c.report!;
-      c.pl.handoff = { accepted: false, t: this.t, step: this.steps, reason: c.reason, report: rep };
+      c.pl.handoff = { accepted: false, outcome: 'rejected', t: this.t, step: this.steps, reason: c.reason, report: rep };
       if (this.rules && c.pl.id === this.rules.runnerId) this.rules.disable('invalidHandoff', { reasons: rep.reasons.join(',') });
       this.emit('handoffRejected', c.pl.id, {
         reasons: rep.reasons.join(','),
@@ -970,7 +1000,7 @@ export class Simulation {
       pl.representation = 'ragdoll';
       const after = this.bodyCount(pl.id);
       const proxyRemoved = !this.physics.world.bodies.contains(oldHandle) || !this.physics.world.getRigidBody(oldHandle)?.isEnabled();
-      pl.handoff = { accepted: true, t: this.t, step: this.steps, reason: c.reason, report: c.report!, audit, activeBodies: { before, after, proxyRemoved } };
+      pl.handoff = { accepted: audit.ok, outcome: audit.ok ? 'accepted' : 'transferFailed', t: this.t, step: this.steps, reason: c.reason, report: c.report!, audit, activeBodies: { before, after, proxyRemoved } };
       pl.ragStats = { maxAnchorErrM: c.report!.maxAnchorErrM, maxFloorPenM: 0, maxSpeed: 0, maxHingeOverDeg: 0, hingeOverJoint: null, maxHingeReverseDeg: 0, hingeReverseJoint: null };
       switched.push(pl.id);
       this.emit('representation', pl.id, {
@@ -990,7 +1020,13 @@ export class Simulation {
           straightFallback: pl.pose?.straightFallback ?? [],
         },
       });
-      if (!audit.ok) this.emit('handoffAuditFailure', pl.id, { reasons: audit.reasons.join(',') });
+      if (!audit.ok) {
+        // The proxy is already gone (the audit reads the switched engine state); the assembly remains as diagnostic
+        // state. A failed transfer invalidates the trial's physical evidence: no referee completion can follow.
+        this.invalidTransfer = { playerId: pl.id, reasons: audit.reasons, t: this.t };
+        this.emit('handoffAuditFailure', pl.id, { reasons: audit.reasons.join(','), energyDeltaJ: audit.energyDeltaJ, energyGainLimitJ: audit.energyGainLimitJ, outcome: 'transferFailed' });
+        this.rules?.disable('invalidTransfer', { playerId: pl.id, reasons: audit.reasons.join(',') });
+      }
     }
     if (switched.length) {
       this.arms?.onRepresentationChange(switched, captured);

@@ -12,7 +12,9 @@ import type { PhysicalPose } from '../sim/pose';
 import { initPhysics } from '../sim/physics';
 import { forwardOf, horiz, len, qInvRot, qRot, round, toLocal, toWorld, v3, type Pose, type Quat, type Vec3 } from '../sim/vec';
 import type { ArmSide } from '../sim/contracts';
-import { ArmOverlay, BalanceOverlay, ContactMarkers, PlayerView, RuleOverlay, type ArmOverlaySide, type OverlayFlags } from './views';
+import { ArmOverlay, BalanceOverlay, ContactMarkers, PALETTES, PlayerView, RuleOverlay, disposeOwned, type ArmOverlaySide, type OverlayFlags } from './views';
+import { ModelAsset } from './player-model';
+import { MODEL_CALIBRATION_ID } from '../sim/model/profiles';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -59,6 +61,7 @@ function buildField(area: { halfX: number; halfZ: number }): THREE.Group {
     g.add(m);
   };
   const { halfX: X, halfZ: Z } = area;
+  g.userData = { halfX: X, halfZ: Z };
   strip(-X, -Z, X, -Z, 0.1);
   strip(-X, Z, X, Z, 0.1);
   strip(-X, -Z, -X, Z, 0.1);
@@ -76,10 +79,15 @@ function buildField(area: { halfX: number; halfZ: number }): THREE.Group {
 
 // ---------------------------------------------------------------- state
 const fixtures: FixtureDef[] = allFixtures();
-const flags: OverlayFlags = { overlays: true, colliders: false };
+const flags: OverlayFlags = { overlays: true, colliders: false, primitives: params.get('view') === 'primitives' };
 let palette = 'default';
 let sim: Simulation;
 let driver: FixedStepDriver;
+/** Loaded supplied-model asset for the current fixture (null: none needed, or the load failed). */
+let modelAsset: ModelAsset | null = null;
+let modelError: string | null = null;
+/** Incremented per load(); a load whose serial is no longer current discards its results (fixture changed). */
+let loadSerial = 0;
 let views: PlayerView[] = [];
 let armOverlays = new Map<string, ArmOverlay>();
 let balOverlays = new Map<string, BalanceOverlay>();
@@ -122,20 +130,49 @@ function lerpPose(a: PhysicalPose, b: PhysicalPose, t: number): PhysicalPose {
   return { ...b, segments, jointLandmarksWorld };
 }
 
+/** The supplied model draws a fixture's players only when their body carries this asset's calibration. */
+const usesModel = (def: FixtureDef): boolean => def.players.some((p) => p.body.measured?.calibrationId === MODEL_CALIBRATION_ID);
+
 async function load(id: string): Promise<void> {
+  const serial = ++loadSerial;
   const def = fixtures.find((f) => f.id === id) ?? fixtures[0];
+  await initPhysics();
+  const next = await Simulation.create(def);
+  let asset: ModelAsset | null = null;
+  let error: string | null = null;
+  if (usesModel(def))
+    try {
+      asset = await ModelAsset.load();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      console.error('[lab] model load failed', e);
+    }
+  // a newer load started while this one waited: drop this result (views are built only when sim and asset are ready)
+  if (serial !== loadSerial) {
+    next.dispose();
+    return;
+  }
   if (sim) sim.dispose();
   disposeViews();
-  await initPhysics();
-  sim = await Simulation.create(def);
+  // a fixture without the model retires the cached asset (its shared geometry, textures and materials)
+  if (modelAsset && modelAsset !== asset) modelAsset.retire();
+  sim = next;
+  modelAsset = asset;
+  modelError = error;
   driver = new FixedStepDriver(def.solver.outerTickS, def.solver.maxTicksPerFrame);
   driver.paused = true;
   driver.speed = Number(($('speed') as HTMLSelectElement).value);
   if (def.cosmetic?.palette && def.cosmetic.palette !== 'default') palette = def.cosmetic.palette;
   buildViews();
-  if (field) scene.remove(field);
-  field = buildField(def.area);
-  scene.add(field);
+  // The field depends only on the practice bounds: reuse it while they match, dispose its resources when replaced.
+  if (!field || field.userData.halfX !== def.area.halfX || field.userData.halfZ !== def.area.halfZ) {
+    if (field) {
+      scene.remove(field);
+      disposeOwned(field);
+    }
+    field = buildField(def.area);
+    scene.add(field);
+  }
   $('title').textContent = `${def.id} [${def.milestone}] ${def.title}${def.notes ? ` — ${def.notes}` : ''}`;
   ($('fixture') as HTMLSelectElement).value = def.id;
   setCamera(camPreset, true);
@@ -148,8 +185,11 @@ async function load(id: string): Promise<void> {
 function buildViews(): void {
   prevPose.clear();
   seenRep.clear();
+  const R = sim.def.ragdoll;
   for (const pl of sim.players) {
-    const v = new PlayerView(pl, palette, sim.activeColliders(pl));
+    const role = pl.setup.role;
+    const model = modelAsset && pl.body.measured?.calibrationId === MODEL_CALIBRATION_ID ? modelAsset.instantiate(`${palette}:${role}`, (PALETTES[palette] ?? PALETTES.default)[role]) : null;
+    const v = new PlayerView(pl, palette, sim.activeColliders(pl), !sim.rules, R, model);
     views.push(v);
     scene.add(v.root);
     prevPose.set(pl.id, { core: corePose(pl), pose: clonePose(pl.pose), rep: pl.representation });
@@ -302,6 +342,11 @@ function wire(): void {
     flags.colliders = !flags.colliders;
     $('col').classList.toggle('on', flags.colliders);
   };
+  $('prim').onclick = () => {
+    flags.primitives = !flags.primitives;
+    $('prim').classList.toggle('on', flags.primitives);
+  };
+  $('prim').classList.toggle('on', flags.primitives);
   $('palette').onclick = () => {
     palette = palette === 'default' ? 'alt' : 'default';
     for (const v of views) v.setPalette(palette);
@@ -417,6 +462,8 @@ const headDeg = (v: Vec3): number => (Math.atan2(v.x, v.z) * 180) / Math.PI;
 
 function info(): void {
   const lines: string[] = [];
+  if (modelError) lines.push(`MODEL LOAD FAILED (primitive view shown): ${modelError}`);
+  else if (modelAsset) lines.push(`model bew-v6 (${MODEL_CALIBRATION_ID})${flags.primitives ? '  [primitive diagnostic view]' : ''}`);
   const bad = sim.result === 'numericalFailure';
   lines.push(`t ${f2(sim.t, 3)} s  tick ${sim.tick}  substeps/tick ${sim.def.solver.substeps}  dt ${f2(sim.dt * 1000, 2)} ms`);
   lines.push(`result ${sim.result}${bad ? '  << NUMERICAL FAILURE (not a stop)' : ''}  speed ${driver.speed}×${driver.discardedWallS > 0 ? `  dropped ${f2(driver.discardedWallS, 2)} s` : ''}`);
@@ -434,8 +481,8 @@ function info(): void {
     lines.push(`${pl.id} (${pl.setup.role}) ${pl.body.id}  ${f2(k.massKg, 1)} kg  ${pl.representation}${pl.rag ? ` (${sim.bodyCount(pl.id)} bodies)` : ''}`);
     if (pl.handoff) {
       const h = pl.handoff;
-      if (h.accepted && h.audit)
-        lines.push(`  HANDOFF @${f2(h.t, 3)} ${h.reason}  P err ${h.audit.linearRelErr.toExponential(1)}  L err ${h.audit.angularRelErr.toExponential(1)}  ΔKE ${f2(h.audit.energyDeltaJ, 1)} J  anchors ${f2(h.report.maxAnchorErrM * 1000, 2)} mm  pen ${f2(h.report.maxNewExternalPenetrationM * 1000, 1)} mm`);
+      if (h.audit)
+        lines.push(`  HANDOFF${h.outcome === 'transferFailed' ? ' TRANSFER FAILED' : ''} @${f2(h.t, 3)} ${h.reason}  P err ${h.audit.linearRelErr.toExponential(1)}  L err ${h.audit.angularRelErr.toExponential(1)}  ΔKE ${f2(h.audit.energyDeltaJ, 1)} / ${f2(h.audit.energyGainLimitJ, 1)} J  anchors ${f2(h.report.maxAnchorErrM * 1000, 2)} mm  pen ${f2(h.report.maxNewExternalPenetrationM * 1000, 1)} mm${h.audit.ok ? '' : `  (${h.audit.reasons.join(',')}: diagnostic state, no completion)`}`);
       else lines.push(`  HANDOFF REJECTED @${f2(h.t, 3)} ${h.report.reasons.join(',')} — falling proxy kept`);
     }
     if (pl.ragStats) lines.push(`  ragdoll max joint sep ${f2(pl.ragStats.maxAnchorErrM * 1000, 1)} mm  max floor pen ${f2(pl.ragStats.maxFloorPenM * 1000, 1)} mm  hinge ${Object.entries(pl.pose?.hingeDeg ?? {}).filter(([kk]) => kk !== 'neck').map(([kk, vv]) => `${kk.replace('left', 'L').replace('right', 'R')} ${f2(vv, 0)}°`).join(' ')}`);
@@ -474,7 +521,7 @@ function info(): void {
   }
   const el = $('info');
   el.textContent = lines.join('\n');
-  el.classList.toggle('bad', bad);
+  el.classList.toggle('bad', bad || !!modelError);
 }
 
 function compact(d: Record<string, unknown> | undefined): string {
@@ -614,6 +661,13 @@ window.addEventListener('resize', resize);
     return sim;
   },
   fixtures: () => fixtures.map((f) => f.id),
+  /** GPU resource counts and live model clones (resource-stability checks across loads and resets). */
+  memory: () => ({ ...renderer.info.memory, programs: renderer.info.programs?.length ?? 0, modelInstances: modelAsset?.liveInstances ?? 0, modelError }),
+  primitives: (on: boolean) => {
+    flags.primitives = on;
+    $('prim').classList.toggle('on', on);
+  },
+  reset: () => resetSim(),
 };
 
 fillFixtureSelect();

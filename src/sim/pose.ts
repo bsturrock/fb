@@ -6,7 +6,7 @@
 // (the limb extends along -Y), local X = the elbow/knee hinge axis, Z = X x Y. The hinge angle about X from the
 // proximal to the distal frame is zero for a straight limb and positive in flexion.
 import type { ArmSide, SegmentId } from './contracts';
-import { hipLocal, shoulderLocal, type BodyProfile, type RagdollProfile } from './profiles';
+import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
 import {
   add, addScaled, clamp, cross, dot, len, neg, norm, qFromAxisAngle, qFromBasis, qMul, qRot, scale, sub, toWorld, upOf, v3,
   type Pose, type Quat, type Vec3,
@@ -30,16 +30,8 @@ export interface PhysicalPose {
   limbClearance: Record<string, number>;
 }
 
-/** Ten-body blueprint lengths (Gate 2 arm profile + Gate 4 legs). */
-export const LIMB = {
-  upperArm: 0.35,
-  forearm: 0.34,
-  palmExtension: 0.05,
-  /** Physical palm ball radius (ARM_G2.palmRadiusM); the palm ball is centred one radius inside the palm landmark. */
-  palmRadius: 0.04,
-  thigh: 0.44,
-  shin: 0.36,
-};
+// Limb lengths and radii come from the player's ragdoll profile (the same numbers its arm profile and candidate
+// bodies use; checked at simulation construction), never a shared constant.
 
 export interface GaitState {
   phase: number; // rad
@@ -224,15 +216,42 @@ export interface ProxyPoseInput {
   memory?: PoseMemory;
 }
 
-const sgn = (s: ArmSide): number => (s === 'right' ? 1 : -1);
+/** Authored procedural reference: the right shoulder and shoulder-to-palm chain the arm targets were written for. */
+const AUTHORED_SHOULDER = v3(0.26, 0.5, 0);
+const AUTHORED_CHAIN_M = 0.74;
+/** Pelvis-centre landmark and gait ankle height of the authored bodies. */
+const AUTHORED_PELVIS_MID = v3(0, -0.05, 0);
+const AUTHORED_ANKLE_Y = -0.83;
+
+/**
+ * Procedural palm target (body-local). `p` is written for the authored bodies with its x already side-signed
+ * (sideSignX); an authored body uses it unchanged. A measured body takes it relative to its own shoulder, scaled by
+ * its arm chain (same reach fraction and direction from the shoulder).
+ */
+export function proceduralLocal(body: BodyProfile, s: ArmSide, p: Vec3): Vec3 {
+  const m = body.measured;
+  if (!m) return p;
+  const ref = v3(AUTHORED_SHOULDER.x * sideSignX(body, s), AUTHORED_SHOULDER.y, AUTHORED_SHOULDER.z);
+  return add(shoulderLocal(body, s), scale(sub(p, ref), m.armChainM / AUTHORED_CHAIN_M));
+}
+
+/** Ball-arm carry palm (body-local, the right arm). */
+export function carryPalmLocal(body: BodyProfile): Vec3 {
+  return proceduralLocal(body, 'right', v3(0.13 * sideSignX(body, 'right'), 0.24, 0.24));
+}
+
+export function pelvisMidLocal(body: BodyProfile): Vec3 {
+  return body.measured ? { ...body.measured.pelvisMid } : { ...AUTHORED_PELVIS_MID };
+}
 
 /** Default procedural arm palm in body-local coordinates: carry (ball arm), ready hands or a running swing. */
 export function proceduralArmTargetLocal(s: ArmSide, inp: ProxyPoseInput): Vec3 {
-  const sx = sgn(s);
-  if (inp.carriesBall && s === 'right') return v3(0.13, 0.24, 0.24);
-  if (inp.readyHands) return v3(0.2 * sx, 0.27, 0.38);
+  const body = inp.body;
+  const sx = sideSignX(body, s);
+  if (inp.carriesBall && s === 'right') return carryPalmLocal(body);
+  if (inp.readyHands) return proceduralLocal(body, s, v3(0.2 * sx, 0.27, 0.38));
   const swing = Math.cos(inp.gait.phase + (s === 'left' ? 0 : Math.PI)) * Math.min(1, inp.speed / 4);
-  return v3(0.27 * sx, 0.05 + 0.08 * Math.abs(swing), 0.1 + 0.22 * swing);
+  return proceduralLocal(body, s, v3(0.27 * sx, 0.05 + 0.08 * Math.abs(swing), 0.1 + 0.22 * swing));
 }
 
 /** Procedural arm alternatives (body-local palm targets, local elbow poles), tried in order when the first is blocked. */
@@ -306,18 +325,18 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const ext = (shapes: PoseShape[]): number => (inp.clearance ? inp.clearance.external(shapes) : 0);
   const softExt = (shapes: PoseShape[]): number => (inp.clearance?.soft ? inp.clearance.soft(shapes) : 0);
   segs.core = { segmentId: 'core', originWorld: { ...pose.p }, rotationWorld: { ...pose.q } };
-  lm.pelvisMid = W(v3(0, -0.05, 0));
+  lm.pelvisMid = W(pelvisMidLocal(body));
   lm.neck = W(body.neck);
   lm.headCenter = W(body.headCenter);
   segs.head = { segmentId: 'head', originWorld: lm.neck, rotationWorld: { ...pose.q } };
   // ---------------- arms
   for (const s of ['left', 'right'] as ArmSide[]) {
-    const sx = sgn(s);
+    const sx = sideSignX(body, s);
     const sh = W(shoulderLocal(body, s));
     const given = inp.arms?.[s];
     type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number };
     const build = (elbow: Vec3, palm: Vec3, wristIn?: Vec3): ArmC => {
-      const wrist0 = wristIn ?? add(elbow, scale(sub(palm, elbow), LIMB.forearm / (LIMB.forearm + LIMB.palmExtension)));
+      const wrist0 = wristIn ?? add(elbow, scale(sub(palm, elbow), R.lengths.forearm / (R.lengths.forearm + R.lengths.palmExtension)));
       const chain = hingeChain(sh, elbow, [wrist0, palm], [fwd, upB], straight);
       const [wrist, palmS] = chain.ends;
       const shapes = armShapes(R, s, sh, elbow, wrist, palmS);
@@ -328,10 +347,10 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     if (given) a = build(given.elbow, given.palm, given.wrist);
     else {
       const procedural = (palmL: Vec3, poleL: Vec3) => (): ArmC => {
-        const r = twoBone(sh, W(palmL), LIMB.upperArm, LIMB.forearm + LIMB.palmExtension, qRot(pose.q, poleL));
+        const r = twoBone(sh, W(palmL), R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, qRot(pose.q, poleL));
         return build(r.mid, r.end);
       };
-      const cands = [procedural(proceduralArmTargetLocal(s, inp), v3(0.6 * sx, -0.5, -0.6)), ...ARM_ALTS(sx).map((c) => procedural(c.palm, c.pole))];
+      const cands = [procedural(proceduralArmTargetLocal(s, inp), v3(0.6 * sx, -0.5, -0.6)), ...ARM_ALTS(sx).map((c) => procedural(proceduralLocal(body, s, c.palm), c.pole))];
       const k = `${s}Arm`;
       if (POSE_DEBUG.on) POSE_DEBUG.last[`${inp.playerId}:${k}`] = cands.map((c, i) => { const r = c(); return { i, depth: r.depth, soft: r.soft }; });
       const r = pick(cands, mem[k]);
@@ -343,7 +362,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     lm[`${pre}Elbow`] = a.elbow;
     lm[`${pre}Wrist`] = a.wrist;
     lm[`${pre}Palm`] = a.palm;
-    lm[`${pre}Hand`] = addScaled(a.palm, norm(sub(a.palm, a.wrist), v3(0, -1, 0)), -LIMB.palmRadius);
+    lm[`${pre}Hand`] = addScaled(a.palm, norm(sub(a.palm, a.wrist), v3(0, -1, 0)), -R.radii.palm);
     segs[`${pre}UpperArm` as SegmentId] = { segmentId: `${pre}UpperArm` as SegmentId, originWorld: sh, rotationWorld: a.chain.frameA };
     segs[`${pre}Forearm` as SegmentId] = { segmentId: `${pre}Forearm` as SegmentId, originWorld: a.elbow, rotationWorld: a.chain.frameB };
     hingeDeg[`${pre}Elbow`] = (a.chain.angleRad * 180) / Math.PI;
@@ -355,12 +374,12 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const amp = Math.min(0.32, 0.075 * inp.speed);
   const lift = 0.13 * Math.min(1, inp.speed / 3);
   for (const s of ['left', 'right'] as ArmSide[]) {
-    const sx = sgn(s);
+    const sx = sideSignX(body, s);
     const hipL = hipLocal(body, s);
     const ph = inp.gait.phase + (s === 'left' ? 0 : Math.PI);
     const swing = Math.sin(ph) > 0 ? Math.sin(ph) : 0;
     const off = Math.cos(ph) * amp;
-    const base = v3(hipL.x + vdir.x * off, -0.83 + lift * swing, hipL.z + vdir.z * off);
+    const base = v3(hipL.x + vdir.x * off, (body.measured?.ankleTargetY ?? AUTHORED_ANKLE_Y) + lift * swing, hipL.z + vdir.z * off);
     const hip = W(hipL);
     type LegC = { knee: Vec3; ankle: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number };
     const variant = (o: Vec3, poleL: Vec3) => (): LegC => {
@@ -368,7 +387,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const pole = qRot(pose.q, poleL);
       let c: LegC | null = null;
       for (let it = 0; it < 5; it++) {
-        const r = twoBone(hip, target, LIMB.thigh, LIMB.shin, pole);
+        const r = twoBone(hip, target, R.lengths.thigh, R.lengths.shin, pole);
         const chain = hingeChain(hip, r.mid, [r.end], [neg(fwd), neg(upB)], straight);
         const ankle = chain.ends[0];
         const shapes = legShapes(R, s, hip, r.mid, ankle, chain.frameB);

@@ -4,6 +4,73 @@
 (relative to Basis; no morph normals), a rigid helmet mesh (100 % Head, 1024² texture), the Mixamo skeleton at 6'2"
 (Hips 1.039 m, knee 0.553, ankle 0.106 ("Ankle" below), shoulder 1.512; mesh top 1.894) plus thumb and mitten bones per hand.
 
+**In this repository (football-sim-7)** see [Use in the tackle lab](#use-in-the-tackle-lab). The sections from
+"Build" to "Belly bone" describe the host application the asset came from. Its `src/body`, `src/rig`, shape fits,
+belly corrective/bone, `npm run build-model` and `npm run fit-shapes` do not exist here. The shell script
+`models/scripts/build-v6.sh` and its Blender scripts are present. Loading the committed GLB needs none of them.
+
+## Use in the tackle lab
+
+**Calibration record** (`src/sim/model/bew-v6.calibration.json`). Regenerate it with
+`npx vite-node scripts/calibrate-model.ts` after any artwork rebuild. `tests/model.test.ts` fails if the committed
+record no longer matches the GLB (it re-derives the record and checks the sha256). Basis shape only. It records:
+
+- the asset: sha256 `5aaab36942e3…`, 33 joints, morphs `heavy`/`lean`, bind = rest within 1.4e-5 m;
+- the body frame: GLB world rest minus origin (0, 0.95, −0.059), axes unchanged, Y up, Z forward. The model faces +Z
+  with the Left* bones on +X, so **anatomical right is on −X** (`rightSignX: -1`);
+- the joint landmarks and the segment rest frames. Each limb's +Y points toward its proximal joint, and its X is the
+  hinge axis;
+- limb lengths and radii (median distance of the bone's dominant vertices; the upper arm includes the shoulder pad):
+  upper arm 0.360/0.099, forearm 0.232/0.060, palm extension 0.126 (r 0.040), thigh 0.431/0.146, shin 0.448/0.124,
+  head r 0.158;
+- the torso and pelvis boxes, split at the Spine joint height with a 3 cm torso overlap. The helmet, glove and shoe
+  measures;
+- the texture key colours (table below).
+
+The calibration id `bew-v6:<sha12>` is part of every model profile's identity. The lab draws the model only for
+bodies that carry it.
+
+**Profiles** (`src/sim/model/profiles.ts`): `modelBody`, `modelArm`, `modelRagdoll` and `modelRules` replace geometry
+only. Mass, support, mass fractions, controller and solver values come from the base profile. Arm, pose, ragdoll,
+candidate validation, query arms and rule labels all read the same lengths. `checkLimbContract` throws when the arm and
+ragdoll profiles disagree. Side signs come from `sideSignX(body, side)`, so `right` is the anatomical right for model
+bodies, and +X for authored ones.
+
+**Loading** (`src/lab/player-model.ts`). The GLB is imported with `?url` and emitted as a hashed build asset (Vite
+`publicDir: false`, so `models/` does not ship). It is loaded once with `GLTFLoader` and cloned per player with
+`SkeletonUtils.clone`. Each clone has its own bones and morph weights and shares geometry. Facts the loader adds:
+
+- GLTFLoader sanitises node names: `mixamorig:Hips` becomes `mixamorigHips`. `boneKey` accepts both.
+- The mesh's default morph weights are `heavy = lean = 1`. Clones set them to 0 (Basis), because the collision
+  geometry is fitted to Basis. There are no morph controls.
+- The materials load as `MeshPhysicalMaterial` (KHR_materials_specular). The textures are embedded.
+
+A failed load shows `MODEL LOAD FAILED (primitive view shown): …` in the lab panel. Views are built only once the
+simulation and the asset are both ready. A stale load result is dropped.
+
+**Rig adapter** (`src/lab/rig-adapter.ts`). It drives bones from the achieved `PhysicalPose`, the same way before and
+after a ragdoll handoff:
+
+| Segment | Bones driven | Rest origin |
+| --- | --- | --- |
+| core | Hips | core |
+| head | Neck, Head | neck |
+| left/right upper arm | Left/RightArm | shoulder |
+| left/right forearm | Left/RightForeArm, Left/RightHand (follows the forearm) | elbow |
+| left/right thigh | Left/RightUpLeg | hip |
+| left/right shin | Left/RightLeg | knee |
+
+`bone world = segment world × bind correction`, where `correction = segment rest⁻¹ × bone rest` (body-local). These
+are converted to parent-local in hierarchy order. The model root and Armature stay fixed and Hips carries the
+placement. Undriven bones (spine, clavicles, feet, toes, fingers) keep their rest local transforms. Twist comes from
+the segment rotation. The rendered landmarks match the physical ones within 1e-4 m before and after a handoff
+(test).
+
+**Recolour.** Palettes replace exact key colours only. On the body, jersey and socks take the jersey colour, pants the
+pants colour and skin the skin colour. On the helmet, the shell takes the helmet colour. Gloves, shoes and the
+facemask keep their texels. Recoloured textures and materials are cached per palette and role and released when the
+asset is retired.
+
 ## Build
 
 `npm run build-model` (scripts/build-v6.sh) runs Blender headless:

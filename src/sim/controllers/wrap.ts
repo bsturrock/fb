@@ -4,6 +4,7 @@
 import type { ArmIntent, ArmSide, PlayerIntent } from '../contracts';
 import { pairKey } from '../contracts';
 import type { BodyProfile, MotorProfile } from '../profiles';
+import { sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { Controller, ControllerContext } from './base';
 import { add, addScaled, clamp, cross, dot, horiz, len, norm, qRot, scale, sub, v3, UP, type Vec3 } from '../vec';
@@ -104,7 +105,6 @@ interface ArmCtl {
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
-const sgnOf = (s: ArmSide): number => (s === 'right' ? 1 : -1);
 
 export class WrapAttemptController implements Controller {
   readonly kind = 'wrapAttempt';
@@ -209,7 +209,7 @@ export class WrapAttemptController implements Controller {
         // limited lateral reposition toward the free arm's side, keeping pace with the runner
         this.finishMode = 'reposition';
         const free: ArmSide = retaining[0] === 'left' ? 'right' : 'left';
-        vel = add(horiz(tb.linearVelocity), scale(side, sgnOf(free) * -(F.repositionMps ?? 0.8)));
+        vel = add(horiz(tb.linearVelocity), scale(side, sideSignX(this.setup.body, free) * -(F.repositionMps ?? 0.8)));
         posture = lean;
       } else if (ctx.t - this.lastContactT > 0.3) {
         this.finishMode = 'recover';
@@ -236,7 +236,8 @@ export class WrapAttemptController implements Controller {
       const st = this.arm[s];
       const ob = myArms[s];
       if (plan === 'none' || !ob) continue;
-      const sgn = sgnOf(s);
+      // `side` is the defender's local +X (cross(near, UP) with the defender facing the runner): the arm's sign on it
+      const sgn = sideSignX(this.setup.body, s);
       const az = azOf(ob.palmContactWorld, sgn);
       const t = ctx.t;
       const go = (ph: WrapArmPhase): void => {

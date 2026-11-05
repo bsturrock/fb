@@ -1,8 +1,8 @@
 # Gate 4 handoff: ragdoll handoff, retained wraps, drill completion
 
-Date: 2026-11-02. Status: G4-A to G4-D are implemented.
+Date: 2026-11-02. Status: G4-A to G4-D are implemented. Review fixes 1–4 of `docs/05_Review_and_Model_Integration_Plan.md` are applied (same day, after the review), and the supplied player model runs on its own G4-M fixtures: see [Review fixes and the supplied-model fixtures](#review-fixes-and-the-supplied-model-fixtures-plan-05).
 
-- 48 Gate 4 tests pass, together with 17 Gate 1, 12 Gate 2 and 16 Gate 3 tests (93 in total).
+- 49 Gate 4 tests pass, together with 17 Gate 1, 12 Gate 2, 16 Gate 3 and 19 model tests (113 in total).
 - Visual review (F9) used:
   - stepped stills across the handoff;
   - 0.25× slow-motion samples;
@@ -15,10 +15,10 @@ Date: 2026-11-02. Status: G4-A to G4-D are implemented.
 | Purpose | Command | Result |
 | --- | --- | --- |
 | Type check | `npx tsc --noEmit -p .` | no errors |
-| Tests | `npx vitest run` | 93 passed (17 G1 + 12 G2 + 16 G3 + 48 G4), 0 failed |
-| Evidence export | `npm run fixtures` | 120 fixtures (31 Gate 4) written to `evidence/traces/<id>.json` and `evidence/summary.json` |
-| Production build | `npm run build` | ok (chunk-size warning only: the Rapier WASM is inlined) |
-| Ragdoll integrity per fixture | `npx vite-node scripts/probe/g4stats.ts` | table below |
+| Tests | `npx vitest run` | 113 passed (17 G1 + 12 G2 + 16 G3 + 49 G4 + 19 model), 0 failed |
+| Evidence export | `npm run fixtures` | 135 fixtures (31 Gate 4, 15 G4-M) written to `evidence/traces/<id>.json` and `evidence/summary.json` |
+| Production build | `npm run build` | ok (chunk-size warning only: the Rapier WASM is inlined); the GLB is emitted as a hashed asset |
+| Ragdoll integrity per fixture | `npx vite-node scripts/probe/g4stats.ts`; model fixtures `npx vite-node scripts/probe/g4stats-m.ts '-M$'` | tables below |
 | Solver comparison (1×, 2×, 4× substeps) | `npx vite-node scripts/probe/g4solver.ts` | table below |
 | Blueprint read back from the engine | `npx vite-node scripts/probe/g4blueprint.ts` | masses, joints, limits |
 | Grip/clamp evidence for F4/F10 | `npx vite-node scripts/probe/g4grips.ts` | per-arm events |
@@ -127,8 +127,8 @@ Columns:
 | G4-F3-twoArm | R lossOfSupport | **22.7** | 6.0 | 2.7 / 1.3 | **11.32** | 0 | 21.1 (395) | 3.3e-9 / 2.1e-8 |
 | G4-F3-oneArm | R / D lossOfSupport | 3.0 / 1.2 | 5.1 / 0.2 | 0.4 / 1.2 | 6.75 | 0.4 | 2.7 / 16.6 | ≤ 2.0e-8 |
 | G4-F4-targetOnly | R diag., D lossOfSupport | 5.0 / 2.7 | 5.6 | 2.4 / 2.2 | 5.24 | 0.5 | 0.0 / 2.3 | ≤ 1.4e-8 |
-| G4-F4-ownerOnly | D diagnostic | 2.2 | 2.6 | 2.7 / 0.3 | 3.72 | 6.5 | 0.0 | ≤ 2.6e-11 |
-| G4-F4-simultaneous | D + R diagnostic | 1.5 | 1.9 | 0.7 / 1.5 | 4.87 | 6.5 | 0.0 | ≤ 2.6e-11 |
+| G4-F4-ownerOnly (after fix 1) | D diagnostic | 2.0 | 2.6 | 2.3 / 0.0 | 3.27 | 6.6 | 0.0 | ≤ 2.6e-11 |
+| G4-F4-simultaneous (after fix 1) | D + R diagnostic | 1.2 / 1.5 | 0.2 / 1.0 | 0.5 / 0.9 | 3.82 | 6.5 | 0.0 | ≤ 2.6e-11 |
 | G4-F4-invalidSurface | R diagnostic | 2.5 | 2.8 | 2.6 / 1.2 | 4.31 | 0.1 | 0.0 | ≤ 9.6e-12 |
 | G4-F10-targetOnly | R diagnostic | 3.2 | 2.6 | 1.1 / 1.1 | 3.78 | 1.9 | 1.1 (29) | ≤ 7.9e-8 |
 | G4-F10-ownerOnly | D diagnostic | 1.6 | 1.0 | 1.1 / 0.5 | 4.83 | 0 | 3.6 (36) | ≤ 1.9e-8 |
@@ -176,8 +176,8 @@ Columns:
 **F4: palm grips through a conversion** (`g4grips.ts`).
 
 - targetOnly: both grips `gripRemap` core→core with anchor error 0 m. They keep loading R and release with `invalidPose` at 1.175 and 1.188 s. D later loses support (1.742 s).
-- ownerOnly: both grips become `gripPassive` (palm gap 0) and release with `separation` at 0.958 s (exposure 0.036 s).
-- simultaneous: remap plus passive on both grips. They release with `separation` at 0.975 s.
+- ownerOnly: both grips become `gripPassive` (palm gap 0). After fix 1 the passive link is tensile (622 force entries above 1 N, all pulling the palm and the anchor together, peak 169.7 N), neither grip releases before the 2.2 s trial end, and the largest palm–anchor separation is 0.050 m. Before the fix both released with `separation` at 0.958 s because the link pushed them apart.
+- simultaneous: remap plus passive on both grips. After fix 1: 405 tensile entries (peak 278.1 N); the right grip releases with `separation` at 1.3125 s (held 0.41 s), the left holds to 2.2 s, largest separation 0.098 m. Before the fix both released at 0.975 s.
 - invalidSurface (labelled diagnostic edit, core shifted 3 cm): `gripRemap ok:false` (surface distance 0.03 m) and an immediate `gripRelease invalidSurface` on both arms. No force follows.
 - Test: active shoulder force and passive palm force never act on one grip in the same step (all F4 cases).
 
@@ -284,6 +284,52 @@ No hard failure observed:
 - every fallback is reported (`handoffRejected`, `invalidHandoff`);
 - no inspection is claimed beyond the list above.
 
+## Review fixes and the supplied-model fixtures (plan 05)
+
+Applied 2026-11-02 from `docs/05_Review_and_Model_Integration_Plan.md`. A full evidence re-export (`npm run fixtures`) changed only the two G4-F4 passive-grip fixtures among the existing 120. Every other existing summary (result, ticks, events, final player states) is identical to the pre-fix export.
+
+**Fix 1: passive grasps pull, they don't push.** `src/sim/arms.ts` passes the anchor-to-palm direction `n` unchanged to the passive link. The F4 results above are re-measured. A test now asserts that every passive force entry is tensile (`tests/gate4.test.ts`, G4-F4).
+
+**Fix 2: a failed transfer audit is never a tackle.** A switched-in candidate whose transfer audit fails is recorded with outcome `transferFailed` (`accepted: false`), emits `handoffAuditFailure`, and disables the rule observer with reason `invalidTransfer`. The trial result is `invalidTransfer`, and no ending or event spot is recorded. Test: G4-F3-twoArm with a copied ragdoll profile whose only change is `energyGainFraction: 0.01`. That makes R's transfer exceed the limit, so the result is `invalidTransfer` with no `ruleEnding`. With the default profile the same transfer is accepted.
+
+**Fix 3: one ball.** When a rule profile exists, the runner view no longer draws its own ball. The rule overlay draws the only cosmetic ball, at the observer's carry reference (`ballLocal` on the runner's core). Fixtures without rules keep the palm ball. The event marker is unchanged and stays frozen after the event.
+
+**Fix 4: no leaked field resources.** The field is reused while the practice bounds match, and it is disposed (geometry and materials) when it is replaced. Views dispose only what they own. Model clones release their skeletons, and the shared asset releases geometry, textures and materials when it is retired. Browser check, warm caches, repeated loads, resets and view toggles: geometries and textures return to the same counts (twoArm-M 38/10, after reset 38/10; G4-F1 52/1 with 0 model instances).
+
+### G4-M: the same drills on the supplied model's measured geometry
+
+`src/sim/fixtures/model.ts` re-profiles 15 drills with the calibrated body, arm, ragdoll and rule profiles from `models/bew-v6.glb` (`src/sim/model/`). Calibration id `bew-v6:5aaab36942e3`. The authored fixtures keep their profiles and results. Measured differences from the authored Gate 4 body:
+
+| | upper arm | forearm | palm ext. | thigh | shin | head r |
+| --- | --- | --- | --- | --- | --- | --- |
+| length (m), authored → model | 0.35 → 0.360 | 0.34 → 0.232 | 0.05 → 0.126 | 0.44 → 0.431 | 0.36 → 0.448 | |
+| radius (m), authored → model | 0.055 → 0.099 | 0.045 → 0.060 | | 0.085 → 0.146 | 0.065 → 0.124 | 0.14 → 0.158 |
+
+The model radii include the pads, gloves and shoes (median distance of bone-dominant vertices, `models/rig.md`). The model's anatomical right is on body −X. The authored profiles call +X "right". The model profiles use the measured side, so a model fixture's `right` is the anatomical right of the rendered player.
+
+| Fixture | Result | Handoffs | Ending / notes | Authored result |
+| --- | --- | --- | --- | --- |
+| G3-F1-M idle/run/brake | duration | none | | duration |
+| G2-F1/F2/F5/F11-M | duration | none | F2-M one palm hold releases `invalidPose` at 0.81 s (balanced-profile authored geometry: 1.36 s). F5-M/F11-M wraps churn clamps (Limitations 6) | duration |
+| G4-F1-M | duration | R diag. 0.5 s accepted | | duration |
+| G4-F2-yaw225-tumble-M | duration | R diag. 0.05 s accepted, ΔKE −6.5 J (limit 205) | | duration |
+| G4-F3-twoArm-M | groundDown 1.058 s, left shin | R 0.771 s accepted; **D rejected** 1.125 s, `externalPenetration` 30 mm | D stays a falling proxy | groundDown 1.150 s, pelvis |
+| G4-F3-oneArm-M | groundDown 0.929 s, right shin | R 0.704 s accepted | | groundDown 1.108 s, pelvis |
+| G4-F3-failed-M | **invalidHandoff** | **R rejected** 0.9 s, `externalPenetration` 102 mm (R's shoe in D's support); D accepted 1.304 s | the slow line now knocks R over | practiceOutOfBounds, R stays up |
+| G4-F4-ownerOnly-M | duration | D 0.9 s, R 2.108 s accepted | passive grips release `separation` 1.46 s | duration |
+| G4-F4-simultaneous-M | duration | D + R 0.9 s accepted | passive grips release `separation` 1.275 s | duration |
+| G4-F10-simultaneous-M | duration | **D and R rejected** 1.2 s, `externalPenetration` 125 mm | left upper arms inside each other | duration |
+| G4-F5-twoRagdolls-M | duration | D + R 0.15 s accepted | | duration |
+| G4-F11-sidelineFoot-M | **sidelineOut 0.004 s**, `rightShin:shoe` | none | the outward foot already crosses z = 4 at the start | sidelineOut 0.167 s, `leftShin:shoe` (same physical foot) |
+
+Integrity of the accepted model handoffs (`g4stats-m.ts`): substep joint separation ≤ 8.7 mm (tumble), floor penetration ≤ 9.5 mm (oneArm-M R), hinge over/reverse ≤ 4.3° / 3.1°, P/L relative error ≤ 1.0e-7. The new external penetration at the switch is ≤ 1.0 mm, except G4-F4-ownerOnly/simultaneous-M D at 13.3 mm (forearm against R, existing contact, under the 15 mm tolerance). Cross-owner overlap while ragdolls exist is ≤ 12.1 mm. Tests (`tests/model.test.ts`) check, among other things, that every G4-M handoff is accepted with a passing audit or rejected with reasons. None ends in `invalidTransfer` or `numericalFailure`.
+
+The three rejections are honest geometry results. The measured limbs are thicker (padded upper arm r 0.099 against 0.055). The supported proxy has no limb colliders (Limitations 5), so its pose can put a padded limb inside the opponent, and the validated candidate is then rejected. The supported opponent's arms constrain the pose only softly. These are not patched.
+
+**Rendering.** The lab draws the supplied model for every fixture whose body carries the calibration id. Its bones follow the achieved pose before and after a handoff through one adapter (`src/lab/rig-adapter.ts`). Primitives remain the diagnostic view (the `primitives` button or `?view=primitives`) and the only view for authored profiles. A failed model load shows `MODEL LOAD FAILED (primitive view shown): …` in the panel.
+
+**Model visual review (Chrome on 5197, this session).** Stills at 1× from side, oblique and overhead views: G3-F1-M idle, run and brake; G2-F1-M reach, beyond reach and behind the back (overhead); G2-F2-M one-arm palm hold; G2-F5-M forearm wrap (oblique and overhead); G2-F11-M slip; G4-F3-failed-M; G4-F5-twoRagdolls-M; G4-F2-yaw225-tumble-M (worst accepted model handoff); G4-F3-twoArm-M ground completion; G4-F11-sidelineFoot-M (front). G4-F3-twoArm-M was also played at 0.25× from 0.45 to 1.33 s with 7 samples: wrap, R's handoff, fall and ground, with no jump at the switch and no side swap. After D's rejected handoff, the falling proxy D shows its standing leg pose in the air: this is the proxy's visual pose, not a rendering fault. The rendered bones match the physical segment landmarks to 1e-4 m before and after a handoff (test). Continuous normal-speed playback was sampled, not watched (U).
+
 ## Decisions for you
 
 1. **Shoulder pivot ±0.26 → ±0.20 m for every Gate 4 body.**
@@ -294,7 +340,7 @@ No hard failure observed:
      - (c) narrower upper-arm radius at 0.26.
 2. **Ball carry position.**
    - The cosmetic ball sits at the core-frame offset (0.20, 0.30, 0.12), upper chest by the right shoulder. In upright views it reads as held high next to the hand.
-   - The event spot uses this point.
+   - The event spot uses this point. Since review fix 3, this is also the only ball drawn whenever a rule profile exists. On the model fixtures, the same authored offset is remapped onto the model's arm chain (`modelBallLocal`). It keeps the authored palm-to-ball relation, scaled to the model arm, on the anatomical right (test).
    - Options:
      - (a) keep;
      - (b) lower it to a tucked carry (for example y ≈ 0.05). This changes every exported spot by a few centimetres.
@@ -320,7 +366,7 @@ No hard failure observed:
    - Floor penetration up to 8.5 mm.
 4. **Solver cost.** `solver-g4-4x60` steps four times per tick. One substep roughly doubles joint separation and triples hinge overshoot (table above).
 5. **The supported proxy has no limb colliders.** Its legs and arms are visual. This is why handoff candidates can find legs inside the opponent (Decisions 3).
-6. **Clamp chatter** (pre-existing since Gate 2). Clamps end and re-begin almost every substep while sliding, and the wrap status alternates between one-arm and two-arm hold (G4-F3-failed). Forces stay within budget, but the event log is noisy.
+6. **Clamp chatter** (pre-existing since Gate 2). Clamps end and re-begin almost every substep while sliding, and the wrap status alternates between one-arm and two-arm hold (G4-F3-failed). Forces stay within budget, but the event log is noisy. The model geometry makes this much more frequent. G2-F5-M has 310 clamp begins against 5 for the same balanced drill on authored geometry (`scripts/probe/clamp-churn.ts`). Cause (`scripts/probe/clamp-chatter.ts`): the model hand is 0.126 m long, against 0.05 m authored, so the palm meets the runner's torso before the forearm does. The closing solve tolerates 15 mm of palm penetration, which brings the forearm just inside the 15 mm contact tolerance, and a clamp begins. The post-step solve then pushes the palm out to the surface, the forearm lifts more than 25 mm away, and the clamp ends with `contactLost`. This repeats every substep. Mechanics unchanged; open item.
 7. **Hand/wrist brace is observer-level only.** A passive ragdoll never produces a hand-only brace. Pushed-over bench attempts gave shin endings or rejected candidates. The foot brace is physical.
 8. **Reversed iteration order** moves bodies by up to 0.38 m, while labels and kinds stay identical (F8).
 9. **The proxy-to-ragdoll COM shift** (about 4 cm) is inherent in the different mass distributions. P and L are conserved about the new COM; KE changes are recorded.

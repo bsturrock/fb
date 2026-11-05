@@ -8,7 +8,6 @@
 //    physically restrained progress (progressStopped) and a configured sideline plane (sidelineOut).
 import type { ColliderTag, ContactRec, PlayerContactObs, PlayerId, SegmentId } from './contracts';
 import type { PhysicalPose } from './pose';
-import { LIMB } from './pose';
 import type { RagdollProfile, RuleProfile } from './profiles';
 import { type Pose, type Vec3, add, dot, horiz, len, round, rv, scale, toLocal, toWorld, v3 } from './vec';
 
@@ -97,12 +96,12 @@ const EPISODE_LOG_S = 0.1;
 function limbShapes(R: RagdollProfile): { seg: SegmentId; kind: 'capsule' | 'ball' | 'box'; region: string; L?: number; r?: number; c?: Vec3; he?: Vec3 }[] {
   const out: ReturnType<typeof limbShapes> = [];
   for (const s of ['left', 'right'] as const) {
-    out.push({ seg: `${s}UpperArm`, kind: 'capsule', region: 'upperArm', L: LIMB.upperArm, r: R.radii.upperArm });
-    out.push({ seg: `${s}Forearm`, kind: 'capsule', region: 'forearm', L: LIMB.forearm, r: R.radii.forearm });
-    out.push({ seg: `${s}Forearm`, kind: 'ball', region: 'palm', r: R.radii.palm, c: v3(0, -(LIMB.forearm + LIMB.palmExtension - R.radii.palm), 0) });
-    out.push({ seg: `${s}Thigh`, kind: 'capsule', region: 'thigh', L: LIMB.thigh, r: R.radii.thigh });
-    out.push({ seg: `${s}Shin`, kind: 'capsule', region: 'shin', L: LIMB.shin, r: R.radii.shin });
-    out.push({ seg: `${s}Shin`, kind: 'box', region: 'shoe', c: v3(0, -LIMB.shin - R.shoe.belowAnkleM, R.shoe.forwardM), he: R.shoe.halfExtents });
+    out.push({ seg: `${s}UpperArm`, kind: 'capsule', region: 'upperArm', L: R.lengths.upperArm, r: R.radii.upperArm });
+    out.push({ seg: `${s}Forearm`, kind: 'capsule', region: 'forearm', L: R.lengths.forearm, r: R.radii.forearm });
+    out.push({ seg: `${s}Forearm`, kind: 'ball', region: 'palm', r: R.radii.palm, c: v3(0, -(R.lengths.forearm + R.lengths.palmExtension - R.radii.palm), 0) });
+    out.push({ seg: `${s}Thigh`, kind: 'capsule', region: 'thigh', L: R.lengths.thigh, r: R.radii.thigh });
+    out.push({ seg: `${s}Shin`, kind: 'capsule', region: 'shin', L: R.lengths.shin, r: R.radii.shin });
+    out.push({ seg: `${s}Shin`, kind: 'box', region: 'shoe', c: v3(0, -R.lengths.shin - R.shoe.belowAnkleM, R.shoe.forwardM), he: R.shoe.halfExtents });
   }
   return out;
 }
@@ -112,8 +111,8 @@ function limbShapes(R: RagdollProfile): { seg: SegmentId; kind: 'capsule' | 'bal
  * y = -L) are wrist/ankle; points within `band` of the elbow/knee are labelled elbow/knee (eligible). The palm ball is
  * the hand and the shoe box is the foot. Only the endpoint band is excluded, never the whole forearm or shin.
  */
-export function labelLimbPoint(region: string, seg: SegmentId, yLocal: number, band: number): GroundRegion {
-  const L = seg.endsWith('Forearm') ? LIMB.forearm : seg.endsWith('Shin') ? LIMB.shin : seg.endsWith('UpperArm') ? LIMB.upperArm : seg.endsWith('Thigh') ? LIMB.thigh : 0;
+export function labelLimbPoint(region: string, seg: SegmentId, yLocal: number, band: number, lengths: RagdollProfile['lengths']): GroundRegion {
+  const L = seg.endsWith('Forearm') ? lengths.forearm : seg.endsWith('Shin') ? lengths.shin : seg.endsWith('UpperArm') ? lengths.upperArm : seg.endsWith('Thigh') ? lengths.thigh : 0;
   switch (region) {
     case 'palm':
       return 'hand';
@@ -141,7 +140,10 @@ export function labelLimbPoint(region: string, seg: SegmentId, yLocal: number, b
 
 export class RuleObserver {
   ending: RuleEnding | null = null;
-  /** Set when the runner's handoff was rejected: no ending is issued (invalidHandoff is a non-success label). */
+  /**
+   * Set when the runner's handoff was rejected (invalidHandoff) or any switched player's transfer audit failed
+   * (invalidTransfer): no ending is issued afterwards; both are non-success labels.
+   */
   disabledReason: string | null = null;
   lastRow: RuleTraceRow | null = null;
   private infl: { since: number; ids: Set<string>; lastT: number; freeS: number } | null = null;
@@ -201,8 +203,8 @@ export class RuleObserver {
           const seg = own.part as SegmentId;
           const sp = f.pose.segments[seg];
           const yl = toLocal({ p: sp.originWorld, q: sp.rotationWorld }, p.pointWorld).y;
-          label = labelLimbPoint(own.region, seg, yl, band);
-        } else label = labelLimbPoint(own.region, 'core', 0, band);
+          label = labelLimbPoint(own.region, seg, yl, band, this.ragProfile.lengths);
+        } else label = labelLimbPoint(own.region, 'core', 0, band, this.ragProfile.lengths);
         out.push({ label, source: 'physical', key: own.key, point: p.pointWorld });
       }
     }
@@ -221,7 +223,7 @@ export class RuleObserver {
             const c = toWorld(P, v3(0, yc, 0));
             if (c.y - s.r! <= tol) {
               const pt = v3(c.x, 0, c.z);
-              out.push({ label: labelLimbPoint(s.region, s.seg, y, band), source: 'poseQuery', key: `${s.seg}:${s.region}`, point: pt });
+              out.push({ label: labelLimbPoint(s.region, s.seg, y, band, this.ragProfile.lengths), source: 'poseQuery', key: `${s.seg}:${s.region}`, point: pt });
             }
           }
         } else if (s.kind === 'ball') {

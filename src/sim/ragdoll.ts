@@ -4,7 +4,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
 import type { PhysicsWorld } from './physics';
-import type { PhysicalPose, SegmentPose } from './pose';
+import { pelvisMidLocal, type PhysicalPose, type SegmentPose } from './pose';
 import { hipLocal, shoulderLocal, type BodyProfile, type RagdollProfile } from './profiles';
 import {
   add, cross, dist, dot, isFiniteVec, len, m3Add, m3Inverse, m3ParallelAxis, m3Vec, qConj, qMul, round, rv, scale, sub, toLocal,
@@ -232,7 +232,7 @@ export function buildCandidate(
   }
   // landmarks in their owning segment (distal joints belong to the child segment)
   const landmarks: Ragdoll['landmarks'] = {
-    pelvisMid: { seg: 'core', local: v3(0, -0.05, 0) },
+    pelvisMid: { seg: 'core', local: pelvisMidLocal(body) },
     neck: { seg: 'head', local: v3() },
     headCenter: { seg: 'head', local: hc },
   };

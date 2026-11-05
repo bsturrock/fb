@@ -107,7 +107,7 @@ export function g4f6Crowded(): FixtureDef {
 
 // ------------------------------------------------------------------ G4-B
 /** Re-profile an earlier-gate fixture for Gate 4 (solver, ragdoll, Gate 4 body); requests and placement unchanged. */
-function asG4(def: FixtureDef, over: Partial<FixtureDef> & Pick<FixtureDef, 'id' | 'milestone' | 'title'>): FixtureDef {
+export function asG4(def: FixtureDef, over: Partial<FixtureDef> & Pick<FixtureDef, 'id' | 'milestone' | 'title'>): FixtureDef {
   return {
     ...def,
     gate: 4,

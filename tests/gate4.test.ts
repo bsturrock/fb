@@ -252,7 +252,25 @@ describe('G4 does not alter prior gate profiles', () => {
 
 
 // --------------------------------------------------------------------------------------------- G4-B helpers
-type Ledger = { tick: number; step: number; owner: string; arm: string; kind: 'hold' | 'clamp' | 'passive'; id: string; target: string }[];
+type V = { x: number; y: number; z: number };
+type Ledger = {
+  tick: number; step: number; owner: string; arm: string; kind: 'hold' | 'clamp' | 'passive'; id: string; target: string;
+  actual: number; forceOnTarget: V; pointOnTarget: V; forceOnOwner: V; pointOnOwner: V;
+}[];
+/**
+ * Passive grasp direction (review finding 1): a loaded passive link must be tensile. The force on the target points
+ * from the held point toward the owner's palm, so dot(forceOnTarget, pointOnTarget - pointOnOwner) < 0 whenever the
+ * points are apart; the owner receives the opposite force. Returns the offending entries.
+ */
+function nonTensilePassive(ledger: Ledger): Ledger {
+  return ledger.filter((x) => {
+    if (x.kind !== 'passive' || x.actual <= 1) return false;
+    const d = v3(x.pointOnTarget.x - x.pointOnOwner.x, x.pointOnTarget.y - x.pointOnOwner.y, x.pointOnTarget.z - x.pointOnOwner.z);
+    if (len(d) < 1e-6) return false;
+    const sum = len(add(v3(x.forceOnTarget.x, x.forceOnTarget.y, x.forceOnTarget.z), v3(x.forceOnOwner.x, x.forceOnOwner.y, x.forceOnOwner.z)));
+    return !(dot(v3(x.forceOnTarget.x, x.forceOnTarget.y, x.forceOnTarget.z), d) < 0) || sum > 1e-9;
+  });
+}
 /**
  * Run with the arm force ledger kept. `clampsAt.get(T)` is the clamp count entering outer tick T; events and ledger
  * entries stamped T happen inside that tick (conversions run at its first substep).
@@ -366,7 +384,7 @@ describe('G4-F4 grip remapping interventions', () => {
     sim.dispose();
   });
 
-  it('owner-only: active shoulder force stops; each grip continues only as a passive palm link until it separates', async () => {
+  it('owner-only: active shoulder force stops; each grip continues only as a tensile passive palm link, ending only by separation', async () => {
     const { sim, ledger } = await runLedger(G4.g4f4('ownerOnly'));
     const rep = evs(sim, 'representation', 'D')[0];
     const pas = evs(sim, 'gripPassive', 'D');
@@ -379,9 +397,14 @@ describe('G4-F4 grip remapping interventions', () => {
       expect(after.every((x) => x.kind === 'passive')).toBe(true);
     }
     expect(ledger.filter((x) => x.owner === 'D' && x.tick >= rep.tick && x.kind !== 'passive')).toHaveLength(0);
+    // the passive links pull the held runner toward the palms (tensile), never push the players apart
+    const loaded = ledger.filter((x) => x.kind === 'passive' && x.actual > 1);
+    expect(loaded.length).toBeGreaterThan(0);
+    expect(nonTensilePassive(ledger)).toEqual([]);
+    // a link ends only by separating past the passive limit; links still alive at the end stay within it
     const rel = evs(sim, 'gripRelease', 'D');
-    expect(rel).toHaveLength(2);
     expect(rel.every((r) => r.data!.reason === 'separation')).toBe(true);
+    for (const g of sim.arms!.grips.values()) expect(g.passive).toBeDefined();
     sim.dispose();
   });
 
@@ -392,6 +415,9 @@ describe('G4-F4 grip remapping interventions', () => {
     expect(evs(sim, 'gripPassive', 'D')).toHaveLength(2);
     const t0 = evs(sim, 'representation')[0].tick;
     expect(ledger.filter((x) => x.tick >= t0 && x.kind !== 'passive')).toHaveLength(0);
+    expect(ledger.some((x) => x.kind === 'passive' && x.actual > 1)).toBe(true);
+    expect(nonTensilePassive(ledger)).toEqual([]);
+    expect(evs(sim, 'gripRelease', 'D').every((r) => r.data!.reason === 'separation')).toBe(true);
     expect(sim.counts()).toMatchObject({ bodies: 21, joints: 18 });
     sim.dispose();
   });
@@ -614,12 +640,12 @@ describe('G4-F7 completion semantics (event matrix)', () => {
     const pl = sim.players[0];
     const pose = pl.pose!;
     const band = 0.03;
-    expect(labelLimbPoint('forearm', 'leftForearm', -0.34 + 0.02, band)).toBe('wrist');
-    expect(labelLimbPoint('forearm', 'leftForearm', -0.17, band)).toBe('forearm');
-    expect(labelLimbPoint('shin', 'leftShin', -0.36 + 0.01, band)).toBe('ankle');
-    expect(labelLimbPoint('shin', 'leftShin', -0.01, band)).toBe('knee');
-    expect(labelLimbPoint('palm', 'leftForearm', 0, band)).toBe('hand');
-    expect(labelLimbPoint('shoe', 'leftShin', 0, band)).toBe('foot');
+    expect(labelLimbPoint('forearm', 'leftForearm', -0.34 + 0.02, band, R.lengths)).toBe('wrist');
+    expect(labelLimbPoint('forearm', 'leftForearm', -0.17, band, R.lengths)).toBe('forearm');
+    expect(labelLimbPoint('shin', 'leftShin', -0.36 + 0.01, band, R.lengths)).toBe('ankle');
+    expect(labelLimbPoint('shin', 'leftShin', -0.01, band, R.lengths)).toBe('knee');
+    expect(labelLimbPoint('palm', 'leftForearm', 0, band, R.lengths)).toBe('hand');
+    expect(labelLimbPoint('shoe', 'leftShin', 0, band, R.lengths)).toBe('foot');
     const out: string[] = [];
     const obs = new RuleObserver(RULES_FOOTBALL('R', { sideline: false, progress: false }), R, (t) => out.push(t));
     const sp = pose.segments.leftForearm;
@@ -751,6 +777,30 @@ describe('G4-F3 completion comes from the selected rule observer', () => {
       sim.dispose();
     });
   }
+
+  it('failed transfer audit (copied profile, energyGainFraction 0.01): distinct invalidTransfer outcome, never a completion', async () => {
+    // Review finding 2: only the copied validation profile differs. The default 50 % allowance passes this transfer;
+    // a 1 % allowance leaves the 10 J absolute floor, below R's transfer energy change.
+    const base = G4.g4f3TwoArm();
+    const strict = structuredClone(base.ragdoll!);
+    strict.validation.energyGainFraction = 0.01;
+    const def: FixtureDef = { ...base, id: `${base.id}-strictEnergy`, ragdoll: strict };
+    const sim = await run(def);
+    const h = sim.players.find((p) => p.id === 'R')!.handoff!;
+    expect(h.audit!.ok).toBe(false);
+    expect(h.audit!.reasons).toContain('energyGain');
+    expect(h.audit!.energyDeltaJ).toBeGreaterThan(h.audit!.energyGainLimitJ);
+    expect(h.outcome).toBe('transferFailed');
+    expect(h.accepted).toBe(false);
+    // the switched assembly stays as diagnostic state (no second representation, no proxy)
+    expect(h.activeBodies).toEqual({ before: 1, after: 10, proxyRemoved: true });
+    expect(evs(sim, 'handoffAuditFailure', 'R')).toHaveLength(1);
+    expect(ruleEvents(sim, 'ruleObserverDisabled')[0].data!.reason).toBe('invalidTransfer');
+    expect(sim.ending).toBeNull();
+    expect(evs(sim, 'ruleEnding')).toHaveLength(0);
+    expect(sim.result).toBe('invalidTransfer');
+    sim.dispose();
+  });
 });
 
 // --------------------------------------------------------------------------------------------- G4-F8

@@ -3,7 +3,8 @@ import { gate1Fixtures } from './gate1';
 import { gate2Fixtures } from './gate2';
 import { gate3Fixtures } from './gate3';
 import { gate4Fixtures } from './gate4';
+import { modelFixtures } from './model';
 
 export function allFixtures(): FixtureDef[] {
-  return [...gate1Fixtures(), ...gate2Fixtures(), ...gate3Fixtures(), ...gate4Fixtures()];
+  return [...gate1Fixtures(), ...gate2Fixtures(), ...gate3Fixtures(), ...gate4Fixtures(), ...modelFixtures()];
 }
