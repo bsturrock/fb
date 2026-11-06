@@ -5,7 +5,9 @@ import { gate3Fixtures } from './gate3';
 import { gate4Fixtures } from './gate4';
 import { modelFixtures } from './model';
 import { locomotionFixtures } from './locomotion';
+import { rideHeightFixtures } from './ride-height';
+import { footworkFixtures } from './footwork';
 
 export function allFixtures(): FixtureDef[] {
-  return [...gate1Fixtures(), ...gate2Fixtures(), ...gate3Fixtures(), ...gate4Fixtures(), ...modelFixtures(), ...locomotionFixtures()];
+  return [...gate1Fixtures(), ...gate2Fixtures(), ...gate3Fixtures(), ...gate4Fixtures(), ...modelFixtures(), ...locomotionFixtures(), ...rideHeightFixtures(), ...footworkFixtures()];
 }

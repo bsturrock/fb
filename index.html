@@ -66,6 +66,27 @@
         color: var(--muted);
         margin-right: 4px;
       }
+      #tune,
+      #brake {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 2px;
+        margin-top: 6px;
+      }
+      #tune[hidden],
+      #brake[hidden] {
+        display: none;
+      }
+      #tuneRows input[type='range'],
+      #brakeRows input[type='range'] {
+        width: 180px;
+        vertical-align: middle;
+      }
+      #tuneOut,
+      #brakeOut {
+        font-size: 11px;
+        user-select: all;
+      }
       #info {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
@@ -143,6 +164,24 @@
         <button id="prim" title="diagnostic primitive bodies instead of the supplied model">primitives</button>
         <button id="palette">palette</button>
         <button id="export">export JSON</button>
+      </div>
+      <div id="tune" class="row" hidden>
+        <label>stance width (m per foot, outward)</label>
+        <div id="tuneRows"></div>
+        <div class="row">
+          <code id="tuneOut"></code>
+          <button id="tuneCopy">copy</button>
+          <button id="tuneZero">reset to clip</button>
+        </div>
+      </div>
+      <div id="brake" class="row" hidden>
+        <label>braking stance (physical root height while braking)</label>
+        <div id="brakeRows"></div>
+        <div class="row">
+          <code id="brakeOut"></code>
+          <button id="brakeCopy">copy</button>
+          <button id="brakeReset">reset to profile</button>
+        </div>
       </div>
       <div id="info"></div>
     </div>

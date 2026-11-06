@@ -5040,5 +5040,1953 @@
     "rep": "ragdoll"
    }
   }
+ },
+ {
+  "fixtureId": "RH-F1-stand",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F1-drop",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F1-lean",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     0.103
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F2-crouch",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.007
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F2-stagger",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F3-fastRun",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     5.456,
+     0.89,
+     0
+    ],
+    "v": [
+     5.8,
+     -0.033,
+     0
+    ],
+    "speed": 5.8,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F3-sprint",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     7.217,
+     0.868,
+     0
+    ],
+    "v": [
+     6.6,
+     0.085,
+     0
+    ],
+    "speed": 6.6,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F3-accelBrake",
+  "result": "duration",
+  "ticks": 270,
+  "t": 4.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     5.317,
+     0.89,
+     0
+    ],
+    "v": [
+     0.003,
+     0,
+     0
+    ],
+    "speed": 0.003,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F4-range",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.007
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F4-load",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 5,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.004
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F4-kickDown",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F4-kickUp",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F5-outOfRange",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     3.971
+    ],
+    "v": [
+     0,
+     0,
+     2
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F5-invalidNormal",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 5,
+  "players": {
+   "R": {
+    "p": [
+     -0.733,
+     0.203,
+     0.848
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F5-obstacle",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 5,
+  "players": {
+   "R": {
+    "p": [
+     0.021,
+     0.315,
+     -0.212
+    ],
+    "v": [
+     -0.024,
+     -0.002,
+     0.011
+    ],
+    "speed": 0.026,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F5-playerBelow",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": -0.0074,
+  "events": 48,
+  "players": {
+   "A": {
+    "p": [
+     0.59,
+     0.234,
+     0.622
+    ],
+    "v": [
+     0.11,
+     -0.087,
+     -0.097
+    ],
+    "speed": 0.147,
+    "rep": "ragdoll"
+   },
+   "B": {
+    "p": [
+     -0.32,
+     0.89,
+     -0.07
+    ],
+    "v": [
+     -0.001,
+     0,
+     0
+    ],
+    "speed": 0.001,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F5-noRescue",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 6,
+  "players": {
+   "R": {
+    "p": [
+     0.003,
+     0.329,
+     0.748
+    ],
+    "v": [
+     0.002,
+     -0.469,
+     -0.315
+    ],
+    "speed": 0.315,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-idleRunBrake",
+  "result": "duration",
+  "ticks": 510,
+  "t": 8.5,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     4.988,
+     0.89,
+     0
+    ],
+    "v": [
+     0.013,
+     0,
+     0
+    ],
+    "speed": 0.013,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-collision",
+  "result": "duration",
+  "ticks": 120,
+  "t": 2,
+  "minPairGap": -0.0091,
+  "events": 71,
+  "players": {
+   "R": {
+    "p": [
+     2.163,
+     0.231,
+     -0.388
+    ],
+    "v": [
+     -0.078,
+     -0.074,
+     0.117
+    ],
+    "speed": 0.141,
+    "rep": "ragdoll"
+   },
+   "D": {
+    "p": [
+     1.873,
+     0.28,
+     0.23
+    ],
+    "v": [
+     0.56,
+     -0.32,
+     -0.415
+    ],
+    "speed": 0.697,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-twoArm",
+  "result": "groundDown",
+  "ticks": 99,
+  "t": 1.65,
+  "minPairGap": 0.0001,
+  "events": 121,
+  "players": {
+   "D": {
+    "p": [
+     2.811,
+     0.89,
+     1.319
+    ],
+    "v": [
+     0.65,
+     -0.053,
+     0.198
+    ],
+    "speed": 0.679,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     3.616,
+     0.511,
+     1.655
+    ],
+    "v": [
+     1.968,
+     -0.729,
+     0.971
+    ],
+    "speed": 2.195,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-oneArm",
+  "result": "groundDown",
+  "ticks": 99,
+  "t": 1.65,
+  "minPairGap": -0.0011,
+  "events": 159,
+  "players": {
+   "D": {
+    "p": [
+     3.332,
+     0.69,
+     1.297
+    ],
+    "v": [
+     2.66,
+     -1.419,
+     -0.318
+    ],
+    "speed": 2.679,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     3.724,
+     0.28,
+     1.462
+    ],
+    "v": [
+     0.952,
+     -0.014,
+     0.745
+    ],
+    "speed": 1.209,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-failed",
+  "result": "practiceOutOfBounds",
+  "ticks": 160,
+  "t": 2.6667,
+  "minPairGap": -0.0004,
+  "events": 479,
+  "players": {
+   "D": {
+    "p": [
+     7.795,
+     0.89,
+     0.813
+    ],
+    "v": [
+     3.886,
+     -0.015,
+     0.285
+    ],
+    "speed": 3.897,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     8.019,
+     0.889,
+     1.25
+    ],
+    "v": [
+     3.775,
+     -0.057,
+     0.34
+    ],
+    "speed": 3.791,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-simultaneous",
+  "result": "duration",
+  "ticks": 156,
+  "t": 2.6,
+  "minPairGap": -0.002,
+  "events": 24,
+  "players": {
+   "D": {
+    "p": [
+     1.68,
+     0.192,
+     0.054
+    ],
+    "v": [
+     -0.008,
+     -0.009,
+     0.001
+    ],
+    "speed": 0.008,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     1.915,
+     0.534,
+     0.559
+    ],
+    "v": [
+     -0.366,
+     -0.254,
+     0.042
+    ],
+    "speed": 0.368,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-sideRecover",
+  "result": "duration",
+  "ticks": 105,
+  "t": 1.75,
+  "minPairGap": 0,
+  "events": 73,
+  "players": {
+   "D": {
+    "p": [
+     0.194,
+     0.89,
+     4.826
+    ],
+    "v": [
+     0.013,
+     -0.002,
+     5.895
+    ],
+    "speed": 5.895,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     2.053,
+     0.35,
+     1.538
+    ],
+    "v": [
+     1.495,
+     -0.691,
+     0.134
+    ],
+    "speed": 1.501,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-sideLoss",
+  "result": "practiceOutOfBounds",
+  "ticks": 105,
+  "t": 1.75,
+  "minPairGap": 0.0001,
+  "events": 23,
+  "players": {
+   "D": {
+    "p": [
+     0.23,
+     0.89,
+     5.984
+    ],
+    "v": [
+     0.007,
+     -0.003,
+     5.97
+    ],
+    "speed": 5.97,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     3.877,
+     0.472,
+     1.438
+    ],
+    "v": [
+     0.892,
+     -0.308,
+     0.153
+    ],
+    "speed": 0.905,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-lean14-cap240",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 5,
+  "players": {
+   "R": {
+    "p": [
+     -0.138,
+     0.231,
+     -0.239
+    ],
+    "v": [
+     0.039,
+     -0.016,
+     0.018
+    ],
+    "speed": 0.043,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-lean14-cap168",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 5,
+  "players": {
+   "R": {
+    "p": [
+     -0.156,
+     0.231,
+     -0.252
+    ],
+    "v": [
+     -0.002,
+     -0.001,
+     -0.018
+    ],
+    "speed": 0.018,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-defenderRun-0",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.864,
+     6.416
+    ],
+    "v": [
+     0,
+     -0.026,
+     6
+    ],
+    "speed": 6,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-defenderRun-25",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.883,
+     6.412
+    ],
+    "v": [
+     0,
+     0.08,
+     6
+    ],
+    "speed": 6,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-defenderRun-50",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.868,
+     6.412
+    ],
+    "v": [
+     0,
+     -0.073,
+     6
+    ],
+    "speed": 6,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F6-defenderRun-75",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "D": {
+    "p": [
+     0,
+     0.879,
+     6.412
+    ],
+    "v": [
+     0,
+     0.023,
+     6
+    ],
+    "speed": 6,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F7-rising",
+  "result": "duration",
+  "ticks": 96,
+  "t": 1.6,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0.872,
+     0.254,
+     0.937
+    ],
+    "v": [
+     2.201,
+     0.523,
+     1.064
+    ],
+    "speed": 2.444,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F7-falling",
+  "result": "duration",
+  "ticks": 96,
+  "t": 1.6,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     -0.088,
+     0.747,
+     0.671
+    ],
+    "v": [
+     1.654,
+     -0.561,
+     0.987
+    ],
+    "speed": 1.926,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F7-top",
+  "result": "duration",
+  "ticks": 96,
+  "t": 1.6,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0.842,
+     0.816,
+     -0.633
+    ],
+    "v": [
+     2.581,
+     -0.179,
+     -1.273
+    ],
+    "speed": 2.878,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F7-bottom",
+  "result": "duration",
+  "ticks": 96,
+  "t": 1.6,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0.585,
+     0.569,
+     0.831
+    ],
+    "v": [
+     2.306,
+     -0.261,
+     1.618
+    ],
+    "speed": 2.817,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "RH-F7-both",
+  "result": "duration",
+  "ticks": 96,
+  "t": 1.6,
+  "minPairGap": 2.0561,
+  "events": 7,
+  "players": {
+   "R": {
+    "p": [
+     -0.081,
+     0.745,
+     -0.829
+    ],
+    "v": [
+     1.677,
+     -0.587,
+     0.98
+    ],
+    "speed": 1.942,
+    "rep": "ragdoll"
+   },
+   "D": {
+    "p": [
+     -0.347,
+     0.808,
+     1.989
+    ],
+    "v": [
+     0.972,
+     -0.248,
+     0.896
+    ],
+    "speed": 1.321,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F1-stand",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 3,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F1-stagger",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 12,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F1-crouch",
+  "result": "duration",
+  "ticks": 240,
+  "t": 4,
+  "minPairGap": null,
+  "events": 3,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.007
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F1-crouchHandoff",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 10,
+  "players": {
+   "R": {
+    "p": [
+     -0.007,
+     0.127,
+     -0.393
+    ],
+    "v": [
+     0.003,
+     -0.39,
+     -0.18
+    ],
+    "speed": 0.18,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F2-loaded",
+  "result": "duration",
+  "ticks": 240,
+  "t": 4,
+  "minPairGap": null,
+  "events": 3,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F3-walkStop",
+  "result": "duration",
+  "ticks": 270,
+  "t": 4.5,
+  "minPairGap": null,
+  "events": 42,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     2.392
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F3-runStop",
+  "result": "duration",
+  "ticks": 330,
+  "t": 5.5,
+  "minPairGap": null,
+  "events": 47,
+  "players": {
+   "R": {
+    "p": [
+     7.014,
+     0.89,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F3-runStopHard",
+  "result": "duration",
+  "ticks": 330,
+  "t": 5.5,
+  "minPairGap": null,
+  "events": 44,
+  "players": {
+   "R": {
+    "p": [
+     5.317,
+     0.89,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F3-runStopReaccel",
+  "result": "duration",
+  "ticks": 330,
+  "t": 5.5,
+  "minPairGap": null,
+  "events": 45,
+  "players": {
+   "R": {
+    "p": [
+     7.12,
+     0.89,
+     0
+    ],
+    "v": [
+     0.001,
+     0,
+     0
+    ],
+    "speed": 0.001,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F3-runStopHandoff",
+  "result": "duration",
+  "ticks": 330,
+  "t": 5.5,
+  "minPairGap": null,
+  "events": 34,
+  "players": {
+   "R": {
+    "p": [
+     4.246,
+     0.204,
+     -0.263
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F3-runStopKick",
+  "result": "duration",
+  "ticks": 330,
+  "t": 5.5,
+  "minPairGap": null,
+  "events": 54,
+  "players": {
+   "R": {
+    "p": [
+     4.831,
+     0.89,
+     0
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F4-drag",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 35,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -1.028
+    ],
+    "v": [
+     0,
+     0,
+     0.282
+    ],
+    "speed": 0.282,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F5-sidePosX",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 30,
+  "players": {
+   "R": {
+    "p": [
+     1.2,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0.002,
+     0,
+     0
+    ],
+    "speed": 0.002,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F5-sideNegX",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 30,
+  "players": {
+   "R": {
+    "p": [
+     -1.2,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     -0.002,
+     0,
+     0
+    ],
+    "speed": 0.002,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F5-yawPosX",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 9,
+  "players": {
+   "R": {
+    "p": [
+     -0.016,
+     0.89,
+     0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F5-yawNegX",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 9,
+  "players": {
+   "R": {
+    "p": [
+     0.016,
+     0.89,
+     0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F6-hop",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 40,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     2.409
+    ],
+    "v": [
+     0,
+     0,
+     1
+    ],
+    "speed": 1,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F7-shove",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 18,
+  "players": {
+   "R": {
+    "p": [
+     0.915,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0.002,
+     0,
+     0
+    ],
+    "speed": 0.002,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F8-sideLoss",
+  "result": "practiceOutOfBounds",
+  "ticks": 105,
+  "t": 1.75,
+  "minPairGap": 0.0001,
+  "events": 156,
+  "players": {
+   "D": {
+    "p": [
+     0.23,
+     0.89,
+     5.984
+    ],
+    "v": [
+     0.007,
+     -0.003,
+     5.97
+    ],
+    "speed": 5.97,
+    "rep": "proxy"
+   },
+   "R": {
+    "p": [
+     3.325,
+     0.215,
+     1.196
+    ],
+    "v": [
+     0.036,
+     -0.014,
+     0.077
+    ],
+    "speed": 0.085,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F8-noRescue",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 12,
+  "players": {
+   "R": {
+    "p": [
+     0.003,
+     0.329,
+     0.748
+    ],
+    "v": [
+     0.002,
+     -0.469,
+     -0.315
+    ],
+    "speed": 0.315,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F8-outOfRange",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": null,
+  "events": 64,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     4.022
+    ],
+    "v": [
+     0,
+     0,
+     2
+    ],
+    "speed": 2,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F11-fastRun",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": null,
+  "events": 26,
+  "players": {
+   "R": {
+    "p": [
+     5.456,
+     0.89,
+     0
+    ],
+    "v": [
+     5.8,
+     -0.033,
+     0
+    ],
+    "speed": 5.8,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F11-sprint",
+  "result": "duration",
+  "ticks": 132,
+  "t": 2.2,
+  "minPairGap": null,
+  "events": 23,
+  "players": {
+   "R": {
+    "p": [
+     7.217,
+     0.868,
+     0
+    ],
+    "v": [
+     6.6,
+     0.085,
+     0
+    ],
+    "speed": 6.6,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F12-slowForward",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 38,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     2.445
+    ],
+    "v": [
+     0,
+     0,
+     1
+    ],
+    "speed": 1,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F12-slowSide",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 41,
+  "players": {
+   "R": {
+    "p": [
+     1.962,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0.8,
+     0,
+     0
+    ],
+    "speed": 0.8,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F12-slowBack",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 41,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -1.97
+    ],
+    "v": [
+     0,
+     0,
+     -0.8
+    ],
+    "speed": 0.8,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F13-load",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 3,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F13-loadShort",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 1,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F13-loadLong",
+  "result": "duration",
+  "ticks": 210,
+  "t": 3.5,
+  "minPairGap": null,
+  "events": 3,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F13-load2600",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 3,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.007
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F13-load3400",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 3,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F13-kickDown",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 2,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F13-kickUp",
+  "result": "duration",
+  "ticks": 180,
+  "t": 3,
+  "minPairGap": null,
+  "events": 4,
+  "players": {
+   "R": {
+    "p": [
+     0,
+     0.89,
+     -0.008
+    ],
+    "v": [
+     0,
+     0,
+     0
+    ],
+    "speed": 0,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F14-oneArm",
+  "result": "groundDown",
+  "ticks": 99,
+  "t": 1.65,
+  "minPairGap": -0.0011,
+  "events": 159,
+  "players": {
+   "D": {
+    "p": [
+     3.332,
+     0.69,
+     1.297
+    ],
+    "v": [
+     2.66,
+     -1.419,
+     -0.318
+    ],
+    "speed": 2.679,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     3.724,
+     0.28,
+     1.462
+    ],
+    "v": [
+     0.952,
+     -0.014,
+     0.745
+    ],
+    "speed": 1.209,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F14-oneArmFeet",
+  "result": "groundDown",
+  "ticks": 99,
+  "t": 1.65,
+  "minPairGap": -0.0001,
+  "events": 177,
+  "players": {
+   "D": {
+    "p": [
+     3.144,
+     0.726,
+     1.296
+    ],
+    "v": [
+     2,
+     -1.941,
+     0.31
+    ],
+    "speed": 2.024,
+    "rep": "ragdoll"
+   },
+   "R": {
+    "p": [
+     3.765,
+     0.352,
+     1.67
+    ],
+    "v": [
+     1.576,
+     -0.885,
+     1.171
+    ],
+    "speed": 1.963,
+    "rep": "ragdoll"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F15-playerBelow",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": -0.0093,
+  "events": 83,
+  "players": {
+   "A": {
+    "p": [
+     1.102,
+     0.133,
+     0.995
+    ],
+    "v": [
+     -0.043,
+     -0.017,
+     -0.03
+    ],
+    "speed": 0.052,
+    "rep": "ragdoll"
+   },
+   "B": {
+    "p": [
+     -0.335,
+     0.89,
+     -0.043
+    ],
+    "v": [
+     -0.002,
+     0.001,
+     -0.004
+    ],
+    "speed": 0.004,
+    "rep": "proxy"
+   }
+  }
+ },
+ {
+  "fixtureId": "L2-F15-overload",
+  "result": "duration",
+  "ticks": 150,
+  "t": 2.5,
+  "minPairGap": -0.0094,
+  "events": 91,
+  "players": {
+   "A": {
+    "p": [
+     0.913,
+     0.234,
+     0.452
+    ],
+    "v": [
+     0.056,
+     -0.001,
+     -0.022
+    ],
+    "speed": 0.06,
+    "rep": "ragdoll"
+   },
+   "B": {
+    "p": [
+     -0.452,
+     0.89,
+     -0.023
+    ],
+    "v": [
+     -0.003,
+     0.002,
+     0
+    ],
+    "speed": 0.003,
+    "rep": "proxy"
+   }
+  }
  }
 ]

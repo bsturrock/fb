@@ -155,6 +155,31 @@ export interface MotorProfile {
   maximumYawTorqueNm: number;
   yawKp: number; // N m / rad
   yawKd: number; // N m s / rad
+  /**
+   * Plan 07 (user, 2026-11-05): optional braking limit. The drive component opposing the actual horizontal velocity is
+   * capped at m x maxDecelMps2 (the ground can only brake the body that hard), after the vector force cap. Absent: the full
+   * drive force also brakes (historical behaviour).
+   */
+  braking?: { maxDecelMps2: number };
+}
+
+/**
+ * Throws when a motor profile carries a braking limit that is not a finite deceleration > 0 (a negative or zero limit
+ * would push along the travel or remove braking; a non-finite one is no limit). Absent `braking` is valid (historical
+ * behaviour). Checked where a limit is authored (withBrakingLimit) and where motors are consumed (Simulation
+ * construction: the fixture motor and every player override), not per frame.
+ */
+export function validateMotorBraking(m: MotorProfile, owner = 'motor'): void {
+  if (m.braking === undefined) return;
+  const v = (m.braking as { maxDecelMps2?: unknown } | null)?.maxDecelMps2;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) throw new Error(`${owner}: motor profile ${m.id}: braking.maxDecelMps2 must be a finite number > 0 (got ${String(v)})`);
+}
+
+/** A motor with the plan 07 braking limit, under a derived identity (opt-in per fixture). */
+export function withBrakingLimit(m: MotorProfile, maxDecelMps2 = 5.5): MotorProfile {
+  const out = { ...m, id: `${m.id}+brake-${maxDecelMps2}`, braking: { maxDecelMps2 } };
+  validateMotorBraking(out, 'withBrakingLimit');
+  return out;
 }
 
 export const DEFAULT_MOTOR: MotorProfile = {
@@ -232,6 +257,164 @@ export const SOLVER_G1: SolverProfile = {
  */
 export const SOLVER_G4: SolverProfile = { ...SOLVER_G1, id: 'solver-g4-4x60', substeps: 4 };
 
+// ---------------------------------------------------------------- support (plan 06a)
+/**
+ * Vertical support of a supported proxy. `capsuleFloor` (the named legacy profile, the default of every Gate 1-4, G4-M
+ * and L1 fixture): the support capsule rests on the floor through rigid contact, so the proxy origin stays at the
+ * body's rest height. `suspension`: a finite ground-probed suspension holds the root at a requested height; the support
+ * capsule no longer touches static ground and a massless guard ball is the bump stop and the falling contact.
+ */
+export type SupportProfile = CapsuleFloorSupport | SuspensionSupport;
+
+export interface CapsuleFloorSupport {
+  id: string;
+  kind: 'capsuleFloor';
+}
+
+/** Named legacy support: rigid capsule-floor contact (historical Gate 1-4, G4-M and L1 evidence). */
+export const SUPPORT_LEGACY: CapsuleFloorSupport = { id: 'support-capsuleFloor-v1', kind: 'capsuleFloor' };
+
+/**
+ * Ground-probed suspension (engineering profile, not a leg model). Heights are root heights: the proxy origin's vertical
+ * distance above the probed ground. Ground: a vertical ray from the proxy origin against static colliders and other
+ * players' live bodies (the player's own colliders are never hit; a player hit is `obstructed`, never ground); the first
+ * hit must be turf with an acceptable normal and lie within `probeMaxM`. Force: F = m (g + a_t) + k (h_t - h) +
+ * c (v_t - v), k = m (2 pi f)^2, c = 2 zeta m (2 pi f), clamped to [0, maxForceBW m g], applied vertically and split by
+ * `application` (pivot share, excess through the COM). Drive and yaw authority scale with the applied load; the balance
+ * ceiling follows `balanceCeiling`.
+ */
+export interface SuspensionSupport {
+  id: string;
+  kind: 'suspension';
+  /**
+   * Root (proxy origin) height of the standing request: the initial athletic stance for this model, provisional and
+   * subject to visual review (user decision 2026-11-05). bew-v6: 0.89 m root, hips about 0.921 m, shoe 1.4 mm above the
+   * turf, knee 45 deg. Under the current foot placement and knee/soft-reach policy it is the highest height whose static
+   * ground-relative leg pose reaches the turf with bent knees (the legacy rest origin 0.95 m leaves the legs 2.6 cm
+   * short; scripts/probe/rh-stand-sweep.ts); it is not a universal maximum standing height.
+   */
+  standingHeightM: number;
+  /** Bounded target range: every request (stance or clip-derived) is clamped into it (reported). */
+  targetRangeM: [number, number];
+  /** Suspension travel: support exists while the probed root height is within [0, probeMaxM] (lost above it). */
+  probeMaxM: number;
+  /** Once lost, the probe re-acquires below probeMaxM - probeHysteresisM (no chatter at the travel limit). */
+  probeHysteresisM: number;
+  /** Acceptable turf normal: dot(normal, up) >= this (flat static turf only in this milestone). */
+  normalMinDotUp: number;
+  /** Guard ball (bump stop, falling contact): its bottom sits this far below the proxy origin; radius. */
+  guard: { bottomM: number; radiusM: number };
+  /** Natural frequency (Hz) and damping ratio of the spring/damper about the target (scaled by the measured mass). */
+  frequencyHz: number;
+  dampingRatio: number;
+  /** Support force ceiling in body weights (m g). The floor never pulls: the force is clamped at 0 below. */
+  maxForceBW: number;
+  /** Ceiling of |d target / dt| (m/s) after blending; the target velocity is the slewed target's own rate. */
+  targetSlewMps: number;
+  /**
+   * Stance request filter: critically damped second order at this frequency (Hz), its acceleration (m/s^2) and rate (m/s)
+   * bounded so a step request never asks the support for more than a fraction of g downward.
+   */
+  stance: { frequencyHz: number; maxAccelMps2: number; maxRateMps: number };
+  /**
+   * Running height from the clips' calibrated pelvis-to-ground trajectory: hip-joint midpoint height above the floor
+   * (player leg units), converted to root height with the body's hip landmark offset. The bob keeps its first
+   * `bobHarmonics` cycle harmonics (stride and step), and its amplitude is scaled down when the current playback rate
+   * would need a downward acceleration above maxDownAccelG g (a support that cannot pull cannot follow it; more force
+   * capacity would not help). Provisional (user decision 2026-11-05): the target is an attenuated bob (Sprint at its
+   * nominal rate keeps 0.342 of its truncated amplitude), so tracking error measures agreement with this modified target,
+   * not preservation of the clip's original motion.
+   */
+  run: { bobHarmonics: number; maxDownAccelG: number };
+  /**
+   * Balance (upright support torque) ceiling while the suspension supports the player. Either rule gives 0 without valid
+   * probe support or once control is falling, and the absolute (maxBalanceTorqueNm) and combined yaw + balance ceilings
+   * still apply. The posture gravity hold always uses the actual applied load and the solved support lever.
+   * - 'nominalWeight' (user decision 2026-11-05): min(maxBalanceTorqueNm, m g r) at the nominal body weight, the same
+   *   ceiling as the legacy support. An explicit approximation: balance is a bounded posture motor of the suspension
+   *   proxy, not a torque a stance foot transmits, so the instantaneous load does not lower it (the running bob unloads
+   *   the support for part of every stride; the drive and yaw authority remain bounded by the instantaneous load).
+   * - 'appliedLoad': min(maxBalanceTorqueNm, N r) at the instantaneous applied load N (superseded; comparison probes).
+   */
+  balanceCeiling: 'nominalWeight' | 'appliedLoad';
+  /**
+   * Where the clamped support force F acts (vertical; user decision 2026-11-05). A deliberate suspension approximation:
+   * excess vertical load supplies lift without additional tipping torque.
+   * - pivot 'legacyHemisphere': the turf point below the body's calibrated legacy pivot, the centre of its support
+   *   capsule's lower hemisphere (body-local, from the body geometry; bew-v6 0.79 m below the root, 1.01 m below the
+   *   COM), so the tipping lever is the one the balance ceiling and posture bound were tuned with. 'probeDepth': the
+   *   body-axis point at the probed root height (superseded; comparison probes).
+   * - excess 'throughCom': pivot force = min(F, m g), COM force = F - pivot force, applied through the COM (no torque
+   *   about it), so the vertical force that holds the ride height is unchanged while the tipping contribution is bounded
+   *   by the body weight (running bob peaks lift without tipping). 'atPivot': all of F at the pivot (superseded).
+   * The posture gravity hold uses the pivot force and the solved pivot lever; both components and the pivot torque
+   * about the COM are traced (`sup.Fp`, `sup.Fm`, `sup.T`).
+   */
+  application: { pivot: 'legacyHemisphere' | 'probeDepth'; excess: 'throughCom' | 'atPivot' };
+  /**
+   * Plan 07 load-release recovery (absent = the 06a law, SUSPENSION_RH). Below the target the spring term's implied
+   * upward approach speed (v_t + (k / c) e) is bounded by v_t + sqrt(2 approachBrakeG g e): the speed from which the body
+   * reaches the target decelerating at approachBrakeG g, which push-only support can always produce by removing force
+   * (support.ts suspensionForce). Without it a compressed, saturated support converts its whole height error into upward
+   * speed on release (RH-F4-load: 0.32 m above standing, beyond travel). Stateless: derived from the solved compression
+   * and velocity, never a load schedule; the force clamp, split, caps and ceiling are unchanged.
+   */
+  recovery?: { approachBrakeG: number };
+  /**
+   * Plan 07 closeout item 4: temporary lower stance while the player brakes (absent = none, every earlier profile).
+   * The braking demand is derived each substep from the locomotion intent and the solved travel: the deceleration the
+   * drive motor's velocity law asks for against the actual horizontal travel (effort x max(0, speed - requested speed
+   * along the travel) / velocityResponseTimeS) as a fraction of the motor's own braking limit (`MotorProfile.braking`;
+   * no braking limit = no braking stance), times smoothstep(speed / fullSpeedMps), while supported and grounded; while
+   * unsupported the blend holds (a landing meets the held stance).
+   * A blend b follows the demand through a critically damped filter at frequencyHz with |db/dt| <= maxRatePerS and
+   * |d2b/dt2| <= maxAccelPerS2, and the height target is the ordinary composition (stance and running height/bob at
+   * the clip weight) blended toward min(heightM, filtered stance) by b, so it acts at any clip weight and returns to
+   * the ready/idle target as the body settles or accelerates again. No root, phase or pose offset.
+   */
+  brakingStance?: { heightM: number; fullSpeedMps: number; frequencyHz: number; maxRatePerS: number; maxAccelPerS2: number };
+}
+
+export const SUSPENSION_RH: SuspensionSupport = {
+  id: 'support-suspension-rh-v1',
+  kind: 'suspension',
+  standingHeightM: 0.89,
+  targetRangeM: [0.72, 0.96],
+  probeMaxM: 1.0,
+  probeHysteresisM: 0.01,
+  normalMinDotUp: Math.cos((20 * Math.PI) / 180),
+  guard: { bottomM: 0.62, radiusM: 0.12 },
+  frequencyHz: 7,
+  dampingRatio: 0.8,
+  maxForceBW: 3.5,
+  targetSlewMps: 1.5,
+  stance: { frequencyHz: 2.5, maxAccelMps2: 4.9, maxRateMps: 0.6 },
+  run: { bobHarmonics: 2, maxDownAccelG: 0.75 },
+  balanceCeiling: 'nominalWeight',
+  application: { pivot: 'legacyHemisphere', excess: 'throughCom' },
+};
+
+/**
+ * Plan 07 repaired support: SUSPENSION_RH plus the bounded load-release recovery (every other setting identical). RH
+ * fixtures keep SUSPENSION_RH (the 06a incoming results); L2 fixtures opt into this profile.
+ */
+export const SUSPENSION_L2: SuspensionSupport = {
+  ...SUSPENSION_RH,
+  id: 'support-suspension-rh-v2',
+  recovery: { approachBrakeG: 0.5 },
+};
+
+/**
+ * Plan 07 closeout item 4: SUSPENSION_L2 plus the braking stance (every other setting identical). 0.80 m is the validated
+ * intermediate stance level (L2-F1-crouch), a tuning candidate (ready 0.89 m). Rates: a 0.15 m blend span stays within
+ * the stance filter's 0.6 m/s and 4.9 m/s^2. Used with the controlled-braking motor (braked fixtures).
+ */
+export const SUSPENSION_L2_BRAKE: SuspensionSupport = {
+  ...SUSPENSION_L2,
+  id: 'support-suspension-rh-v3',
+  brakingStance: { heightM: 0.8, fullSpeedMps: 3.0, frequencyHz: 2.5, maxRatePerS: 4, maxAccelPerS2: 32 },
+};
+
 // ---------------------------------------------------------------- stance (rotation authority)
 export interface StanceProfile {
   id: string;
@@ -290,6 +473,7 @@ export interface ProfileIds {
   balance?: string;
   ragdoll?: string;
   rule?: string;
+  support?: string;
 }
 
 // ---------------------------------------------------------------- arms (Gate 2)

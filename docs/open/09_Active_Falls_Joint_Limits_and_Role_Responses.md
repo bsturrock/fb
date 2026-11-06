@@ -4,6 +4,12 @@ Repository-aligned plan • 2026-11-05 • Planned after integrated passive fall
 
 Previous: [locomotion integration](08_Locomotion_Transitions_and_Tackle_Integration.md).
 
+## Prerequisites and support boundary
+
+Accept passive integrated falls from plans 06a–08 first, including handoffs at low ride height and both signs of vertical velocity. Active responses must not conceal support or transfer failures. All suspension, grounded drive and supported posture effort is disabled before this layer activates; rejected conversion stays a passive falling proxy. Test bob extrema and saturated-support exits in L4-F9. Preserve the accepted shoe pitch at conversion, then keep the shoe fixed to its shin.
+
+[Plan 07a](07a_Ragdoll_Contact_Handoff.md) owns the natural-contact overlap rejections in simultaneous, player-below and footwork one-arm falls. They must already articulate successfully before active-fall acceptance here. A passive proxy for a genuinely invalid diagnostic remains a safety policy, not a deferral of those gameplay failures. Idle and walking arm animation belong to 08; this plan owns articulated physical effort and limits.
+
 ## Existing mechanics and remaining scope
 
 `src/sim/ragdoll.ts` already constructs ten bodies with elbow/knee/neck revolute limits and spherical shoulders/hips. It validates candidates and transfers bulk momentum. `arms.ts` already handles passive retained palm links, reduced falling budgets, releases and clamp transitions. `rules.ts` and `Simulation.observeRules` already freeze the official ending/spot and allow a settle interval. Reuse those; do not implement them again.
@@ -31,7 +37,7 @@ Audit power as torque dot relative angular velocity. Initially bound total posit
 
 Extend `ragdoll.ts` joint metadata/constraints, `profiles.ts` for explicit response settings, `simulation.ts` substep integration, and `arms.ts` shared allocation. Keep policy in a small simulation module only if it keeps those responsibilities clear. Extend existing trace/export, fixture registry and tests. Report solver/profile identity, requested/applied effort, contact state, task changes, work and limit error.
 
-## 16. Required fixtures
+## Required fixtures
 
 | ID | Fixture | Pass evidence |
 | --- | --- | --- |
@@ -50,7 +56,7 @@ Extend `ragdoll.ts` joint metadata/constraints, `profiles.ts` for explicit respo
 
 Use forward, sideways, and backward fall configurations. Include a fast fall with insufficient time to brace and a carrier with no free arm. Outcome variation should follow pose/contact/velocity differences, not randomized winners or a required landing script.
 
-## 17. Acceptance, evidence, and limits
+## Acceptance, evidence, and limits
 
 Retain Gate 4 boundary tolerances and document 08 pose/representation continuity. Additionally require:
 

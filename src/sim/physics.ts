@@ -2,8 +2,8 @@
 // engine handles (handles change after reset or ragdoll conversion).
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ColliderRegion, ColliderTag, ContactRec, ContactPointRec, PlayerId, BodyPartId, ArmSide } from './contracts';
-import type { BodyProfile, CombineRule, SolverProfile, StanceProfile } from './profiles';
-import { add, qRot, sub, type Pose, type Quat, type Vec3, vc, dot, scale, neg, qInvRot } from './vec';
+import type { BodyProfile, CombineRule, SolverProfile, StanceProfile, SuspensionSupport } from './profiles';
+import { add, qRot, sub, type Pose, type Quat, type Vec3, v3, vc, dot, scale, neg, qInvRot } from './vec';
 
 let ready: Promise<void> | null = null;
 /** Initialise the Rapier WASM module once per process. */
@@ -23,6 +23,25 @@ export interface ProxyBody {
   support: RAPIER.Collider;
   /** Support shape geometry in its own frame. */
   supportShape: { radius: number; halfHeight: number };
+  /**
+   * Suspension support only (plan 06a): massless guard ball on the body axis, the bump stop and the falling contact with
+   * static ground. Not in `colliders` (it lies inside the support capsule; contacts with players are filtered out).
+   */
+  guard?: RAPIER.Collider;
+}
+
+/** Collision-group membership bit of static ground (turf and obstacles) when a suspension player exists. */
+export const GROUP_STATIC = 0x0001;
+/** Rapier interaction groups: 16 membership bits (high half) and 16 filter bits (low half), unsigned. */
+export const interactionGroups = (membership: number, filter: number): number => ((((membership & 0xffff) << 16) | (filter & 0xffff)) >>> 0);
+
+/** One vertical ground probe: the nearest listed collider below a point. */
+export interface GroundHit {
+  collider: RAPIER.Collider;
+  /** Vertical distance from the probe origin to the hit (m). */
+  distM: number;
+  pointWorld: Vec3;
+  normal: Vec3;
 }
 
 export interface MassReport {
@@ -109,7 +128,7 @@ export class PhysicsWorld {
   }
 
   /** Create one dynamic standing proxy per the body profile. Total mass is set once through collider masses. */
-  createProxy(playerId: PlayerId, profile: BodyProfile, stance: StanceProfile, pose: Pose): ProxyBody {
+  createProxy(playerId: PlayerId, profile: BodyProfile, stance: StanceProfile, pose: Pose, suspension?: SuspensionSupport): ProxyBody {
     const s = this.solver;
     const desc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pose.p.x, pose.p.y, pose.p.z)
@@ -176,8 +195,45 @@ export class PhysicsWorld {
       colliders.push(support, torso, pelvis, head);
       supportShape = { radius: g.support.radius, halfHeight: g.support.halfHeight };
     }
+    let guard: RAPIER.Collider | undefined;
+    if (suspension) {
+      if (profile.kind !== 'upperBodyCompound') throw new Error(`suspension support needs an upper-body compound (${profile.id})`);
+      // The support capsule keeps its geometry and mass (player-player body collision and mass properties unchanged)
+      // but no longer touches static ground: the suspension, not floor contact, holds the root height.
+      support.setCollisionGroups(interactionGroups(0xffff, 0xffff & ~GROUP_STATIC));
+      // Massless guard: bottom `bottomM` below the origin; it meets static ground only when the suspension is overcome
+      // (bump stop) or disabled (falling). Contacts with players are filtered by the simulation's contact hook.
+      const G = suspension.guard;
+      guard = this.world.createCollider(
+        this.colliderDesc(RAPIER.ColliderDesc.ball(G.radiusM), 0, true)
+          .setTranslation(0, -G.bottomM + G.radiusM, 0)
+          .setActiveHooks(RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS),
+        body,
+      );
+      this.addTag(guard, playerId, 'core', 'support', 'supportGuard');
+    }
     body.recomputeMassPropertiesFromColliders();
-    return { body, colliders, support, supportShape };
+    return { body, colliders, support, supportShape, guard };
+  }
+
+  /** Static ground (turf, obstacles) joins GROUP_STATIC so a suspension support capsule can exclude it. */
+  markStatic(c: RAPIER.Collider): void {
+    c.setCollisionGroups(interactionGroups(GROUP_STATIC, 0xffff));
+  }
+
+  /**
+   * Nearest collider straight below `origin` among `targets` (the caller passes static ground and, to detect an
+   * obstructing player, other players' bodies; never the probing player's own colliders), searched to `maxDistM`.
+   */
+  groundProbe(origin: Vec3, maxDistM: number, targets: RAPIER.Collider[]): GroundHit | null {
+    const ray = new RAPIER.Ray({ x: origin.x, y: origin.y, z: origin.z }, { x: 0, y: -1, z: 0 });
+    let best: GroundHit | null = null;
+    for (const c of targets) {
+      const hit = c.castRayAndGetNormal(ray, maxDistM, true);
+      if (!hit || (best && hit.timeOfImpact >= best.distM)) continue;
+      best = { collider: c, distM: hit.timeOfImpact, pointWorld: v3(origin.x, origin.y - hit.timeOfImpact, origin.z), normal: vc(hit.normal) };
+    }
+    return best;
   }
 
   removeBody(body: RAPIER.RigidBody): void {

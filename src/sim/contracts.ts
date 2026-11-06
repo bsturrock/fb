@@ -53,6 +53,17 @@ export interface LocomotionIntent {
   effort: number; // clamped 0..1 (ground drive)
   /** Yaw steering effort 0..1 (default 1). */
   yawEffort?: number;
+  /**
+   * Plan 06a stance request (suspension support only; ignored by the legacy capsule-floor support): requested root
+   * height (m above the ground; default the profile's standing height; clamped to its target range) and the stance
+   * foot stagger (m, the left foot forward of the right; pose only).
+   */
+  stance?: StanceRequest;
+}
+
+export interface StanceRequest {
+  heightM?: number;
+  staggerM?: number;
 }
 
 export interface ArmIntent {

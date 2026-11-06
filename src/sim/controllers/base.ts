@@ -2,7 +2,7 @@
 import type { BodyProfile } from '../profiles';
 import type { ArmIntent, ArmSide, PlayerId, PlayerIntent, Snapshot } from '../contracts';
 import { norm, horiz, v3, type Vec3, dirFromHeading, rad, toWorld } from '../vec';
-import type { PostureIntent } from '../contracts';
+import type { PostureIntent, StanceRequest } from '../contracts';
 
 export interface ControllerContext {
   self: PlayerId;
@@ -42,6 +42,8 @@ export interface ScriptSegment {
   yawEffort?: number;
   /** Gate 3 posture request: lean (deg, bounded by the balance profile) toward a direction or the facing. */
   posture?: { leanDeg: number; dir?: Vec3 | 'facing' | 'velocity' };
+  /** Plan 06a stance request (root height, stagger); suspension support only. */
+  stance?: StanceRequest;
 }
 
 /** Scripted arm request. The target is a point in the focus player's frame, the own frame, or the world. */
@@ -107,7 +109,7 @@ export class ScriptController implements Controller {
       posture = { leanDirWorld: dir, leanRad: rad(seg.posture.leanDeg) };
     }
     return {
-      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: facing, effort: seg.effort ?? 1, yawEffort: seg.yawEffort ?? 1 },
+      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: facing, effort: seg.effort ?? 1, yawEffort: seg.yawEffort ?? 1, ...(seg.stance ? { stance: { ...seg.stance } } : {}) },
       arms: scriptedArms(ctx, this.spec.arms),
       posture,
       debug: { phase: 'script' },

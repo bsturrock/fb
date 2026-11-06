@@ -17,6 +17,7 @@ import { ModelAsset } from './player-model';
 import { MODEL_CALIBRATION_ID } from '../sim/model/profiles';
 import { playbackLabel } from '../sim/run-clip';
 import { followCenter } from './follow';
+import { SUSPENSION_L2_BRAKE, type SuspensionSupport } from '../sim/profiles';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -186,11 +187,109 @@ async function load(id: string): Promise<void> {
   }
   $('title').textContent = `${def.id} [${def.milestone}] ${def.title}${def.notes ? ` — ${def.notes}` : ''}`;
   ($('fixture') as HTMLSelectElement).value = def.id;
+  buildTune(def);
+  buildBrakeTune(def);
   setCamera(camPreset, true);
   const u = new URL(location.href);
   u.searchParams.set('fixture', def.id);
   history.replaceState(null, '', u);
   updateRunButton();
+}
+
+// ---------------------------------------------------------------- look tuning: run-clip stance width (plan 07)
+/**
+ * Live slider editor for the run-clip profile's per-clip extra stance width (`stanceWidthAddM`, m per foot, outward).
+ * Moving a slider rebuilds the current fixture with the edited profile (reset to t = 0); the copy line is the value to
+ * hand back for the profile, verbatim. Shown for fixtures with run clips.
+ */
+function buildTune(def: FixtureDef): void {
+  const P = def.runClips;
+  $('tune').hidden = !P;
+  if (!P) return;
+  const rows = $('tuneRows');
+  rows.textContent = '';
+  const cur = (id: string): number => P.stanceWidthAddM?.[id] ?? 0;
+  const out = (): string => `stanceWidthAddM: { ${P.clips.map((c) => `'${c.id}': ${cur(c.id).toFixed(3)}`).join(', ')} }`;
+  for (const c of P.clips) {
+    const row = document.createElement('div');
+    const lab = document.createElement('label');
+    const val = document.createElement('span');
+    const inp = document.createElement('input');
+    inp.type = 'range';
+    inp.min = '-0.06';
+    inp.max = '0.12';
+    inp.step = '0.005';
+    inp.value = String(cur(c.id));
+    lab.textContent = `${c.id} `;
+    val.textContent = ` ${cur(c.id).toFixed(3)}`;
+    inp.oninput = () => (val.textContent = ` ${Number(inp.value).toFixed(3)}`);
+    inp.onchange = () => {
+      const w = { ...(P.stanceWidthAddM ?? {}), [c.id]: Number(inp.value) };
+      const base = P.id.replace(/\+width\(.*\)$/, '');
+      const np = { ...P, id: `${base}+width(${P.clips.map((k) => `${k.id} ${(w[k.id] ?? 0).toFixed(3)}`).join(', ')})`, stanceWidthAddM: w };
+      const i = fixtures.findIndex((f) => f.id === def.id);
+      fixtures[i] = { ...def, runClips: np };
+      void load(def.id);
+    };
+    row.append(lab, inp, val);
+    rows.append(row);
+  }
+  $('tuneOut').textContent = out();
+  $('tuneCopy').onclick = () => void navigator.clipboard?.writeText(out());
+  $('tuneZero').onclick = () => {
+    const i = fixtures.findIndex((f) => f.id === def.id);
+    const { stanceWidthAddM: _drop, ...rest } = P;
+    fixtures[i] = { ...def, runClips: { ...rest, id: P.id.replace(/\+width\(.*\)$/, '') } };
+    void load(def.id);
+  };
+}
+
+// ---------------------------------------------------------------- look tuning: braking stance (plan 07 item 4)
+/**
+ * Live slider editor for the support profile's braking stance (`brakingStance.heightM`: the root height braking blends
+ * toward; `fullSpeedMps`: the speed from which the full depth applies). Moving a slider rebuilds the current fixture with
+ * the edited profile (reset to t = 0); the copy line is the value to hand back, verbatim. Shown for fixtures whose
+ * support has a braking stance.
+ */
+function buildBrakeTune(def: FixtureDef): void {
+  const S = def.support && def.support.kind === 'suspension' ? (def.support as SuspensionSupport) : null;
+  const B = S?.brakingStance;
+  $('brake').hidden = !B;
+  if (!S || !B) return;
+  const rows = $('brakeRows');
+  rows.textContent = '';
+  const out = (): string => `brakingStance: { heightM: ${B.heightM.toFixed(3)}, fullSpeedMps: ${B.fullSpeedMps.toFixed(2)} }`;
+  const base = S.id.replace(/\+brake\(.*\)$/, '');
+  const apply = (nb: NonNullable<SuspensionSupport['brakingStance']>, id: string): void => {
+    const i = fixtures.findIndex((f) => f.id === def.id);
+    fixtures[i] = { ...def, support: { ...S, id, brakingStance: nb } };
+    void load(def.id);
+  };
+  const slider = (name: string, key: 'heightM' | 'fullSpeedMps', min: number, max: number, step: number, digits: number): void => {
+    const row = document.createElement('div');
+    const lab = document.createElement('label');
+    const val = document.createElement('span');
+    const inp = document.createElement('input');
+    inp.type = 'range';
+    inp.min = String(min);
+    inp.max = String(max);
+    inp.step = String(step);
+    inp.value = String(B[key]);
+    lab.textContent = `${name} `;
+    val.textContent = ` ${B[key].toFixed(digits)}`;
+    inp.oninput = () => (val.textContent = ` ${Number(inp.value).toFixed(digits)}`);
+    inp.onchange = () => {
+      const nb = { ...B, [key]: Number(inp.value) };
+      apply(nb, `${base}+brake(${nb.heightM.toFixed(3)} m, ${nb.fullSpeedMps.toFixed(2)} m/s)`);
+    };
+    row.append(lab, inp, val);
+    rows.append(row);
+  };
+  slider('height m', 'heightM', S.targetRangeM[0], S.standingHeightM, 0.005, 3);
+  slider('full depth from m/s', 'fullSpeedMps', 0.5, 6, 0.25, 2);
+  $('brakeOut').textContent = out();
+  $('brakeCopy').onclick = () => void navigator.clipboard?.writeText(out());
+  $('brakeReset').onclick = () => apply({ ...SUSPENSION_L2_BRAKE.brakingStance! }, base);
 }
 
 function buildViews(): void {
@@ -288,7 +387,7 @@ function fillFixtureSelect(): void {
   const sel = $('fixture') as HTMLSelectElement;
   const groups = new Map<string, HTMLOptGroupElement>();
   for (const f of fixtures) {
-    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : `Gate ${f.gate} · ${f.milestone}`;
+    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : f.milestone === 'RH' ? 'RH · ride height and support' : f.milestone === 'L2' ? 'L2 · support recovery and footwork' : `Gate ${f.gate} · ${f.milestone}`;
     let g = groups.get(key);
     if (!g) {
       g = document.createElement('optgroup');
@@ -511,6 +610,36 @@ function info(): void {
       const res = Object.entries(pl.pose?.targetResidualM ?? {}).map(([kk, vv]) => `${kk.replace('left', 'L').replace('right', 'R')} ${f2(vv, 3)}`);
       lines.push(`  run ${st.w > 0 ? playbackLabel(st, sim.def.runClips) : 'procedural gait'}  u ${f2(st.u, 3)}  w ${f2(st.w, 2)} (→${f2(st.wTarget, 2)})  rate ${f2(st.rate, 3)}  v ${f2(st.speed, 2)}${res.length ? `  res ${res.join(' ')} m` : ''}`);
     }
+    if (pl.sus && !pl.rag) {
+      // plan 06a suspension: requested vs achieved root height, force (commanded / applied / ceiling), authority, probe
+      const u = pl.sus;
+      const W = k.massKg * Math.abs(sim.def.solver.gravityY);
+      const S = sim.suspension!;
+      const sat = u.saturated === 'max' ? ' SAT-MAX' : u.saturated === 'zero' && u.active ? ' at 0' : '';
+      lines.push(
+        `  support h ${Number.isFinite(u.probe.heightM) ? f2(u.probe.heightM, 3) : '-'} / target ${f2(u.targetM, 3)} m (req ${f2(u.requestM, 2)}${Number.isFinite(u.runM) ? `  clip ${f2(u.runM, 3)} ×${f2(u.bobScale, 2)}` : ''})  ` +
+          `F ${f2(u.appliedN / W, 2)} BW (cmd ${f2(u.commandedN / W, 2)}, max ${S.maxForceBW}; pivot ${f2(u.pivotN / W, 2)} + COM ${f2(u.comN / W, 2)}, tip ${f2(Math.hypot(u.tipTorqueNm.x, u.tipTorqueNm.z), 0)} N m)${sat}  auth ${f2(u.authority, 2)}  probe ${u.probe.status}${u.bottomed ? '  GUARD DOWN' : ''}${u.active ? '' : '  (off)'}`,
+      );
+    }
+    if (pl.feet && !pl.rag) {
+      // plan 07 foot planner: mode (planted / step swing / follow swing / airborne), contact-feature error and drift while
+      // planted, swing progress and commanded speed, last release reason
+      const one = (s: ArmSide): string => {
+        const ft = pl.feet!.feet[s];
+        const m = ft.mode === 'planted' ? 'planted' : ft.mode === 'airborne' ? 'airborne' : ft.source === 'step' ? 'step' : 'follow';
+        const body =
+          ft.mode === 'planted'
+            ? `err ${f2(ft.featureErrM * 100, 2)} cm drift ${f2(ft.driftM * 100, 2)} cm`
+            : ft.mode === 'swing' && ft.source === 'step'
+              ? `${f2(ft.durS > 0 ? Math.min(1, ft.elapsedS / ft.durS) : 0, 2)} of ${f2(ft.durS, 2)} s  ${f2(ft.speedMps, 2)} m/s`
+              : `${f2(ft.speedMps, 2)} m/s`;
+        return `${s === 'left' ? 'L' : 'R'} ${m}${ft.mode === 'planted' && ft.tentative ? ' (proposed)' : ''} ${body}  res ${f2(ft.residualM * 100, 1)} cm${ft.releaseReason ? `  (released: ${ft.releaseReason})` : ''}${ft.fails ? `  failed ${ft.fails}/${ft.attempts} (last: ${ft.failReason})` : ''}`;
+      };
+      const st = pl.feet.stats;
+      const cov = (s: ArmSide): string => (st.cover[s].eligibleS > 0 ? `${f2((100 * st.cover[s].plantedS) / st.cover[s].eligibleS, 0)}%` : '-');
+      lines.push(`  feet ${pl.feet.profile.id}  ${one('left')}  |  ${one('right')}`);
+      lines.push(`  plants confirmed ${st.confirmed}/${st.attempts} proposed, failed ${st.failed}, sustained ${st.sustained}; eligible stance planted L ${cov('left')} R ${cov('right')}`);
+    }
     balanceInfo(pl, lines);
     armInfo(pl.id, lines);
     const d = pl.intent.debug;
@@ -581,6 +710,15 @@ function frame(now: number): void {
     const pts: { p: Vec3; color: number }[] = [];
     for (const c of sim.contacts) {
       if (c.a.playerId && c.b.playerId && c.a.playerId !== c.b.playerId) for (const p of c.points) pts.push({ p: p.pointWorld, color: 0xff2020 });
+    }
+    // plan 07 foot anchors: planted contact feature (green), step swing destination (amber)
+    for (const pl of sim.players) {
+      if (!pl.feet || pl.rag) continue;
+      for (const s of ['left', 'right'] as const) {
+        const ft = pl.feet.feet[s];
+        if (ft.mode === 'planted' && ft.anchorW) pts.push({ p: ft.anchorW, color: 0x20e040 });
+        else if (ft.mode === 'swing' && ft.source === 'step' && ft.dest) pts.push({ p: ft.dest, color: 0xffb020 });
+      }
     }
     contactMarkers.set(pts, flags.overlays);
     // interpolated core poses; sim-state points are re-expressed in each body's frame so arms stay attached

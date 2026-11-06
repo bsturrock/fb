@@ -477,6 +477,12 @@ export interface RunClipProfile {
    * carry, 1 = the clip's full hand excursion). The ball stays in the carry hand.
    */
   carrySwing: number;
+  /**
+   * Plan 07 (optional, look tuning): extra stance width per foot (m, outward from the travel line) by clip id, added to
+   * the clip ankle and its planted contact point; blended between neighbouring clips like the sample. Absent: the clip
+   * width (bit-identical).
+   */
+  stanceWidthAddM?: Readonly<Record<string, number>>;
 }
 
 /** Profile export without sample data (identity, nominal speeds, bounds and policy). */
@@ -502,6 +508,7 @@ export function runClipProfileExport(p: RunClipProfile): Record<string, unknown>
     blendRatePerS: p.blendRatePerS,
     armSwing: p.armSwing,
     carrySwing: p.carrySwing,
+    ...(p.stanceWidthAddM ? { stanceWidthAddM: { ...p.stanceWidthAddM } } : {}),
   };
 }
 
@@ -514,6 +521,9 @@ export function validateRunClipProfile(p: RunClipProfile, R: RagdollProfile): vo
   if (!(p.weightRatePerS > 0)) throw new RunClipError(p.id, 'invalid weight rate');
   if (!(p.blendRatePerS > 0)) throw new RunClipError(p.id, 'invalid blend rate');
   if (!(p.carrySwing >= 0 && p.carrySwing <= 1)) throw new RunClipError(p.id, 'carrySwing must be within 0..1');
+  // plan 07 look tuning: finite signed widths (0 and inward adjustments included); non-finite would leave the leg pose
+  for (const [k, w] of Object.entries(p.stanceWidthAddM ?? {}))
+    if (typeof w !== 'number' || !Number.isFinite(w)) throw new RunClipError(p.id, `stanceWidthAddM.${k} must be a finite number (got ${String(w)})`);
   const leg = R.lengths.thigh + R.lengths.shin;
   for (const c of p.clips) {
     const s = leg / c.record.restLegM;
@@ -652,7 +662,55 @@ export function playbackArmMean(st: RunPlayback, p: RunClipProfile): Record<ArmS
 }
 const lerp3 = (x: Vec3, y: Vec3, t: number): Vec3 => addScaled(x, sub(y, x), t);
 
+/** Extra stance width per foot (m) of the current clip blend (profile `stanceWidthAddM`; 0 when absent). */
+export function playbackWidthAddM(st: RunPlayback, p: RunClipProfile): number {
+  const w = p.stanceWidthAddM;
+  if (!w) return 0;
+  const a = w[p.clips[st.k].id] ?? 0;
+  const nb = p.clips[st.k + 1];
+  return nb && st.blend > 0 ? a + ((w[nb.id] ?? 0) - a) * st.blend : a;
+}
+
 /** Clip label for traces: the clip id, or "lower+upper" while blending. */
+/**
+ * Per foot: inside its clip stance interval at the playback phase (plan 07 plant schedule). The interval of a clip blend
+ * is the blend of the neighbouring clips' intervals (cyclic), so it moves continuously with the blend.
+ */
+export function playbackStance(st: RunPlayback, p: RunClipProfile): Record<ArmSide, boolean> {
+  const a = p.clips[st.k].record.stance;
+  const b = p.clips[st.k + 1]?.record.stance;
+  const t = b && st.blend > 0 ? st.blend : 0;
+  const mix = (x: number, y: number): number => frac(x + t * (((y - x + 1.5) % 1) - 0.5));
+  const inside = (u: number, lo: number, hi: number): boolean => (lo <= hi ? u >= lo && u < hi : u >= lo || u < hi);
+  const out = {} as Record<ArmSide, boolean>;
+  for (const s of SIDES) {
+    const lo = b ? mix(a[s][0], b[s][0]) : a[s][0];
+    const hi = b ? mix(a[s][1], b[s][1]) : a[s][1];
+    out[s] = inside(st.u, lo, hi);
+  }
+  return out;
+}
+
+/**
+ * Swing progress of each foot in the current blended clip cycle (plan 07 closeout): 0 at the clip liftoff, 1 at the next
+ * touchdown; null inside the stance interval. Uses the same blended stance annotations as playbackStance.
+ */
+export function playbackSwingProgress(st: RunPlayback, p: RunClipProfile): Record<ArmSide, number | null> {
+  const a = p.clips[st.k].record.stance;
+  const b = p.clips[st.k + 1]?.record.stance;
+  const t = b && st.blend > 0 ? st.blend : 0;
+  const mix = (x: number, y: number): number => frac(x + t * (((y - x + 1.5) % 1) - 0.5));
+  const inside = (u: number, lo: number, hi: number): boolean => (lo <= hi ? u >= lo && u < hi : u >= lo || u < hi);
+  const out = {} as Record<ArmSide, number | null>;
+  for (const s of SIDES) {
+    const lo = b ? mix(a[s][0], b[s][0]) : a[s][0];
+    const hi = b ? mix(a[s][1], b[s][1]) : a[s][1];
+    const swing = frac(lo - hi);
+    out[s] = inside(st.u, lo, hi) || swing <= 0 ? null : clamp(frac(st.u - hi) / swing, 0, 1);
+  }
+  return out;
+}
+
 export function playbackLabel(st: RunPlayback, p: RunClipProfile): string {
   const b = p.clips[st.k + 1];
   return b && st.blend > 0 ? `${p.clips[st.k].id}+${b.id}` : p.clips[st.k].id;
@@ -668,6 +726,9 @@ export interface SampledContact {
   weight: number;
   pointWorld: Vec3;
   soleFoot: Vec3;
+  /** Sole length from below the ankle (heel) to below the toe base (shoe frame z, m) and the roll fraction along it. */
+  toeZ: number;
+  rollF: number;
 }
 
 /** Clip foot contact: full at or below fullM of heel/toe height, none above offM; heel-to-toe roll over rollM (m). */
@@ -697,6 +758,8 @@ export interface RetargetOptions {
   carrySwing: number;
   restToe: Readonly<Record<ArmSide, Vec3>>;
   armMean: Readonly<Record<ArmSide, { upper: Vec3; fore: Vec3 }>>;
+  /** Plan 07: extra stance width per foot (m, outward), from the profile's `stanceWidthAddM`. */
+  widthAddM?: number;
 }
 
 /**
@@ -724,7 +787,10 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
   for (const s of SIDES) {
     const c = sample.leg[s];
     const a = M(c.ankle);
-    const off = qRot(yawQ, v3(a.x * leg, 0, a.z * leg));
+    // optional extra width, outward on the body's own side of the travel line
+    // (absent or 0: the unchanged expression, bit-identical)
+    const wx = o.widthAddM ? o.widthAddM * sideSignX(body, s) : 0;
+    const off = qRot(yawQ, v3(wx ? a.x * leg + wx : a.x * leg, 0, a.z * leg));
     const ankleW = v3(g.x + off.x, sole + c.ankle.y * leg, g.z + off.z);
     // stance contact: the clip's lower of heel and toe (blended over 3 cm of height difference) is the planted point
     const heelM = c.heelH * leg;
@@ -734,10 +800,10 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
     if (cw > 0) {
       const f = smooth((heelM - toeM) / CONTACT.rollM + 0.5);
       const pc = M(addScaled(c.ankle, sub(c.toe, c.ankle), f));
-      const po = qRot(yawQ, v3(pc.x * leg, 0, pc.z * leg));
+      const po = qRot(yawQ, v3(wx ? pc.x * leg + wx : pc.x * leg, 0, pc.z * leg));
       // the planted sole point in the shin frame: below the ankle (heel) to below the toe base, inside the shoe box
       const toeZ = Math.min(M(o.restToe[s]).z * leg, R.shoe.forwardM + R.shoe.halfExtents.z);
-      contact = { weight: cw, pointWorld: v3(g.x + po.x, 0, g.z + po.z), soleFoot: v3(0, -sole, toeZ * f) };
+      contact = { weight: cw, pointWorld: v3(g.x + po.x, 0, g.z + po.z), soleFoot: v3(0, -sole, toeZ * f), toeZ, rollF: f };
     }
     // foot angle in the travel plane (clip +Z) relative to the rest foot's angle below the horizontal (the shoe's flat)
     const fv = sub(c.toe, c.ankle);

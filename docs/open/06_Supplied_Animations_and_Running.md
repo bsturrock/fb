@@ -2,7 +2,11 @@
 
 Repository-aligned plan • 2026-11-05 • Implemented 2026-11-05; smoothness and carry-arm pass 2 the same day; waiting for the user's visual acceptance. Evidence, inventory, settings and open artifacts: [plan 06 handoff](../handoff/plan06.md).
 
-Previous: [model integration](../closed/05_Review_and_Model_Integration_Plan.md). Next: [contact footwork](07_Procedural_Contact_Footwork.md).
+Previous: [model integration](../closed/05_Review_and_Model_Integration_Plan.md). Next: [physical ride height](06a_Physical_Ride_Height_and_Support.md).
+
+## Committed baseline and follow-up
+
+Implementation is committed; visual acceptance remains outstanding. The requirements below describe the implemented pose-only baseline, not instructions to redo it. [Plan 06a](06a_Physical_Ride_Height_and_Support.md) supersedes the fixed-height/pelvis-bob restriction for its new support profile. Pass 2 already pitches supported shoes and freezes that pitch into the shin-owned ragdoll shoe; the original rigid-shoe wording below is historical. Preserve the [handoff](../handoff/plan06.md) as evidence.
 
 ## Baseline and scope
 

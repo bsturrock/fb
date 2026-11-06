@@ -1,7 +1,8 @@
 // Fixture definition: starting conditions and requests, never post-contact trajectories.
-import type { ArmSide, PlayerId, Role } from './contracts';
-import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, MotorProfile, RagdollProfile, RuleProfile, SolverProfile, StanceProfile } from './profiles';
+import type { ArmSide, PlayerId, Role, StanceRequest } from './contracts';
+import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, MotorProfile, RagdollProfile, RuleProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
 import type { CandidateEdit } from './ragdoll';
+import type { FootworkProfile } from './footwork';
 import type { RunClipProfile } from './run-clip';
 import type { ScriptSpec } from './controllers/base';
 import type { CoachedEntrySpec } from './controllers/coached';
@@ -31,6 +32,11 @@ export interface PlayerSetup {
     diagnosticImpulse?: { impulse: Vec3; pointLocal: Vec3 };
     /** Initial run-clip (and procedural gait) phase, normalized (0 = left touchdown); default runner 0, defender 0.25. */
     runPhase?: number;
+    /**
+     * Suspension support only: the stance request in force at reset (root height, stagger), placing the body at its
+     * height target before settling. It should equal the controller's first request; default the standing height.
+     */
+    stance?: StanceRequest;
   };
   /** Anatomical shoulder selected for connection (classification label "shoulder:selected"). */
   selectedShoulder?: ArmSide;
@@ -62,12 +68,27 @@ export interface FixtureDef {
    * procedural gait only). Pose only: never read by forces, support or rules other than through the pose.
    */
   runClips?: RunClipProfile;
+  /**
+   * Plan 06a: vertical support profile (absent = the named legacy capsule-floor support, SUPPORT_LEGACY). RH fixtures opt
+   * into the ground-probed suspension explicitly.
+   */
+  support?: SupportProfile;
+  /**
+   * Plan 07: per-foot plant / swing planner (absent = the plan 06/06a pose path unchanged). Pose only; requires the
+   * suspension support (the planner reads its probed ground).
+   */
+  footwork?: FootworkProfile;
   /** Clearly labelled diagnostic interventions (never contact-driven outcomes). */
   diagnostics?: {
-    conversions?: { playerId: PlayerId; atS: number; edit?: CandidateEdit }[];
+    conversions?: DiagnosticConversionSpec[];
+    /** Labelled external force at the player's COM over [fromS, toS) (plan 06a load tests). */
+    forces?: { playerId: PlayerId; fromS: number; toS: number; forceWorld: Vec3 }[];
   };
-  /** Static diagnostic obstacles (cuboids). */
-  obstacles?: { id: string; center: Vec3; halfExtents: Vec3; yawDeg?: number }[];
+  /**
+   * Static diagnostic obstacles (cuboids). `surface: 'turf'` marks a turf patch the suspension probe may stand on (its
+   * normal is still checked); any other obstacle under a probe is an invalid support surface.
+   */
+  obstacles?: { id: string; center: Vec3; halfExtents: Vec3; yawDeg?: number; rollDeg?: number; surface?: 'turf' }[];
   players: PlayerSetup[];
   durationS: number;
   /** Ticks of passive settling before t = 0 (initial velocities are set after settling). */
@@ -77,6 +98,18 @@ export interface FixtureDef {
   focus?: Record<PlayerId, PlayerId>;
   /** Cosmetic-only options; the simulation never reads these. */
   cosmetic?: { palette?: string };
+}
+
+/**
+ * Labelled diagnostic conversion. `when` (plan 06a RH-F7) delays it from `atS` to the first substep at which the proxy's
+ * vertical velocity is rising (> 0.05 m/s), falling (< -0.05 m/s), or passes a height extremum (top: velocity turns
+ * from up to down; bottom: from down to up).
+ */
+export interface DiagnosticConversionSpec {
+  playerId: PlayerId;
+  atS: number;
+  edit?: CandidateEdit;
+  when?: 'rising' | 'falling' | 'top' | 'bottom';
 }
 
 export const PRACTICE_AREA = { halfX: 8, halfZ: 6 };
