@@ -1,6 +1,8 @@
 # Ragdoll handoff during player contact
 
-Repository-aligned plan • 2026-11-05 • Cleared to start after the accepted 06a/07 checkpoint, before 08. Independent closeout review passes 218 tests, build and all 216 fixtures; the 143 historical summaries are unchanged. Continuous visual acceptance remains open.
+Repository-aligned plan • 2026-11-05 • Accepted by the user for checkpoint commit, including the two review closeout fixes. 239 tests, build and 238 regenerated fixtures pass; all 143 historical summaries are unchanged. Plan 08 is cleared to start.
+
+**Accepted implementation (2026-11-05):** every required natural-contact case is an audited articulated fall: RH-F6-simultaneous both players, RH-F5-playerBelow (and both falling), L2-F14-oneArmFeet. 22 HC variants are added. The final reach-direction correction remains bounded through its release, with actual substep displacement regressions; post-conversion measurements include the first solved response. The user accepted the scoped contact-movement and ragdoll-handoff checks and requested the checkpoint commit. Causes, corrected measurements, changed defender outcomes and declared limits are in the [plan 07a handoff](../handoff/plan07a.md#review-closeout-fixes-2026-11-05).
 
 Previous: [support recovery and contact footwork](07_Procedural_Contact_Footwork.md). Next: [locomotion integration](08_Locomotion_Transitions_and_Tackle_Integration.md).
 
@@ -8,7 +10,7 @@ Previous: [support recovery and contact footwork](07_Procedural_Contact_Footwork
 
 Start from the accepted 06a/07 checkpoint, including its [step-transfer repair](07_Procedural_Contact_Footwork.md#3-transfer-stopping-feet-without-starting-a-two-foot-hop) and [lower physical braking stance](07_Procedural_Contact_Footwork.md#4-lower-the-physical-braking-stance). Independent review passed all four closeout items: 218 tests, build and 216 regenerated fixtures, with the 143 historical summaries unchanged. Do not redo these fixes. The ordinary stop physically lowers and takes individual final steps. Its remaining abrupt toe-off/run-start motion, cadence and arms-out styling belong to 08; the contact-clearance discontinuities below belong here.
 
-The current baseline has improved: `RH-F5-playerBelow` and `L2-F14-oneArmFeet` now produce accepted conversions after the limb-continuity work; preserve those gains as regressions. `RH-F6-simultaneous` still rejects both players for overlapping upper arms and leaves rigid falling proxies. This milestone owns the remaining natural-contact conversion failures and the associated discontinuous clearance corrections. Plan 09's active joint responses cannot repair a conversion that never happened.
+At the incoming 06a/07 checkpoint, `RH-F5-playerBelow` and `L2-F14-oneArmFeet` already produced accepted conversions, while `RH-F6-simultaneous` rejected both players for overlapping upper arms. The accepted 07a implementation converts all three required cases. Preserve these gains while closing the associated discontinuous clearance corrections. Plan 09's active joint responses cannot repair a conversion that never happened.
 
 Retain rejection and the passive fallback for genuinely invalid input and diagnostic failures. They are safeguards, not accepted final behavior for these natural-contact cases. Removing a limb snap alone does not meet the goal.
 

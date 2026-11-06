@@ -1,7 +1,7 @@
 // Wrap-attempt controller (Gate 2): approaches the runner and requests independent arm paths around the runner's
 // opposite sides. Waypoints are requests generated from the runner's current observed geometry; phases advance on
 // observed hand position / clamp contact. Timeouts only abandon or retry; they never create contact or a wrap.
-import type { ArmIntent, ArmSide, PlayerIntent } from '../contracts';
+import type { ArmIntent, ArmSide, PlayerIntent, StanceRequest } from '../contracts';
 import { pairKey } from '../contracts';
 import type { BodyProfile, MotorProfile } from '../profiles';
 import { sideSignX } from '../profiles';
@@ -69,6 +69,8 @@ export interface WrapSpec {
   removeAfterConnect?: boolean;
   /** Forward posture lean (deg) toward the runner while approaching/engaged (bounded by the balance profile). */
   approachLeanDeg?: number;
+  /** Plan 07a stance request held throughout (root height, stagger; suspension support only). Request only. */
+  stance?: StanceRequest;
 }
 
 const DEF = {
@@ -110,7 +112,7 @@ export class WrapAttemptController implements Controller {
   readonly kind = 'wrapAttempt';
   readonly observationDelayS = 0;
   readonly decisionIntervalS = 0;
-  readonly p: Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish'>>;
+  readonly p: Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance'>>;
   private connectedAt: number | null = null;
   private lastContactT = -Infinity;
   private progress: { t: number; along: number }[] = [];
@@ -124,7 +126,7 @@ export class WrapAttemptController implements Controller {
     readonly setup: PlayerSetup,
     readonly motor: MotorProfile,
   ) {
-    this.p = { ...DEF, ...stripUndef(spec) } as Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish'>>;
+    this.p = { ...DEF, ...stripUndef(spec) } as Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance'>>;
     const mk = (s: ArmSide): ArmCtl => ({ phase: spec.plan[s] === 'none' ? 'idle' : spec.plan[s] === 'wrap' ? 'ready' : 'palmReach', since: 0, bestAz: -180, lastProgressT: 0, lastClampT: -1 });
     this.arm = { left: mk('left'), right: mk('right') };
     const y = (setup.initial.yawDeg * Math.PI) / 180;
@@ -140,12 +142,16 @@ export class WrapAttemptController implements Controller {
     return Math.abs(dot(d, rx)) * h.x + Math.abs(dot(d, rz)) * h.z;
   }
 
+  private stanceReq(): { stance?: StanceRequest } {
+    return this.spec.stance ? { stance: { ...this.spec.stance } } : {};
+  }
+
   decide(ctx: ControllerContext): PlayerIntent {
     const P = this.p;
     const me = ctx.observed.bodies[ctx.self];
     const tid = ctx.focus;
     const tb = tid ? ctx.observed.bodies[tid] : undefined;
-    if (!me || !tb || !tid) return { locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: this.lastFacing, effort: 1 } };
+    if (!me || !tb || !tid) return { locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: this.lastFacing, effort: 1, ...this.stanceReq() } };
     const tBody = ctx.bodies[tid];
     const R = tb.position;
     const nearRaw = horiz(sub(me.position, R));
@@ -303,7 +309,7 @@ export class WrapAttemptController implements Controller {
       debugArms[s] = { phase: st.phase, az: Math.round(az), target };
     }
     return {
-      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: this.lastFacing, effort: effortOut },
+      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: this.lastFacing, effort: effortOut, ...this.stanceReq() },
       arms,
       posture,
       debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true },

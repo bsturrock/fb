@@ -2,6 +2,8 @@
 
 **Follow-up ownership:** [Plan 07a](../open/07a_Ragdoll_Contact_Handoff.md) owns the remaining simultaneous-contact rejection and large contact-clearance limb corrections before plan 08. Player-below and `L2-F14-oneArmFeet` conversions currently succeed and must remain successful. Earlier rejected falls below are incoming evidence. [Plan 08](../open/08_Locomotion_Transitions_and_Tackle_Integration.md) owns ordinary transition smoothing, natural idle posture and procedural walking arm swing.
 
+**Later disposition (2026-11-05):** the user accepted 07a and its two review fixes for commit. Required natural-contact handoffs now articulate, with 239 tests/build/238 fixtures passing and the 143 historical summaries unchanged. The 07 measurements below remain the incoming checkpoint evidence; [08](../open/08_Locomotion_Transitions_and_Tackle_Integration.md) is cleared to start.
+
 **Date:** 2026-11-05.
 **Status:** implementation accepted by independent review on 2026-11-05 for the 06a/07 checkpoint. All four closeout items pass code and numeric review: 218 tests and the build pass, all 216 fixtures regenerate, and the 143 historical summary records match HEAD. Continuous visual acceptance remains open; this is clearance to start 07a, not a claim of finished locomotion realism.
 
@@ -690,8 +692,8 @@ Changed:
 4. **Post-conversion differences with footwork** follow from the planted leg pose seeding the ragdoll (L2-F14-oneArmFeet D converts at 1.425 s instead of 1.375 s). Candidate placement is plan 07a.
 5. **Visual-flight support, attenuated Sprint bob and load-limited drive** remain the declared 06a approximations.
 6. **No automatic run/contact selection:** that is plan 08.
-7. **Continuity limits:** while a player can still convert, a pose with no valid path to the chosen candidate still steps (RH-F5-playerBelow A's right leg, 66 cm at 0.517 s). The arm system's achieved grip arms are outside the pose path (up to 26 cm one-tick moves in RH-F6-simultaneous).
-8. **Rejected handoffs:** RH-F6-simultaneous D and R (upper arms overlapping) and L2-F8-noRescue R (`jointAnchor`) stay rejected. The user takes these as their own milestone (plan 07a).
+7. **Continuity limits:** while a player can still convert, a pose with no valid path to the chosen candidate still steps (RH-F5-playerBelow A's right leg, 66 cm at 0.517 s). The arm system's achieved grip arms are outside the pose path (up to 26 cm one-tick moves in RH-F6-simultaneous). *(Plan 07a: the guard no longer advances toward an invalid candidate, and opponents' published limbs are in the clearance. A's leg is now 10.7 cm and the simultaneous grip arms are ≤ 6.9 cm; see the [plan 07a handoff](plan07a.md).)*
+8. **Rejected handoffs:** RH-F6-simultaneous D and R (upper arms overlapping) and L2-F8-noRescue R (`jointAnchor`) stay rejected. The user takes these as their own milestone (plan 07a). *(Plan 07a: RH-F6-simultaneous D and R are accepted at 1.200 s. L2-F8-noRescue stays a safe rejection, as intended.)*
 9. **Jumping:** L2-F6-hop is a labelled push, not a jump; there is no jump design.
 10. **Stance width:** the profile field and the lab editor exist; no value is set until the user picks one.
 11. **Walk arms and idle stance:** the user's later milestone (plan 08).

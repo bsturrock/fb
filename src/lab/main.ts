@@ -387,7 +387,7 @@ function fillFixtureSelect(): void {
   const sel = $('fixture') as HTMLSelectElement;
   const groups = new Map<string, HTMLOptGroupElement>();
   for (const f of fixtures) {
-    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : f.milestone === 'RH' ? 'RH · ride height and support' : f.milestone === 'L2' ? 'L2 · support recovery and footwork' : `Gate ${f.gate} · ${f.milestone}`;
+    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : f.milestone === 'RH' ? 'RH · ride height and support' : f.milestone === 'L2' ? 'L2 · support recovery and footwork' : f.milestone === 'HC' ? 'HC · ragdoll handoff during contact' : `Gate ${f.gate} · ${f.milestone}`;
     let g = groups.get(key);
     if (!g) {
       g = document.createElement('optgroup');

@@ -7,7 +7,8 @@ import { modelFixtures } from './model';
 import { locomotionFixtures } from './locomotion';
 import { rideHeightFixtures } from './ride-height';
 import { footworkFixtures } from './footwork';
+import { handoffContactFixtures } from './handoff-contact';
 
 export function allFixtures(): FixtureDef[] {
-  return [...gate1Fixtures(), ...gate2Fixtures(), ...gate3Fixtures(), ...gate4Fixtures(), ...modelFixtures(), ...locomotionFixtures(), ...rideHeightFixtures(), ...footworkFixtures()];
+  return [...gate1Fixtures(), ...gate2Fixtures(), ...gate3Fixtures(), ...gate4Fixtures(), ...modelFixtures(), ...locomotionFixtures(), ...rideHeightFixtures(), ...footworkFixtures(), ...handoffContactFixtures()];
 }

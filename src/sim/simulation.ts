@@ -18,7 +18,7 @@ import {
   advanceBraking, advanceStance, brakingDemand, classifyProbe, clipHeightModel, composeTarget, loadAuthority, newSuspensionRuntime, runHeight, splitSupportForce, suspensionForce, type ClipHeightModel, type RunHeight,
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
-import { buildProxyPose, advanceGait, legRequestLocal, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from './pose';
+import { buildProxyPose, advanceGait, legRequestLocal, poseLimbShapes, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from './pose';
 import { footTrace, initFeet, newFootPlan, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlan, type FootPlanInput } from './footwork';
 import {
   anchorErrors, buildCandidate, hingeAngles, bulkOf, externalFromColliders, externalFromRagdoll, ragdollPose, removeRagdoll, switchToRagdoll,
@@ -1427,6 +1427,8 @@ export class Simulation {
   // ------------------------------------------------------------------ Gate 4: sim-owned physical pose
   private updatePoses(dt: number): void {
     const R = this.def.ragdoll;
+    // plan 07a: every player's published limbs before any pose of this substep is built (order independent)
+    const limbs = this.publishedLimbs();
     for (const pl of this.players) {
       if (pl.rag) {
         pl.pose = ragdollPose(pl.rag);
@@ -1487,7 +1489,7 @@ export class Simulation {
         readyHands: !!pl.intent.debug?.readyHands,
         carriesBall: pl.setup.role === 'runner',
         localVelDir: sp > 0.2 ? v3(localV.x / sp, 0, localV.z / sp) : v3(0, 0, 1),
-        clearance: R ? this.poseClearance(pl) : undefined,
+        clearance: R ? this.poseClearance(pl, limbs) : undefined,
         memory: pl.poseMemory,
         sampled,
         ground: pl.sus
@@ -1579,12 +1581,19 @@ export class Simulation {
    * players' active colliders, diagnostic obstacles and opponents' achieved query-arm segments (external), and of
    * forearm/palm against the player's own torso/pelvis (self).
    */
-  private poseClearance(pl: PlayerRuntime): PoseClearance {
+  private poseClearance(pl: PlayerRuntime, limbs?: Map<PlayerId, ExternalShape[]>): PoseClearance {
     const ext: ExternalShape[] = [];
     const soft: ExternalShape[] = [];
     for (const o of this.players) {
       if (o === pl) continue;
       ext.push(...externalFromColliders(this.activeColliders(o), () => o.id));
+      // plan 07a (ground-relative poses): another player's published limbs are physical for this player's procedural
+      // limbs while that player can still convert (they become its ragdoll colliders at the switch, possibly in the same
+      // batch); a ragdoll's limbs are already active colliders
+      if (pl.sus && limbs && this.def.ragdoll && !o.rag && !o.handoff) {
+        const ls = limbs.get(o.id);
+        if (ls) ext.push(...ls);
+      }
       const ao = this.arms?.obs(o.id);
       if (ao && !o.rag)
         for (const sd of ['left', 'right'] as ArmSide[]) {
@@ -1627,6 +1636,27 @@ export class Simulation {
       return v;
     };
     return { external: (shapes) => depth(shapes, ext), soft: (shapes) => depth(shapes, soft), self: (shapes) => depth(shapes, own), push };
+  }
+
+  /**
+   * Plan 07a: candidate-equivalent limb and shoe shapes of every non-ragdoll player's published pose (the pose of the
+   * last substep), keyed `<id>:<segment>`. Read once before the poses of a substep are built, so no player sees another
+   * player's pose of the same substep (player order cannot decide who yields).
+   */
+  private publishedLimbs(): Map<PlayerId, ExternalShape[]> {
+    const out = new Map<PlayerId, ExternalShape[]>();
+    const R = this.def.ragdoll;
+    if (!R || !this.suspension) return out;
+    for (const o of this.players) {
+      if (o.rag || !o.pose || o.body.kind !== 'upperBodyCompound') continue;
+      const ls: ExternalShape[] = [];
+      for (const s of poseLimbShapes(R, o.pose)) {
+        const q = poseShapeToRapier(s);
+        if (q) ls.push({ key: `${o.id}:${s.key}`, shape: q.shape, pose: q.pose });
+      }
+      out.set(o.id, ls);
+    }
+    return out;
   }
 
   /** Clip flight: the clip plays (weight >= 0.5) outside both feet's stance intervals (visual flight only). */

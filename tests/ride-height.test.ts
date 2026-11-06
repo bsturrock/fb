@@ -417,7 +417,12 @@ describe('RH-F6 legacy and suspension versions (same requests)', () => {
       const sum = (s: Simulation) =>
         `${s.result}; ${s.players.map((p) => `${p.id} ${p.handoff ? `${p.handoff.outcome}@${p.handoff.t.toFixed(3)}${p.handoff.report.reasons.length ? `(${p.handoff.report.reasons.join(',')})` : ''}` : 'no handoff'}`).join(', ')}`;
       report.push(`${lid} -> ${rid}\n    legacy:     ${sum(sa)}\n    suspension: ${sum(sb)}`);
-      if (lid === 'G4-F10-simultaneous-M') for (const s of [sa, sb]) for (const p of s.players) expect(p.handoff?.report.reasons).toContain('externalPenetration');
+      // known rejection retained on the legacy support; plan 07a: the suspension version (RH-F6-simultaneous) converts
+      // both players (the published poses now clear each other's candidate-equivalent limbs)
+      if (lid === 'G4-F10-simultaneous-M') {
+        for (const p of sa.players) expect(p.handoff?.report.reasons).toContain('externalPenetration');
+        for (const p of sb.players) expect(p.handoff?.outcome, `${rid} ${p.id}`).toBe('accepted');
+      }
       for (const s of [sa, sb]) s.dispose();
     }
     console.log(`[RH-F6]\n  ${report.join('\n  ')}`);

@@ -1,14 +1,32 @@
 # Locomotion transitions and tackle integration
 
-Repository-aligned plan • 2026-11-05 • Planned.
+Repository-aligned plan • 2026-11-05 • Ready to start from the user-accepted 07a checkpoint, including both review fixes. Incoming validation: 239 tests, build and 238 fixtures pass; all 143 historical summaries unchanged.
 
 Previous: [ragdoll contact handoff](07a_Ragdoll_Contact_Handoff.md). Next: [active falls](09_Active_Falls_Joint_Limits_and_Role_Responses.md).
+
+## Intended result and execution order
+
+Make the accepted movement mechanics read as purposeful football movement: a convincing deceleration into a settled stance, natural idle and walking arms, then automatic run/contact/exit composition. Start with the visible stopping problem. Implement the three passes in order; the first gives a small, useful playback review before contact integration expands the cases. Full 08 acceptance requires all three.
+
+| Pass | Work | Evidence to hand off |
+| --- | --- | --- |
+| 1. Start, brake and stop | Smooth the run-start takeover and clip toe-off release; preserve achieved foot motion and independent plants. Refine braking step timing/placement, the existing lower physical stance and free-arm balance pose. Settle without a final hop or endless stepping. | L3-F16 plus the accepted runStop, hard-stop comparison, phase variants and interrupted stop. Normal-speed deceleration should look deliberate; substep traces explain target/landmark velocity changes and plant releases. |
+| 2. Idle and walking | Fit a useful posture from the supplied Idle.fbx; settle on existing plants. Restore procedural walking arm swing through the existing pose path, blending to idle/run and respecting carry/ready/held ownership. | L3-F13–F15: carrier/non-carrier idle, forward/backward/lateral walking and idle/walk/run/stop transitions. Include a conversion from the fitted posture. |
+| 3. Automatic contact integration | Compose free movement, preparation, contact and exit from actual observations and achieved pose. Preserve valid feet/arms independently; handle misses, recontact and falling without a shared stance reset. | L3-F1–F12, including eight run phases, mirrors, sustained contests, released loads and falls in every transition. Accepted 07a handoffs and first-solve checks stay valid. |
+
+Use the accepted 0.80 m braking-height candidate and 5.5 m/s² motor braking cap as the starting profile. The runStop reference reaches about 0.801 m at the clip-to-procedural crossing and stops to ≤ 0.1 m/s in about 1.48 s over 3.31 m. Refine the motion from actual slowing; step count and duration remain outputs. A refined bounded height/posture request can change support load and travel, so report those changes. Force budgets, artificial root/velocity corrections and render-only pelvis offsets are not presentation controls.
+
+For pass 1, show the complete stop at normal speed and 0.25× from side and oblique views. It should lower, take distinct catching steps, use available free arms and finish stably. Address the known toe-off velocity reversal around 3.067–3.10 s, the 2.55 s brake-phase variant and run-start takeover around 0.75 s. Retain the now-accepted absence of the synchronized hop. Natural deceleration is a visual acceptance requirement, alongside the numeric checks below.
+
+At each pass, run focused regressions and keep the existing contact cases available for review. At closeout, run the full suite/build/fixture export and publish one handoff with profile identities, measured deltas, playback cases and remaining limits. New jump design, ballistic running, spine/head animation and active/anatomical ragdoll changes keep their later scope.
 
 ## Prerequisites
 
 Require the adopted plan 06a suspension with plan 07's accepted load-release recovery, hinge-valid handoffs and running/contact plants. An implemented 06a controller or passing foot-drift metric alone does not satisfy this prerequisite. Migrate integrated locomotion fixtures to that explicit repaired support profile; retain named legacy cases for historical evidence. Committed plan 06 pre-handoff invariance is not required for new support. Record every changed tackle outcome; restoring legacy winners/timings is not an acceptance target.
 
 Require [07a's contact-handoff acceptance](07a_Ragdoll_Contact_Handoff.md) for the simultaneous, player-below and footwork one-arm cases. Their rigid falling-proxy behavior is not an accepted integration baseline; retain safety rejection only for genuinely invalid candidates and diagnostics.
+
+This prerequisite is satisfied by the user-accepted [07a closeout](../handoff/plan07a.md#review-closeout-fixes-2026-11-05). Preserve candidate-equivalent opponent-limb clearance, the final shown reach-direction limit and its recovery state, and momentum/energy measurements beginning before the first solved step. The accepted defender remains upright in RH-F6-oneArm, L2-F14-oneArm, HC-F3-mirror and HC-F3-phase0; changed tackle winners are not a reason to alter force budgets. Every actual required natural-contact fall must still articulate with passing audits. Retain legacy fixtures as historical evidence rather than retrofitting their profiles.
 
 ## Idle and procedural walking poses
 
@@ -40,6 +58,8 @@ Free walking arms follow actual gait phase and speed with bounded continuous swi
 
 Keep `PlayerRuntime.pose`, `Simulation.updatePoses`, `convertBatch`, `validateCandidate`, `switchToRagdoll` and `ragdollPose`. The code already has canonical physical segments, delayed observation history, render interpolation, simultaneous conversion, retained contact remapping and transfer failure handling. The new work is switching/blending clip and contact-foot targets while preserving that boundary. Existing snapshot history is not automatically sufficient for per-foot transition state; add only the previous achieved targets/state needed by the transition.
 
+Preserve `poseMemory` and the reach-recovery flag through ordinary locomotion mode changes. Clear them on actual reset/accepted conversion, not to hide a transition correction. Advance gait and clip phase once per physics substep. Same-time old/new-pose comparisons use copied state and must not advance or mutate the live sampler, foot planner or continuity memory.
+
 ## Implementation
 
 1. Add a small per-player locomotion mode (free run, preparation, contact, exit); keep it separate from supported/falling control and proxy/articulated representation. Use observed contact, retained arms and actual movement, with hysteresis. Preparation may request bounded stance height and existing posture lean, but cannot grant contact, traction or balance. Blend height targets through the plan 06a controller; use achieved core height and orientation for all limbs.
@@ -59,7 +79,7 @@ Polish run-to-stop transitions using 07's procedural final steps and persistent 
 
 Use 07's explicitly calibrated opt-in controlled-braking motor profile for ordinary controlled-stop integration, and keep the original-profile hard-stop case as a comparison. Its separate braking cap is an approved physics-profile change, not a parameter the transition/foot planner may adjust. Carry the motor identity into evidence; step count and animation duration follow actual solved deceleration. Contact/grip impulses remain outside the motor-only cap, and profile changes must not be used to force a successful tackle or plant.
 
-**Accepted 07 transition residuals.** Reproduce the observed runStop toe-off around 3.067–3.10 s and the 2.55 s brake-phase variant. Positions remain continuous at physics substeps, but the released plant rejoins the moving clip with an abrupt change in knee/ankle velocity (one-tick second difference 11.8 cm observed, 14.4 cm in the variant). Also review run-start quick-step takeover around 0.75 s. Smooth ordinary plant/clip/step transitions from the achieved motion, without weakening confirmed-contact checks, changing braking authority or hiding a ground-contact failure. Measure first displacement and velocity alongside second differences; do not describe the latter as a literal teleport. Contact-clearance jumps remain 07a work.
+**Accepted 07 transition residuals.** Reproduce the observed runStop toe-off around 3.067–3.10 s and the 2.55 s brake-phase variant. Positions remain continuous at physics substeps, but the released plant rejoins the moving clip with an abrupt change in knee/ankle velocity (one-tick second difference 11.8 cm observed, 14.4 cm in the variant). Also review run-start quick-step takeover around 0.75 s. Smooth ordinary plant/clip/step transitions from the achieved motion, without weakening confirmed-contact checks, changing braking authority or hiding a ground-contact failure. Measure first displacement and velocity alongside second differences; do not describe the latter as a literal teleport. Preserve the accepted 07a contact-clearance fixes and report any new regressions introduced by this composition.
 
 **Football braking presentation (user visual feedback).** Plan 07 now owns both the synchronized two-foot hop repair and the bounded lower physical braking stance; they must already work on entry here. This milestone refines cadence/foot placement, stance timing and the arms-out balance pose using that accepted physical height request. Free arms may move outward within existing reach, clearance and continuity limits; carry, ready and held arms keep their assignments. Do not lower only the mesh, change braking budgets to manufacture a preferred number of steps, or reintroduce rebound on return to idle. The pose should visibly anticipate/respond to actual slowing and finish in a stable stance; handle contact, reacceleration and falling from the achieved state. Pose-only arm motion still supplies no physical counterbalance. Review at normal speed for recognisable deceleration, not just finite numbers or absence of an explosion.
 

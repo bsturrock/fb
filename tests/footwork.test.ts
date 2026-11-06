@@ -285,15 +285,23 @@ describe('L2 repair 2: one-arm defender hinge contract (L2-F14)', () => {
     expect(Math.abs(dist(hip, bounded.mid) - a)).toBeLessThan(1e-9);
     expect(Math.abs(dist(bounded.mid, bounded.end) - b)).toBeLessThan(1e-9);
   });
-  it('the late defender conversion is a valid handoff (RH-F6-oneArm and L2-F14); a genuinely bad candidate stays rejected', async () => {
-    for (const def of [rhf6().find((d) => d.id === 'RH-F6-oneArm')!, L2.l2f14OneArm()]) {
+  it('every one-arm fall is a valid handoff, including a late defender; a genuinely bad candidate stays rejected', async () => {
+    let lateDefender = false;
+    for (const def of [rhf6().find((d) => d.id === 'RH-F6-oneArm')!, L2.l2f14OneArm(), L2.l2f14OneArmFeet()]) {
       const sim = await run(def);
       for (const p of sim.players) {
-        expect(p.handoff?.outcome, `${def.id} ${p.id}`).toBe('accepted');
-        expect(p.handoff?.report.hingeOk).toBe(true);
+        // A corrected runner pose changes subsequent contacts; the defender may stay up, but every fall must convert.
+        if (p.controlMode === 'supported') expect(p.handoff, `${def.id} ${p.id}`).toBeNull();
+        else {
+          expect(p.handoff?.outcome, `${def.id} ${p.id}`).toBe('accepted');
+          expect(p.handoff?.report.hingeOk).toBe(true);
+          if (p.id === 'D') lateDefender = true;
+        }
       }
+      expect(sim.players.find((p) => p.id === 'R')!.handoff?.outcome, def.id).toBe('accepted');
       sim.dispose();
     }
+    expect(lateDefender).toBe(true);
     const bad = await run(FIX('L2-F8-noRescue'));
     expect(bad.players[0].handoff?.outcome).toBe('rejected');
     expect(bad.players[0].handoff?.report.reasons).toContain('jointAnchor');
