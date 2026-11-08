@@ -8,7 +8,7 @@
 import type { ArmSide, SegmentId } from './contracts';
 import { carryRequest, seatBallLocal, seatBallWorld, seatPalmLocal, type CarryProfile, type CarrySeat } from './carry';
 import { chestArm, type SampledLimbs } from './run-clip';
-import type { LocomotionProfile } from './locomotion';
+import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
 import {
   add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qInvRot, qMul, qRot, scale, sub, toWorld, upOf, v3,
@@ -709,10 +709,10 @@ export function legRequestLocal(inp: ProxyPoseInput, s: ArmSide): Vec3 {
     const fwdH = norm(v3(fwd.x, 0, fwd.z), v3(0, 0, 1));
     const hipW = toWorld(pose, v3(hipL.x, hipL.y, hipL.z));
     const gx = qRot(pose.q, v3(vdir.x * off, 0, vdir.z * off));
-    const still = 1 - Math.min(1, inp.speed / 1.5);
+    const still = idleStanceFade(inp.speed);
     const st = (s === 'left' ? 0.5 : -0.5) * gr.staggerM * still;
     // plan 08: the fitted idle stance is wider than the hips; it opens as the travel stops (absent: unchanged)
-    const wide = inp.loco ? qRot(pose.q, v3(sideSignX(body, s) * inp.loco.profile.idle.widthAddM * still, 0, 0)) : v3();
+    const wide = inp.loco ? qRot(pose.q, v3(sideSignX(body, s) * idleWidthAddM(inp.loco.profile, body, s) * still, 0, 0)) : v3();
     const aw = v3(hipW.x + gx.x + fwdH.x * st + wide.x, gr.y + soleH + lift * swing, hipW.z + gx.z + fwdH.z * st + wide.z);
     proc = qInvRot(pose.q, sub(aw, pose.p));
   }

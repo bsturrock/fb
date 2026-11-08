@@ -1,6 +1,6 @@
 # 10b — Foot target continuity
 
-Repository-aligned plan • 2026-11-08 • Not started. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Follows [10a](10a_Test_Gate_and_Evidence_Integrity.md).
+Repository-aligned plan • 2026-11-08 • **Implemented 2026-11-08** ([handoff](../handoff/plan10.md#10b--foot-target-continuity)): full suite green, the 238 committed summaries unchanged, 74 L3 and 62 L4 summaries changed and listed; audit 0 boundaries over 1 cm with the `stepStopM` correction gone; hip twist envelope stiffened (`envelope-l4-v2`) after 10b exposed a persistent twist. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Follows [10a](10a_Test_Gate_and_Evidence_Integrity.md).
 
 **Goal:** the composed foot planner publishes targets with continuous motion inside an ownership as well as across it, with step state that matches what was published. The [08 closeout](08_Review_Closeout.md) contracts stay in force: same-time 1 cm composition limit, planner vertical speed and follow-offset recovery at most 1.5 m/s, and no snapping to the destination when a timer expires.
 

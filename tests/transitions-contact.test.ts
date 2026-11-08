@@ -6,7 +6,6 @@ import { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dist, qRot, scale, sub, type Vec3 } from '../src/sim/vec';
 import { pace, run, runSim } from './helpers';
-import type { ArmObs } from '../src/sim/arms';
 import { SIDES, FIX, L3, each, modes, armProfile, ragOf, armLengthErr, count } from './transitions-shared';
 
 
@@ -18,6 +17,9 @@ describe('plan 08 pass 3: contact integration', () => {
     {
       const sim = await Simulation.create(d);
       const before: Record<string, Record<string, Vec3 | null>> = {};
+      // plan 10b: the entries and the plants held across them, so the claim is not vacuous
+      let entries = 0;
+      let kept = 0;
       while (!sim.done) {
         for (const pl of sim.players) {
           if (!pl.feet || !pl.pose) continue;
@@ -29,14 +31,18 @@ describe('plan 08 pass 3: contact integration', () => {
         await pace();
         sim.players.forEach((pl, i) => {
           if (pl.rag || was[i] === pl.loco?.mode || pl.loco?.mode !== 'contact') return;
+          entries++;
           for (const s of SIDES) {
             const h0 = before[pl.id]?.[s];
             const f = pl.feet!.feet[s];
             // a plant held across the entry keeps its anchor; the mode itself moves nothing
             if (h0 && f.mode === 'planted' && f.heelW && dist(h0, f.heelW) > 1e-9) expect(f.plantedAtS, `${d.id} ${pl.id} ${s}`).toBeGreaterThan(sim.t - 1 / 60 - 1e-6);
+            else if (h0 && f.mode === 'planted') kept++;
           }
         });
       }
+      expect(entries, `${d.id} contact entries`).toBeGreaterThan(0);
+      expect(kept, `${d.id} plants held across an entry`).toBeGreaterThan(0);
       sim.dispose();
     }
   });
@@ -261,8 +267,17 @@ describe('plan 08 pass 3: contact integration', () => {
     sim.dispose();
   });
 
-  /** The achieved arm segments against the arm profile and every live hold's palm against its anchor, each substep it exists. */
-  const held = async (d: FixtureDef, watch: (s: Simulation) => void = () => {}): Promise<{ sim: Simulation; lengthM: number; gripGapM: number; grips: number; clamps: number; clampGapM: number }> => {
+  /** Deliberate faults for the negative controls: the shown elbow pushed out along the upper arm, the anchor moved on the target. */
+  interface Tamper {
+    stretchElbow?: number;
+    anchorLocal?: Vec3;
+  }
+  /**
+   * The held arms as the published pose shows them (plan 10b: the pose's landmarks, not the arm system's observation, so a
+   * pose-side displacement fails): segments against the arm profile and every live hold's palm against its anchor on the
+   * target, each substep the hold exists.
+   */
+  const held = async (d: FixtureDef, watch: (s: Simulation) => void = () => {}, tamper: Tamper = {}): Promise<{ sim: Simulation; lengthM: number; gripGapM: number; grips: number; clamps: number; clampGapM: number }> => {
     const A = armProfile(d);
     const out = { lengthM: 0, gripGapM: 0, grips: 0, clamps: 0, clampGapM: 0 };
     const sim = await Simulation.create(d, {
@@ -272,13 +287,21 @@ describe('plan 08 pass 3: contact integration', () => {
         for (const pl of s.players) {
           if (pl.rag) continue;
           const o = arms.obs(pl.id);
+          const lm = pl.pose?.jointLandmarksWorld;
           for (const side of SIDES) {
             const a = o?.[side];
-            if (!a) continue;
+            if (!a || !(a.gripId || a.clampContactId)) continue;
+            expect(lm, `${d.id} ${pl.id} ${side} held with no published pose`).toBeDefined();
+            const sh = lm![`${side}Shoulder`]!;
+            const el = lm![`${side}Elbow`]!;
+            const shown = {
+              shoulderWorld: sh,
+              elbowWorld: tamper.stretchElbow ? add(el, scale(sub(el, sh), tamper.stretchElbow)) : el,
+              wristWorld: lm![`${side}Wrist`]!,
+              palmContactWorld: lm![`${side}Palm`]!,
+            };
             // a held arm is shown by the arm solve: fixed segments, the free-arm composition adds nothing to it
-            if (a.gripId || a.clampContactId) {
-              out.lengthM = Math.max(out.lengthM, armLengthErr(a, A));
-            }
+            out.lengthM = Math.max(out.lengthM, armLengthErr(shown, A));
             if (a.gripId) {
               const g = arms.grips.get(a.gripId)!;
               const t = s.byId.get(g.targetId)!;
@@ -286,8 +309,8 @@ describe('plan 08 pass 3: contact integration', () => {
               const b = t.proxy.body;
               const q = b.rotation();
               const p = b.translation();
-              const anchor = add({ x: p.x, y: p.y, z: p.z }, qRot({ x: q.x, y: q.y, z: q.z, w: q.w }, g.targetPointLocal));
-              out.gripGapM = Math.max(out.gripGapM, dist(a.palmContactWorld, anchor));
+              const anchor = add({ x: p.x, y: p.y, z: p.z }, qRot({ x: q.x, y: q.y, z: q.z, w: q.w }, tamper.anchorLocal ? add(g.targetPointLocal, tamper.anchorLocal) : g.targetPointLocal));
+              out.gripGapM = Math.max(out.gripGapM, dist(shown.palmContactWorld, anchor));
               out.grips++;
             }
             if (a.clampContactId) out.clamps++;
@@ -350,24 +373,28 @@ describe('plan 08 pass 3: contact integration', () => {
   }, 60000);
 
   it('the retention measures fail a stretched limb and a shifted anchor, and the wrong player has no hold', async () => {
+    // the same measures, on the same run, with a 2 % longer shown upper arm or an anchor moved 2 cm on the target
     const d = FIX('L3-F4-gripTarget');
     const A = armProfile(d);
-    let seen: ArmObs | null = null;
+    const tol = ragOf(d).validation.lengthTolM;
     const r = await held(d, (s) => {
-      const o = s.arms!.obs('D');
-      if (o?.left?.gripId) seen ??= structuredClone(o.left);
       // the held runner holds nothing: inspecting it would prove nothing
       const q = s.arms!.obs('R');
       expect(q?.left?.gripId ?? null).toBeNull();
       expect(q?.right?.gripId ?? null).toBeNull();
     });
-    expect(seen).not.toBeNull();
-    const a = seen!;
-    expect(armLengthErr(a, A)).toBeLessThanOrEqual(ragOf(d).validation.lengthTolM);
-    const stretched = { ...a, elbowWorld: add(a.elbowWorld, scale(sub(a.elbowWorld, a.shoulderWorld), 0.02)) };
-    expect(armLengthErr(stretched, A)).toBeGreaterThan(ragOf(d).validation.lengthTolM);
-    expect(dist(a.palmContactWorld, add(a.palmContactWorld, { x: 0.02, y: 0, z: 0 }))).toBeGreaterThan(A.surfaceTolM);
+    expect(r.grips).toBeGreaterThan(0);
+    expect(r.lengthM).toBeLessThanOrEqual(tol);
+    expect(r.gripGapM).toBeLessThanOrEqual(A.surfaceTolM);
     r.sim.dispose();
-  }, 30000);
+    const stretched = await held(d, () => {}, { stretchElbow: 0.02 });
+    expect(stretched.lengthM).toBeGreaterThan(tol);
+    expect(stretched.gripGapM).toBeLessThanOrEqual(A.surfaceTolM);
+    stretched.sim.dispose();
+    const shifted = await held(d, () => {}, { anchorLocal: { x: 0.02, y: 0, z: 0 } });
+    expect(shifted.gripGapM).toBeGreaterThan(A.surfaceTolM);
+    expect(shifted.lengthM).toBeLessThanOrEqual(tol);
+    shifted.sim.dispose();
+  }, 60000);
 });
 

@@ -36,6 +36,9 @@ export interface RunClipsRecord {
 
 export function clipIntake(dir = DIR): RunClipsRecord {
   const manifest = JSON.parse(readFileSync(`${dir}/manifest.json`, 'utf8')) as ManifestEntry[];
+  // plan 10b: the record needs exactly one walk cycle; say so by name rather than fail on a missing record later
+  const walks = manifest.filter((m) => m.kind === 'walk');
+  if (walks.length !== 1) throw new RunClipError('walk', `the manifest needs exactly one walk clip (kind 'walk'), it has ${walks.length}${walks.length ? `: ${walks.map((m) => m.id).join(', ')}` : ''}`);
   // the idle source has its own intake (scripts/model/idle-intake.ts): it is not a run clip
   const clips = manifest.filter((m) => m.kind !== 'idle').map((m) => {
     const isWalk = m.kind === 'walk';
@@ -77,6 +80,6 @@ export function clipIntake(dir = DIR): RunClipsRecord {
     policy: RUN_CLIP_POLICY,
     calibrationSha256: CAL.asset.sha256,
     clips: clips.filter((c) => !c.isWalk).map((c) => c.rec).sort((a, b) => a.nominalSpeedMps - b.nominalSpeedMps),
-    walk: clips.find((c) => c.isWalk)!.rec,
+    walk: clips.find((c) => c.isWalk)!.rec, // (exactly one: checked above)
   };
 }

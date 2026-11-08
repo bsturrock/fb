@@ -26,7 +26,7 @@ for (const id of [...new Set(named.map((n) => n[0]))]) {
     const worst = (l: typeof near): string => {
       if (!l.length) return 'none';
       const d = [...l].sort((a, b) => b.deltaM - a.deltaM)[0];
-      return `${d.t.toFixed(4)} ${(d.deltaM * 100).toFixed(2)} ${d.landmark} raw ${(d.rawM * 100).toFixed(2)} ${mark} ${((d.by[mark] ?? 0) * 100).toFixed(2)} stop ${JSON.stringify(d.stepStopM)} jump ${JSON.stringify(d.requestJumpM)}`;
+      return `${d.t.toFixed(4)} ${(d.deltaM * 100).toFixed(2)} ${d.landmark} raw ${(d.rawM * 100).toFixed(2)} ${mark} ${((d.by[mark] ?? 0) * 100).toFixed(2)} jump ${JSON.stringify(d.requestJumpM)}`;
     };
     console.log(`${id} ${t.toFixed(4)} ${who} ${mark}: at ${worst(at)}; within a tick ${worst(near)}`);
   }

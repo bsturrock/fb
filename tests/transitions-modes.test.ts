@@ -9,12 +9,12 @@ import { FixedStepDriver } from '../src/sim/driver';
 import { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { ArmSide } from '../src/sim/contracts';
-import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
+import { FOOTWORK_L2, FOOTWORK_L3, type FootPlanInput } from '../src/sim/footwork';
 import { advanceLoco, IDLE_POSE_RECORD, LOCOMOTION_L3, newLocoState, type LocoObs } from '../src/sim/locomotion';
 import { dist, len, qConj, qRot, sub, v3, vc, type Vec3 } from '../src/sim/vec';
 import { idleIntake } from '../scripts/model/idle-intake';
 import { pace, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
-import { RULES_FOOTBALL } from '../src/sim/profiles';
+import { RULES_FOOTBALL, sideSignX } from '../src/sim/profiles';
 import { SIDES, FIX, L3, each, count, peaks, LIMBS } from './transitions-shared';
 
 
@@ -24,8 +24,8 @@ afterEach(() => new Promise<void>((done) => setTimeout(done)));
 describe('plan 08 opt-in', () => {
   it('only L3 fixtures take the composed planner and the locomotion profile; earlier ids keep their paths', () => {
     expect(FOOTWORK_L2.compose).toBeUndefined();
-    expect(FOOTWORK_L3.id).toBe('footwork-l3-v2');
-    expect(LOCOMOTION_L3.id).toBe('locomotion-l3-v2');
+    expect(FOOTWORK_L3.id).toBe('footwork-l3-v3');
+    expect(LOCOMOTION_L3.id).toBe('locomotion-l3-v3');
     for (const d of allFixtures()) {
       if (d.id.startsWith('L4-')) continue; // later than L3: its falls start from L3 fixtures, with their profiles
       if (d.id.startsWith('L3-')) {
@@ -109,6 +109,34 @@ describe('plan 08 locomotion mode', () => {
       expect(st.mode).toBe('free');
       expect(st.reason).toBe('falling');
       expect(st.contactW + st.prepW).toBeLessThan(w);
+    }
+  });
+
+  it('a clamped brace weight takes its rate with it: it leaves the bound as one that came to rest there (plan 10b)', () => {
+    // the critically damped brace weight does not reach its bounds in any L3 or L4 run; started past one, the rate the
+    // clamp overrode used to keep it pinned there after the contact weight had moved away
+    for (const [w0, v0, target] of [[0.999, 5, { contact: true }], [0.001, -5, {}]] as const) {
+      const at = newLocoState();
+      const t = drive(at, target, 0.5);
+      const rest = { ...at, braceW: w0 > 0.5 ? 1 : 0, braceV: 0 };
+      at.braceW = w0;
+      at.braceV = v0;
+      advanceLoco(at, P, obs(target), t + dt, dt);
+      advanceLoco(rest, P, obs(target), t + dt, dt);
+      expect(at.braceW).toBe(rest.braceW);
+      expect(at.braceV).toBe(0);
+      // then the other way: both leave the bound together
+      const away = w0 > 0.5 ? {} : { contact: true };
+      let tt = t + dt;
+      let moved = 0;
+      for (let i = 0; i < 120; i++) {
+        tt += dt;
+        advanceLoco(at, P, obs(away), tt, dt);
+        advanceLoco(rest, P, obs(away), tt, dt);
+        expect(at.braceW, `${w0} ${i}`).toBeCloseTo(rest.braceW, 12);
+        if (Math.abs(at.braceW - (w0 > 0.5 ? 1 : 0)) > 0.01) moved++;
+      }
+      expect(moved).toBeGreaterThan(0);
     }
   });
 });
@@ -275,6 +303,41 @@ describe('plan 08 pass 2: idle and walking', () => {
     expect(count(h, 'handoffRejected')).toBe(0);
     expect(h.players[0].representation).toBe('ragdoll');
     h.dispose();
+  }, 30000);
+
+  it('the idle stance is the fitted width on either body: the width outside the hip comes from the body (plan 10b)', async () => {
+    // before 10b the width added outside the hip assumed bew-v6's 0.1125 m hip: on the stock body (0.13 m) the stance
+    // was 0.355 m. Both the planner's home and the ordinary leg request are read at rest
+    const fitted = FIX('L3-F15-fitted');
+    const stock = FIX('L3-F4-gripTarget').players.find((p) => p.body.hipRight.x === 0.13)!.body;
+    const widths: number[] = [];
+    for (const d of [fitted, { ...fitted, players: fitted.players.map((p) => ({ ...p, body: stock })) }]) {
+      const sim = await Simulation.create(d);
+      const R = sim.players[0];
+      const host = sim as unknown as { footInput: (pl: typeof R, ...a: unknown[]) => FootPlanInput };
+      const input = host.footInput.bind(sim);
+      let at: { home: FootPlanInput['home']; request: FootPlanInput['request']; right: Vec3; speed: number } | null = null;
+      host.footInput = (pl, ...a) => {
+        const r = input(pl, ...a);
+        if (pl === R) {
+          const q = R.proxy.body.rotation();
+          const v = R.proxy.body.linvel();
+          at = { home: structuredClone(r.home), request: structuredClone(r.request), right: qRot({ x: q.x, y: q.y, z: q.z, w: q.w }, v3(sideSignX(R.body, 'right'), 0, 0)), speed: Math.hypot(v.x, v.z) };
+        }
+        return r;
+      };
+      await runSim(sim);
+      const a = at!;
+      expect(a.speed, d.players[0].body.id).toBeLessThan(1e-3);
+      const across = (p: Record<ArmSide, Vec3>): number => p.right.x * a.right.x + p.right.z * a.right.z - (p.left.x * a.right.x + p.left.z * a.right.z);
+      for (const w of [across(a.home), across(a.request)]) {
+        expect(w, d.players[0].body.id).toBeCloseTo(IDLE_POSE_RECORD.stance.widthM * IDLE_POSE_RECORD.stance.legScale, 3);
+        widths.push(w);
+      }
+      sim.dispose();
+    }
+    expect(stock.hipRight.x).not.toBeCloseTo(Math.abs(fitted.players[0].body.hipRight.x), 2);
+    expect(widths.length).toBe(4);
   }, 30000);
 
   it('L3-F14: a free arm swings visibly at a walk; the swing fades with the gait; carry and ready keep their assignment', async () => {
@@ -509,6 +572,41 @@ describe('plan 08 walking ramp between controller decisions', () => {
     expect(seen).toBeGreaterThan(10);
     sim.dispose();
   }, 30000);
+
+  it('the ramp reads the mode decided this substep, and prep and exit pass through it as contact does (plan 10b)', async () => {
+    // plan 08 kept contact and run requests out of the ramp (only a free walk is shaped); prep and exit are part of that
+    // bypass. Before 10b the mode was decided after the ramp, so at each change the ramp used the last substep's mode
+    for (const id of ['L3-F7-phase0', 'L3-F8-recontact']) {
+      const atRamp = new Map<string, string | undefined>();
+      const changes = new Map<string, number>();
+      const last = new Map<string, string | undefined>();
+      let bypass = 0;
+      const sim = await Simulation.create(FIX(id), {
+        onSubstep: (s) => {
+          for (const pl of s.players) {
+            const mode = pl.loco?.mode;
+            expect(atRamp.get(pl.id), `${id} ${pl.id} ${s.t.toFixed(4)}`).toBe(mode);
+            if (last.has(pl.id) && last.get(pl.id) !== mode) changes.set(mode!, (changes.get(mode!) ?? 0) + 1);
+            last.set(pl.id, mode);
+            if (mode !== 'free' && pl.controlMode === 'supported' && !pl.rag) {
+              bypass++;
+              expect(dist(pl.walkRequest!, pl.walkWant!), `${id} ${pl.id} ${mode} ${s.t.toFixed(4)}`).toBe(0);
+            }
+          }
+        },
+      });
+      const host = sim as unknown as { rampWalkRequest: (pl: Simulation['players'][number], decided: boolean) => void };
+      const ramp = host.rampWalkRequest.bind(sim);
+      host.rampWalkRequest = (pl, decided) => {
+        atRamp.set(pl.id, pl.loco?.mode);
+        ramp(pl, decided);
+      };
+      await runSim(sim);
+      for (const m of ['prep', 'contact', 'exit', 'free']) expect(changes.get(m) ?? 0, `${id} changes to ${m}`).toBeGreaterThan(0);
+      expect(bypass).toBeGreaterThan(100);
+      sim.dispose();
+    }
+  }, 60000);
 });
 
 describe('plan 08 lifecycle and reproducibility', () => {
@@ -558,8 +656,8 @@ describe('plan 08 lifecycle and reproducibility', () => {
   it('the export names the locomotion and footwork profiles and the per-player mode', async () => {
     const sim = await run(FIX('L3-F7-phase0'));
     const x = sim.exportFixture() as { profiles: Record<string, unknown> };
-    expect(JSON.stringify(x.profiles)).toContain('locomotion-l3-v2');
-    expect(JSON.stringify(x.profiles)).toContain('footwork-l3-v2');
+    expect(JSON.stringify(x.profiles)).toContain('locomotion-l3-v3');
+    expect(JSON.stringify(x.profiles)).toContain('footwork-l3-v3');
     expect(sim.trace.at(-1)!.players.R.loco).toBeDefined();
     sim.dispose();
   });

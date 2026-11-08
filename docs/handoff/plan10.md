@@ -80,3 +80,171 @@ A8 adds a field, so its test fails without it by construction.
 | `profileIds.ragdoll`, `profiles.ragdoll.id` | 2 |
 
 No summary, trace row or other export field changed.
+
+## 10b — Foot target continuity
+
+**Result:** full suite exit 0, no unhandled error: 19 files, 795 tests, 176 s wall. Typecheck and build pass. The 238 committed summaries are unchanged: every non-L3/L4 summary is byte-identical to 10a. 74 of 97 L3 and 62 of 76 L4 summaries change (listed below). The L3 transition audit has 0 boundaries over 1 cm (2292 boundaries, largest 0.98 cm at `L3-F3-recover` R 0.671 s, then 0.92 cm at `L3-F7-phase75`; 10a had 2450, largest 0.89 cm. Boundaries over 1 cm before any reference correction: 50 at 10a, 6 now. The `requestJumpM` correction applies at 613 boundaries (10a 634); `stepStopM` applied at 165 and is gone), with the `stepStopM` reference correction gone (B1) and the `requestJumpM` correction kept (B3).
+
+### What changed
+
+- **B1, steps that stopped dead.** A composed step's path is replanned every substep over a horizon that never falls to one substep while the foot is moving: `boundedHorizon` lengthens the remaining time (never shortens it) until the minimum-jerk path to the destination stays within the step's acceleration limit, and a path with one substep left arrives only when that last substep is within the limit too (distance at most aMax·dt²/2, speed at most aMax·dt). Arrival is the same test as before (`lateS` armed or inside `arriveS`); `lateS` is no longer the only thing between a moving foot and a one-substep stop. At the speed cap the next path starts from the accepted motion and its acceleration (before, the cap zeroed it, so a capped foot could not slow below the cap: `L3-F16-runStop` R right ran 8 m/s past its destination at 3.35 s and was still swinging at the end). A continued clip step is timed with the time its acceleration limit needs (`√(10/√3 · L / aMax)`), so it lands on time on a free stop or start. Two consequences of no longer snapping, each with its own rule: the feet land one at a time, at least `landGapS` apart (`fitLanding`, the plan 08 stop contract), and a step out of time whose foot and target are settled within the plant tolerance lands where it is (before, the stop put it on a destination; without either, `L3-F4-twoArm` D, a leg held off by a tackler, chased a moving destination and planted nothing in contact; see Findings). The `stepStopM` reference correction in the transition audit stood in for the old dead stop; with the stop gone it is removed at its source (`continueOwners` compares the old path as it is).
+- **B2, stale vertical rate.** Every composed step stores the published vertical rate, `(y − prev.y) / dt`, whatever set the height; its vertical acceleration is the path's own where a path set it (0 at the lift cap), else the change of the published rate. A chase's vertical path starts from that motion and stays within the declared lift acceleration (`endRateY`: the mean over the last substep, not its end rate).
+- **B3, leg-request jump at contact.** The source was the sampled clip's travel heading, which took the travel direction in one substep, so a collision that turned the travel turned the leg request with it: up to 4.45 cm second difference in `L3-F8-recontact` (D2 left, 0.829 s), 116 substeps over 1 cm across L3. The heading now follows the travel direction, critically damped at the foot planner's own follow rate (`headingRadPerS = 18`, in the run-clip profile id). A composed heading at the clearance crossing takes the body heading the same way. The audit's `requestJumpM` correction stays, as the plan says.
+- **B4, walk ramp.** `advanceLocoMode` now runs before `rampWalkRequest`, so the ramp reads this substep's mode. Plan 08's bypass is for contact and the run only (the closeout says so); prep and exit now ramp.
+- **B5, stance width.** `LOCOMOTION_L3.idle.halfWidthM` is the fitted stance's half width (the clip's width scaled to the body's legs); `idleWidthAddM(P, body, s)` takes what it adds outside the body's own `|hipLocal(body, s).x|` at use, so a stock body (hip 0.13 m) gets the fitted width as bew-v6 does. `HIP_HALF_WIDTH_M` is gone. `idleStanceFade(speed)` is the one fade, shared by `pose.ts` and `simulation.ts`.
+- **B6, brace rate.** A clamped `braceW` zeroes `braceV`.
+- **B7, coached phase (U3).** `phaseFirst` on the coached entry spec updates the phase from this decision's observations before aiming; `asL3` opts every L3 coached entry in. Gate 1 fixtures keep the old order, so their summaries are unchanged.
+- **B8, tests.** The shifted-anchor control now shifts a real anchor (`anchorLocal` by 0.02 m) and an elbow stretch, and runs them through the retention check; `held()` measures the published pose's shoulder, elbow, wrist and palm landmarks; the `L3-F1` entry test asserts entries happened and were kept; audit purity compares full trace rows, events and per-substep snapshots of the feet, run playback, pose memory, locomotion state and walk request on a stated sample (the first fixture of each L3 family plus five chosen ones); the reseed gap is bounded by the contract (one substep at the speed cap horizontally, the lift cap vertically) instead of 0.1 m. `trialOf` now copies both feet and the stats (hardening: identical foot events across 173 L3/L4 fixtures with and without it), and `chase` refreshes `moveV`.
+- **B9, intake.** `clip-intake` throws a `RunClipError` naming the missing walk when the manifest has none (or more than one). `idle-intake` asserts its assumption: the rest skeleton faces +Z within 1° (measured 0.81°) and both rest legs agree within 1 mm; `restLegM` is the mean of both legs. The record is unchanged.
+- **B10, plan 08 handoff.** Corrections added in place (dated, linked here): the 597/599 against 600/600 count, the `stepStopM` description, "lands on arrival … no timer" (twice), the 20.89 m/s peak, and the shifted-anchor control.
+
+### Declared limits
+
+From the swing limits, not from output (`stepAccelLimits`, asserted in `tests/foot-continuity.test.ts`). A minimum-jerk path over time T peaks at speed (15/8)·D/T and acceleration (10/√3)·D/T², so its peak acceleration is 80/(15√3) = 3.079 × its peak speed / T:
+
+| Limit | Derivation | Value |
+| --- | --- | --- |
+| `stepAccelMps2` | 3.079 × `maxSpeedMps` 3.5 / `minS` 0.2 | 53.89 m/s² |
+| `stepAccelPerTravel` | 3.079 × `travelSpeedK` 2.5 / `minS` 0.2 | 38.49 m/s² per m/s of travel |
+| `liftAccelMps2` | 3.079 × `maxLiftRateMps` 1.5 / (`minS` / 2) (a step rises, then descends) | 46.19 m/s² |
+| `landGapS` | `minS` / 2 | 0.1 s |
+
+The step's horizontal limit is `stepAccelMps2 + stepAccelPerTravel × travel speed`, the same form as the speed cap.
+
+### Regressions, each shown failing with its fault restored
+
+`tests/foot-continuity.test.ts` checks, at every substep of every L3 fixture: a step target's horizontal second difference within its acceleration limit; a step's stored vertical rate equal to the published one; a chase's vertical rate change within the lift acceleration; the clip's leg request second difference within 1 cm on a supported body at full clip weight. It also counts what it saw (over 30000 step substeps), and adds the reproductions and the timing check below.
+
+| Fault put back | Failing check |
+| --- | --- |
+| B1: horizon not bounded (a stop in one substep) | 257 breaches in `L3-F3-side` |
+| B1: acceleration zeroed at the speed cap | 8 stop tests (feet still swinging, short rest) |
+| B1: no landing gap | 4 stop-landing tests (landings 0.04–0.06 s apart) |
+| B1: settled out-of-time steps never land | `L3-F4-twoArm` contact stepping |
+| B1: continued step timed without its acceleration term | `L3-F16-stop1.7` 9 substeps overdue (limit 2) |
+| B2: stale stored vertical rate | 778 breaches in `L3-F1-phase6` |
+| B2: chase replanned from the full mean rate | 5 `L3-F7` airborne tests |
+| B3: clip heading snaps to the travel | leg request jump over 3 cm (the test runs it) |
+| B3: composed heading snapped at the crossing | audit `L3-F7-loadRelease` raw 1.30 cm |
+| B4: ramp reads last substep's mode | mode `free` instead of `prep` |
+| B5: fixed 0.1125 m hip | stock-body stance 0.3546 m against 0.3196 m |
+| B6: rate kept after the clamp | rate 4.0024 left after the clamp |
+| B7: old order | the aim lags the phase exactly once (asserted) |
+| B8: live pose memory read by the audit | purity: `L3-F1-phase0` row 1 `players.D.ft` |
+| B8: held arm displaced on the pose side | the tamper runs exceed the tolerance |
+| B9 | the tests run the bad inputs |
+
+The reproductions: before 10b, `L3-F3-side` D left at 0.0583 s went from 20.51 m/s to 0 in one substep (8.55 cm second difference), and the same at R 0.2708 s, D left 0.3333 s and `L3-F1-phase0` 0.6708 s. Those runs have changed; the test asserts that every step running out of time above 1 m/s in both fixtures slows by at most aMax·dt over the next substep.
+
+### Stops
+
+`L3-F16` and `L3-F14` stops, 10a against 10b (brake time, speed at the brake, rest time, stopping distance and peak support load unchanged everywhere; 0 failed plants everywhere; coverage within ±0.4%):
+
+| Fixture | Last step 10a (s) | Last step 10b (s) | Attempts 10a / 10b |
+| --- | --- | --- | --- |
+| `L3-F16-runStop` (and Free, Ready) | 4.500 | 4.417 | 17 / 16 |
+| `L3-F16-runStopHard` | 4.208 | 3.983 | 16 / 16 |
+| `L3-F16-stop1.7` | 3.067 | 3.279 | 12 / 12 |
+| `L3-F16-stop1.9` | 3.217 | 3.483 | 13 / 13 |
+| `L3-F16-stop2.1` | 3.888 | 3.721 | 15 / 14 |
+| `L3-F16-stop2.3` | 4.254 | 3.517 | 15 / 14 |
+| `L3-F16-stop2.45` | 4.529 | 4.037 | 16 / 15 |
+| `L3-F16-stop2.55` | 3.842 | 3.829 | 15 / 15 |
+| `L3-F16-stop2.75` | 4.121 | 4.338 | 16 / 16 |
+| `L3-F16-stop2.9` | 4.688 | 4.525 | 18 / 17 |
+| `L3-F16-stop3.05` | 4.371 | 4.354 | 17 / 17 |
+| `L3-F16-reaccel` | 4.554 | 4.379 | 17 / 16 |
+| `L3-F16-kick` | 4.025 | 4.121 | 14 / 14 |
+| `L3-F16-contactStop` | 1.817 | 1.758 | 6 / 6 |
+| `L3-F14-walkRunStop` (and Carrier) | 4.875 | 5.192 | 13 / 14 |
+
+After the brake no two landings of opposite feet fall within `landGapS`, no plant fails and both feet end planted; the longest flight with no foot planted at run speed outside contact is 0.133 s (`L3-F7-phase25`). `L3-F14-walkRunStop` is the one stop whose distance and load move: 3.41 → 3.44 m and 1854 → 1766 N. Bisected to B3 (the clip's heading feeds the support).
+
+### Envelope stiffness exposed by 10b
+
+The first gate run failed one test: in `L4-F3-run-on` (and its source copy `L4-F9-free`), whose pre-fall run changed with 10b, the runner comes to rest with its right hip 7.2° past its twist range (twist −58° against −50°) from 1.85 s to the end of the trial, 0.65 s against the 0.25 s persistence limit. The shoe, carrying about 216 N, holds it by friction against about 100 N·m of twist spring. Plan 09's 800 N·m/rad twist cannot hold that inside the 5° tolerance; the passive limit was soft where plan 09 had only measured folded swing (its 2500 → 3500 change). The tolerance and persistence limit are unchanged. The hip twist is now 1600 N·m/rad (that load at 3.6°), with damping 3 → 4 N·m·s/rad for the same damping ratio, under new ids `envelope-l4-v2` and `ragdoll-l4-v2`. The longest run past tolerance across L4 falls is now 0.175 s (`L4-F3-run-off`, right hip) (10a: 0.188 s, `L4-F3-run-off` and `L4-F5-twoClamp-off`). The stated-load test derives its expected settled means from the profile (hip twist 30 N·m now settles at 1.07° instead of 2.15°). The persistence test is the regression: with 800 put back it fails on `L4-F3-run-on`. The plan 09 handoff has two dated corrections for this (the stated-load table and the natural-fall figures).
+
+### Profile ids
+
+| Profile | 10a | 10b |
+| --- | --- | --- |
+| Footwork (L3) | `footwork-l3-v2` | `footwork-l3-v3` |
+| Locomotion (L3) | `locomotion-l3-v2` | `locomotion-l3-v3` |
+| Run clips (L3) | `...+l3` | `...+l3+headingRadPerS=18` |
+| Envelope / ragdoll (L4) | `envelope-l4-v1`, `ragdoll-l4-v1` | `envelope-l4-v2`, `ragdoll-l4-v2` |
+| Coached entry (L3) | — | `phaseFirst: true` in the fixture definition |
+
+### Changed summaries
+
+All changed summaries, by family (suffixes after the family id):
+
+| Family | Changed |
+| --- | --- |
+| `L3-F1` | falling, low, mirror0, mirror4, phase0, phase1, phase2, phase3, phase4, phase5, phase6, phase7, rising |
+| `L3-F10` | both, bothLow, bothMirror, defender, falling, rising |
+| `L3-F11` | invalid |
+| `L3-F14` | handoff, walkRunStop, walkRunStopCarrier |
+| `L3-F15` | handoff |
+| `L3-F16` | contactStop, handoff, reaccel, runStop, runStopFree, runStopReady, stop1.9, stop2.1, stop2.3, stop2.45, stop2.9 |
+| `L3-F2` | missMirror |
+| `L3-F3` | collision, recover, side, sideMirror |
+| `L3-F4` | gripBoth, gripOwner, gripTarget, oneArm, twoArm |
+| `L3-F5` | drag, dragMirror |
+| `L3-F6` | hold, holdMirror, saturated |
+| `L3-F7` | loadRelease, mirror0, mirror50, phase0, phase25, phase50, phase75 |
+| `L3-F8` | recontact |
+| `L3-F9` | convert-contact, convert-exit, convert-free, convert-prep, defenderFalling, defenderRising, lift-contact, lift-exit, lift-free, lift-prep, low, noProbe-contact, noProbe-exit, noProbe-free, noProbe-prep, playerBelow |
+| `L4-F1` | hipSwing, hipTwist |
+| `L4-F10` | elbow-off, elbow-on, knee-off, knee-on, palm-off, palm-on, wrap-off, wrap-on |
+| `L4-F11` | disturbed, exhausted |
+| `L4-F12` | base, carryLeft, mirror |
+| `L4-F2` | forward-off, forward-on, model-forward-on, model-side-off, model-side-on, side-off, side-on |
+| `L4-F3` | forward-off, forward-on, model-forward-on, model-oblique-off, model-oblique-on, model-side-off, model-side-on, oblique-off, oblique-on, run-off, run-on, side-off, side-on |
+| `L4-F4` | fast, late, obstructed, occupied, tooFar |
+| `L4-F5` | oneClamp-off, oneClamp-on, onePalm-off, onePalm-on, twoClamp-off, twoClamp-on, twoPalm-off, twoPalm-on |
+| `L4-F6` | break |
+| `L4-F7` | overcome, passive, zeroCap |
+| `L4-F9` | both, contact, crowded, defenderFalling, defenderRising, exit, free, low, prep, transferFailed |
+
+Every result label and ending kind is unchanged. Endings that moved (time 10a → 10b, ball spot shift):
+
+| Fixture | Ending | Time (s) | Spot shift |
+| --- | --- | --- | --- |
+| `L3-F1-falling` | groundDown | 1.0958 → 1.0875 | 0.04 m |
+| `L3-F1-low` | groundDown | 1.3708 → 1.3708 | 0.01 m |
+| `L3-F1-mirror0` | groundDown | 1.1667 → 1.1667 | 0.03 m |
+| `L3-F1-mirror4` | groundDown | 1.1917 → 1.2417 | 0.30 m |
+| `L3-F1-phase0` | groundDown | 1.125 → 1.1125 | 0.06 m |
+| `L3-F1-phase1` | groundDown | 1.1875 → 1.175 | 0.06 m |
+| `L3-F1-phase2` | groundDown | 1.1 → 1.0875 | 0.05 m |
+| `L3-F1-phase3` | groundDown | 1.1583 → 1.1625 | 0.05 m |
+| `L3-F1-phase4` | groundDown | 1.1292 → 1.1333 | 0.02 m |
+| `L3-F1-phase5` | groundDown | 1.15 → 1.1667 | 0.09 m |
+| `L3-F1-phase6` | groundDown | 1.0875 → 1.0875 | 0.01 m |
+| `L3-F1-phase7` | groundDown | 1.0917 → 1.1 | 0.05 m |
+| `L3-F1-rising` | groundDown | 1.1 → 1.0875 | 0.06 m |
+| `L3-F10-defender` | groundDown | 1.1 → 1.0875 | 0.06 m |
+| `L3-F4-oneArm` | groundDown | 1.1 → 1.0875 | 0.05 m |
+| `L3-F4-twoArm` | groundDown | 1.1583 → 1.1625 | 0.03 m |
+| `L3-F9-defenderFalling` | groundDown | 1.0958 → 1.0875 | 0.04 m |
+| `L3-F9-defenderRising` | groundDown | 1.1 → 1.0875 | 0.06 m |
+| `L4-F10-wrap-off` | groundDown | 1.1583 → 1.1667 | 0.05 m |
+| `L4-F10-wrap-on` | groundDown | 1.1792 → 1.1875 | 0.06 m |
+| `L4-F5-oneClamp-off` | groundDown | 1.1 → 1.0875 | 0.06 m |
+| `L4-F5-oneClamp-on` | groundDown | 1.1167 → 1.1125 | 0.02 m |
+| `L4-F9-defenderFalling` | groundDown | 1.1208 → 1.1125 | 0.04 m |
+| `L4-F9-defenderRising` | groundDown | 1.1167 → 1.1125 | 0.02 m |
+
+Other changes:
+
+- `L3-F1-phase3`: conversions [(0.842, 'R')] -> [(0.842, 'R'), (1.517, 'D')]
+- `L3-F9-convert-free`: conversions [(0.2, 'R'), (1.125, 'D')] -> [(0.2, 'R')]
+- `L4-F9-transferFailed`: handoff [('handoffAuditFailure', 0.904, 'R'), ('handoffAuditFailure', 1.45, 'D')] -> [('handoffAuditFailure', 0.904, 'R'), ('handoffAuditFailure', 1.433, 'D')]
+
+Final positions moved by up to 2.76 m (`L3-F9-convert-free`, where D no longer falls). Before the hip twist change, 22 L4 summaries had changed with the L3 changes (`L4-F3-run`, `L4-F4-occupied`, `L4-F5`, `L4-F6-break`, `L4-F9`, `L4-F10-wrap`); the other 40 changed with the hip twist stiffness alone.
+
+### Findings
+
+- `L3-F1-phase5` D right: slide plants at 0.029–0.050 s drop the target 2.4–5.6 cm vertically at the reseed. Pre-existing; it passes the audit, and it is a reseed onto the achieved foot, not a planner path.
+- The reseed level gap's worst case sits exactly at its cap (one substep at the speed cap).
+- **Overdue steps still hover in contact** (the plan 08 open item, not fixed here). In `L3-F4-twoArm` D's left foot swings from 0.479 s until D falls at 1.40 s, and the right plants once, at 1.375 s; at 10a the dead stop put both down (left 0.896 s, right 1.012 s). Without the settled-landing rule D plants nothing in contact and the contact-stepping test fails; with it the test passes on that one plant, as narrowly as plan 08 reported.

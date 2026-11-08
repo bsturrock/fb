@@ -27,13 +27,10 @@ for (const def of allFixtures().filter((d) => d.id.startsWith('L3-'))) {
     if (d.deltaM > 0.01) r.over++;
     r.peak = Math.max(r.peak, d.deltaM);
     const jump = Math.max(...Object.values(d.requestJumpM));
-    const stop = Math.max(...Object.values(d.stepStopM));
-    if (stop > 0) all.stopFired++;
     if (d.from.replace(/#\d+/g, '') === d.to.replace(/#\d+/g, '')) all.reseedOnly++;
     if (d.rawM > 0.01) {
       r.raw++;
       if (jump > 0) all.jump++;
-      else if (stop > 0) all.stop++;
       else all.neither++;
     }
     if (d.continuedM > 0.01) all.cont++;

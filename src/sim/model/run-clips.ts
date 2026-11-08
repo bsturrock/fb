@@ -68,12 +68,16 @@ export function suppliedWalkClip(): RunClip {
  * for a walking request only, so a run start and a stop from a run never pass through it; walking requests ramp at the
  * supplied Start Walking's speed curve (about 1.2 m/s^2), so a walk starts and stops over steps.
  */
+/** Plan 10b: the L3 clip heading's follow rate (rad/s), the foot planner's own follow rate (FOOTWORK_L3 followRadPerS). */
+const L3_HEADING_RAD_PER_S = 18;
+
 export function runClipsL3(base: RunClipProfile = runClipsBew()): RunClipProfile {
   const walk = suppliedWalkClip();
   return {
     ...base,
-    id: `${base.id}+${walk.identity}+l3`,
+    id: `${base.id}+${walk.identity}+l3+headingRadPerS=${L3_HEADING_RAD_PER_S}`,
     clips: [walk, ...base.clips],
+    headingRadPerS: L3_HEADING_RAD_PER_S,
     walk: { requestMps: [0.05, 2.1], fadeMps: [0.15, 0.5], minStride: 0.5, dropM: 0.025, rampMps2: 1.2, brakeB: 0.3 },
     stanceWidthAddM: { walk: 0, 'fast-run': 0.065, sprint: 0.025 },
   };

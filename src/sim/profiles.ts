@@ -655,7 +655,8 @@ export interface RagdollEnvelope {
 }
 
 export const ENVELOPE_L4: RagdollEnvelope = {
-  id: 'envelope-l4-v1',
+  // v2 (plan 10b): hip twist 800 -> 1600 N m/rad (damping 3 -> 4, the same damping ratio)
+  id: 'envelope-l4-v2',
   mode: 'soft',
   toleranceDeg: 5,
   persistS: 0.25,
@@ -674,7 +675,9 @@ export const ENVELOPE_L4: RagdollEnvelope = {
     neutralTwistDeg: 0,
     // 2500 let a leg folded under the body's weight sit 5-6 degrees past its range for a quarter second
     swing: { stiffnessNmPerRad: 3500, dampingNmsPerRad: 50 },
-    twist: { stiffnessNmPerRad: 800, dampingNmsPerRad: 3 },
+    // 800 let a leg lying with its shoe held by friction sit 7.2 degrees past its twist range under about 100 N m for
+    // 0.65 s, to the end of the trial (L4-F3-run-on, plan 10b); 1600 puts that load at 3.6 degrees
+    twist: { stiffnessNmPerRad: 1600, dampingNmsPerRad: 4 },
     maxTorqueNm: 800,
   },
 };
@@ -783,7 +786,7 @@ export const RAGDOLL_G4: RagdollProfile = {
 };
 
 /** Plan 09: the Gate 4 ragdoll with the anatomical envelope; everything else is the same blueprint. */
-export const RAGDOLL_L4: RagdollProfile = { ...RAGDOLL_G4, id: 'ragdoll-l4-v1', envelope: ENVELOPE_L4 };
+export const RAGDOLL_L4: RagdollProfile = { ...RAGDOLL_G4, id: 'ragdoll-l4-v2', envelope: ENVELOPE_L4 };
 
 // ---------------------------------------------------------------- rule observer (Gate 4)
 /**

@@ -3,7 +3,12 @@
 // phases, held/carry-arm precedence, render-rate and reset reproducibility, limb contract, unchanged physics before the
 // first handoff, candidate/transfer audits and the exported identity.
 import { describe, expect, it } from 'vitest';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { clipIntake } from '../scripts/model/clip-intake';
+import { idleIntake } from '../scripts/model/idle-intake';
+import { IDLE_POSE_RECORD } from '../src/sim/locomotion';
 import FAST from '../models/animations/fast-run.json';
 import { RUN_CLIPS_RECORD, decodeRunClips, runClipsBew, suppliedRunClips } from '../src/sim/model/run-clips';
 import {
@@ -62,6 +67,34 @@ const legScale = (def: FixtureDef, rec: RunClipRecord): number => (def.ragdoll!.
 describe('L1 asset and intake record', () => {
   it('the committed intake record reproduces from models/animations (manifest FBX hashes, analysis, policy)', () => {
     expect(clipIntake()).toEqual(JSON.parse(JSON.stringify(RUN_CLIPS_RECORD)));
+  });
+
+  it('intake inputs it cannot use fail by name: no walk clip, an idle rest skeleton off +Z or with unequal legs (plan 10b)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intake-'));
+    try {
+      const manifest = JSON.parse(readFileSync('models/animations/manifest.json', 'utf8')) as { kind?: string; source: string; data: string }[];
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest.filter((m) => m.kind !== 'walk')));
+      expect(() => clipIntake(dir)).toThrow(RunClipError);
+      expect(() => clipIntake(dir)).toThrow(/exactly one walk clip.*has 0/);
+      // the idle: the real source, its data with the rest skeleton turned 2 degrees, then with one rest leg 2 mm longer
+      const idle = manifest.find((m) => m.kind === 'idle')!;
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify([idle]));
+      mkdirSync(dirname(join(dir, idle.source)), { recursive: true });
+      copyFileSync(`models/animations/${idle.source}`, join(dir, idle.source));
+      const raw = JSON.parse(readFileSync(`models/animations/${idle.data}`, 'utf8')) as { rest: Record<string, number[]> };
+      const turn = (deg: number): Record<string, number[]> => {
+        const c = Math.cos((deg * Math.PI) / 180);
+        const sn = Math.sin((deg * Math.PI) / 180);
+        return Object.fromEntries(Object.entries(raw.rest).map(([k, p]) => [k, [p[0]! * c - p[2]! * sn, p[1]!, p[0]! * sn + p[2]! * c]]));
+      };
+      expect(idleIntake('models/animations')).toEqual(IDLE_POSE_RECORD);
+      writeFileSync(join(dir, idle.data), JSON.stringify({ ...raw, rest: turn(2) }));
+      expect(() => idleIntake(dir)).toThrow(/turned 2\.\d+ degrees from \+Z/);
+      writeFileSync(join(dir, idle.data), JSON.stringify({ ...raw, rest: { ...raw.rest, LeftFoot: [raw.rest.LeftFoot![0]!, raw.rest.LeftFoot![1]! - 0.002, raw.rest.LeftFoot![2]!] } }));
+      expect(() => idleIntake(dir)).toThrow(/rest legs differ/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('each clip stores identity, root-motion policy, nominal speed, playback bounds, half-open stance and phase zero', () => {

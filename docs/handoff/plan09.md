@@ -50,7 +50,11 @@ Elbows, knees and the neck stay native revolute limits; they gained load tests, 
 
 The 5° target applies to the settled column and passes. Settled is the largest excursion over the last 0.4 s. Shoulder twist is lightly damped and still rings there between about 1° and 3.2°; its mean is the 2.15° that 15 N·m over 400 N·m/rad predicts, and the test checks that mean. The shoulder twist peak is an arrival and rebound transient, not the stated load, and is over 5°.
 
+> **Correction ([plan 10b](plan10.md#envelope-stiffness-exposed-by-10b), 2026-11-08):** hip twist stiffness is now 1600 N·m/rad (`envelope-l4-v2`). Under the same 30 N·m the hip twist settles at 1.47° left and 1.34° right (mean 1.06°, the load over the new stiffness), with a 4.7° peak while arriving (right). The test now derives each expected mean from the profile.
+
 **Natural falls are not held to 5°.** Across every L4 fall the largest excursion is 31.6° (`L4-F10-wrap-on`, runner right shoulder, a defender landing on it) and the longest run past tolerance is 0.19 s (`L4-F3-run-off`, right hip), against the 0.25 s persistent limit, which a test now enforces on every L4 fall. Native hinges reach 6.8° past the knee limit at impact (`L4-F10-knee-on`). None of this is a hard guarantee at arbitrary impact, as the plan says.
+
+> **Correction ([plan 10b](plan10.md#envelope-stiffness-exposed-by-10b), 2026-11-08):** after plan 10b's L3 changes, `L4-F3-run-on` (and `L4-F9-free`) came to rest with the runner's right hip 7.2° past its twist range for 0.65 s, its shoe held by friction against about 100 N·m of the 800 N·m/rad twist spring; the persistence test caught it. With hip twist at 1600 N·m/rad the longest run is 0.175 s (`L4-F3-run-off`, right hip) and the largest excursion 34.4° (`L4-F9-defenderFalling`, runner right shoulder).
 
 ### The swing range is a tilted cone
 

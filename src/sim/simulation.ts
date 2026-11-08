@@ -19,7 +19,7 @@ import {
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
 import { buildProxyPose, advanceGait, legRequestLocal, poseLimbShapes, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from './pose';
-import { advanceLoco, newLocoState, type LocoState, type LocomotionProfile } from './locomotion';
+import { advanceLoco, idleStanceFade, idleWidthAddM, newLocoState, type LocoState, type LocomotionProfile } from './locomotion';
 import { clipJoin, continueOwners, footTrace, initFeet, newFootPlan, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlan, type FootPlanInput } from './footwork';
 import {
   anchorErrors, applyEnvelope, auditEnvelope, buildCandidate, hingeAngles, bulkOf, externalFromColliders, externalFromRagdoll, initEnvelope, limitGradients, ragdollPose, removeRagdoll, switchToRagdoll,
@@ -36,7 +36,7 @@ import {
 } from './run-clip';
 import { RuleObserver, ruleProfileExport, type EndingKind, type RetentionObs, type RuleEnding, type RuleTraceRow } from './rules';
 import type { ArmSide } from './contracts';
-import { dist, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, yawOf, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, upOf, dot, clamp, UP, deg, qInvRot, qFromUnitVectors, scale, addScaled, toWorld, clampLen, neg } from './vec';
+import { type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, yawOf, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, upOf, dot, clamp, UP, deg, qInvRot, qFromUnitVectors, scale, addScaled, toWorld, clampLen, neg } from './vec';
 
 /**
  * Trial labels. Referee endings (rule observer) are distinct from non-success stops: duration (timeout), the
@@ -275,7 +275,8 @@ export interface TransitionDelta {
    * Largest landmark difference against the reference (m), the measure the limit applies to. The reference is the old
    * composition with its own snaps taken out at their source: the ordinary request's jump of this substep from a following
    * foot (a collision turns the clip's heading with the travel in one substep; that jump belongs to the old path whether or
-   * not ownership changes) and a timed-out step's dead stop. Everything else about the old composition stands.
+   * not ownership changes). Everything else about the old composition stands (plan 10b: a timed-out step no longer stops
+   * dead, so its path is compared as it is; the `stepStopM` correction is gone).
    */
   deltaM: number;
   landmark: string;
@@ -288,8 +289,6 @@ export interface TransitionDelta {
   continuedM: number;
   /** Size of the ordinary request's jump removed from each following foot (m); 0 for other owners. */
   requestJumpM: Record<ArmSide, number>;
-  /** Size of the dead stop removed from each timed-out step (m, see `continueOwners`); 0 for other owners. */
-  stepStopM: Record<ArmSide, number>;
   /** Both compositions' requests and solved legs at the boundary. */
   legs: Record<ArmSide, { old: AuditLeg; now: AuditLeg }>;
 }
@@ -307,7 +306,7 @@ export interface AuditLeg {
 }
 
 /** The old composition's pose input at a boundary, and the reference feet (see TransitionDelta.deltaM). */
-type AuditOld = ProxyPoseInput & { from: string; to: string; reference: NonNullable<ProxyPoseInput['feet']>; requestJumpM: Record<ArmSide, number>; stepStopM: Record<ArmSide, number> };
+type AuditOld = ProxyPoseInput & { from: string; to: string; reference: NonNullable<ProxyPoseInput['feet']>; requestJumpM: Record<ArmSide, number> };
 
 /** The composition of one substep, kept for the next substep's audit. */
 interface AuditPrev {
@@ -948,6 +947,9 @@ export class Simulation {
         pl.intent = { locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: norm(horiz(forwardOf(f.rotation())), v3(0, 0, 1)), effort: 1 } };
         decided = true;
       }
+      // plan 10b: the ramp reads this substep's locomotion mode (decided from the last solve's contacts and motion, which
+      // nothing changes before 4b), not the previous substep's
+      if (this.suspension && !pl.rag && pl.sus) this.advanceLocoMode(pl, this.physics.dt);
       this.rampWalkRequest(pl, decided);
     }
     // 4. clear application-owned force/torque accumulators (once, before any contribution)
@@ -962,7 +964,6 @@ export class Simulation {
     if (S)
       for (const pl of this.players) {
         if (pl.rag || !pl.sus) continue;
-        this.advanceLocoMode(pl, this.physics.dt);
         this.advanceLocomotion(pl, this.physics.dt);
         this.supportTargets(pl, S, this.physics.dt);
         this.applySupport(pl, S, this.physics.dt, false);
@@ -1915,7 +1916,7 @@ export class Simulation {
     const reqNow = { left: legRequestLocal(inp, 'left'), right: legRequestLocal(inp, 'right') };
     this.auditPrev.set(pl.id, { key, foot: footO, arm: armO, feet: { ...inp.feet }, plan: null, reqL: reqNow, reqL2: prev?.reqL ?? reqNow, reqN: (prev?.reqN ?? 0) + 1, armsL, readyHands: !!inp.readyHands, contactW, supported, falling, mode: pl.loco?.mode ?? '' });
     if (!prev?.plan || prev.key === key) return null;
-    const old: AuditOld = { ...inp, memory: structuredClone(pl.poseMemory), from: prev.key, to: key, reference: {}, requestJumpM: { left: 0, right: 0 }, stepStopM: { left: 0, right: 0 } };
+    const old: AuditOld = { ...inp, memory: structuredClone(pl.poseMemory), from: prev.key, to: key, reference: {}, requestJumpM: { left: 0, right: 0 } };
     // the legs' support composition: the ordinary request of the old state at this root
     const v = vc(pl.proxy.body.linvel());
     const seam = prev.supported !== supported || prev.falling !== falling;
@@ -1927,30 +1928,26 @@ export class Simulation {
     if (run) old.sampled = this.sampledLimbs(pl, run, inp.pose);
     const request = {} as FootPlanInput['request'];
     for (const s of SD) request[s] = toWorld(inp.pose, legRequestLocal(old, s));
-    const { requests: cont, stopped, tookUp } = continueOwners(prev.plan, { ...ftIn, request }, prev.feet);
+    const { requests: cont, tookUp } = continueOwners(prev.plan, { ...ftIn, request }, prev.feet);
     const feet = { ...inp.feet };
     // a foot whose ownership did not change keeps this substep's request: only the handover is compared. Across a change of the
     // request's composition its offset is the old one: the live offset has taken the new request's seam up
     const kept = (s: ArmSide): boolean => prev.foot[s] === footO[s] && !seam;
     for (const s of SD) if (!kept(s)) feet[s] = cont[s];
     old.feet = feet;
-    // the reference: the same composition with the old path's own snaps taken out where they start: a following foot's
-    // ordinary request carried on in the body frame, a step out of time carried on along its stored motion
+    // the reference: the same composition with the old path's own snap taken out where it starts: a following foot's
+    // ordinary request carried on in the body frame
     const ref = { ...feet };
     for (const s of SD) {
       const q = feet[s];
       // (a carried foot has the old path's request itself: nothing of it was corrected, its comparison is with that path as it is)
       if (kept(s) || inp.feet[s]?.carried) continue;
-      const on = stopped[s];
       // (a jump the old owner's offset took up is already out of its path)
       if (q?.kind === 'offset' && prev.reqN > 1 && !tookUp[s]) {
         const L = legRequestLocal(old, s);
         const jump = sub(L, sub(scale(prev.reqL[s], 2), prev.reqL2[s]));
         ref[s] = { ...q, offsetW: sub(q.offsetW, qRot(inp.pose.q, jump)) };
         old.requestJumpM[s] = len(jump);
-      } else if (q?.kind === 'target' && on) {
-        ref[s] = { ...q, ankleW: on };
-        old.stepStopM[s] = dist(q.ankleW, on);
       }
     }
     old.reference = ref;
@@ -2009,7 +2006,7 @@ export class Simulation {
       return { kind: r?.kind ?? 'none', request: n?.request ?? v3(), ankle: o.jointLandmarksWorld[`${s}Ankle`], variant: n?.variant ?? 0, softM: n?.softM ?? 0, liftM: n?.liftM ?? 0, soleO: r?.soleO ?? 0, poleW: r?.poleW ?? 0 };
     };
     const legs = { left: { old: leg(oldIn, old, 'left'), now: leg(nowIn, now, 'left') }, right: { old: leg(oldIn, old, 'right'), now: leg(nowIn, now, 'right') } };
-    this.transitionDeltas.push({ t: this.t, playerId: pl.id, from: oldIn.from, to: oldIn.to, deltaM: rf.m, landmark: rf.k, by: rf.by, rawM: raw.m, rawBy: raw.by, continuedM, requestJumpM: oldIn.requestJumpM, stepStopM: oldIn.stepStopM, legs });
+    this.transitionDeltas.push({ t: this.t, playerId: pl.id, from: oldIn.from, to: oldIn.to, deltaM: rf.m, landmark: rf.k, by: rf.by, rawM: raw.m, rawBy: raw.by, continuedM, requestJumpM: oldIn.requestJumpM, legs });
   }
 
   /**
@@ -2076,7 +2073,7 @@ export class Simulation {
       hips[s] = hip;
       const st = (s === 'left' ? 0.5 : -0.5) * (inp.ground?.staggerM ?? 0);
       // plan 08: the fitted idle stance opens as the travel stops (the same width as the ordinary request)
-      const wide = inp.loco ? inp.loco.profile.idle.widthAddM * (s === 'left' ? -1 : 1) * (1 - Math.min(1, inp.speed / 1.5)) : 0;
+      const wide = inp.loco ? idleWidthAddM(inp.loco.profile, pl.body, s) * (s === 'left' ? -1 : 1) * idleStanceFade(inp.speed) : 0;
       home[s] = v3(hip.x + fwdH.x * st + rightW.x * wide, gy + soleM, hip.z + fwdH.z * st + rightW.z * wide);
       request[s] = toWorld(core, legRequestLocal(inp, s));
     }

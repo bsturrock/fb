@@ -9,6 +9,8 @@ import { FixedStepDriver } from '../src/sim/driver';
 import { computeDrive, computeYaw } from '../src/sim/motors';
 import { DEFAULT_MOTOR } from '../src/sim/profiles';
 import { qFromYaw, v3 } from '../src/sim/vec';
+import type { FixtureDef } from '../src/sim/fixture';
+import { asL3 } from '../src/sim/fixtures/transitions';
 import { create, disposeTracked, nonEmpty, pace, run, runSim, speedH, traceDiff, traceRowsDiff } from './helpers';
 
 // free every engine world a test created (gate tests do not dispose their simulations themselves)
@@ -328,5 +330,43 @@ describe('G1-D: coached entry and contact profile', () => {
     expect(fits['G1-F10-runner-135kg-wide']).not.toBeCloseTo(fits['G1-F10-runner-80kg-narrow'], 2);
     // mass alone (same dimensions) does not change fit geometry
     expect(fits['G1-F10-defender-80kg-std']).toBeCloseTo(fits['G1-F10-defender-135kg-std'], 1);
+  });
+});
+
+describe('plan 10b: the coached entry aims with the phase it has just observed (opt-in)', () => {
+  /** Each decision of the coached player D: the phase it returns and the prediction horizon its aim used (s). */
+  const decisions = async (def: FixtureDef): Promise<{ phase: string; horizon: number }[]> => {
+    const sim = await create(def);
+    const ctl = sim.byId.get('D')!.controller;
+    const decide = ctl.decide.bind(ctl);
+    const out: { phase: string; horizon: number }[] = [];
+    ctl.decide = (ctx) => {
+      const r = decide(ctx);
+      if (r.debug?.horizon !== undefined) out.push({ phase: String(r.debug.phase), horizon: Number(r.debug.horizon) });
+      return r;
+    };
+    await runSim(sim);
+    return out;
+  };
+  const phaseFirst = (def: FixtureDef): FixtureDef => ({ ...def, players: def.players.map((p) => (p.controller.kind === 'coachedEntry' ? { ...p, controller: { ...p.controller, phaseFirst: true } } : p)) });
+  /** Connection and drive aim at most 0.1 s ahead: the decisions that do not. */
+  const lagging = (ds: { phase: string; horizon: number }[]): number => ds.filter((d) => (d.phase === 'connect' || d.phase === 'drive') && d.horizon > 0.1 + 1e-12).length;
+
+  it('opted in, a decision that enters connection aims as a connection; the gate 1 order, kept on G1, aims as the gather it left', async () => {
+    // G1-F8-front-outsideIn enters connection at 1.35 s with a 0.245 s horizon from the gather it has just left
+    const def = g1f8Cases().find((d) => d.id === 'G1-F8-front-outsideIn')!;
+    const now = await decisions(phaseFirst(def));
+    expect(now.some((d) => d.phase === 'connect')).toBe(true);
+    expect(now.some((d) => d.phase === 'drive')).toBe(true);
+    expect(lagging(now)).toBe(0);
+    const old = await decisions(def);
+    expect(lagging(old)).toBe(1);
+    expect(Math.max(...old.filter((d) => d.phase === 'connect').map((d) => d.horizon))).toBeGreaterThan(0.2);
+  });
+
+  it('L3 and later opt in; the gate 1 fixtures do not', () => {
+    const l3 = asL3(g1f9Fit(), 'L3-x');
+    expect(l3.players.find((p) => p.id === 'D')!.controller).toMatchObject({ kind: 'coachedEntry', phaseFirst: true });
+    for (const d of [g1f9Fit(), ...g1f8Cases()]) for (const p of d.players) expect((p.controller as { phaseFirst?: boolean }).phaseFirst, d.id).toBeUndefined();
   });
 });

@@ -29,6 +29,12 @@ export interface CoachedEntrySpec {
   driveThroughM?: number;
   continueS?: number;
   recoverAfterS?: number;
+  /**
+   * Plan 10b: update the phase from this decision's observations before aiming, so a phase change takes effect in the
+   * decision that observes it (absent: the gate 1 order, aim and heading from the previous decision's phase, one
+   * decision interval late). Opted in on L3 and later; the historical fixtures keep the gate 1 order.
+   */
+  phaseFirst?: boolean;
 }
 
 export type CoachedPhase = 'track' | 'gather' | 'connect' | 'drive' | 'recover';
@@ -58,7 +64,7 @@ export class CoachedEntryController implements Controller {
   readonly kind = 'coachedEntry';
   readonly observationDelayS: number;
   readonly decisionIntervalS: number;
-  private p: Required<Omit<CoachedEntrySpec, 'kind' | 'target' | 'leverageSideWorld' | 'shoulder'>>;
+  private p: Required<Omit<CoachedEntrySpec, 'kind' | 'target' | 'leverageSideWorld' | 'shoulder' | 'phaseFirst'>>;
   phase: CoachedPhase = 'track';
   private phaseT0 = 0;
   private lastLat: Vec3;
@@ -105,23 +111,14 @@ export class CoachedEntryController implements Controller {
     const vR = horiz(rb.linearVelocity);
     const dirToR = norm(sub(R, S), this.lastDir);
     this.lastDir = dirToR;
-    // Approach basis: live while tracking, frozen once the attempt gathers (close-range centre lines are ill-posed).
-    let nearDir: Vec3;
-    let lat: Vec3;
-    if (this.basis && (this.phase === 'gather' || this.phase === 'connect' || this.phase === 'drive')) {
-      nearDir = this.basis.near;
-      lat = this.basis.lat;
-    } else {
-      nearDir = neg(dirToR); // runner -> tackler
-      // Leverage lateral axis: component of the assigned side perpendicular to the approach; keep last valid one.
-      const levH = horiz(this.spec.leverageSideWorld);
-      const latRaw = sub(levH, scale(nearDir, dot(levH, nearDir)));
-      lat = len(latRaw) > 0.2 ? norm(latRaw) : this.lastLat;
-      this.lastLat = lat;
-      this.basis = { near: nearDir, lat };
-    }
+    let { nearDir, lat } = this.approachBasis(dirToR);
 
     const gap = obs.pairGap[pairKey(ctx.self, this.spec.target)] ?? len(sub(R, S)) - 0.6;
+    const touching = (obs.contacts[ctx.self] ?? []).some((c) => c.other === this.spec.target);
+    if (this.spec.phaseFirst) {
+      this.updatePhase(ctx.t, touching, gap, S, R, nearDir, lat);
+      ({ nearDir, lat } = this.approachBasis(dirToR));
+    }
     const closing = dot(sub(vS, vR), dirToR);
     // Prediction horizon shrinks with the gap; a slow closing rate cannot stretch it (parallel running would
     // otherwise aim far ahead of the runner). Connection aims at the current upper torso.
@@ -163,41 +160,7 @@ export class CoachedEntryController implements Controller {
     const w = this.phase === 'connect' ? 1 : Math.max(wGap, wTime);
     const aim = lerp(trackAim, fitAim, w);
 
-    // ---- phase update from observations (felt contact with the target, gap history)
-    const t = ctx.t;
-    const touching = (obs.contacts[ctx.self] ?? []).some((c) => c.other === this.spec.target);
-    if (touching) {
-      this.lastContactT = t;
-      if (this.phase !== 'drive') {
-        this.firstContactT = t;
-        this.setPhase('drive', t);
-      }
-    }
-    if (gap < this.minGap - 1e-4) {
-      this.minGap = gap;
-      this.gapRiseT = -1;
-    } else if (gap > this.minGap + 0.05 && this.gapRiseT < 0) this.gapRiseT = t;
-    if (this.phase === 'drive') {
-      if (!touching && t - this.lastContactT > p.recoverAfterS) this.setPhase('recover', t);
-    } else if (this.phase === 'recover') {
-      if (t - this.phaseT0 > p.recoverAfterS) {
-        this.minGap = gap;
-        this.gapRiseT = -1;
-        this.entryNear = null;
-        this.basis = null;
-        this.setPhase('track', t);
-      }
-    } else {
-      const passed = this.entryNear ? dot(sub(S, R), this.entryNear) < -0.05 : false;
-      if (this.phase === 'track' && gap <= p.gatherGapM) this.basis = { near: nearDir, lat };
-      const missed = this.phase === 'connect' && this.gapRiseT >= 0 && t - this.gapRiseT > p.recoverAfterS;
-      if (passed || missed) this.setPhase('recover', t);
-      else if (gap <= p.connectGapM) {
-        if (this.phase !== 'connect') this.entryNear = nearDir;
-        this.setPhase('connect', t);
-      } else if (gap <= p.gatherGapM) this.setPhase('gather', t);
-      else this.setPhase('track', t);
-    }
+    if (!this.spec.phaseFirst) this.updatePhase(ctx.t, touching, gap, S, R, nearDir, lat);
 
     // ---- requests (bounded speeds; the motor bounds the force)
     const toAim = sub(aim, S);
@@ -254,6 +217,56 @@ export class CoachedEntryController implements Controller {
         firstContactT: this.firstContactT,
       },
     };
+  }
+
+  /** Approach basis: live while tracking, frozen once the attempt gathers (close-range centre lines are ill-posed). */
+  private approachBasis(dirToR: Vec3): { nearDir: Vec3; lat: Vec3 } {
+    if (this.basis && (this.phase === 'gather' || this.phase === 'connect' || this.phase === 'drive')) return { nearDir: this.basis.near, lat: this.basis.lat };
+    const nearDir = neg(dirToR); // runner -> tackler
+    // Leverage lateral axis: component of the assigned side perpendicular to the approach; keep last valid one.
+    const levH = horiz(this.spec.leverageSideWorld);
+    const latRaw = sub(levH, scale(nearDir, dot(levH, nearDir)));
+    const lat = len(latRaw) > 0.2 ? norm(latRaw) : this.lastLat;
+    this.lastLat = lat;
+    this.basis = { near: nearDir, lat };
+    return { nearDir, lat };
+  }
+
+  /** Phase update from observations (felt contact with the target, gap history). */
+  private updatePhase(t: number, touching: boolean, gap: number, S: Vec3, R: Vec3, nearDir: Vec3, lat: Vec3): void {
+    const p = this.p;
+    if (touching) {
+      this.lastContactT = t;
+      if (this.phase !== 'drive') {
+        this.firstContactT = t;
+        this.setPhase('drive', t);
+      }
+    }
+    if (gap < this.minGap - 1e-4) {
+      this.minGap = gap;
+      this.gapRiseT = -1;
+    } else if (gap > this.minGap + 0.05 && this.gapRiseT < 0) this.gapRiseT = t;
+    if (this.phase === 'drive') {
+      if (!touching && t - this.lastContactT > p.recoverAfterS) this.setPhase('recover', t);
+    } else if (this.phase === 'recover') {
+      if (t - this.phaseT0 > p.recoverAfterS) {
+        this.minGap = gap;
+        this.gapRiseT = -1;
+        this.entryNear = null;
+        this.basis = null;
+        this.setPhase('track', t);
+      }
+    } else {
+      const passed = this.entryNear ? dot(sub(S, R), this.entryNear) < -0.05 : false;
+      if (this.phase === 'track' && gap <= p.gatherGapM) this.basis = { near: nearDir, lat };
+      const missed = this.phase === 'connect' && this.gapRiseT >= 0 && t - this.gapRiseT > p.recoverAfterS;
+      if (passed || missed) this.setPhase('recover', t);
+      else if (gap <= p.connectGapM) {
+        if (this.phase !== 'connect') this.entryNear = nearDir;
+        this.setPhase('connect', t);
+      } else if (gap <= p.gatherGapM) this.setPhase('gather', t);
+      else this.setPhase('track', t);
+    }
   }
 
   exportParams(): unknown {

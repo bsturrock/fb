@@ -7,6 +7,8 @@
 
 **Current result with [plan 08a](#plan-08a-ball-carry): 599 tests, 597 pass, 2 fail.** Both failures are the transition audit: 3 of 2412 L3 boundaries are over 1 cm, peak 1.50 cm. 53 are over on the raw difference. Typecheck and build pass. 335 fixtures export. All 238 committed summaries are identical. The supplied walk is on the L3 path; see [Walk, start and stop](#walk-start-and-stop-2026-11-06).
 
+> **Correction ([plan 10b](plan10.md#10b--foot-target-continuity), 2026-11-08):** this line predates [08a's leg composition repair](#leg-composition-repair-2026-11-07). The result after it, and at the checkpoint `02eba2a`, is the one under that section: 600 of 600 tests pass and the audit has 0 of 2450 boundaries over 1 cm. (With plan 09 the suite at `02eba2a` has 675 tests.)
+
 **Plan:** [08 — Locomotion transitions and tackle integration](../open/08_Locomotion_Transitions_and_Tackle_Integration.md). **Previous:** [plan 07a handoff](plan07a.md). **Next:** [09 — Active falls](../open/09_Active_Falls_Joint_Limits_and_Role_Responses.md).
 
 **Independent review disposition (2026-11-05):** 347 tests/build and all 330 summaries reproduced, with every earlier summary unchanged. Acceptance is held for three repairs: contact/airborne transition continuity, declared foot-motion caps and integration assertions that establish their scenarios/geometry. Execute [08 review closeout](../open/08_Review_Closeout.md) from this working tree before visual acceptance and 09. The measurements below remain incoming implementation evidence.
@@ -81,6 +83,8 @@ By kind, now then incoming where it was listed: landing `swing/step>planted/step
 | The old step would run on past its landing (`stepStopM`) | 13 | `an old path that was about to run on past the landing is the artifact` |
 | Neither | 0 | |
 
+> **Correction ([plan 10b](plan10.md#10b--foot-target-continuity), 2026-11-08):** the `stepStopM` row is not an old-path artifact. The old reference stopped the step at its landing with the same instant stop the live step had at the end of its late stretch (B1). 10b removed that stop from the step itself, so the correction is gone: the reference is the old path as it is. See the 10b section for which corrections remain.
+
 The landing reproduction is `L3-F3-side` R at 0.320833 s: raw 5.15 cm, no request jump, 0.44 cm once the reference stops the step at its landing. That correction comes from the plan's stored step motion, not from achieved motion. The negative control `negative control: a known old/new pose difference over 1 cm still fails with the achieved motion smooth` reopens a real handover on `L3-F7-phase25` (`FOOT_DEBUG.noJoinCheck`) and fails. `the audit reads copies` compares five fixtures with the audit on and off.
 
 **Achieved substep motion stays a separate number.** `continuedM` exceeds 1 cm at 353 of 2413 boundaries. These pass because the limit compares old and new at the same time, and both carry that motion. Limb second differences in contact are therefore still not within 1 cm.
@@ -146,6 +150,8 @@ The plan says to repair handovers "starting from the achieved pose and motion". 
 Root causes repaired by the earlier closeout, all in the shared composed path:
 
 - A step's landing ran on a timer and could plant a moving foot short of its target, or snap out of a clearance variant. It now lands on arrival, on the primary leg, with the foot on the ground.
+
+> **Correction ([plan 10b](plan10.md#10b--foot-target-continuity), 2026-11-08):** "on arrival" still had a timer. Once a step's time ran out, its late stretch (`lateS`) ran down, and when it expired the target jumped to the destination with its velocity zeroed in one substep (B1; for example `L3-F3-side` D left 0.0583 s, 20.51 m/s to 0). 10b bounds the path's horizon by the step's acceleration limit, so it no longer arrives in one substep.
 - A follower was carried through request jumps, and a released plant followed a request already running away from it. It now keeps the foot, or steps.
 
 - A clip that fades out and is rejoined jumped phase while still shown (1.4 cm palm steps). The shown phase now slides (`uSlip`). This was most of the remaining palm and elbow excess.
@@ -167,6 +173,8 @@ Root causes repaired by the earlier closeout, all in the shared composed path:
 Measured inside the planner (`stats`) and independently from outside between two substeps of one owner, with zero fixtures over. Limits and tolerances are unchanged. The outside measure no longer infers a seam from request speed: the planner records the exact amount the offset took up (`seamOffset`) and the measure removes that amount.
 
 On a reseed the world target moves up to 67.15 m/s (`L3-F13-settle2.1`). That is the coordinate change, not the foot: the test bounds the new target to under 10 cm from the achieved foot. The achieved ankle peak is 20.89 m/s, D's left foot in `L3-F3-side` and its copies at 0.0167 s. This is a planner step in the fixture's first substeps, with the root at 6.9 m/s and the clip's own swing at 11.6 m/s. It is within the caps, and I have not established why that step is so fast. The previous peak, 23.96 m/s on the struck shoe in `L3-F1-phase5`, is gone.
+
+> **Correction ([plan 10b](plan10.md#10b--foot-target-continuity), 2026-11-08):** the 20.89 m/s step is B1. The step had no acceleration limit, and its path over the time left demanded more than the speed cap, so its target ran at the cap (20.84 m/s at a 6.93 m/s root) and stopped dead at 0.0583 s. With 10b's declared acceleration limit that step no longer reaches the cap. The L3 achieved ankle peak is now 17.34 m/s (`L3-F7-phase75` R right 0.6708 s, cap 17.99 m/s). The reseed bound of under 10 cm is now also checked level against one substep at the step speed cap.
 
 ### Stops
 
@@ -208,6 +216,8 @@ Tests prove these occurred, not only that assertions ran. 97 L3 fixtures, 576 te
 | Plants | 1044 across L3, 30 honest failures: 25 slide, 4 clearance, 1 reach (`scripts/probe/p08-final.ts`) |
 
 Geometry: achieved arm segment lengths 0.00 mm from profile (tolerance 2 mm), palm to anchor 0.00 mm (15 mm), remap anchor error 0.00 mm (2 mm). Negative controls fail a stretched limb, a shifted anchor and the wrong player. These figures are for the six fixtures above. Candidate and first-solve checks pass, including the added `L3-F4-twoArm`, conversion in contact, no-probe in contact, `L3-F9-defenderRising`, `L3-F10-both` and `L3-F10-defender`.
+
+> **Correction ([plan 10b](plan10.md#10b--foot-target-continuity), 2026-11-08):** the "shifted anchor" control compared a palm with itself moved 2 cm, which is true by construction and ran no project check. The hold measures also read the arm system's observation, not the published pose. 10b measures the pose's held-arm landmarks and runs the same measures with the shown elbow stretched 2 % and the anchor moved 2 cm on the target; each fails its tolerance.
 
 ### Changed results
 
@@ -343,6 +353,8 @@ Every behaviour change is opt-in through the L3 fixtures. L1, L2, RH and HC fixt
 
 - The foot planner has a composed path (`compose` in `footwork-l3-v2`). Each foot follows the run clip through a critically damped offset, seeded from the request the leg solve actually used and the achieved ankle velocity, so a takeover or release starts where the foot is.
 - Swing steps in composed mode are receding-horizon quintics. A foot lands on its achieved lowest shoe corner, and landing waits on the achieved foot gap and on arrival, with no timer (closeout).
+
+> **Correction ([plan 10b](plan10.md#10b--foot-target-continuity), 2026-11-08):** landing kept the late-stretch timer, which snapped (B1, above). It is now bounded by the step's acceleration limit.
 - Foot owner changes keep the achieved sole angle and knee pole, and decay them (`soleO`, `poleW`). The pose rebases its continuity guard when the owner kind changes.
 - The clip brake handover and the clip join phase (`joinPhase`) pick a compatible phase. Free arms brace while braking; carry and ready hands keep their assignment.
 - Motor, 5.5 m/s² braking limit, force budgets and the 0.80 m stance are unchanged. Nothing is a render-only offset.
@@ -694,7 +706,7 @@ Open from this plan:
 6. Contact peaks of 19-23 cm were last measured before these repairs: a free limb pushed out of a moving body, stopping sharply once clear.
 7. Clamp churn remains high: `L3-F6-hold` has 739 `clampBegin`.
 8. `reach` still ends most plants in a stop.
-9. The 20.89 m/s planner step at the start of `L3-F3-side` is not explained.
+9. The 20.89 m/s planner step at the start of `L3-F3-side` is not explained. *(Explained and repaired in plan 10b: B1, see above.)*
 10. [08a's separate leg repair](#leg-composition-repair-2026-11-07) passes the unchanged audit (0/2450, peak 0.893 cm), but changes 10 D handoff records, including four conversions appearing/disappearing. Visual acceptance remains open.
 
 Declared approximations, unchanged:

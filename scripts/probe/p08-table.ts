@@ -7,7 +7,6 @@ const by = new Map<string, { n: number; over: number; max: number; raw: number }
 const kinds = new Map<string, { n: number; over: number; max: number }>();
 let raw = 0;
 let jump = 0;
-let stop = 0;
 let cont = 0;
 let contPass = 0;
 let carried = 0;
@@ -26,7 +25,6 @@ for (const def of allFixtures().filter((d) => d.id.startsWith('L3-'))) {
       r.raw++;
       raw++;
       if (Math.max(...Object.values(x.requestJumpM)) > 0) jump++;
-      else if (Math.max(...Object.values(x.stepStopM)) > 0) stop++;
       else carried++;
     }
     if (x.continuedM > 0.01) {
@@ -48,5 +46,5 @@ for (const def of allFixtures().filter((d) => d.id.startsWith('L3-'))) {
   sim.dispose();
 }
 for (const [k, r] of [...by].sort((p, q) => Number(p[0].slice(1)) - Number(q[0].slice(1)))) console.log(`${k} ${r.over}/${r.n} max ${(r.max * 100).toFixed(2)} raw ${r.raw}`);
-console.log(`all ${all.filter((x) => x.deltaM > 0.01).length}/${all.length} max ${(Math.max(...all.map((x) => x.deltaM)) * 100).toFixed(2)} raw over ${raw}: request jump ${jump}, step stop ${stop}, neither ${carried}; achieved over ${cont}, passing ${contPass}`);
+console.log(`all ${all.filter((x) => x.deltaM > 0.01).length}/${all.length} max ${(Math.max(...all.map((x) => x.deltaM)) * 100).toFixed(2)} raw over ${raw}: request jump ${jump}, neither ${carried}; achieved over ${cont}, passing ${contPass}`);
 for (const [k, q] of [...kinds].sort((p, r) => r[1].n - p[1].n).slice(0, 12)) console.log(`${q.over}/${q.n} ${(q.max * 100).toFixed(2)} ${k}`);

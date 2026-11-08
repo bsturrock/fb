@@ -464,6 +464,12 @@ export interface RunClipProfile {
   headingMaxDeg: number;
   /** Beyond headingMaxDeg the clip weight target fades to 0 over this many degrees (procedural gait). */
   headingFadeDeg: number;
+  /**
+   * Plan 10b (optional): the travel heading follows the actual travel direction (within headingMaxDeg of the body forward)
+   * critically damped at this rate (rad/s), not in one update: a collision turns the travel direction in one substep, and
+   * the clip's limbs turned with it (a 1-2 cm jump in the leg request). Absent: it follows in one update (bit-identical).
+   */
+  headingRadPerS?: number;
   /** Max rate of change of the applied clip weight (1/s): the bounded clip <-> procedural transition. */
   weightRatePerS: number;
   /**
@@ -521,6 +527,7 @@ export function runClipProfileExport(p: RunClipProfile): Record<string, unknown>
     fadeMps: p.fadeMps,
     headingMaxDeg: p.headingMaxDeg,
     headingFadeDeg: p.headingFadeDeg,
+    ...(p.headingRadPerS !== undefined ? { headingRadPerS: p.headingRadPerS } : {}),
     weightRatePerS: p.weightRatePerS,
     blendRatePerS: p.blendRatePerS,
     ...(p.walk ? { walk: p.walk } : {}),
@@ -579,6 +586,8 @@ export interface RunPlayback {
   speed: number;
   /** World travel heading used for the clip frame (rad, as headingOf). */
   heading: number;
+  /** Plan 10b (profile headingRadPerS): the heading's rate (rad/s). */
+  headingV?: number;
   /** Core translation at the previous update (solved travel source). */
   prevP: Vec3 | null;
 }
@@ -652,7 +661,18 @@ export function advanceRunPlayback(st: RunPlayback, p: RunClipProfile, inp: RunP
   let off = 0;
   if (speed > 0.5 && len(dir) > 0.5) off = wrapPi(headingOf(dir) - hf);
   const maxO = rad(p.headingMaxDeg);
-  st.heading = hf + clamp(off, -maxO, maxO);
+  if (p.headingRadPerS === undefined || init || st.headingV === undefined) {
+    st.heading = hf + clamp(off, -maxO, maxO);
+    if (p.headingRadPerS !== undefined) st.headingV = 0;
+  } else {
+    // plan 10b: the world travel heading, critically damped toward the travel direction (within the offset limit of the
+    // body forward); a body that yaws while it travels straight leaves it where it is, as the instant heading did
+    const want = hf + clamp(off, -maxO, maxO);
+    const w = Math.min(p.headingRadPerS, 0.5 / inp.dt);
+    const e = wrapPi(want - st.heading);
+    st.headingV += (w * w * e - 2 * w * st.headingV) * inp.dt;
+    st.heading = want - e + st.headingV * inp.dt;
+  }
   st.speed = speed;
   const headingW = 1 - smooth((Math.abs(off) - maxO) / rad(Math.max(1e-6, p.headingFadeDeg)));
   const scaleLeg = inp.legM / p.clips[0].record.restLegM;

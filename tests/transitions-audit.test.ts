@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Simulation, type TransitionDelta } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { FOOT_DEBUG, FOOTWORK_L3 } from '../src/sim/footwork';
-import { dist, horiz, len, type Vec3 } from '../src/sim/vec';
-import { run, runSim, traceDiff } from './helpers';
+import { dist, horiz, len, scale, sub, type Vec3 } from '../src/sim/vec';
+import { nonEmpty, run, runSim, traceRowsDiff } from './helpers';
 import { SIDES, FIX, L3, each } from './transitions-shared';
 
 
@@ -21,16 +21,37 @@ describe('plan 08 transition audit', () => {
     return out;
   };
 
-  it('the audit reads copies: the same run with and without it is identical', async () => {
-    for (const id of ['L3-F16-runStop', 'L3-F7-phase25', 'L3-F4-twoArm', 'L3-F9-noProbe-prep', 'L3-F3-side']) {
-      const a = await run(FIX(id));
-      const b = await run(FIX(id), { transitionAudit: true });
-      expect(traceDiff(a.trace, b.trace, a.players.map((p) => p.id)).pos, id).toBe(0);
-      expect(JSON.stringify(b.events), id).toBe(JSON.stringify(a.events));
-      a.dispose();
-      b.dispose();
+  it('the audit reads copies: the same run with and without it is identical, every trace row and every substep\'s planner, sampler and pose state', async () => {
+    // plan 10b: the full trace rows, the events, and at every substep each player's foot plan, run-clip playback, pose
+    // memory, locomotion state, walking request and published pose. The stated sample: the first fixture of each L3
+    // family (F1-F17) and the five the audit was first checked on
+    const first = new Map<string, string>();
+    for (const d of L3(/^L3-/)) first.set(d.id.split('-').slice(0, 2).join('-'), first.get(d.id.split('-').slice(0, 2).join('-')) ?? d.id);
+    const ids = [...new Set([...first.values(), 'L3-F16-runStop', 'L3-F7-phase25', 'L3-F4-twoArm', 'L3-F9-noProbe-prep', 'L3-F3-side'])];
+    expect(first.size).toBeGreaterThanOrEqual(16);
+    for (const id of ids) {
+      const states = async (audit: boolean): Promise<{ sim: Simulation; states: string[] }> => {
+        const out: string[] = [];
+        const sim = await run(FIX(id), {
+          transitionAudit: audit,
+          onSubstep: (s) => {
+            out.push(JSON.stringify(s.players.map((pl) => [pl.feet, pl.run, pl.poseMemory, pl.loco, pl.walkRequest, pl.walkWant, pl.pose])));
+          },
+        });
+        return { sim, states: out };
+      };
+      const a = await states(false);
+      const b = await states(true);
+      expect(b.sim.transitionDeltas.length + b.sim.events.length, id).toBeGreaterThan(0);
+      expect(traceRowsDiff(a.sim.trace, b.sim.trace), id).toBeNull();
+      expect(JSON.stringify(b.sim.events), id).toBe(JSON.stringify(a.sim.events));
+      expect(b.states.length, id).toBe(a.states.length);
+      const i = a.states.findIndex((x, k) => x !== b.states[k]);
+      expect(i, `${id}: substep ${i} state differs`).toBe(-1);
+      a.sim.dispose();
+      b.sim.dispose();
     }
-  }, 30000);
+  }, 300000);
 
   // every L3 case: free movement, contact, recontact, landing and airborne recovery, contact interrupted by falling
   each(/^L3-/, 'transition-only pose discontinuity at most 1 cm at every ownership change, all landmarks, same solved time', async (d) => {
@@ -73,27 +94,33 @@ describe('plan 08 transition audit', () => {
     }
   }, 30000);
 
-  it('a step that gathers speed out of time has not stopped: nothing is set aside, the comparison is the old path as it is', async () => {
-    // L3-F1-low: D's step gathers speed in the substep it loses support: carrying its last motion on would compare the new foot
-    // with a path nothing was on (the boundary's time follows the runner's ragdoll, plan 08a)
-    const x = (await audited(FIX('L3-F1-low'))).find((b) => b.playerId === 'D' && b.t > 1.45 && b.t < 1.55 && b.to.includes('airborne') && !b.from.includes('airborne'));
+  it('a step is compared with its old path as it is: nothing of a step is set aside (plan 10b)', async () => {
+    // L3-F1-low: D's step loses support out of time. Before 10b the reference carried a timed-out step's stored motion on
+    // (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is nothing to carry on
+    const ds = await audited(FIX('L3-F1-low'));
+    const x = ds.find((b) => b.playerId === 'D' && b.t > 1.45 && b.t < 1.55 && b.to.includes('airborne') && !b.from.includes('airborne'));
     expect(x).toBeTruthy();
-    expect(x!.stepStopM.right).toBe(0);
+    expect(x!.legs.right.old.kind).toBe('target');
     expect(x!.deltaM).toBe(x!.rawM);
+    expect('stepStopM' in x!).toBe(false);
   }, 30000);
 
-  it('the audit keeps the raw difference and what it set aside: a collision jolts the clip request, the new path does not take it', async () => {
-    // L3-F7-phase0: collision turns the travel direction, the clip heading follows and the old path's request jolts; the
-    // feet that changed owner at that boundary do not carry the jolt, and their achieved motion shows it
-    const ds = await audited(FIX('L3-F7-phase0'));
-    const jolted = ds.filter((x) => x.rawM > 0.01 && x.deltaM <= 0.01);
-    expect(jolted.length).toBeGreaterThan(0);
+  it('the audit keeps the raw difference and what it set aside: where the clip request jumps in the body frame, the new path does not take it', async () => {
+    // L3-F7-phase0: before 10b the collision turned the travel direction, the clip heading snapped to it and the old
+    // path's request jolted (two boundaries over 1 cm raw, passed only through the correction). The heading now follows at
+    // a bounded rate (B3): nothing there is over 1 cm before or after the correction
+    const f7 = nonEmpty(await audited(FIX('L3-F7-phase0')), 'L3-F7-phase0 boundaries');
+    for (const x of f7) expect(x.rawM, `L3-F7-phase0 ${x.t}`).toBeLessThanOrEqual(0.01);
+    // what still jumps is the body-frame request when contact entry turns the body (the angular impulse; the clip itself
+    // is the same in both compositions): L3-F1-mirror0 D 0.479 s
+    const ds = await audited(FIX('L3-F1-mirror0'));
+    const jolted = nonEmpty(ds.filter((x) => x.rawM > 0.01 && x.deltaM <= 0.01), 'jolted boundaries');
     for (const x of jolted) expect(Math.max(...Object.values(x.requestJumpM))).toBeGreaterThan(0);
     // the two measures differ only where a demonstrated artifact was corrected; every boundary keeps all three numbers
-    for (const x of ds) {
+    for (const x of [...f7, ...ds]) {
       expect(Object.keys(x.rawBy).sort()).toEqual(Object.keys(x.by).sort());
       expect(Number.isFinite(x.continuedM)).toBe(true);
-      if (Math.max(...Object.values(x.requestJumpM), ...Object.values(x.stepStopM)) === 0) expect(x.deltaM).toBeCloseTo(x.rawM, 10);
+      if (Math.max(...Object.values(x.requestJumpM)) === 0) expect(x.deltaM).toBeCloseTo(x.rawM, 10);
     }
   }, 30000);
 
@@ -105,44 +132,35 @@ describe('plan 08 transition audit', () => {
     }
   }, 60000);
 
-  it('an old path that was about to run on past the landing is the artifact: the landing is smooth, the raw difference stays on the record', async () => {
-    // L3-F3-side at 0.32 s: R's step lands. Carried on one more substep the old step path is 5 cm from the plant, with no
-    // request jump to explain it; the achieved shoe carries on its own motion to 4 mm
-    // (the step out of time at the speed cap: its target stands still after moving 5.6 cm a substep). The reference carries that
-    // stored motion on, from the plan: not from the achieved motion, which stays a separate number
-    const ds = await audited(FIX('L3-F3-side'));
-    const x = ds.find((b) => b.playerId === 'R' && Math.abs(b.t - 0.3208) < 1e-3)!;
-    expect(x.rawM).toBeGreaterThan(0.04);
-    expect(Math.max(...Object.values(x.requestJumpM))).toBe(0);
-    expect(x.stepStopM.right).toBeGreaterThan(0.04);
-    expect(x.deltaM).toBeLessThanOrEqual(0.01);
-    expect(x.deltaM).not.toBe(x.continuedM);
-    // D's next left landing (0.767 s after the leg repair) has the same artifact. The raw 1.88 cm stays recorded,
-    // and the landing itself is not excused: its plant still fails on that slide.
-    const y = ds.find((b) => b.playerId === 'D' && b.t > 0.4 && b.legs.left.old.kind === 'target' && b.legs.left.now.kind === 'plant')!;
-    expect(y).toBeDefined();
-    expect(y.rawM).toBeGreaterThan(0.01);
-    expect(Math.max(...Object.values(y.requestJumpM))).toBe(0);
-    expect(y.stepStopM.left).toBeGreaterThan(0.02);
-    expect(y.deltaM).toBeLessThanOrEqual(0.01);
-    const sim = await Simulation.create(FIX('L3-F3-side'));
-    await runSim(sim);
-    const failed = sim.events.find((e) => e.type === 'footPlantFailed' && e.playerId === 'D' && e.data?.side === 'left' && Math.abs(e.t - y.t) < 1e-5);
-    sim.dispose();
-    expect(failed?.data?.reason).toBe('slide');
-  }, 30000);
+  it('a landing is compared with the old step path as it is: the old path no longer runs on past it (plan 10b)', async () => {
+    // L3-F3-side: before 10b, R's step at 0.32 s ran out of time at the speed cap and its old path stood still 5 cm past
+    // the plant the substep after (the stop the stepStopM reference carried on); across L3 that correction carried 14
+    // boundaries over 1 cm, up to 6.9 cm. Now every step-to-plant landing passes with nothing set aside
+    for (const id of ['L3-F3-side', 'L3-F3-sideMirror', 'L3-F5-drag', 'L3-F8-recontact']) {
+      const ds = await audited(FIX(id));
+      const landings = ds.filter((b) => SIDES.some((s) => b.legs[s].old.kind === 'target' && b.legs[s].now.kind === 'plant'));
+      expect(landings.length, id).toBeGreaterThan(1);
+      for (const x of landings) {
+        expect(x.rawM, `${id} ${x.t.toFixed(4)} ${x.playerId}`).toBeLessThanOrEqual(0.01);
+        if (Math.max(...Object.values(x.requestJumpM)) === 0) expect(x.deltaM).toBe(x.rawM);
+      }
+    }
+  }, 60000);
 
-  it('negative control: a known old/new pose difference over 1 cm still fails with the achieved motion smooth', async () => {
-    // L3-F7-phase25 without the handover check: a short step about to accelerate hands its foot to the request. The new path
-    // carries the achieved motion on (smooth); the old path was going 1.7 cm further. The audit has to report it
-    FOOT_DEBUG.noJoinCheck = true;
+  it('negative control: a known old/new pose difference over 1 cm still fails (the 10b crossing heading fault put back)', async () => {
+    // L3-F7-loadRelease with the composed crossing setting a following foot's heading to the body's, as before 10b: D's
+    // left knee pole turns 19 degrees in one substep at contact entry and the leg takes another clearance variant, while
+    // the old owner keeps its heading. The audit has to report that boundary, with nothing set aside. (The plan 08 control,
+    // the handover check switched off in L3-F7-phase25, no longer gives one: with 10b's bounded step paths no handover in
+    // L3 departs by over 1 cm without it.)
+    FOOT_DEBUG.crossingBodyHeading = true;
     try {
-      const ds = await audited(FIX('L3-F7-phase25'));
-      const x = ds.filter((b) => b.deltaM > 0.01 && b.continuedM < 0.01);
-      expect(x.length).toBeGreaterThan(0);
-      for (const b of x) expect(b.rawM).toBeGreaterThan(0.01);
+      const ds = await audited(FIX('L3-F7-loadRelease'));
+      const x = ds.filter((b) => b.deltaM > 0.01);
+      expect(x.map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`)).toEqual(['D 0.5750 leftAnkle']);
+      for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
     } finally {
-      FOOT_DEBUG.noJoinCheck = false;
+      FOOT_DEBUG.crossingBodyHeading = false;
     }
   }, 30000);
 
@@ -152,7 +170,7 @@ describe('plan 08 transition audit', () => {
     let airborne = 0;
     let overdue = 0;
     for (const d of L3(/^L3-F(1-low|1-phase4|3-collision|9-noProbe-contact|9-noProbe-free|9-noProbe-prep|11-invalid)$/)) {
-      const was = new Map<string, { carried: boolean; seeds: number; mode: string; source: string; late: boolean; moveV: Vec3; stepV: Vec3; target: Vec3 }>();
+      const was = new Map<string, { carried: boolean; seeds: number; mode: string; source: string; late: boolean; moveV: Vec3; stepV: Vec3; target: Vec3; aMax: number }>();
       const sim = await Simulation.create(d, {
         transitionAudit: true,
         onSubstep: (s) => {
@@ -176,12 +194,16 @@ describe('plan 08 transition audit', () => {
                 kept++;
                 expect(f.seeds, `${d.id} ${s.t}`).toBe(p.seeds);
                 if (p.late) {
-                  // a step past its time goes on from the motion it had, not from a path velocity it dropped: the mean of its last
-                  // substep, or while it was still gathering speed what it ended that substep at
+                  // a step past its time goes on from the motion it had, not from a path velocity it dropped: its motion changes by
+                  // at most the step's declared acceleration over the substep, plus what the speed cap takes off (plan 10b; this
+                  // was a window of -2/+2 m/s around the last speed, with half the speed as the floor, which a bounded reversal
+                  // through zero speed breaks)
                   overdue++;
-                  const speed = dist({ ...f.target, y: 0 }, { ...p.target, y: 0 }) / s.dt;
-                  expect(speed, `${d.id} ${s.t}`).toBeGreaterThan(Math.max(len(p.moveV) - 2, 0.5 * len(p.moveV)));
-                  expect(speed, `${d.id} ${s.t}`).toBeLessThan(Math.max(len(p.moveV), len(horiz(p.stepV))) + 2);
+                  const sp = len(horiz(pl.proxy.body.linvel()));
+                  const C = FOOTWORK_L3.compose!;
+                  const vNow = scale(horiz(sub(f.target, p.target)), 1 / s.dt);
+                  const cut = Math.max(0, len(p.moveV) - (FOOTWORK_L3.swing.maxSpeedMps + FOOTWORK_L3.swing.travelSpeedK * sp));
+                  expect(len(sub(vNow, p.moveV)), `${d.id} ${s.t}`).toBeLessThanOrEqual(Math.max(C.stepAccelMps2 + C.stepAccelPerTravel * sp, p.aMax) * s.dt + cut + 1e-9);
                 }
               }
               // a held leg that loses support stays on the old owner's path too
@@ -189,7 +211,8 @@ describe('plan 08 transition audit', () => {
                 airborne++;
                 expect(f.seeds, `${d.id} ${s.t}`).toBe(p.seeds);
               }
-              was.set(k, { carried: f.carried, seeds: f.seeds, mode: f.mode, source: f.source, late: f.elapsedS >= f.durS, moveV: { ...f.moveV }, stepV: { ...f.stepV }, target: { ...f.target } });
+              const C = FOOTWORK_L3.compose!;
+              was.set(k, { carried: f.carried, seeds: f.seeds, mode: f.mode, source: f.source, late: f.elapsedS >= f.durS, moveV: { ...f.moveV }, stepV: { ...f.stepV }, target: { ...f.target }, aMax: C.stepAccelMps2 + C.stepAccelPerTravel * len(horiz(pl.proxy.body.linvel())) });
             }
         },
       });

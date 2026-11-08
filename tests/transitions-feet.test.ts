@@ -16,15 +16,16 @@ afterEach(() => new Promise<void>((done) => setTimeout(done)));
 describe('plan 08 foot limits at every actual substep', () => {
   const LIFT = FOOTWORK_L3.swing.maxLiftRateMps;
   const REJOIN = FOOTWORK_L3.rejoinMps;
-  type Seen = { lift: number; offset: number; nLift: number; nOffset: number; ownerChanges: number; gap: number; nCarried: number; carriedStat: number; carriedFlat: number };
+  const SW = FOOTWORK_L3.swing;
+  type Seen = { lift: number; offset: number; nLift: number; nOffset: number; ownerChanges: number; gap: number; gapLevel: number; gapStepY: number; nStepReseeds: number; nCarried: number; carriedStat: number; carriedFlat: number };
   /**
    * The vertical target speed and the offset recovery speed from outside the planner, between two substeps of one seed: a step
    * also from the substep it takes over without a reseed (a carried leg), or changes mode on its path. `carriedStat` and
    * `carriedFlat` are how far the planner's own record of that first update is from what it published, vertically and level.
    */
   const measure = async (d: FixtureDef): Promise<{ sim: Simulation; seen: Seen }> => {
-    const seen: Seen = { lift: 0, offset: 0, nLift: 0, nOffset: 0, ownerChanges: 0, gap: 0, nCarried: 0, carriedStat: 0, carriedFlat: 0 };
-    const last = new Map<string, { source: string; mode: string; target: Vec3; offset: Vec3; seeds: number; solved: Vec3; recoord: boolean }>();
+    const seen: Seen = { lift: 0, offset: 0, nLift: 0, nOffset: 0, ownerChanges: 0, gap: 0, gapLevel: 0, gapStepY: 0, nStepReseeds: 0, nCarried: 0, carriedStat: 0, carriedFlat: 0 };
+    const last = new Map<string, { source: string; mode: string; target: Vec3; offset: Vec3; seeds: number; solved: Vec3; recoord: boolean; speed: number }>();
     const sim = await Simulation.create(d, {
       onSubstep: (s) => {
         for (const pl of s.players)
@@ -34,6 +35,8 @@ describe('plan 08 foot limits at every actual substep', () => {
             if (!f || pl.rag) continue;
             const k = `${pl.id}:${side}`;
             const p = last.get(k);
+            const v = pl.proxy.body.linvel();
+            const speed = Math.hypot(v.x, v.z);
             const same = !!p && p.seeds === f.seeds && !p.recoord && !f.rejoin;
             if (p && same && f.mode !== 'planted') {
               if (f.source === 'step') {
@@ -51,11 +54,19 @@ describe('plan 08 foot limits at every actual substep', () => {
                 seen.nOffset++;
               }
             } else if (p && p.seeds !== f.seeds) {
-              // a reseed keeps the foot: the new owner's target starts one substep from the achieved foot
+              // a reseed keeps the foot: the new owner's target starts one substep from the achieved foot. Level: within the
+              // step speed cap at the body's travel speed (the fastest any owner moves a target, plan 10b), as a fraction of
+              // it; a step's height within the lift cap. A follow owner's height is the request's; a plant's is the floor
               seen.ownerChanges++;
               seen.gap = Math.max(seen.gap, dist(f.target, p.solved));
+              const cap = (SW.maxSpeedMps + SW.travelSpeedK * Math.max(speed, p.speed)) * s.dt;
+              seen.gapLevel = Math.max(seen.gapLevel, len(horiz(sub(f.target, p.solved))) / cap);
+              if (f.source === 'step' && f.mode !== 'planted') {
+                seen.nStepReseeds++;
+                seen.gapStepY = Math.max(seen.gapStepY, Math.abs(f.target.y - p.solved.y) / (LIFT * s.dt));
+              }
             }
-            last.set(k, { source: f.source, mode: f.mode, target: { ...f.target }, offset: { ...f.offset }, seeds: f.seeds, solved: { ...f.solvedW }, recoord: f.rejoin || f.wait });
+            last.set(k, { source: f.source, mode: f.mode, target: { ...f.target }, offset: { ...f.offset }, seeds: f.seeds, solved: { ...f.solvedW }, recoord: f.rejoin || f.wait, speed });
           }
       },
     });
@@ -76,6 +87,8 @@ describe('plan 08 foot limits at every actual substep', () => {
     expect(seen.lift, d.id).toBeLessThanOrEqual(LIFT + 1e-6);
     expect(seen.offset, d.id).toBeLessThanOrEqual(REJOIN + 1e-6);
     expect(seen.gap, d.id).toBeLessThan(0.1);
+    expect(seen.gapLevel, d.id).toBeLessThanOrEqual(1 + 1e-9);
+    expect(seen.gapStepY, d.id).toBeLessThanOrEqual(1 + 1e-9);
     expect(seen.carriedStat, d.id).toBeLessThan(1e-6);
     expect(seen.carriedFlat, d.id).toBeLessThan(1e-6);
     expect(c.margin, d.id).toBeGreaterThanOrEqual(-1e-9);

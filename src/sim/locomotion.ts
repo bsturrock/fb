@@ -1,6 +1,7 @@
 // Plan 08: locomotion composition above the foot planner: free-arm poses (brace, fitted idle, walking swing) and the
 // per-player locomotion mode. Pose-only requests; the motor, the support budgets and the contact mechanics never read this.
 import type { ArmSide } from './contracts';
+import { hipLocal, type BodyProfile } from './profiles';
 import { v3, type Vec3 } from './vec';
 import IDLE_RECORD from './model/idle-pose.record.json';
 
@@ -37,8 +38,12 @@ export interface LocomotionProfile {
   id: string;
   /** Free arm while braking (out and a little forward, elbow out and back), weighted by the support's braking blend. */
   brace: ArmPoseSpec;
-  /** Fitted resting posture: chest-frame arm directions (anatomical left +X) and the extra stance width per foot (m). */
-  idle: { arms: IdlePoseRecord['arms']; widthAddM: number };
+  /**
+   * Fitted resting posture: chest-frame arm directions (anatomical left +X) and the fitted stance's half width (m: each
+   * ankle from the body's centre line, the clip's width scaled to the body's legs). What it adds outside the hip is taken
+   * at use from the body's own hip (idleWidthAddM).
+   */
+  idle: { arms: IdlePoseRecord['arms']; halfWidthM: number };
   /** Walking arms: follow the achieved feet's fore-aft spread (m at full swing), faded in with travel speed (m/s). */
   walk: { strideM: number; fadeMps: [number, number]; swingRad: number; restReach: number; forwardBend: number; tauS: number };
   /** Contact composition: observation hysteresis and the bounded preparation request. */
@@ -59,15 +64,26 @@ export interface LocomotionProfile {
   };
 }
 
-const HIP_HALF_WIDTH_M = 0.1125;
-
 export const LOCOMOTION_L3: LocomotionProfile = {
-  id: 'locomotion-l3-v2',
+  // v3 (plan 10b): the stance's half width instead of a width added outside a fixed 0.1125 m hip (bew-v6's)
+  id: 'locomotion-l3-v3',
   brace: { palm: v3(0.5, 0.12, 0.26), pole: v3(0.9, 0, -0.4) },
-  idle: { arms: IDLE_POSE_RECORD.arms, widthAddM: Math.max(0, 0.5 * (IDLE_POSE_RECORD.stance.widthM * IDLE_POSE_RECORD.stance.legScale) - HIP_HALF_WIDTH_M) },
+  idle: { arms: IDLE_POSE_RECORD.arms, halfWidthM: 0.5 * IDLE_POSE_RECORD.stance.widthM * IDLE_POSE_RECORD.stance.legScale },
   walk: { strideM: 0.2, fadeMps: [0.25, 1], swingRad: 0.42, restReach: 0.965, forwardBend: 0.07, tauS: 0.06 },
   contact: { clearS: 0.12, prepRangeM: 2.2, prepClosingMps: 1.5, prepHoldS: 0.15, exitMinS: 0.15, prepDropM: 0.05, weightRatePerS: 5, braceRadPerS: 24 },
 };
+
+/** The fitted idle stance's width per foot outside the body's own hip (m, never inward). */
+export function idleWidthAddM(P: LocomotionProfile, body: BodyProfile, s: ArmSide): number {
+  return Math.max(0, P.idle.halfWidthM - Math.abs(hipLocal(body, s).x));
+}
+
+/** Travel speed (m/s) at which the idle stance has fully closed. */
+export const IDLE_STANCE_FADE_MPS = 1.5;
+/** How much of the idle stance (width and stagger) shows at this travel speed: 1 at rest, 0 from IDLE_STANCE_FADE_MPS. */
+export function idleStanceFade(speed: number): number {
+  return 1 - Math.min(1, speed / IDLE_STANCE_FADE_MPS);
+}
 
 // ------------------------------------------------------------------------------------------- locomotion mode
 /** Free movement, preparation for a closing opponent, contact (solver contact or retention), exit back to free movement. */
@@ -133,7 +149,10 @@ export function advanceLoco(st: LocoState, P: LocomotionProfile, o: LocoObs, t: 
   st.contactW = step(st.contactW, !o.falling && to === 'contact' ? 1 : 0);
   const w = C.braceRadPerS;
   st.braceV += (w * w * (st.contactW - st.braceW) - 2 * w * st.braceV) * dt;
-  st.braceW = Math.max(0, Math.min(1, st.braceW + st.braceV * dt));
+  const braceW = st.braceW + st.braceV * dt;
+  st.braceW = Math.max(0, Math.min(1, braceW));
+  // plan 10b: a clamped weight stops there: the rate the clamp overrode is not integrated on the next substep
+  if (st.braceW !== braceW) st.braceV = 0;
   if (to === from) return null;
   st.mode = to;
   st.reason = reason;

@@ -42,11 +42,15 @@ const LIMIT_SIDES = ['left', 'right'] as const;
 
 // ------------------------------------------------------------------ limits
 describe('L4-F1 limits under stated loads, muscles off', () => {
+  // the settled mean is the stated load over the profile's stiffness (deg): 1.15, 2.15, 0.98 and, since plan 10b's
+  // stiffer hip twist, 1.07
+  const loadDeg = (nm: number, k: number): number => ((nm / k) * 180) / Math.PI;
+  const E = ENVELOPE_L4;
   for (const [id, joint, expected] of [
-    ['L4-F1-shoulderSwing', 'Shoulder', 1.15],
-    ['L4-F1-shoulderTwist', 'Shoulder', 2.15],
-    ['L4-F1-hipSwing', 'Hip', 0.98],
-    ['L4-F1-hipTwist', 'Hip', 2.15],
+    ['L4-F1-shoulderSwing', 'Shoulder', loadDeg(30, E.shoulder.swing.stiffnessNmPerRad)],
+    ['L4-F1-shoulderTwist', 'Shoulder', loadDeg(15, E.shoulder.twist.stiffnessNmPerRad)],
+    ['L4-F1-hipSwing', 'Hip', loadDeg(60, E.hip.swing.stiffnessNmPerRad)],
+    ['L4-F1-hipTwist', 'Hip', loadDeg(30, E.hip.twist.stiffnessNmPerRad)],
   ] as const)
     it(`${id}: soft, the settled overshoot is the stiffness load, inside 5 degrees`, async () => {
       const d = FIX(id);

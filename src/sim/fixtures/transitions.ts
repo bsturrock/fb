@@ -26,6 +26,8 @@ export function asL3(def: FixtureDef, id: string, title?: string, notes?: string
     locomotion: LOCOMOTION_L3,
     carry: CARRY_L3,
     ...(def.rules ? { rules: ruleVariant(def.rules, 'ballSource=carryPose', { ballSource: 'carryPose' }) } : {}),
+    // plan 10b: a coached entry updates its phase before it aims (the gate 1 fixtures keep their order)
+    players: def.players.map((p) => (p.controller.kind === 'coachedEntry' ? { ...p, controller: { ...p.controller, phaseFirst: true } } : p)),
     notes: [def.notes, notes, `Footwork: ${FOOTWORK_L3.id}; locomotion: ${LOCOMOTION_L3.id}; carry: ${CARRY_L3.id}.`].filter(Boolean).join(' '),
   };
 }

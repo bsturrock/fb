@@ -19,7 +19,7 @@ for (const def of allFixtures().filter((d) => re.test(d.id))) {
     const s = k.startsWith('left') ? 'left' : 'right';
     const L = d.legs[s];
     const dReq = Math.hypot(L.old.request.x - L.now.request.x, L.old.request.y - L.now.request.y, L.old.request.z - L.now.request.z);
-    console.log(`${def.id.padEnd(24)} ${d.t.toFixed(4)} ${d.playerId} accept ${(d.deltaM * 100).toFixed(2)} ${k} raw ${(d.rawM * 100).toFixed(2)} cont ${(d.continuedM * 100).toFixed(2)} jump ${(d.requestJumpM[s] * 100).toFixed(2)} stop ${(d.stepStopM[s] * 100).toFixed(2)} kind ${L.old.kind}>${L.now.kind} dReq ${(dReq * 100).toFixed(2)} var ${L.old.variant}/${L.now.variant} | ${kinds(d.from, d.to)}`);
+    console.log(`${def.id.padEnd(24)} ${d.t.toFixed(4)} ${d.playerId} accept ${(d.deltaM * 100).toFixed(2)} ${k} raw ${(d.rawM * 100).toFixed(2)} cont ${(d.continuedM * 100).toFixed(2)} jump ${(d.requestJumpM[s] * 100).toFixed(2)} kind ${L.old.kind}>${L.now.kind} dReq ${(dReq * 100).toFixed(2)} var ${L.old.variant}/${L.now.variant} | ${kinds(d.from, d.to)}`);
   }
   sim.dispose();
 }
