@@ -12,20 +12,14 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { ArmSide } from '../src/sim/contracts';
 import { CARRY_ARM } from '../src/sim/carry';
 import { isGround } from '../src/sim/contracts';
-import { rotateToward } from '../src/sim/fall-response';
+import { rotateToward } from '../src/sim/vec';
 import { ENVELOPE_L4, FALL_L4, SOLVER_G4, SOLVER_G4_ZEROG, type JointEnvelope } from '../src/sim/profiles';
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, landmarkWorld, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { nonEmpty, pace, run, runSim, stepWhile, traceDiff } from './helpers';
+import { breathe, evs, FIX, nonEmpty, pace, run, runSim, stepWhile, traceDiff } from './helpers';
 
 const ALL = fallFixtures();
-const FIX = (id: string): FixtureDef => {
-  const f = ALL.find((d) => d.id === id);
-  if (!f) throw new Error(`no fixture ${id}`);
-  return f;
-};
-const breathe = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 const ran = new Map<string, Simulation>();
 async function sim(id: string): Promise<Simulation> {
@@ -38,7 +32,6 @@ afterAll(() => {
 });
 
 const exp = (s: Simulation): any => s.exportFixture();
-const evs = (s: Simulation, type: string): any[] => s.events.filter((e) => e.type === type);
 const report = (s: Simulation, id: string): any => exp(s).fallEffort[id];
 const envelopeOf = (s: Simulation, id: string): any[] => exp(s).jointLimits[id].envelope.joints;
 const passive = (s: Simulation, id: string): { pos: number; neg: number } => ({ pos: envelopeOf(s, id).reduce((a, j) => a + j.passivePositiveJ, 0), neg: envelopeOf(s, id).reduce((a, j) => a + j.passiveNegativeJ, 0) });

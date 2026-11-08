@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   // The supplied model is imported as a hashed asset (src/lab/player-model.ts, `?url`); models/ is source art, not a
@@ -6,4 +6,4 @@ export default defineConfig({
   publicDir: false,
   server: { port: 5197, strictPort: true },
   test: { environment: 'node', testTimeout: 120000, setupFiles: ['tests/setup.ts'] },
-} as any);
+});

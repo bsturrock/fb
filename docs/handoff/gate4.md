@@ -89,7 +89,7 @@ Date: 2026-11-02. Status: G4-A to G4-D are implemented. Review fixes 1–4 of `d
   - representation change resets interpolation;
   - event-log vectors and id lists are now printed. They were blank before this session.
 - `tests/gate4.test.ts` (new, 48 tests).
-- Probes: `scripts/probe/g4*.ts`.
+- Probes: `scripts/probe/g4*.ts` (the ones no handoff names were archived to `scripts/probe-archive/` in [plan 10f](plan10.md#10f--cleanup-and-module-structure)).
 
 ## Source-to-ragdoll mapping
 

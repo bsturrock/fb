@@ -1,9 +1,9 @@
-// Plan 07 closeout item 3 probe: per footwork fixture and player, the stepping before item 3 (FOOT_DEBUG legacyEntry +
+// Plan 07 closeout item 3 probe: per footwork fixture and player, the stepping before item 3 (debug switches legacyEntry +
 // noQuick), with the item 3 reactive entry only (noQuick) and with item 3 complete. Supported, articulated-free
 // substeps: time with both feet in lifted (non-drag) planner steps, time in drag steps, ordinary step starts while the
 // other foot is in a lifted step, steps, shortest step duration, confirmed / failed plants, eligible stance planted.
 // Usage: vite-node scripts/probe/p07-item3-compare.ts [id regex]
-import { FOOT_DEBUG, type FootPlanInput } from '../../src/sim/footwork';
+import { type FootPlanInput } from '../../src/sim/footwork';
 
 const { Simulation } = await import('../../src/sim/simulation');
 const { allFixtures } = await import('../../src/sim/fixtures/index');
@@ -15,8 +15,7 @@ console.log('| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
 for (const def of allFixtures().filter((d) => re.test(d.id) && d.footwork)) {
   for (const pl of def.players) {
     for (const [name, m] of Object.entries(modes)) {
-      Object.assign(FOOT_DEBUG, m);
-      const sim = await Simulation.create(def);
+      const sim = await Simulation.create(def, { debug: { foot: m } });
       const proto = Object.getPrototypeOf(sim) as { footInput: (...a: unknown[]) => FootPlanInput };
       const orig = proto.footInput;
       let both = 0;
@@ -56,4 +55,3 @@ for (const def of allFixtures().filter((d) => re.test(d.id) && d.footwork)) {
     }
   }
 }
-Object.assign(FOOT_DEBUG, { legacyEntry: false, noQuick: false });

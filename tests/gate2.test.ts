@@ -3,9 +3,8 @@ import { Simulation } from '../src/sim/simulation';
 import { FixedStepDriver } from '../src/sim/driver';
 import * as G2 from '../src/sim/fixtures/gate2';
 import { ARM_G2, shoulderLocal } from '../src/sim/profiles';
-import type { FixtureDef } from '../src/sim/fixture';
 import { len, sub, toLocal, toWorld, type Vec3 } from '../src/sim/vec';
-import { create, disposeTracked, nonEmpty, pace, run, runSim, traceDiff, traceRowsDiff } from './helpers';
+import { create, disposeTracked, evs, nonEmpty, pace, run, runEach, runSim, traceDiff, traceRowsDiff } from './helpers';
 
 // free every engine world a test created (gate tests do not dispose their simulations themselves)
 afterEach(() => disposeTracked());
@@ -14,18 +13,7 @@ const P = ARM_G2;
 const TOL = P.surfaceTolM;
 
 /** Run a fixture, calling `each` after every outer tick (substeps = 1 in these profiles). */
-async function runEach(def: FixtureDef, each: (sim: Simulation) => void, opts = {}): Promise<Simulation> {
-  const sim = await create(def, opts);
-  each(sim);
-  while (!sim.done) {
-    sim.stepTick();
-    await pace();
-    each(sim);
-  }
-  return sim;
-}
 
-const evs = (sim: Simulation, type: string) => sim.events.filter((e) => e.type === type);
 const poseOf = (sim: Simulation, id: string) => {
   const b = sim.byId.get(id)!.proxy.body;
   return { p: { ...b.translation() }, q: { ...b.rotation() } };

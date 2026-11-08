@@ -3,7 +3,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ColliderRegion, ColliderTag, ContactRec, ContactPointRec, PlayerId, BodyPartId, ArmSide } from './contracts';
 import type { BodyProfile, CombineRule, SolverProfile, StanceProfile, SuspensionSupport } from './profiles';
-import { add, qRot, sub, type Pose, type Quat, type Vec3, v3, vc, dot, scale, neg, qInvRot } from './vec';
+import { add, qRot, sub, type Pose, type Quat, type Vec3, v3, vc, dot, neg, qInvRot } from './vec';
 
 let ready: Promise<void> | null = null;
 /** Initialise the Rapier WASM module once per process. */
@@ -140,7 +140,7 @@ export class PhysicsWorld {
     const desc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pose.p.x, pose.p.y, pose.p.z)
       .setRotation(pose.q)
-      .setCanSleep(false)
+      .setCanSleep(s.sleeping)
       .setCcdEnabled(s.ccd)
       .setSoftCcdPrediction(s.softCcdPredictionM)
       .setLinearDamping(s.linearDamping)
@@ -272,7 +272,8 @@ export class PhysicsWorld {
   /**
    * Every force-bearing manifold involving at least one player collider, oriented from `a` to `b`, where `a` is
    * the collider with the lower handle. Speculative points (no impulse, no penetration beyond `touchDistM`) are
-   * skipped.
+   * skipped. One record per collider pair: when a pair has several manifolds, only the one with the most kept points
+   * is returned (the first of equals); the others' points and impulse are dropped.
    */
   collectContacts(): ContactRec[] {
     const out: ContactRec[] = [];
@@ -397,5 +398,3 @@ export class PhysicsWorld {
     return res;
   }
 }
-
-export const vScaleAdd = (a: Vec3, b: Vec3, s: number): Vec3 => add(a, scale(b, s));

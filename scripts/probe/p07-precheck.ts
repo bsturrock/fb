@@ -2,14 +2,12 @@
 // sustained, coverage). Usage: vite-node scripts/probe/p07-precheck.ts [id regex]
 import { Simulation } from '../../src/sim/simulation';
 import { allFixtures } from '../../src/sim/fixtures/index';
-import { FOOT_DEBUG } from '../../src/sim/footwork';
 
 const re = new RegExp(process.argv[2] ?? '^L2-F(3-runStop|11-)');
 for (const def of allFixtures()) {
   if (!re.test(def.id) || !def.footwork) continue;
   for (const off of [false, true]) {
-    FOOT_DEBUG.noReachCheck = off;
-    const sim = await Simulation.create(def);
+    const sim = await Simulation.create(def, { debug: { foot: { noReachCheck: off } } });
     sim.runToEnd();
     for (const p of sim.players) {
       if (!p.feet) continue;
@@ -20,4 +18,3 @@ for (const def of allFixtures()) {
     sim.dispose();
   }
 }
-FOOT_DEBUG.noReachCheck = false;

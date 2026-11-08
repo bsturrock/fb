@@ -10,7 +10,7 @@ import {
 import { ARM_G2, BALANCE_G3, DEFAULT_MOTOR, shoulderLocal } from '../src/sim/profiles';
 import type { FixtureDef } from '../src/sim/fixture';
 import { len, qFromAxisAngle, qMul, sub, toLocal, UP, v3, type Vec3 } from '../src/sim/vec';
-import { create, disposeTracked, nonEmpty, pace, run, runSim, traceDiff, traceRowsDiff } from './helpers';
+import { create, disposeTracked, evs, nonEmpty, pace, run, runEach, runSim, traceDiff, traceRowsDiff } from './helpers';
 
 // free every engine world a test created (gate tests do not dispose their simulations themselves)
 afterEach(() => disposeTracked());
@@ -20,17 +20,6 @@ const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
 const EPS = 1e-6;
 
-async function runEach(def: FixtureDef, each: (sim: Simulation) => void): Promise<Simulation> {
-  const sim = await create(def);
-  each(sim);
-  while (!sim.done) {
-    sim.stepTick();
-    await pace();
-    each(sim);
-  }
-  return sim;
-}
-const evs = (sim: Simulation, type: string, id?: string) => sim.events.filter((e) => e.type === type && (!id || e.playerId === id));
 const leanOf = (sim: Simulation, id: string) => sim.trace.map((r) => ({ t: r.t, ...r.players[id].lean! }));
 const finishOf = (sim: Simulation) => sim.trace.map((r) => (r.players.D.ph ?? '').split(' ')[0]);
 const byId = (id: string): FixtureDef => allFixtures().find((f) => f.id === id)!;

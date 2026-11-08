@@ -222,6 +222,7 @@ export interface SolverProfile {
   touchDistM: number;
   linearDamping: number;
   angularDamping: number;
+  /** Body sleeping, read by every dynamic body (physics proxies and ragdoll segments); always off. */
   sleeping: false;
   /** Max wall-clock ticks consumed per display frame by the lab driver (excess wall time is discarded and reported). */
   maxTicksPerFrame: number;
@@ -466,18 +467,6 @@ export const BALANCE_G3: BalanceProfile = {
   fallingArmBudgetFraction: 0.35,
 };
 
-export interface ProfileIds {
-  body: Record<string, string>;
-  motor: string;
-  solver: string;
-  stance: string;
-  arm?: string;
-  balance?: string;
-  ragdoll?: string;
-  rule?: string;
-  support?: string;
-}
-
 // ---------------------------------------------------------------- arms (Gate 2)
 export type RetentionMode = 'surfaceHold' | 'forearmClamp';
 
@@ -609,8 +598,6 @@ export interface RagdollProfile {
   audit: { massTolKg: number; linearRelTol: number; angularRelTol: number };
   /** Passive palm-to-target retention once a grip owner is a ragdoll (section 10). */
   passiveGrip: { stiffness: number; damping: number; maxSeparationM: number; budgetFraction: number };
-  /** Wrist/ankle exclusion band for ground-contact classification (m from the landmark along the limb). */
-  endBandM: number;
   /** Plan 09: shoulder/hip swing-twist envelope (absent: spherical joints stay unrestricted, the Gate 4 passive path). */
   envelope?: RagdollEnvelope;
   /**
@@ -812,8 +799,10 @@ export const RAGDOLL_G4: RagdollProfile = {
   },
   audit: { massTolKg: 1e-4, linearRelTol: 1e-5, angularRelTol: 1e-4 },
   passiveGrip: { stiffness: 3000, damping: 100, maxSeparationM: 0.1, budgetFraction: 0.35 },
-  endBandM: 0.03,
 };
+
+/** Pose blueprint used for presentation when no ragdoll profile is configured (Gate 1-3 fixtures). */
+export const DEFAULT_POSE_PROFILE = RAGDOLL_G4;
 
 /** Plan 09: the Gate 4 ragdoll with the anatomical envelope; everything else is the same blueprint. */
 export const RAGDOLL_L4: RagdollProfile = { ...RAGDOLL_G4, id: 'ragdoll-l4-v2', envelope: ENVELOPE_L4 };
@@ -835,7 +824,9 @@ export interface RuleProfile {
   ballLocal: Vec3;
   /**
    * Where the ball is: `coreOffset` (default) = ballLocal in the core frame; `carryPalm` = the runner's ball-arm palm in
-   * the sim-owned physical pose (plan 06: the run-clip carry arm moves the ball), ballLocal when no pose exists.
+   * the sim-owned physical pose (plan 06: the run-clip carry arm moves the ball); `carryPose` = the seated ball's centre
+   * on the achieved forearm (plan 08a, the pose's `carriedBall` landmark). Both fall back to ballLocal when no pose
+   * exists.
    */
   ballSource?: 'coreOffset' | 'carryPalm' | 'carryPose';
   /**
@@ -874,6 +865,9 @@ const FOOTBALL_ELIGIBLE = ['torso', 'pelvis', 'head', 'upperArm', 'elbow', 'fore
 const fmtAxis = (a: Vec3): string => `${a.x},${a.y},${a.z}`;
 const sameAxis = (a: Vec3, b: Vec3): boolean => a.x === b.x && a.y === b.y && a.z === b.z;
 
+/** The authored ball reference: right arm of a right = +X body, in the core frame (m). Model runners scale it (model/profiles). */
+export const AUTHORED_BALL_LOCAL: Vec3 = v3(0.2, 0.3, 0.12);
+
 /**
  * The football rule profile. Every option that departs from the default appears in the id (`+fwd=0,0,-1`,
  * `+sideline=off`, ...), so one id always stands for one set of values; variants built by spreading a profile derive
@@ -894,7 +888,7 @@ export const RULES_FOOTBALL = (
   kind: 'footballTackleSubset',
   runnerId,
   forwardAxis: o.forwardAxis ?? v3(1, 0, 0),
-  ballLocal: v3(0.2, 0.3, 0.12),
+  ballLocal: { ...AUTHORED_BALL_LOCAL },
   eligibleRegions: FOOTBALL_ELIGIBLE,
   endBandM: 0.03,
   groundImpulseMinNs: 1e-4,

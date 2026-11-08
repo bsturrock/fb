@@ -28,7 +28,7 @@ Versions: three 0.170.0, @dimforge/rapier3d-compat 0.21.0, vite 6.4.5, vitest 3.
 - `src/sim/fixtures/gate1.ts` — F1–F10 definitions.
 - `src/sim/pose.ts` — sim-owned physical pose (landmarks, two-bone limbs). Legs and Gate 1 arms are visual only.
 - `src/lab/{main,views}.ts`, `index.html` — TackleLab.
-- `tests/gate1.test.ts`, `tests/helpers.ts`; `scripts/run-fixtures.ts`; `scripts/probe/*` (diagnostics).
+- `tests/gate1.test.ts`, `tests/helpers.ts`; `scripts/run-fixtures.ts`; `scripts/probe/*` (diagnostics) (the ones no handoff names were archived to `scripts/probe-archive/` in [plan 10f](plan10.md#10f--cleanup-and-module-structure)).
 
 There was no earlier blocking/playground code in this repository; nothing to preserve.
 

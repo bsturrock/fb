@@ -6,7 +6,7 @@
 import CAL from './bew-v6.calibration.json';
 import type { ModelCalibration, Tuple3 } from './calibration-types';
 import { carryPalmLocal, proceduralLocal } from '../pose';
-import { ARM_G2, RAGDOLL_G4, upperBodyCompound, type ArmProfile, type BodyProfile, type RagdollProfile, type RuleProfile } from '../profiles';
+import { ARM_G2, AUTHORED_BALL_LOCAL, RAGDOLL_G4, upperBodyCompound, type ArmProfile, type BodyProfile, type RagdollProfile, type RuleProfile } from '../profiles';
 import { v3, type Vec3 } from '../vec';
 
 export const MODEL_CALIBRATION = CAL as unknown as ModelCalibration;
@@ -98,9 +98,6 @@ export function modelRagdoll(base: RagdollProfile = RAGDOLL_G4): RagdollProfile 
     shoe: { halfExtents: t3(C.shoe.halfExtents), belowAnkleM: -C.shoe.centerShin[1], forwardM: C.shoe.centerShin[2] },
   };
 }
-
-/** Ball reference of the authored rule profiles (RULES_FOOTBALL / RULES_LAB_CORE), right arm of a right = +X body. */
-const AUTHORED_BALL_LOCAL = v3(0.2, 0.3, 0.12);
 
 /**
  * Carry reference for a model runner: the authored ball offset relative to the shoulder (scaled by the chain) on the

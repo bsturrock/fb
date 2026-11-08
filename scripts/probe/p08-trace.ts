@@ -5,7 +5,8 @@
 // Usage: vite-node scripts/probe/p08-trace.ts <fixture id> <player> <from> <to> [left|right]
 import { Simulation } from '../../src/sim/simulation';
 import { allFixtures } from '../../src/sim/fixtures/index';
-import { POSE_DEBUG } from '../../src/sim/pose';
+import { poseProbe } from '../../src/sim/debug';
+const PROBE = poseProbe();
 import { len, sub, type Vec3 } from '../../src/sim/vec';
 
 const [id, who, from, to, side] = process.argv.slice(2);
@@ -16,12 +17,13 @@ const sides = side ? [side as 'left' | 'right'] : (['left', 'right'] as const);
 const last: Record<string, Vec3[]> = {};
 const f3 = (v: Vec3): string => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
 let cont: Record<string, Record<string, unknown>> = {};
-POSE_DEBUG.trace = (key, r) => {
+PROBE.trace = (key, r) => {
   // the live pose is built first; the audit's old pose after it
   cont[key] ??= r;
 };
 let seen = 0;
 const sim = await Simulation.create(def, {
+  debug: { poseProbe: PROBE },
   transitionAudit: true,
   onSubstep: (s) => {
     const pl = s.byId.get(who)!;
@@ -49,7 +51,7 @@ const sim = await Simulation.create(def, {
       const d2 = len(sub(dx, dp));
       const info = pl.pose.legInfo?.[sd];
       const r = c[`${who}:${sd}Leg`] as { cont?: { al?: number; push?: number; a0?: number; dd?: number } | null; dc?: Vec3; shown?: Vec3; depth?: number; chosenDepth?: number } | undefined;
-      console.log(`  ${sd[0]} ${f.mode}/${f.source}${f.wait ? '+w' : ''}${f.tentative ? '+t' : ''} ankle ${f3(p)} dx ${(len(dx) * 100).toFixed(2)} dv ${(len(sub(dx, dp)) * 240).toFixed(2)} d2 ${(d2 * 100).toFixed(2)} | req ${f3(f.lastRequest ?? p)} rv ${len(f.requestV).toFixed(2)} tgt ${f3(f.target)} solved ${f3(f.solvedW)} off ${len(f.offset).toFixed(3)} offV ${len(f.offsetV).toFixed(2)} stepV ${f3(f.stepV)} vy ${f.liftRateMps.toFixed(2)}`);
+      console.log(`  ${sd[0]} ${f.mode}/${f.source}${f.wait ? '+w' : ''}${f.tentative ? '+t' : ''} ankle ${f3(p)} dx ${(len(dx) * 100).toFixed(2)} dv ${(len(sub(dx, dp)) * 240).toFixed(2)} d2 ${(d2 * 100).toFixed(2)} | req ${f3(f.lastRequest ?? p)} rv ${len(f.requestV).toFixed(2)} tgt ${f3(f.target)} solved ${f3(f.solvedW)} off ${len(f.offset).toFixed(3)} offV ${len(f.offsetV).toFixed(2)} stepV ${f3({ ...f.stepH.v, y: f.stepY.v })} vy ${f.liftRateMps.toFixed(2)}`);
       console.log(`    sole o ${f.soleO.toFixed(3)} v ${f.soleV.toFixed(2)} ang ${f.soleAngle.toFixed(3)} base ${f.soleBase.toFixed(3)} poleW ${f.poleW.toFixed(3)} var ${info?.variant} soft ${(info?.softM ?? 0).toFixed(4)} lift ${(info?.liftM ?? 0).toFixed(4)} gap ${f.gapM.toFixed(4)} roll ${f.rollF.toFixed(2)} edge ${f.edgeX.toFixed(3)} | cont al ${r?.cont?.al?.toFixed?.(3)} a0 ${r?.cont?.a0?.toFixed?.(3)} dd ${r?.cont?.dd?.toFixed?.(3)} push ${r?.cont?.push?.toFixed?.(4)} depth ${r?.depth?.toFixed?.(4)}/${r?.chosenDepth?.toFixed?.(4)} dc ${r?.dc ? len(r.dc).toFixed(3) : ''} shown ${r?.shown ? len(r.shown).toFixed(3) : ''}`);
     }
     for (const d of hits) {

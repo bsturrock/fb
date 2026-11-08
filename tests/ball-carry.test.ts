@@ -12,7 +12,7 @@ import { buildProxyPose, carriedBall, hingeChain, proceduralLocal, type Physical
 import { shoulderLocal, sideSignX, type BodyProfile } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, dot, len, lerp, norm, qFromAxisAngle, qIdentity, qInvRot, qRot, sub, toLocal, toWorld, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { pace, runSim } from './helpers';
+import { FIX, pace, runSim } from './helpers';
 
 const tv = (p: Vec3): THREE.Vector3 => new THREE.Vector3(p.x, p.y, p.z);
 const close = (a: THREE.Vector3, b: Vec3, tol = 1e-4): void => expect(a.distanceTo(tv(b))).toBeLessThan(tol);
@@ -102,7 +102,6 @@ describe('plan 08a donor arithmetic', () => {
 });
 
 // ---------------------------------------------------------------- through the simulation
-const FIX = (id: string): FixtureDef => allFixtures().find((d) => d.id === id)!;
 /** The same fixture on the earlier hold: no carry profile, the ball on the palm. */
 const held = (d: FixtureDef): FixtureDef => ({ ...d, carry: undefined, ...(d.rules ? { rules: { ...d.rules, ballSource: 'carryPalm' as const } } : {}) });
 const carrier = (s: Simulation): PlayerRuntime => s.players.find((p) => p.setup.role === 'runner')!;

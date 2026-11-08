@@ -12,11 +12,10 @@ import { RigAdapter, cloneRig } from '../src/lab/rig-adapter';
 import { FOOTBALL, createFootball } from '../src/lab/football';
 import { CARRY_L3 } from '../src/sim/carry';
 import { MODEL_CALIBRATION as C } from '../src/sim/model/profiles';
-import { allFixtures } from '../src/sim/fixtures/index';
 import { Simulation } from '../src/sim/simulation';
 import { carriedBall, type PhysicalPose } from '../src/sim/pose';
 import { add, qFromAxisAngle, qInvRot, qMul, qRot, v3, type Pose, type Vec3 } from '../src/sim/vec';
-import { runSim } from './helpers';
+import { FIX, runSim } from './helpers';
 
 const PARTS = ['torso', 'upper', 'fore', 'hand'] as const;
 type Part = (typeof PARTS)[number];
@@ -121,8 +120,6 @@ function thinnestAxis(m: number[]): THREE.Vector3 {
   const j = [0, 1, 2].reduce((a, b) => (A[b][b] < A[a][a] ? b : a), 0);
   return new THREE.Vector3(V[0][j], V[1][j], V[2][j]).normalize();
 }
-
-const FIX = (id: string) => allFixtures().find((d) => d.id === id)!;
 
 /** Published poses of the carrier through a fixture window, every `every` substeps. */
 async function poses(id: string, from: number, to: number, every: number): Promise<PhysicalPose[]> {

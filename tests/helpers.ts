@@ -1,6 +1,21 @@
 import { expect } from 'vitest';
+import type { SimEvent } from '../src/sim/contracts';
 import { Simulation, type SimOptions, type TraceRow } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
+import { allFixtures } from '../src/sim/fixtures/index';
+
+/** The registered fixture `id` (a fresh definition each call); throws when there is none. */
+export const FIX = (id: string): FixtureDef => {
+  const f = allFixtures().find((d) => d.id === id);
+  if (!f) throw new Error(`no fixture ${id}`);
+  return f;
+};
+
+/** An event with its data read loosely (tests read event-specific fields). */
+export type TestEvent = Omit<SimEvent, 'data'> & { data: any };
+
+/** The events of one type, optionally of one player. */
+export const evs = (sim: Simulation, type: string, id?: string): TestEvent[] => sim.events.filter((e) => e.type === type && (!id || e.playerId === id)) as TestEvent[];
 
 /**
  * Yield a macrotask when the worker has run synchronously for `everyMs` of wall time. Simulation runs are synchronous;
@@ -64,6 +79,18 @@ export async function create(def: FixtureDef, opts: SimOptions = {}): Promise<Si
 /** Dispose every tracked simulation still alive. */
 export function disposeTracked(): void {
   for (const s of [...live]) s.dispose();
+}
+
+/** Run `def` to its end (tracked), calling `each` before the first tick and after every tick. */
+export async function runEach(def: FixtureDef, each: (sim: Simulation) => void, opts: SimOptions = {}): Promise<Simulation> {
+  const sim = await create(def, opts);
+  each(sim);
+  while (!sim.done) {
+    sim.stepTick();
+    await pace();
+    each(sim);
+  }
+  return sim;
 }
 
 export async function run(def: FixtureDef, opts: SimOptions = {}): Promise<Simulation> {

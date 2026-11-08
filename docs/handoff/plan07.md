@@ -660,7 +660,7 @@ New:
 - `src/sim/footwork.ts`;
 - `src/sim/fixtures/footwork.ts`;
 - `tests/footwork.test.ts`;
-- `scripts/probe/p07-*.ts`.
+- `scripts/probe/p07-*.ts` (the ones no handoff names were archived to `scripts/probe-archive/` in [plan 10f](plan10.md#10f--cleanup-and-module-structure)).
 
 Changed:
 - `support.ts`: the recovery bound;

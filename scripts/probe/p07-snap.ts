@@ -6,8 +6,8 @@
 import { Simulation } from '../../src/sim/simulation';
 import { allFixtures } from '../../src/sim/fixtures/index';
 import { add, dist, len, qConj, qRot, scale, sub, type Vec3 } from '../../src/sim/vec';
-import { POSE_DEBUG } from '../../src/sim/pose';
-POSE_DEBUG.on = true;
+import { poseProbe } from '../../src/sim/debug';
+const PROBE = poseProbe({ on: true });
 
 const args = process.argv.slice(2);
 const re = new RegExp(args.find((a) => !a.startsWith('--')) ?? '^RH-F6-simultaneous$|^RH-F5-playerBelow$|^L2-F14-');
@@ -16,7 +16,7 @@ const LIMBS: Record<string, string[]> = { leftLeg: ['leftKnee', 'leftAnkle'], ri
 const BIG = 0.03;
 for (const def of allFixtures()) {
   if (!re.test(def.id)) continue;
-  const sim = await Simulation.create(def);
+  const sim = await Simulation.create(def, { debug: { poseProbe: PROBE } });
   const prev: Record<string, { p: Record<string, Vec3>; pp?: Record<string, Vec3>; v: number | undefined; mode: string; fb: boolean; lift: number }> = {};
   const st: Record<string, { sw: number; max: number; at: number; what: string; big: number; bigList: string[] }> = {};
   while (!sim.done) {
@@ -34,9 +34,9 @@ for (const def of allFixtures()) {
         const v = pl.poseMemory[limb];
         const joint = keys[0];
         const fb = pl.pose.straightFallback.includes(joint);
-        const dl = POSE_DEBUG.legs[`${pl.id}:${limb.replace('Leg', '')}`];
+        const dl = PROBE.legs[`${pl.id}:${limb.replace('Leg', '')}`];
         const lift = limb.endsWith('Leg') && dl ? dist(dl.lifted, dl.ik) : 0;
-        const cd = POSE_DEBUG.cont[`${pl.id}:${limb}`];
+        const cd = PROBE.cont[`${pl.id}:${limb}`];
         const cont = cd ? ` a0 ${cd.a0.toFixed(2)} al ${cd.al.toFixed(2)} dd ${(cd.dd * 100).toFixed(0)}cm` : '';
         const s = (st[k] ??= { sw: 0, max: 0, at: 0, what: '', big: 0, bigList: [] });
         const pr = prev[k];

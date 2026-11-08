@@ -2,7 +2,7 @@
 
 Repository-aligned plan • 2026-11-05 • Implemented in all three passes with the [08 review closeout](08_Review_Closeout.md); declared finished by the user on 2026-11-07. See the [handoff](../handoff/plan08.md).
 
-**Implementation status (2026-11-05):** the 1 cm transition metric holds for free locomotion (735 boundaries, largest 0.9 cm) and does not hold in contact (274 of 1807 boundaries over 1 cm, largest 5.8 cm). Natural deceleration at normal speed has not had a human review.
+**Implementation status (2026-11-05; history, superseded):** at the first pass the 1 cm transition metric held for free locomotion (735 boundaries, largest 0.9 cm) and did not hold in contact (274 of 1807 boundaries over 1 cm, largest 5.8 cm). The review closeout and the leg composition repair brought the audit to 0 of 2450 boundaries over 1 cm ([repair evidence](../handoff/plan08.md#leg-composition-repair-2026-11-07)); plan 10b's audit results are in its [handoff](../handoff/plan10.md#10b--foot-target-continuity).
 
 **Review disposition:** close the contact/airborne continuity gap, restore the declared composed foot-motion limits, and repair integration tests that do not establish recontact, falling and retained-arm geometry. Preserve this implementation as the starting point; the [closeout plan](08_Review_Closeout.md) contains the reproductions, scope and acceptance checks.
 

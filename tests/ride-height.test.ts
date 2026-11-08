@@ -4,7 +4,6 @@
 // reproducibility, legacy invariance.
 import { describe, expect, it } from 'vitest';
 import * as RH from '../src/sim/fixtures/ride-height';
-import { allFixtures } from '../src/sim/fixtures/index';
 import { Simulation, type PlayerTraceRow } from '../src/sim/simulation';
 import { FixedStepDriver } from '../src/sim/driver';
 import type { FixtureDef } from '../src/sim/fixture';
@@ -24,15 +23,10 @@ import {
 } from '../src/sim/support';
 import { footFrame, legShapes, type PoseShape } from '../src/sim/pose';
 import { dist, qRot, v3 } from '../src/sim/vec';
-import { pace, run, runSim, stepWhile } from './helpers';
+import { FIX, pace, run, runSim, stepWhile } from './helpers';
 
 const S = SUSPENSION_RH;
 const G = 9.81;
-const FIX = (id: string): FixtureDef => {
-  const f = allFixtures().find((d) => d.id === id);
-  if (!f) throw new Error(`no fixture ${id}`);
-  return f;
-};
 const rows = (sim: Simulation, id: string): { t: number; r: PlayerTraceRow }[] => sim.trace.map((row) => ({ t: row.t, r: row.players[id] }));
 const clampReq = (x: number) => Math.min(S.targetRangeM[1], Math.max(S.targetRangeM[0], x));
 const lowest = (shapes: PoseShape[]): number => {

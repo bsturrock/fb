@@ -755,4 +755,4 @@ npx vite-node scripts/probe/p08-final.ts               # conversions, rejections
 npx vite-node scripts/probe/p08-trace.ts <id> <player> <from> <to> [side]   # one player's legs at actual substeps
 ```
 
-New files: `src/sim/locomotion.ts`, `src/sim/fixtures/transitions.ts`, `tests/transitions.test.ts`, `scripts/model/idle-intake.ts`, `src/sim/model/idle-pose.record.json`, `models/animations/idle.json`, `models/animations/source/idle.fbx`, `scripts/probe/p08-*.ts`.
+New files: `src/sim/locomotion.ts`, `src/sim/fixtures/transitions.ts`, `tests/transitions.test.ts`, `scripts/model/idle-intake.ts`, `src/sim/model/idle-pose.record.json`, `models/animations/idle.json`, `models/animations/source/idle.fbx`, `scripts/probe/p08-*.ts` (the ones no handoff names were archived to `scripts/probe-archive/` in [plan 10f](plan10.md#10f--cleanup-and-module-structure)).

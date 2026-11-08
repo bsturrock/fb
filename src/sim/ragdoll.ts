@@ -8,8 +8,8 @@ import type { PhysicsWorld } from './physics';
 import { pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type RagdollProfile } from './profiles';
 import {
-  add, addScaled, cross, dist, dot, isFiniteVec, len, m3Add, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qMul, qRot, round, rv, scale, sub, toLocal,
-  toWorld, v3, vc, worldInertia, type Mat3, type Pose, type Quat, type Vec3,
+  add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qIdentity, qMul, qRot, round, rv, scale,
+  sub, toLocal, toWorld, v3, vc, worldInertia, type Mat3, type Pose, type Quat, type Vec3,
 } from './vec';
 
 export const SEGMENTS: SegmentId[] = [
@@ -46,6 +46,8 @@ export interface RagdollJoint {
 /** Plan 09: one spherical joint's soft envelope state since the handoff. */
 export interface EnvelopeRuntime {
   jointId: string;
+  /** Plan 10f (F6): the joint's index in `Ragdoll.joints`, so a substep does not search for it. */
+  jointIndex: number;
   /** Range the joint started outside of (rad); it follows the limb inward and decays, so conversion adds no kick. */
   swingSlack: number;
   twistSlackLo: number;
@@ -134,9 +136,8 @@ export interface ExternalShape {
   floor?: boolean;
 }
 
-const poseOfRb = (rb: RAPIER.RigidBody): Pose => ({ p: vc(rb.translation()), q: { ...rb.rotation() } });
-const composePose = (a: Pose, b: Pose): Pose => ({ p: toWorld(a, b.p), q: qMul(a.q, b.q) });
-const I3: Quat = { x: 0, y: 0, z: 0, w: 1 };
+/** A rigid body's solved pose. */
+export const poseOfRb = (rb: RAPIER.RigidBody): Pose => ({ p: vc(rb.translation()), q: { ...rb.rotation() } });
 
 /** Signed twist angle (rad) of q about the local X axis (swing removed), in (-pi, pi]. */
 export function twistX(q: Quat): number {
@@ -187,7 +188,7 @@ export function buildCandidate(
         .setTranslation(p.x, p.y, p.z)
         .setRotation(sp.rotationWorld)
         .setEnabled(false)
-        .setCanSleep(false)
+        .setCanSleep(s.sleeping)
         .setCcdEnabled(s.ccd)
         .setSoftCcdPrediction(s.softCcdPredictionM)
         .setLinearDamping(s.linearDamping)
@@ -212,10 +213,10 @@ export function buildCandidate(
     phys.addTag(c, playerId, seg, region, `${seg}:${region}`, side);
     colliders.push({ collider: c, segment: seg, region, side, local });
   };
-  const at = (x: number, y: number, z: number): Pose => ({ p: v3(x, y, z), q: I3 });
+  const at = (x: number, y: number, z: number): Pose => ({ p: v3(x, y, z), q: qIdentity() });
   // shoe on the shin at the pose's ankle pitch (plan 06 pass 2; 0 = the rigid shoe of the procedural gait)
   const shoeLocal = (side: ArmSide): Pose => {
-    const q = pitchShin(I3, ((pose.anklePitchDeg?.[side] ?? 0) * Math.PI) / 180);
+    const q = pitchShin(qIdentity(), ((pose.anklePitchDeg?.[side] ?? 0) * Math.PI) / 180);
     return { p: add(v3(0, -L.shin, 0), qRot(q, v3(0, -R.shoe.belowAnkleM, R.shoe.forwardM))), q };
   };
   // palm landmark and the palm ball's centre on the forearm; plan 08a: the carry hand turned over the ball's nose
@@ -357,6 +358,7 @@ export const relativeOmega = (rag: Ragdoll, j: RagdollJoint): Vec3 => sub(vc(rag
 /** Limb direction (proximal to distal), world. */
 export const limbDirWorld = (rag: Ragdoll, seg: SegmentId): Vec3 => qRot(rag.bodies[seg].rotation(), v3(0, -1, 0));
 
+/** Angle wrapped to (-pi, pi] by whole turns (exact, unlike `vec.wrapPi`'s atan2; the recorded twist limits use this). */
 const wrapPi = (a: number): number => {
   let x = a;
   while (x > Math.PI) x -= 2 * Math.PI;
@@ -460,12 +462,12 @@ function jointSwingTwist(rag: Ragdoll, j: RagdollJoint): SwingTwist {
 }
 
 /** World unit axes along which a relative rotation raises this joint's swing excess and external twist. */
-export function limitGradients(rag: Ragdoll, j: RagdollJoint): { swing: Vec3; twist: Vec3; twistReach: number } {
+export function limitGradients(rag: Ragdoll, j: RagdollJoint): { swing: Vec3; twist: Vec3 } {
   const q = qMul(qConj(rag.bodies[j.parent].rotation()), rag.bodies[j.child].rotation());
   const st = swingTwistOf(q);
   const qp = rag.bodies[j.parent].rotation();
   const s = j.sideSign ?? 1;
-  return { swing: qRot(qp, swingExcess(envelopeOf(rag, j)!, st.dir, s).axis), twist: scale(qRot(qp, twistAxis(q, st)), s), twistReach: Math.cos(st.swingRad / 2) };
+  return { swing: qRot(qp, swingExcess(envelopeOf(rag, j)!, st.dir, s).axis), twist: scale(qRot(qp, twistAxis(q, st)), s) };
 }
 
 /**
@@ -539,7 +541,7 @@ export function envelopeMoments(E: JointEnvelope, q: Quat, sideSign: number, sla
 export function initEnvelope(rag: Ragdoll): void {
   if (!rag.profile.envelope) return;
   const out: EnvelopeRuntime[] = [];
-  for (const j of rag.joints) {
+  for (const [jointIndex, j] of rag.joints.entries()) {
     const E = envelopeOf(rag, j);
     if (!E) continue;
     const st = jointSwingTwist(rag, j);
@@ -550,6 +552,7 @@ export function initEnvelope(rag: Ragdoll): void {
     const twistSlackLo = Math.max(0, (E.twistDeg[0] * Math.PI) / 180 - tw);
     out.push({
       jointId: j.id,
+      jointIndex,
       swingSlack,
       twistSlackLo,
       twistSlackHi,
@@ -578,7 +581,7 @@ export function applyEnvelope(rag: Ragdoll, dt: number): void {
   const decay = (P.slackDecayDegPerS * Math.PI * dt) / 180;
   const tolDeg = P.toleranceDeg;
   for (const e of rag.envelope) {
-    const j = rag.joints.find((x) => x.id === e.jointId)!;
+    const j = rag.joints[e.jointIndex];
     const E = envelopeOf(rag, j)!;
     const s = j.sideSign ?? 1;
     const qp = rag.bodies[j.parent].rotation();
@@ -616,7 +619,7 @@ export function auditEnvelope(rag: Ragdoll, dt: number): void {
   if (!rag.envelope) return;
   for (const e of rag.envelope) {
     if (len(e.torque) === 0) continue;
-    const j = rag.joints.find((x) => x.id === e.jointId)!;
+    const j = rag.joints[e.jointIndex];
     const w = scale(add(e.wPre, relativeOmega(rag, j)), 0.5);
     const work = dot(e.torque, w) * dt;
     if (work > 0) e.passivePositiveJ += work;
@@ -828,7 +831,7 @@ export function switchToRagdoll(phys: PhysicsWorld, proxyBody: RAPIER.RigidBody,
   let Iasm: Mat3 = [0, 0, 0, 0, 0, 0, 0, 0, 0];
   for (const p of parts) Iasm = m3Add(Iasm, m3Add(p.I, m3ParallelAxis(p.m, sub(p.C, C))));
   const inv = m3Inverse(Iasm);
-  const det = Iasm[0] * (Iasm[4] * Iasm[8] - Iasm[5] * Iasm[7]) - Iasm[1] * (Iasm[3] * Iasm[8] - Iasm[5] * Iasm[6]) + Iasm[2] * (Iasm[3] * Iasm[7] - Iasm[4] * Iasm[6]);
+  const det = m3Det(Iasm);
   const omega = inv ? m3Vec(inv, L) : v3();
   // ---- the switch: old proxy out, candidate in, in one boundary operation
   phys.removeBody(proxyBody);

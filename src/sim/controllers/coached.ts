@@ -5,7 +5,7 @@ import { pairKey } from '../contracts';
 import { hipLocal, headRadius, torsoHalf, shoulderLocal, type MotorProfile } from '../profiles';
 import type { Controller, ControllerContext } from './base';
 import {
-  UP, add, addScaled, clamp, cross, dot, horiz, len, lerp, neg, norm, qRot, scale, sub, toWorld, v3, type Vec3,
+  UP, add, addScaled, clamp, cross, dot, horiz, len, lerp, neg, norm, qRot, scale, smooth, sub, toWorld, v3, type Vec3,
 } from '../vec';
 
 export interface CoachedEntrySpec {
@@ -55,10 +55,6 @@ const DEFAULTS = {
   recoverAfterS: 0.3,
 };
 
-const smooth = (x: number): number => {
-  const t = clamp(x, 0, 1);
-  return t * t * (3 - 2 * t);
-};
 
 export class CoachedEntryController implements Controller {
   readonly kind = 'coachedEntry';

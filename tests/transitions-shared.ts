@@ -1,5 +1,4 @@
 // Plan 08 (L3) test helpers shared by the tests/transitions-*.test.ts files.
-import { allFixtures } from '../src/sim/fixtures/index';
 import { transitionFixtures } from '../src/sim/fixtures/transitions';
 import { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
@@ -11,11 +10,7 @@ import type { ArmObs } from '../src/sim/arms';
 import { it } from 'vitest';
 
 export const SIDES: ArmSide[] = ['left', 'right'];
-export const FIX = (id: string): FixtureDef => {
-  const f = allFixtures().find((d) => d.id === id);
-  if (!f) throw new Error(`no fixture ${id}`);
-  return f;
-};
+export { FIX } from './helpers';
 export const L3 = (re: RegExp): FixtureDef[] => transitionFixtures().filter((d) => re.test(d.id));
 /** One test per fixture of a group (a long synchronous loop would starve the test runner). */
 export const each = (re: RegExp, name: string, f: (d: FixtureDef) => Promise<void>): void => {

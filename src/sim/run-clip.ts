@@ -19,8 +19,8 @@ import { carryArmSwing } from './carry';
 import type { ArmSide } from './contracts';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
 import {
-  add, addScaled, clamp, closestOnSegment, headingOf, len, norm, qFromYaw, qInvRot, qNormalize, qRot, rad, scale, sub,
-  type Pose, type Quat, type Vec3, v3,
+  add, addScaled, clamp, closestOnSegment, headingOf, len, norm, qFromYaw, qInvRot, qNormalize, qRot, rad, scale, smooth, sub,
+  wrapPi, type Pose, type Quat, type Vec3, v3,
 } from './vec';
 
 export class RunClipError extends Error {
@@ -89,7 +89,6 @@ export function validateRunClipSource(id: string, raw: unknown): RunClipSource {
 // ------------------------------------------------------------------------------------------- analysis
 const t3 = (a: number[]): Vec3 => v3(a[0], a[1], a[2]);
 const tq = (a: number[]): Quat => qNormalize({ x: a[0], y: a[1], z: a[2], w: a[3] });
-const wrapPi = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 const frac = (x: number): number => x - Math.floor(x);
 const hz = (a: Vec3): Vec3 => v3(a.x, 0, a.z);
 
@@ -596,10 +595,6 @@ export function newRunPlayback(u0: number): RunPlayback {
   return { u: frac(u0), w: 0, wTarget: 0, rate: 1, blend: 0, k: 0, pos: 0, speed: 0, heading: 0, prevP: null };
 }
 
-export const smooth = (x: number): number => {
-  const s = clamp(x, 0, 1);
-  return s * s * (3 - 2 * s);
-};
 
 /** Speed-selected blend position k + blend (0 .. clips - 1) at speed v. */
 function clipPosition(p: RunClipProfile, v: number): number {
@@ -750,7 +745,6 @@ export function playbackWidthAddM(st: RunPlayback, p: RunClipProfile): number {
   return nb && st.blend > 0 ? a + ((w[nb.id] ?? 0) - a) * st.blend : a;
 }
 
-/** Clip label for traces: the clip id, or "lower+upper" while blending. */
 /**
  * Per foot: inside its clip stance interval at the playback phase (plan 07 plant schedule). The interval of a clip blend
  * is the blend of the neighbouring clips' intervals (cyclic), so it moves continuously with the blend.
@@ -822,6 +816,7 @@ export function joinPhase(st: RunPlayback, p: RunClipProfile, side: ArmSide, off
   return frac(best - (delayS * rate) / sel.cycleS);
 }
 
+/** Clip label for traces: the clip id, or "lower+upper" while blending. */
 export function playbackLabel(st: RunPlayback, p: RunClipProfile): string {
   const b = p.clips[st.k + 1];
   return b && st.blend > 0 ? `${p.clips[st.k].id}+${b.id}` : p.clips[st.k].id;
@@ -964,4 +959,26 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
   const out: SampledLimbs = { weight, legs, arms, carrySwing: o.carrySwing * (o.carryShare ?? 1), carrySampled: o.carrySwing > 0 };
   if (o.carryRaw) out.carryRaw = (o.carryShare ?? 1) * carryArmSwing(sample.arm.right.upper, sample.arm.left.upper);
   return out;
+}
+
+/**
+ * Plan 08: the composed clip weight, critically damped toward the clip's smoothed weight at `w` (rad/s, the locomotion
+ * profile's `contact.clipWeightRadPerS`), so a reversal (a contact that ends mid-fade) is no velocity step.
+ */
+export function followClipWeight(st: RunPlayback, dt: number, w: number): void {
+  const want = smooth(st.w);
+  if (st.wF === undefined || dt <= 0) {
+    st.wF = want;
+    st.wFV = 0;
+    return;
+  }
+  st.wFV = (st.wFV ?? 0) + (w * w * (want - st.wF) - 2 * w * (st.wFV ?? 0)) * dt;
+  st.wF = clamp(st.wF + st.wFV * dt, 0, 1);
+  // a rejoined phase slides in the same way: the clip it left may still be shown
+  st.uSlipV = (st.uSlipV ?? 0) + (-w * w * (st.uSlip ?? 0) - 2 * w * (st.uSlipV ?? 0)) * dt;
+  st.uSlip = (st.uSlip ?? 0) + st.uSlipV * dt;
+  if (st.w <= 0 && st.wF < 1e-3) {
+    st.wF = 0;
+    st.wFV = 0;
+  }
 }

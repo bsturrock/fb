@@ -7,13 +7,20 @@ import { isGround, type ArmSide, type ContactRec, type PlayerId, type Role, type
 import type { FallResponseProfile, JointEnvelope } from './profiles';
 import { twoBone } from './pose';
 import { clampDirToEnvelope, hingeAngles, hingeAxisWorld, landmarkWorld, limbDirWorld, relativeOmega, type Ragdoll, type RagdollJoint } from './ragdoll';
-import { add, addScaled, clamp, clampLen, cross, dist, dot, horiz, len, norm, qFromAxisAngle, qInvRot, qRot, rad, round, rv, scale, sub, v3, vc, type Quat, type Vec3 } from './vec';
+import { add, addScaled, clamp, clampLen, cross, dist, dot, horiz, len, norm, qFromAxisAngle, qInvRot, qRot, rad, rotateToward, round, rv, scale, smooth, sub, v3, vc, type Quat, type Vec3 } from './vec';
 
 export type ArmTask = 'passive' | 'protect' | 'hold' | 'brace';
 export type BraceState = 'none' | 'seek' | 'contact' | 'missed';
 export type BraceMissReason = 'tooFar' | 'late' | 'obstructed' | 'expired';
 
 const SIDES: ArmSide[] = ['left', 'right'];
+/** Brace reach: the two-bone solve stops this far short of the straight arm (m), so the elbow keeps a bend to aim. */
+const BRACE_REACH_MARGIN_M = 1e-3;
+/** Brace reach: the elbow pole in the core frame, outward (times the side sign) and backward. */
+const BRACE_POLE_OUT = 0.6;
+const BRACE_POLE_BACK = -1;
+/** Power cap: bisection steps for the shared effort scale (2^-14 of full effort). */
+const POWER_SCALE_BISECTIONS = 14;
 
 interface ArmState {
   side: ArmSide;
@@ -25,7 +32,6 @@ interface ArmState {
   /** Rate-limited brace target, which starts at the achieved pose. */
   targetDirCore: Vec3;
   targetElbowRad: number;
-  floorTarget: Vec3 | null;
   reachable: boolean;
   everReachable: boolean;
   /**
@@ -139,11 +145,6 @@ const LIMB_OF: Record<SegmentId, Limb | 'body'> = {
 };
 const jointLimb = (j: RagdollJoint): Limb => LIMB_OF[j.child] as Limb;
 
-const smooth = (x: number): number => {
-  const t = clamp(x, 0, 1);
-  return t * t * (3 - 2 * t);
-};
-
 /** Torque toward a limb direction (world): spring across the error, damping across the swing rate only, no twist. */
 function dirTorque(cur: Vec3, tgt: Vec3, w: Vec3, kp: number, kd: number, spring = true): Vec3 {
   const c = cross(cur, tgt);
@@ -153,23 +154,6 @@ function dirTorque(cur: Vec3, tgt: Vec3, w: Vec3, kp: number, kd: number, spring
   const damp = scale(swingRate, -kd);
   return spring && s > 1e-6 ? addScaled(damp, c, (kp * ang) / s) : damp;
 }
-
-/**
- * Unit `from` turned toward unit `to` by at most maxRad. Plan 10c C5: opposite vectors (no cross product) turn about an
- * axis perpendicular to `from`, its cross product with the least-aligned basis axis, instead of jumping half a turn.
- */
-export const rotateToward = (from: Vec3, to: Vec3, maxRad: number): Vec3 => {
-  const c = cross(from, to);
-  const s = len(c);
-  const a = Math.atan2(s, dot(from, to));
-  if (a <= maxRad) return { ...to };
-  let axis = s >= 1e-9 ? scale(c, 1 / s) : null;
-  if (!axis) {
-    const [x, y, z] = [Math.abs(from.x), Math.abs(from.y), Math.abs(from.z)];
-    axis = norm(cross(from, x <= y && x <= z ? v3(1, 0, 0) : y <= z ? v3(0, 1, 0) : v3(0, 0, 1)));
-  }
-  return norm(qRot(qFromAxisAngle(axis, maxRad), from));
-};
 
 export class FallResponse {
   readonly episodes = new Map<PlayerId, FallEpisode>();
@@ -208,7 +192,7 @@ export class FallResponse {
     const mk = (side: ArmSide): ArmState => {
       const dir = qInvRot(rag.bodies.core.rotation(), limbDirWorld(rag, `${side}UpperArm`));
       const elbow = rad(hinge[`${side}Elbow`]);
-      return { side, task: 'passive', brace: 'none', refDirCore: dir, refElbowRad: elbow, targetDirCore: dir, targetElbowRad: elbow, floorTarget: null, reachable: false, everReachable: false, obstructedAtS: null };
+      return { side, task: 'passive', brace: 'none', refDirCore: dir, refElbowRad: elbow, targetDirCore: dir, targetElbowRad: elbow, reachable: false, everReachable: false, obstructedAtS: null };
     };
     const ep: FallEpisode = {
       playerId,
@@ -382,6 +366,11 @@ export class FallResponse {
     ep.cmds.push({ joint: j, torque: scale(hingeAxisWorld(ep.rag, j), applied), requestedNm: Math.abs(tau), capNm, wPre: relativeOmega(ep.rag, j), inertia, arm, task });
   }
 
+  /**
+   * Moment of inertia the power prediction uses for a joint's child: a uniform rod of the segment's mass about its end,
+   * mL^2/3. An approximation (the segment is not a rod and drags the limb beyond it); the power audit, predicted
+   * against achieved within 5%, holds with it.
+   */
   private inertia(ep: FallEpisode, seg: SegmentId, lengthM: number): number {
     return (ep.rag.massKg[seg] * lengthM * lengthM) / 3;
   }
@@ -469,15 +458,14 @@ export class FallResponse {
     const target = v3(S.x + offset.x, B.palmYM, S.z + offset.z);
     const L = rag.profile.lengths;
     const lower = L.forearm + L.palmExtension;
-    const reach = L.upperArm + lower - 1e-3;
-    const pole = qRot(q, v3(sideSign * 0.6, 0, -1));
+    const reach = L.upperArm + lower - BRACE_REACH_MARGIN_M;
+    const pole = qRot(q, v3(sideSign * BRACE_POLE_OUT, 0, BRACE_POLE_BACK));
     const r = twoBone(sW, target, L.upperArm, lower, pole, reach);
     const wanted = qInvRot(q, norm(sub(r.mid, sW), v3(0, -1, 0)));
     const dirIK = clampDirToEnvelope(this.envelope(ep, 'shoulder'), wanted, sideSign, rad(B.envelopeMarginDeg));
     // in reach of the predicted shoulder, without a direction the shoulder's range does not have
     const reachable = dist(S, target) <= reach && dot(wanted, dirIK) > Math.cos(rad(B.envelopeMarginDeg));
     if (reachable && !a.everReachable) this.host.emit('braceTarget', ep.playerId, { arm: a.side, target: rv(target, 3), horizonS: round(h, 3), tS: round(this.host.t - ep.t0, 4) });
-    a.floorTarget = target;
     a.reachable = reachable;
     a.everReachable ||= reachable;
     const d = Math.min(len(sub(target, sW)), reach);
@@ -508,7 +496,7 @@ export class FallResponse {
     if (total(1) > limitW) {
       let lo = 0;
       let hi = 1;
-      for (let k = 0; k < 14; k++) {
+      for (let k = 0; k < POWER_SCALE_BISECTIONS; k++) {
         const m = (lo + hi) / 2;
         if (total(m) > limitW) hi = m;
         else lo = m;

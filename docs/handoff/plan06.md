@@ -292,7 +292,7 @@ Pass 2 (agents' Chrome, 1× side view of L1-F1-fastRun, 4 stills): the planted f
   - `scripts/model/clip-intake.ts`
   - `scripts/intake-clips.ts`
   - `tests/locomotion.test.ts`
-  - probes `scripts/probe/l1-*.ts`
+  - probes `scripts/probe/l1-*.ts` (the ones no handoff names were archived to `scripts/probe-archive/` in [plan 10f](plan10.md#10f--cleanup-and-module-structure))
 - Changed:
   - `src/sim/pose.ts`: sampled branch, foot IK, swing clearance, residuals; pass 2: continuous leg solve, ankle pitch (`anklePitchDeg`, `footFrame`, `pitchShin`), carry swing, radial clearance.
   - `src/sim/ragdoll.ts`: shoe collider and landmark at the pose's ankle pitch; `Ragdoll.anklePitchDeg`, published by `ragdollPose`.

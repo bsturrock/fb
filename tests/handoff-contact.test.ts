@@ -10,20 +10,14 @@ import { rhf6 } from '../src/sim/fixtures/ride-height';
 import { Simulation, type PlayerRuntime } from '../src/sim/simulation';
 import { FixedStepDriver } from '../src/sim/driver';
 import type { FixtureDef } from '../src/sim/fixture';
-import { POSE_DEBUG, stableReach } from '../src/sim/pose';
+import { poseProbe } from '../src/sim/debug';
+import { stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { POSE_GUARD_C6 } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { pace, run, runSim, stepWhile, traceDiff } from './helpers';
+import { breathe, FIX, pace, run, runSim, stepWhile, traceDiff } from './helpers';
 
-const FIX = (id: string): FixtureDef => {
-  const f = allFixtures().find((d) => d.id === id);
-  if (!f) throw new Error(`no fixture ${id}`);
-  return f;
-};
 const HC = (): FixtureDef[] => allFixtures().filter((d) => d.id.startsWith('HC-'));
-/** Yield to the event loop between long synchronous runs (keeps the vitest worker RPC responsive). */
-const breathe = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 /** Unchanged boundary tolerances (RagdollProfile validation): landmark 0.01 m, new external penetration 0.015 m. */
 const LANDMARK_TOL = 0.01;
 const PEN_TOL = 0.015;
@@ -436,13 +430,12 @@ describe('HC contact continuity of the published pose', () => {
 
   it('HC-F2-offset: actual knee and ankle displacement stays bounded at each physics substep', async () => {
     const def = FIX('HC-F2-offset');
-    const sim = await Simulation.create(def);
     const prev: Record<string, Vec3> = {};
     const dt = def.solver.outerTickS / def.solver.substeps;
     // Contact push-out (5 cm), ordinary departure and the fast direction correction, over one substep.
     const budget = 0.05 + (2.5 + 6) * dt;
     let worst = 0;
-    POSE_DEBUG.trace = (key, r) => {
+    const trace = (key: string, r: Record<string, unknown>): void => {
       if (key !== 'A:rightLeg') return;
       for (const n of ['knee', 'ankle']) {
         const p = r[n] as Vec3;
@@ -450,10 +443,10 @@ describe('HC contact continuity of the published pose', () => {
         prev[n] = p;
       }
     };
+    const sim = await Simulation.create(def, { debug: { poseProbe: poseProbe({ trace }) } });
     try {
       await runSim(sim);
     } finally {
-      POSE_DEBUG.trace = undefined;
       sim.dispose();
     }
     expect(worst).toBeLessThanOrEqual(budget);
@@ -483,23 +476,20 @@ describe('HC contact continuity of the published pose', () => {
   it('the continuity guard never advances more than 2 cm past the rate-limited step in the required cases', async () => {
     for (const id of ['RH-F5-playerBelow', 'RH-F6-simultaneous', 'L2-F14-oneArmFeet']) {
       await breathe();
-      const sim = await Simulation.create(FIX(id));
       let worst = 0;
       let at = '';
-      POSE_DEBUG.on = true;
-      POSE_DEBUG.trace = (k, r) => {
-        const c = r.cont as { a0: number; al: number; dd: number } | null;
-        if (c && c.al > c.a0) {
-          const adv = (c.al - c.a0) * c.dd;
-          if (adv > worst) [worst, at] = [adv, `${k} ${sim.t.toFixed(3)}`];
-        }
-      };
-      try {
-        await runSim(sim);
-      } finally {
-        POSE_DEBUG.trace = undefined;
-        POSE_DEBUG.on = false;
-      }
+      const probe = poseProbe({
+        on: true,
+        trace: (k, r) => {
+          const c = r.cont as { a0: number; al: number; dd: number } | null;
+          if (c && c.al > c.a0) {
+            const adv = (c.al - c.a0) * c.dd;
+            if (adv > worst) [worst, at] = [adv, `${k} ${sim.t.toFixed(3)}`];
+          }
+        },
+      });
+      const sim = await Simulation.create(FIX(id), { debug: { poseProbe: probe } });
+      await runSim(sim);
       expect(worst, `${id} ${at}`).toBeLessThanOrEqual(0.02);
       sim.dispose();
     }

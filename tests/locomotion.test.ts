@@ -26,13 +26,12 @@ import {
   type RunClipRecord,
 } from '../src/sim/run-clip';
 import * as L1 from '../src/sim/fixtures/locomotion';
-import { allFixtures } from '../src/sim/fixtures/index';
 import { Simulation, type PlayerTraceRow, type TraceRow } from '../src/sim/simulation';
 import { FixedStepDriver } from '../src/sim/driver';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dist, len, qInvRot, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { footFrame } from '../src/sim/pose';
-import { pace, run, runSim, stepWhile } from './helpers';
+import { FIX, pace, run, runSim, stepWhile } from './helpers';
 
 type Raw = { fps: number; frames: Record<string, number[]>[]; rest: Record<string, number[]>; rot: Record<string, number[]>[] };
 const clone = (): Raw => JSON.parse(JSON.stringify(FAST));
@@ -40,11 +39,6 @@ const REC = (id: string): RunClipRecord => {
   const r = RUN_CLIPS_RECORD.clips.find((c) => c.id === id);
   if (!r) throw new Error(`no clip record ${id}`);
   return r;
-};
-const FIX = (id: string): FixtureDef => {
-  const f = allFixtures().find((d) => d.id === id);
-  if (!f) throw new Error(`no fixture ${id}`);
-  return f;
 };
 const frac = (x: number): number => ((x % 1) + 1) % 1;
 /** Phase difference b - a wrapped to (-0.5, 0.5]. */

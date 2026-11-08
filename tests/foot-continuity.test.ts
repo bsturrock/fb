@@ -105,7 +105,7 @@ async function continuity(d: FixtureDef): Promise<{ breaches: Breach[]; outOfTim
           else if (pastDue) over.set(`${pl.id}:${side}`, { at, n: 1 });
           else if (o) { overdue.push(o); over.delete(`${pl.id}:${side}`); }
           const step = f.mode !== 'planted' && f.source === 'step' && !f.wait && !f.rejoin;
-          const row: Row = { key: `${f.mode !== 'planted'}/${f.source}/${f.seeds}/${f.wait}/${f.rejoin}`, mode: f.mode, source: f.source, seeds: f.seeds, h: { x: f.target.x, y: 0, z: f.target.z }, y: f.target.y, vy: f.stepV.y, sy: f.solvedW.y, avy: f.ankleV.y, aMax: aMaxAt(sp), vCap: vCapAt(sp) };
+          const row: Row = { key: `${f.mode !== 'planted'}/${f.source}/${f.seeds}/${f.wait}/${f.rejoin}`, mode: f.mode, source: f.source, seeds: f.seeds, h: { x: f.target.x, y: 0, z: f.target.z }, y: f.target.y, vy: f.stepY.v, sy: f.solvedW.y, avy: f.ankleV.y, aMax: aMaxAt(sp), vCap: vCapAt(sp) };
           const k = `${pl.id}:${side}`;
           const h = hist.get(k) ?? [];
           h.push(row);
@@ -117,7 +117,7 @@ async function continuity(d: FixtureDef): Promise<{ breaches: Breach[]; outOfTim
           if (f.mode !== 'planted' && f.source === 'step' && r1.key === r2.key) {
             seen.stored++;
             const pub = (r2.y - r1.y) / dt;
-            if (Math.abs(f.stepV.y - pub) > 1e-9) breaches.push({ what: 'stored vertical rate', at, got: f.stepV.y, limit: pub });
+            if (Math.abs(f.stepY.v - pub) > 1e-9) breaches.push({ what: 'stored vertical rate', at, got: f.stepY.v, limit: pub });
           }
           // B1: the step's horizontal second difference
           if (step && r0 && r0.key === r2.key && r1.key === r2.key) {

@@ -2,15 +2,15 @@
 // ankle request and achieved ankle, knee angle, frames' relative twist vs the published hinge angle.
 import { Simulation } from '../../src/sim/simulation';
 import { rhf6 } from '../../src/sim/fixtures/ride-height';
-import { POSE_DEBUG } from '../../src/sim/pose';
+import { poseProbe } from '../../src/sim/debug';
+const PROBE = poseProbe({ on: true });
 import { qConj, qMul } from '../../src/sim/vec';
 import { twistX } from '../../src/sim/ragdoll';
 
 const def = rhf6().find((d) => d.id === (process.argv[2] ?? 'RH-F6-oneArm'))!;
 const pid = process.argv[3] ?? 'D';
 const from = Number(process.argv[4] ?? 1.3);
-const sim = await Simulation.create(def);
-POSE_DEBUG.on = true;
+const sim = await Simulation.create(def, { debug: { poseProbe: PROBE } });
 const f = (x: number) => x.toFixed(3);
 while (!sim.done && sim.t < 1.52) {
   sim.stepTick();
@@ -19,7 +19,7 @@ while (!sim.done && sim.t < 1.52) {
   const pr = D.sus!.probe;
   const lm = D.pose.jointLandmarksWorld;
   const s = 'right';
-  const dbg = POSE_DEBUG.legs[`${pid}:${s}`];
+  const dbg = PROBE.legs[`${pid}:${s}`];
   const rel = qMul(qConj(D.pose.segments.rightThigh.rotationWorld), D.pose.segments.rightShin.rotationWorld);
   console.log(
     sim.t.toFixed(4), D.controlMode, pr.status, pr.surface, 'gy', f(pr.groundY), 'h', f(pr.heightM),

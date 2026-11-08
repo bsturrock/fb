@@ -2,15 +2,15 @@
 // Usage: vite-node scripts/probe/p07-legtrace.ts <fixture> <player:leftLeg> <fromS> <toS>
 import { Simulation } from '../../src/sim/simulation';
 import { allFixtures } from '../../src/sim/fixtures/index';
-import { POSE_DEBUG } from '../../src/sim/pose';
-POSE_DEBUG.on = true;
+import { poseProbe } from '../../src/sim/debug';
+const PROBE = poseProbe({ on: true });
 import type { Vec3 } from '../../src/sim/vec';
 
 const [id, key, a, b] = process.argv.slice(2);
 const def = allFixtures().find((d) => d.id === id)!;
-const sim = await Simulation.create(def);
+const sim = await Simulation.create(def, { debug: { poseProbe: PROBE } });
 const f = (v: unknown) => (v && typeof v === 'object' && 'x' in (v as object) ? `${(v as Vec3).x.toFixed(3)},${(v as Vec3).y.toFixed(3)},${(v as Vec3).z.toFixed(3)}` : v && typeof v === "object" ? JSON.stringify(v, (_k, x) => (typeof x === "number" ? +x.toFixed(4) : x)) : String(v));
-POSE_DEBUG.trace = (k, r) => {
+PROBE.trace = (k, r) => {
   if (k !== key || sim.t < +a || sim.t > +b) return;
   console.log(sim.t.toFixed(4), Object.entries(r).map(([n, v]) => `${n} ${f(v)}`).join('  '));
 };

@@ -7,24 +7,13 @@ import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { RAGDOLL_G4, SOLVER_G1 } from '../src/sim/profiles';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dot, len, qRot, v3 } from '../src/sim/vec';
-import { nonEmpty, pace, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
+import { evs, nonEmpty, pace, run, runEach, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
 import { FixedStepDriver } from '../src/sim/driver';
 
 const R = RAGDOLL_G4;
 const R2D = 180 / Math.PI;
-const evs = (sim: Simulation, type: string, id?: string) => sim.events.filter((e) => e.type === type && (!id || e.playerId === id));
 
 /** Step a fixture tick by tick, calling `each` after every outer tick. */
-async function runEach(def: FixtureDef, each: (sim: Simulation) => void): Promise<Simulation> {
-  const sim = await Simulation.create(def);
-  each(sim);
-  while (!sim.done) {
-    sim.stepTick();
-    await pace();
-    each(sim);
-  }
-  return sim;
-}
 
 /** Mechanical energy (kinetic + gravitational, J) of a player's active bodies. */
 function energyOf(sim: Simulation, id: string): number {
@@ -250,7 +239,6 @@ describe('G4 does not alter prior gate profiles', () => {
     }
   });
 });
-
 
 // --------------------------------------------------------------------------------------------- G4-B helpers
 type V = { x: number; y: number; z: number };

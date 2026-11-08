@@ -2,9 +2,9 @@
 // the fitted idle and procedural walking arms, the per-player locomotion mode (free, preparation, contact, exit) and the
 // transition audit. L2, HC and every earlier fixture keep their paths; each L3 fixture opts in under its own id.
 import { afterEach, describe, expect, it } from 'vitest';
-import { Simulation, type TransitionDelta } from '../src/sim/simulation';
+import { Simulation, type SimOptions, type TransitionDelta } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
-import { FOOT_DEBUG, FOOTWORK_L3 } from '../src/sim/footwork';
+import { FOOTWORK_L3 } from '../src/sim/footwork';
 import { dist, horiz, len, scale, sub, type Vec3 } from '../src/sim/vec';
 import { nonEmpty, run, runSim, traceRowsDiff } from './helpers';
 import { SIDES, FIX, L3, each } from './transitions-shared';
@@ -14,8 +14,8 @@ import { SIDES, FIX, L3, each } from './transitions-shared';
 afterEach(() => new Promise<void>((done) => setTimeout(done)));
 
 describe('plan 08 transition audit', () => {
-  const audited = async (d: FixtureDef): Promise<TransitionDelta[]> => {
-    const sim = await run(d, { transitionAudit: true });
+  const audited = async (d: FixtureDef, debug?: SimOptions['debug']): Promise<TransitionDelta[]> => {
+    const sim = await run(d, { transitionAudit: true, ...(debug ? { debug } : {}) });
     const out = sim.transitionDeltas;
     sim.dispose();
     return out;
@@ -153,15 +153,10 @@ describe('plan 08 transition audit', () => {
     // the old owner keeps its heading. The audit has to report that boundary, with nothing set aside. (The plan 08 control,
     // the handover check switched off in L3-F7-phase25, no longer gives one: with 10b's bounded step paths no handover in
     // L3 departs by over 1 cm without it.)
-    FOOT_DEBUG.crossingBodyHeading = true;
-    try {
-      const ds = await audited(FIX('L3-F7-loadRelease'));
-      const x = ds.filter((b) => b.deltaM > 0.01);
-      expect(x.map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`)).toEqual(['D 0.5750 leftAnkle']);
-      for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
-    } finally {
-      FOOT_DEBUG.crossingBodyHeading = false;
-    }
+    const ds = await audited(FIX('L3-F7-loadRelease'), { foot: { crossingBodyHeading: true } });
+    const x = ds.filter((b) => b.deltaM > 0.01);
+    expect(x.map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`)).toEqual(['D 0.5750 leftAnkle']);
+    for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
   }, 30000);
 
   it('a held leg handed to a step keeps the old owner\'s request at the handover, and a support loss keeps a step on its path', async () => {
@@ -170,7 +165,7 @@ describe('plan 08 transition audit', () => {
     let airborne = 0;
     let overdue = 0;
     for (const d of L3(/^L3-F(1-low|1-phase4|3-collision|9-noProbe-contact|9-noProbe-free|9-noProbe-prep|11-invalid)$/)) {
-      const was = new Map<string, { carried: boolean; seeds: number; mode: string; source: string; late: boolean; moveV: Vec3; stepV: Vec3; target: Vec3; aMax: number }>();
+      const was = new Map<string, { carried: boolean; seeds: number; mode: string; source: string; late: boolean; moveV: Vec3; target: Vec3; aMax: number }>();
       const sim = await Simulation.create(d, {
         transitionAudit: true,
         onSubstep: (s) => {
@@ -212,7 +207,7 @@ describe('plan 08 transition audit', () => {
                 expect(f.seeds, `${d.id} ${s.t}`).toBe(p.seeds);
               }
               const C = FOOTWORK_L3.compose!;
-              was.set(k, { carried: f.carried, seeds: f.seeds, mode: f.mode, source: f.source, late: f.elapsedS >= f.durS, moveV: { ...f.moveV }, stepV: { ...f.stepV }, target: { ...f.target }, aMax: C.stepAccelMps2 + C.stepAccelPerTravel * len(horiz(pl.proxy.body.linvel())) });
+              was.set(k, { carried: f.carried, seeds: f.seeds, mode: f.mode, source: f.source, late: f.elapsedS >= f.durS, moveV: { ...f.moveV }, target: { ...f.target }, aMax: C.stepAccelMps2 + C.stepAccelPerTravel * len(horiz(pl.proxy.body.linvel())) });
             }
         },
       });

@@ -42,6 +42,13 @@ export function clampLen(a: Vec3, max: number): Vec3 {
 }
 export const isFiniteVec = (a: Vec3): boolean => Number.isFinite(a.x) && Number.isFinite(a.y) && Number.isFinite(a.z);
 export const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
+/** Smoothstep of x clamped to [0, 1]. */
+export const smooth = (x: number): number => {
+  const s = clamp(x, 0, 1);
+  return s * s * (3 - 2 * s);
+};
+/** Angle wrapped to (-pi, pi] through atan2 (rounds near the bounds; ragdoll's twist wrap subtracts turns exactly). */
+export const wrapPi = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 export const deg = (r: number): number => (r * 180) / Math.PI;
 export const rad = (d: number): number => (d * Math.PI) / 180;
 
@@ -144,7 +151,6 @@ export function qFromBasis(xAxis: Vec3, yAxis: Vec3, zAxis: Vec3): Quat {
 }
 export const forwardOf = (q: Quat): Vec3 => qRot(q, { x: 0, y: 0, z: 1 });
 export const upOf = (q: Quat): Vec3 => qRot(q, { x: 0, y: 1, z: 0 });
-export const rightOf = (q: Quat): Vec3 => qRot(q, { x: 1, y: 0, z: 0 });
 /** Heading (rad) of the body's local forward projected on the floor plane. */
 export const yawOf = (q: Quat): number => headingOf(forwardOf(q));
 /** Rotation angle (rad) of q relative to identity, 0..pi. */
@@ -160,9 +166,39 @@ export interface Pose {
 }
 export const toWorld = (pose: Pose, local: Vec3): Vec3 => add(pose.p, qRot(pose.q, local));
 export const toLocal = (pose: Pose, world: Vec3): Vec3 => qInvRot(pose.q, sub(world, pose.p));
+/** `b` (in `a`'s frame) in `a`'s parent frame. */
+export const composePose = (a: Pose, b: Pose): Pose => ({ p: toWorld(a, b.p), q: qMul(a.q, b.q) });
+/** `b` in `a`'s frame. */
+export const relPose = (a: Pose, b: Pose): Pose => ({ p: toLocal(a, b.p), q: qMul(qConj(a.q), b.q) });
+/** Angle between two unit quaternions (rad, 0..pi; sign-insensitive). */
+export const qAngleBetween = (a: Quat, b: Quat): number => {
+  const d = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+  return 2 * Math.acos(Math.min(1, d));
+};
+/** `from` moved toward `to` by at most `maxStep` (m). */
+export const moveToward = (from: Vec3, to: Vec3, maxStep: number): Vec3 => {
+  const d = sub(to, from);
+  const l = len(d);
+  return l <= maxStep ? { ...to } : addScaled(from, d, maxStep / l);
+};
+/**
+ * Unit `from` turned toward unit `to` by at most maxRad. Plan 10c C5: opposite vectors (no cross product) turn about an
+ * axis perpendicular to `from`, its cross product with the least-aligned basis axis, instead of jumping half a turn.
+ */
+export const rotateToward = (from: Vec3, to: Vec3, maxRad: number): Vec3 => {
+  const c = cross(from, to);
+  const s = len(c);
+  const a = Math.atan2(s, dot(from, to));
+  if (a <= maxRad) return { ...to };
+  let axis = s >= 1e-9 ? scale(c, 1 / s) : null;
+  if (!axis) {
+    const [x, y, z] = [Math.abs(from.x), Math.abs(from.y), Math.abs(from.z)];
+    axis = norm(cross(from, x <= y && x <= z ? v3(1, 0, 0) : y <= z ? v3(0, 1, 0) : v3(0, 0, 1)));
+  }
+  return norm(qRot(qFromAxisAngle(axis, maxRad), from));
+};
 
 // ---------- 3x3 matrices ----------
-export const m3Identity = (): Mat3 => [1, 0, 0, 0, 1, 0, 0, 0, 1];
 export function m3FromQuat(q: Quat): Mat3 {
   const { x, y, z, w } = q;
   return [
@@ -188,7 +224,6 @@ export const m3Vec = (a: Mat3, v: Vec3): Vec3 => ({
   z: a[6] * v.x + a[7] * v.y + a[8] * v.z,
 });
 export const m3Add = (a: Mat3, b: Mat3): Mat3 => a.map((x, i) => x + b[i]) as Mat3;
-export const m3Scale = (a: Mat3, s: number): Mat3 => a.map((x) => x * s) as Mat3;
 export const m3Diag = (d: Vec3): Mat3 => [d.x, 0, 0, 0, d.y, 0, 0, 0, d.z];
 export function m3Det(a: Mat3): number {
   return (

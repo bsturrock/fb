@@ -1,6 +1,6 @@
 # Ball carry pose and placement from sim-6
 
-Repository-aligned plan • 2026-11-07 • Implemented, uncommitted, as carry profile `carry-sim6-v1`. **The separate leg composition repair passes the transition audit: 0 of 2450 boundaries over 1 cm, peak 0.893 cm.** User visual acceptance is outstanding. Evidence in the [08a handoff section](../handoff/plan08.md#plan-08a-ball-carry).
+Repository-aligned plan • 2026-11-07 • Implemented as carry profile `carry-sim6-v1` and committed in checkpoint `02eba2a`. **The separate leg composition repair passes the transition audit: 0 of 2450 boundaries over 1 cm, peak 0.893 cm.** User visual acceptance is outstanding. Evidence in the [08a handoff section](../handoff/plan08.md#plan-08a-ball-carry).
 
 Related: [08 — Locomotion integration](08_Locomotion_Transitions_and_Tackle_Integration.md), [08 review closeout](08_Review_Closeout.md), [07a — Ragdoll handoff](07a_Ragdoll_Contact_Handoff.md).
 

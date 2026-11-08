@@ -1,6 +1,6 @@
 # Active falls, joint limits and role responses
 
-Repository-aligned plan • 2026-11-05 • Planned after integrated passive falls in document 08.
+Repository-aligned plan • 2026-11-05 • Planned after integrated passive falls in document 08. Implemented on top of 08 and 08a and committed in checkpoint `02eba2a` ([handoff](../handoff/plan09.md)); user review is outstanding.
 
 Previous: [locomotion integration](08_Locomotion_Transitions_and_Tackle_Integration.md).
 

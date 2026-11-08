@@ -10,6 +10,7 @@ import { CARRY_ARM, carryRequest, seatBallCapsule, seatBallLocal, seatBallWorld,
 import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
+import type { PoseDebug, PoseProbe } from './debug';
 import {
   add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qInvRot, qMul, qRot, scale, sub, toWorld, upOf, v3,
   type Pose, type Quat, type Vec3,
@@ -425,7 +426,10 @@ export interface ProxyPoseInput {
    */
   handoffPossible?: boolean;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
-  loco?: { profile: LocomotionProfile; brakeB: number; swing: number; contactW: number };
+  loco?: { profile: LocomotionProfile; brakeB: number; swing: number; contactW: number };  /** Plan 10f (F2): this simulation's pose switches (`SimOptions.debug.pose`); absent: all off. */
+  debug?: PoseDebug;
+  /** Plan 10f (F2): read-only diagnostics (`SimOptions.debug.poseProbe`). */
+  probe?: PoseProbe;
 }
 
 /** Authored procedural reference: the right shoulder and shoulder-to-palm chain the arm targets were written for. */
@@ -573,20 +577,6 @@ const CLEAR_OK = 0.004;
 /** Physical depth a candidate may have and still count as valid for the handoff (margin under 0.015 m). */
 const HARD_OK = 0.012;
 
-/** Probe-only switch: when `on`, buildProxyPose records every evaluated limb candidate's depth and worst shape. */
-export const POSE_DEBUG: {
-  on: boolean;
-  last: Record<string, { i: number; depth: number; soft: number }[]>;
-  legs: Record<string, { request: Vec3; ik: Vec3; lifted: Vec3; floorLeft: number }>;
-  /** Plan 07 continuity: per limb the rate-limited fraction, the shown fraction and the departure change (m). */
-  cont: Record<string, { a0: number; al: number; dd: number }>;
-  contLast: { a0: number; al: number; dd: number } | null;
-  /** Probe-only: true disables the plan 07 limb continuity (as with dtS 0), for A/B comparison. */
-  noContinuity?: boolean;
-  /** Per-call leg trace (body frame): request, chosen and shown departures, shown ankle and knee, variant. */
-  trace?: (key: string, r: Record<string, unknown>) => void;
-} = { on: false, last: {}, legs: {}, cont: {}, contLast: null };
-
 /**
  * Choose a limb variant (sticky: the previous choice is tried first). Physical depth (`depth`) ranks first: a variant
  * is physically valid at <= HARD_OK. Among valid variants the first fully clear one (depth and `soft` <= CLEAR_OK)
@@ -623,14 +613,14 @@ function pick<T extends { depth: number; soft: number }>(cands: (() => T)[], pre
  *   0.02 -> 0.94, RH-F6-sideRecover R's left arm 0.02 -> 0.86).
  * - Else (nothing valid within the bound): the least deep of the held, rate-limited and fast steps.
  */
-function continuityAlpha(dp: Vec3, pp: Vec3, dc: Vec3, pc: Vec3, dt: number, mps: number, poleRadPs: number, ev: (alpha: number) => { good: boolean; depth: number }): number {
+function continuityAlpha(dp: Vec3, pp: Vec3, dc: Vec3, pc: Vec3, dt: number, mps: number, poleRadPs: number, ev: (alpha: number) => { good: boolean; depth: number }, probe?: PoseProbe): number {
   const dd = dist(dp, dc);
   const ang = Math.acos(clamp(dot(norm(pp, pc), norm(pc, pp)), -1, 1));
   const frac = (k: number): number => Math.min(1, dd > 1e-9 ? (k * mps * dt) / dd : 1, ang > 1e-9 ? (k * poleRadPs * dt) / ang : 1);
   const a0 = frac(1);
   const aF = frac(CONT_FAST_MPS / mps);
   const done = (al: number): number => {
-    if (POSE_DEBUG.on) POSE_DEBUG.contLast = { a0, al, dd };
+    if (probe?.on) probe.contLast = { a0, al, dd };
     return al;
   };
   if (a0 >= 1 || ev(a0).good) return done(a0);
@@ -658,10 +648,7 @@ function continuityAlpha(dp: Vec3, pp: Vec3, dc: Vec3, pc: Vec3, dt: number, mps
   for (const x of [a0, aF]) if (ev(x).depth < ev(best).depth - 1e-6) best = x;
   return done(best);
 }
-/**
- * Previous shown departure, re-expressed against the current request after a request jump (the shown target is kept).
- * Records the current request.
- */
+
 /** The last shown target of a continuity key (body frame). */
 function contShown(mem: PoseMemory, k: string): Vec3 | null {
   const dp = memVec(mem, `${k}:d`);
@@ -669,6 +656,10 @@ function contShown(mem: PoseMemory, k: string): Vec3 | null {
   return dp && pb ? add(pb, dp) : null;
 }
 
+/**
+ * Previous shown departure, re-expressed against the current request after a request jump (the shown target is kept).
+ * Records the current request.
+ */
 function contPrev(mem: PoseMemory, k: string, base: Vec3, dt: number): Vec3 | null {
   const dp = memVec(mem, `${k}:d`);
   const pb = memVec(mem, `${k}:b`);
@@ -722,6 +713,7 @@ export function legRequestLocal(inp: ProxyPoseInput, s: ArmSide): Vec3 {
 
 export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const { body, pose } = inp;
+  const P = inp.probe;
   const R = inp.ragdoll;
   const straight = (R.validation.straightBendDeg * Math.PI) / 180;
   const W = (l: Vec3) => toWorld(pose, l);
@@ -873,7 +865,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // a real obstacle: the arm moves off it continuously, and the alternatives remain for what that does not clear.
       const held = sampledArm || (!!lo && !inp.readyHands) || !!carried;
       const cands = [procedural(palm0, pole0), ...ARM_ALTS(sx).map((c) => procedural(proceduralLocal(body, s, c.palm), c.pole))];
-      if (POSE_DEBUG.on) POSE_DEBUG.last[`${inp.playerId}:${k}`] = cands.map((c, i) => { const r = c(); return { i, depth: r.depth, soft: r.soft }; });
+      if (P?.on) P.last[`${inp.playerId}:${k}`] = cands.map((c, i) => { const r = c(); return { i, depth: r.depth, soft: r.soft }; });
       // a sampled arm that crosses another body moves away from the body (horizontal, radially from the body axis: a
       // continuous direction) by the smallest clearing distance (bracketed, then bisected), so the correction changes
       // continuously with the clip; only when nothing within SWING_OUT_MAX clears does it fall back to the
@@ -915,7 +907,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       if (gr0) {
         const dc = sub(a.tgtL!, palm0);
         const pc = norm(a.poleL!, pole0);
-        const dt = POSE_DEBUG.noContinuity ? 0 : (inp.dtS ?? 0);
+        const dt = inp.debug?.noContinuity ? 0 : (inp.dtS ?? 0);
         // plan 08: an owner change jumps the palm request: the arm carries on at its last body-frame motion, as a foot's new
         // owner does, and turns toward the new request at the bounded rate from there, not from where it stood
         const last = lo ? contShown(mem, k) : null;
@@ -955,12 +947,12 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           const al = continuityAlpha(dp, pp, dc, pc, dt, lo ? CONT_L3_MPS : CONT_ARM_MPS, lo ? CONT_L3_RADPS : CONT_POLE_RADPS, (x) => {
             const c = atM(x);
             return { good: !guard || c.depth <= extOk, depth: c.depth };
-          });
-          if (POSE_DEBUG.on && POSE_DEBUG.contLast) POSE_DEBUG.cont[`${inp.playerId}:${k}`] = POSE_DEBUG.contLast;
+          }, P);
+          if (P?.on && P.contLast) P.cont[`${inp.playerId}:${k}`] = P.contLast;
           // plan 07a: a tangled chosen candidate (itself in another body) is shown pushed out too, as for the legs
           const shownPushed = al < 1 || ext(chosen.shapes) > HARD_OK;
           if (shownPushed) a = atM(al);
-          if (POSE_DEBUG.trace) contDbg = { ...(POSE_DEBUG.contLast ?? { a0: al, dd: 0 }), al, push: dist(a.tgtL!, add(palm0, lerp(dp, dc, al))) };
+          if (P?.trace) contDbg = { ...(P.contLast ?? { a0: al, dd: 0 }), al, push: dist(a.tgtL!, add(palm0, lerp(dp, dc, al))) };
           // the shown target (with its push-out) is the next pose's start: each step then only needs a shallow push
           setMemVec(mem, `${k}:d`, shownPushed ? sub(a.tgtL!, palm0) : dc);
           setMemVec(mem, `${k}:p`, al < 1 ? towardDir(pp, pc, al) : pc);
@@ -969,7 +961,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           setMemVec(mem, `${k}:p`, pc);
         }
       }
-      if (POSE_DEBUG.trace) POSE_DEBUG.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, sampled: sampledArm, palm0, dc: sub(r.best.tgtL!, palm0), shown: a.tgtL ? sub(a.tgtL, palm0) : null, poleC: r.best.poleL, pole: a.poleL, elbow: qInvRot(pose.q, sub(a.elbow, pose.p)), wrist: qInvRot(pose.q, sub(a.wrist, pose.p)), fb: a.chain.fallback, depth: a.depth });
+      if (P?.trace) P.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, sampled: sampledArm, palm0, dc: sub(r.best.tgtL!, palm0), shown: a.tgtL ? sub(a.tgtL, palm0) : null, poleC: r.best.poleL, pole: a.poleL, elbow: qInvRot(pose.q, sub(a.elbow, pose.p)), wrist: qInvRot(pose.q, sub(a.wrist, pose.p)), fb: a.chain.fallback, depth: a.depth });
       if (held) targetResidualM[k] = dist(a.reach, W(palm0));
     }
     const pre = s;
@@ -1143,7 +1135,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         c.ik = ik;
         c.rollF = rollUsed;
         c.edgeX = edgeUsed;
-        if (POSE_DEBUG.on && len(o) < 1e-9) POSE_DEBUG.legs[`${inp.playerId}:${s}`] = { request: W(base), ik, lifted: target, floorLeft: c.depth };
+        if (P?.on && len(o) < 1e-9) P.legs[`${inp.playerId}:${s}`] = { request: W(base), ik, lifted: target, floorLeft: c.depth };
         // floor depth left after the lift is a presentation residual, not a reason to switch variants
         c.depth = ext(c.shapes);
         c.soft = softExt(c.shapes);
@@ -1178,7 +1170,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     if (gr && l.req && l.pole) {
       const dc = sub(Lw(l.req), base);
       const pc = qInvRot(pose.q, l.pole);
-      const dt = POSE_DEBUG.noContinuity ? 0 : (inp.dtS ?? 0);
+      const dt = inp.debug?.noContinuity ? 0 : (inp.dtS ?? 0);
       // plan 08: the new request starts from the shown path; the old departure is not added a second time
       if (own !== 0) mem[`${k}:own`] = own;
       // ... and where it was going: a new owner takes over a moving foot, at its last body-frame motion
@@ -1228,8 +1220,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const al = continuityAlpha(dp, pp, dc, pc, dt, inp.loco ? (fr?.kind === 'plant' ? CONT_L3_PLANT_MPS : CONT_L3_MPS) : CONT_LEG_MPS, inp.loco ? CONT_L3_RADPS : CONT_POLE_RADPS, (x) => {
           const c = atM(x);
           return { good: !guard || c.good, depth: c.rank };
-        });
-        if (POSE_DEBUG.on && POSE_DEBUG.contLast) POSE_DEBUG.cont[`${inp.playerId}:${k}`] = POSE_DEBUG.contLast;
+        }, P);
+        if (P?.on && P.contLast) P.cont[`${inp.playerId}:${k}`] = P.contLast;
         // plan 07a: a chosen candidate that itself penetrates another body (no clear variant: tangled) is shown pushed
         // out as well, also once the blend toward it is complete (HC-F2-lowCarrier: A's shoe stood 13 cm in B's head)
         const shownPushed = al < 1 || ext(chosen.shapes) > HARD_OK;
@@ -1242,7 +1234,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           const dl = at(al, true);
           if (dl.rank < atM(al).rank) l = dl;
         }
-        if (POSE_DEBUG.trace) contDbg = { ...(POSE_DEBUG.contLast ?? { a0: al, dd: 0 }), al, push: dist(Lw(l.req!), add(base, lerp(dp, dc, al))) };
+        if (P?.trace) contDbg = { ...(P.contLast ?? { a0: al, dd: 0 }), al, push: dist(Lw(l.req!), add(base, lerp(dp, dc, al))) };
         // the shown target (with its push-out) is the next pose's start: each step then only needs a shallow push
         setMemVec(mem, `${k}:d`, shownPushed ? sub(Lw(l.req!), base) : dc);
         setMemVec(mem, `${k}:p`, al < 1 ? towardDir(pp, pc, al) : pc);
@@ -1251,7 +1243,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         setMemVec(mem, `${k}:p`, pc);
       }
     }
-    if (POSE_DEBUG.trace) POSE_DEBUG.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, base, dc: l.req ? sub(Lw(r.best.req!), base) : null, shown: l.req ? sub(Lw(l.req), base) : null, ankle: Lw(l.ankle), knee: Lw(l.knee), poleC: r.best.pole ? qInvRot(pose.q, r.best.pole) : null, pole: l.pole ? qInvRot(pose.q, l.pole) : null, fb: l.chain.fallback, chosenAnkle: Lw(r.best.ankle), depth: l.depth, chosenDepth: r.best.depth });
+    if (P?.trace) P.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, base, dc: l.req ? sub(Lw(r.best.req!), base) : null, shown: l.req ? sub(Lw(l.req), base) : null, ankle: Lw(l.ankle), knee: Lw(l.knee), poleC: r.best.pole ? qInvRot(pose.q, r.best.pole) : null, pole: l.pole ? qInvRot(pose.q, l.pole) : null, fb: l.chain.fallback, chosenAnkle: Lw(r.best.ankle), depth: l.depth, chosenDepth: r.best.depth });
     if (sl || gr) targetResidualM[k] = dist(l.ankle, l.req ?? W(base));
     lm[`${s}Hip`] = hip;
     lm[`${s}Knee`] = l.knee;

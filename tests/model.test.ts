@@ -11,12 +11,12 @@ import { MODEL_CALIBRATION, MODEL_CALIBRATION_ID, MODEL_ARM_CHAIN_M, modelArm, m
 import { REQUIRED_BONES, RIG_MAP, RigAdapter, boneKey, cloneRig } from '../src/lab/rig-adapter';
 import { buildProxyPose, carryPalmLocal, twoBone, type PhysicalPose } from '../src/sim/pose';
 import { ARM_G2, RAGDOLL_G4, hipLocal, shoulderLocal, sideSignX, upperBodyCompound } from '../src/sim/profiles';
-import { Simulation, checkLimbContract } from '../src/sim/simulation';
+import { checkLimbContract } from '../src/sim/simulation';
 import { modelFixtures } from '../src/sim/fixtures/model';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { SegmentId } from '../src/sim/contracts';
 import { add, dist, dot, len, qFromAxisAngle, qInvRot, qMul, sub, toWorld, v3, type Pose, type Vec3 } from '../src/sim/vec';
-import { pace, run } from './helpers';
+import { evs, run, runEach } from './helpers';
 
 const C = MODEL_CALIBRATION;
 const M = (id: string): FixtureDef => {
@@ -24,20 +24,8 @@ const M = (id: string): FixtureDef => {
   if (!f) throw new Error(`no model fixture ${id}`);
   return f;
 };
-const evs = (sim: Simulation, type: string, id?: string) => sim.events.filter((e) => e.type === type && (!id || e.playerId === id));
 const tv = (v: Vec3): THREE.Vector3 => new THREE.Vector3(v.x, v.y, v.z);
 const worldPos = (o: THREE.Object3D): THREE.Vector3 => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
-
-async function runEach(def: FixtureDef, each: (sim: Simulation) => void): Promise<Simulation> {
-  const sim = await Simulation.create(def);
-  each(sim);
-  while (!sim.done) {
-    sim.stepTick();
-    await pace();
-    each(sim);
-  }
-  return sim;
-}
 
 const qNorm = (q: { x: number; y: number; z: number; w: number }) => {
   const n = Math.hypot(q.x, q.y, q.z, q.w);

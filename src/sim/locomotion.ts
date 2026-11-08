@@ -59,8 +59,13 @@ export interface LocomotionProfile {
     /** Largest height drop requested by preparation (m) and the rate of the preparation and contact weights (1/s). */
     prepDropM: number;
     weightRatePerS: number;
-  /** Rate of the free arms' critically damped brace weight. */
-  braceRadPerS: number;
+    /** Rate of the free arms' critically damped brace weight. */
+    braceRadPerS: number;
+    /**
+     * Rate of the composed clip weight, critically damped toward the clip's smoothed weight, so a reversal (a contact
+     * that ends mid-fade) is no velocity step; a rejoined phase slides in at the same rate.
+     */
+    clipWeightRadPerS: number;
   };
 }
 
@@ -70,7 +75,7 @@ export const LOCOMOTION_L3: LocomotionProfile = {
   brace: { palm: v3(0.5, 0.12, 0.26), pole: v3(0.9, 0, -0.4) },
   idle: { arms: IDLE_POSE_RECORD.arms, halfWidthM: 0.5 * IDLE_POSE_RECORD.stance.widthM * IDLE_POSE_RECORD.stance.legScale },
   walk: { strideM: 0.2, fadeMps: [0.25, 1], swingRad: 0.42, restReach: 0.965, forwardBend: 0.07, tauS: 0.06 },
-  contact: { clearS: 0.12, prepRangeM: 2.2, prepClosingMps: 1.5, prepHoldS: 0.15, exitMinS: 0.15, prepDropM: 0.05, weightRatePerS: 5, braceRadPerS: 24 },
+  contact: { clearS: 0.12, prepRangeM: 2.2, prepClosingMps: 1.5, prepHoldS: 0.15, exitMinS: 0.15, prepDropM: 0.05, weightRatePerS: 5, braceRadPerS: 24, clipWeightRadPerS: 24 },
 };
 
 /** The fitted idle stance's width per foot outside the body's own hip (m, never inward). */

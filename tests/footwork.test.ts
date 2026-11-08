@@ -18,15 +18,10 @@ import { buildProxyPose, flexReach, footFrame, hingeChain, legRequestLocal, legS
 import { RunClipError, validateRunClipProfile } from '../src/sim/run-clip';
 import { bodyG4 } from '../src/sim/fixtures/gate4';
 import { add, dist, dot, len, qFromYaw, qRot, sub, v3, type Vec3 } from '../src/sim/vec';
-import { pace, run, runSim, stepWhile } from './helpers';
+import { FIX, pace, run, runSim, stepWhile } from './helpers';
 
 const G = 9.81;
 const SIDES: ArmSide[] = ['left', 'right'];
-const FIX = (id: string): FixtureDef => {
-  const f = allFixtures().find((d) => d.id === id);
-  if (!f) throw new Error(`no fixture ${id}`);
-  return f;
-};
 const lowest = (shapes: PoseShape[]): number => {
   let y = Infinity;
   for (const s of shapes) if (s.kind === 'box') for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) y = Math.min(y, s.c.y + qRot(s.q, v3(sx * s.he.x, sy * s.he.y, sz * s.he.z)).y);

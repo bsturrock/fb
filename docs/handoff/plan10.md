@@ -437,3 +437,66 @@ Revision 2's E1 and E2 change nothing in the registered fixtures: no player with
 
 - **E1 and E2 are latent in the fixtures** (above). They will act in any L3/L4 fixture where a lowered defender is still supported at the ending, or a runner stands held after a contact.
 - **L4 rule fixtures not built from an L3 fixture join revision 2 through `asL4`.** The shoved and tipped falls (`L4-F10-knee`, `-elbow`, `-palm`) and `L4-F9-transferFailed` take `RULES_FOOTBALL` or `RULES_LAB_CORE` directly; the opt-in sits in `asL4`, so no L4 rule profile is missed (the profile test fails with it removed).
+
+## 10f — Cleanup and module structure
+
+**Result:** full suite exit 0, no unhandled error: 22 files, 820 tests, 182 s wall. Typecheck and build pass. 410 fixtures export. `evidence/summary.json` is byte-identical to 10e: no summary, result, ending or spot changes. Every trace is byte-identical to 10e apart from the three export fields the items name, checked with those fields stripped from both sides (`.scratch/f10/semdiff.py`):
+
+| Field | Exports | Item |
+| --- | --- | --- |
+| `profiles.ragdoll.endBandM` removed | 321 | F4: declared, never read |
+| `profiles.locomotion.contact.clipWeightRadPerS` added (24, the old `CLIP_WEIGHT_RADPS`) | 119 | F5 |
+| `controller.resolved.stance` removed from the wrap controller | 3 | F4: `stripUndef` kept the stance request in the resolved parameters |
+
+The two splits (F9, F10) were checked against the export taken after F1 to F8: all 410 traces and the summary file byte-identical after F9, after F10 and after the three seams below were restored. Audit-on and audit-off runs stay identical (`tests/transitions-audit.test.ts`; its only edit drops a stored `stepV` it never read). No probe a handoff cites was removed.
+
+### What changed
+
+- **F1, probes (U10).** 92 probes that no handoff or plan document names moved from `scripts/probe/` to `scripts/probe-archive/`, which `tsconfig.json` excludes (`exclude: ["scripts/probe-archive"]`; its README says how to revive one). 108 stay in `scripts/probe/` and typecheck: every probe a document names. The five handoffs that cite probe families by glob (gates 1 and 4, plans 06, 07 and 08) say which of them were archived and link here.
+- **F2, debug switches per simulation.** `FOOT_DEBUG` (footwork) and `POSE_DEBUG` (pose) are gone. `SimOptions.debug` (`src/sim/debug.ts`) holds `foot` (`noReachCheck`, `legacyEntry`, `noQuick`, `noJoinCheck`, `crossingBodyHeading`), `pose` (`noContinuity`) and the read-only `poseProbe` (`on`, `trace` and its accumulators, made by `poseProbe()`). The simulation passes its own switches into the foot plan input and the pose input; nothing is module state, so tests no longer restore anything in `finally`. The export carries `debug` with every switch that is on and omits it otherwise (a switch set `false` is not recorded); the probe is never exported. Tests and kept probes set the switches through options.
+- **F3, duplicate helpers.** `vec.ts` gains `smooth`, `wrapPi`, `composePose`, `relPose`, `qAngleBetween` (was arms' `quatAngle`), `moveToward` and `rotateToward`; ragdoll, arms, fall response, footwork and the coached controller import them. Ragdoll exports `poseOfRb`, which arms imports with `landmarkWorld` (in place of its `landmarkOf`); arms uses `qSlerp`, ragdoll `qIdentity` and `m3Det`, footwork `scale`. `tests/helpers.ts` gains `FIX` (throws on a missing fixture), `evs` with a `TestEvent` type, and `runEach`; the test files' local copies are gone.
+- **F4, dead code.** Removed after a search for each: `rightOf`, `m3Identity`, `m3Scale`, `vScaleAdd`, `DiagnosticConversion`, `floorTarget`, `twistReach`, arms' `tgt`, `RagdollProfile.endBandM` and `ProfileIds`. `SolverProfile.sleeping` is wired, not deleted: every dynamic body reads it (`setCanSleep`; it is false on every profile, as the bodies were). `EXCLUDED_GROUND_REGIONS` is live since 10e E4. The wrap controller's `stripUndef` drops `stance` with `kind`, `plan` and `finish`.
+- **F5, magic numbers.** The fall response's brace pole, its reach margin and bisection count are named constants; the rod inertia in the power prediction is documented as an approximation that the 5 % power audit bounds. The clip weight rate is the locomotion profile field `contact.clipWeightRadPerS` beside `braceRadPerS`, same value.
+- **F6, per-substep lookups.** Each envelope entry stores its joint index at `initEnvelope`; the per-substep `rag.joints.find` is gone.
+- **F7, documentation.** `docs/README.md` states the current state (08, 08a and 09 committed in `02eba2a`; 10a to 10f implemented). The plan 08 implementation-status block of 2026-11-05 is labelled as history; the 08a and 09 status lines record the checkpoint commit. The `ballSource` doc names `carryPose`; `AUTHORED_BALL_LOCAL` is defined once in `profiles.ts` and both `RULES_FOOTBALL.ballLocal` and the model profiles use it. The misplaced docstrings in `simulation.ts` moved with their functions (two more, in `pose.ts` and `run-clip.ts`, and one in `footwork.ts` above `landOnCorner` that belonged to `advanceStep`); `braceRadPerS` is re-indented; `collectContacts` states that it keeps only the best manifold per collider pair.
+- **F8, configuration.** `vite.config.ts` uses `defineConfig` from `vitest/config` with no cast; `.gitignore` has `.claude/` (nothing under it was tracked).
+- **F11, assets (U11).** No change: no Git LFS.
+
+### F9, `simulation.ts` split
+
+`simulation.ts` is down from 2552 to 1323 lines. Each seam moved into a module of functions over a narrow host: a `Pick<Simulation, ...>` naming exactly the members the module reads or calls, which became public. `stepSubstep` stays the orchestrator and lists the pipeline order in numbered steps. The state clusters stay on `Simulation`; the modules hold no state of their own.
+
+| Module | Host (members) | Moved |
+| --- | --- | --- |
+| `sim-evidence.ts` | `EvidenceHost` (26) | `recordTrace`, `exportFixture`, `limitReport`, `summary` |
+| `transition-audit.ts` | `AuditHost` (7) | `auditInput`, `keepLandmarks`, `recordTransition`, and the audit copy of `advanceLocomotion` (`auditPlayback`) |
+| `rule-wiring.ts` | `RuleWiringHost` (14) | `observeRules` |
+| `support-runtime.ts` | `SupportHost` (8) | probes, support targets, `prepDropM`, `applySupport` |
+| `conversion.ts` | `ConversionHost` (15) | `convertBatch` (now `convertPlayers`) |
+| `contact-observation.ts` | `ContactHost` = `SupportHost` and 16 | `postStep` (now `observeContacts`), contact episodes |
+| `pose-runtime.ts` | `PoseHost` = `AuditHost` and 15 | `updatePoses`, the foot plan input and events, pose clearance, published limbs, sampled limbs, carry side, walk swing |
+| `motor-step.ts` | `MotorHost` (6) | step 5 of `stepSubstep` (motors) |
+
+`exportFixture`, `limitReport`, `summary`, `prepDrop`, `sampledLimbs` and `carrySide` stay on `Simulation` as one-line delegates for their callers. So do `footInput`, `poseClearance` and `convertBatch`, and the modules call them through the host: a test (`transitions-modes`, the idle stance width) and five cited probes (`p07-crossgeo`, `p07-brakestance`, `p07-stopphases`, `p07-item3-compare`, `p07a-baseline`) wrap them on the instance or the prototype, and `l1-carry` calls `poseClearance`. The first full suite after the split failed that test (`host.footInput` undefined), which is how the seam was found; the casts had hidden it from the typechecker. Every method the split removed was then searched for in tests, kept probes and the lab, and these three are the only ones used. With the seams back the test passes, and `l1-carry`, `p07a-baseline` and `p07-crossgeo` were run through them. `checkLimbContract` stays in `simulation.ts`; `followClipWeight` moved to `run-clip.ts`, beside the playback it follows.
+
+### F10, `footwork.ts` split and the step state
+
+`footwork.ts` is down from 1830 to 1517 lines. It keeps the planner: plants and their proposals, reactive and clip-regime steps, their timing (`fitStance`, `fitLanding`) and destinations, `advanceStep`, observation, initialization and the trace. Two modules take the rest, and neither imports a value back from it (type imports only), so there is no import cycle:
+
+- `foot-compose.ts`: the composed owners: following the request (seeded from the achieved foot, the decaying offset), the airborne chase, the published step motion, the step that carries a held leg's path, the per-substep request bookkeeping and the foot angle and pole weights.
+- `step-path.ts`: the minimum-jerk path: the quintic substep, its sampled peak acceleration over a set of axes, the bounded horizon and the step's acceleration limit.
+
+10b B2 had not split the step state, so F10 does: `FootState.stepV` and `stepA` (one vector each, the horizontal path's x and z beside the vertical path's y) are `stepH` (`{ v, a }`, x and z, y always 0) and `stepY` (`{ v, a }`, numbers), each replaced whole on an update and readonly within. Every read maps exactly: the horizontal path reads `stepH`, the vertical path and the lift damper `stepY`, and `canFollow`, the one reader of the full velocity, rebuilds it from both. The two tests that read `stepV` (`foot-continuity`, `transitions-audit`) and two kept probes follow.
+
+### Regressions, each shown failing with its fault restored
+
+`tests/debug-options.test.ts` (new) steps a switched and a default simulation of the same fixture together, in one process, and compares each with its own solo run: `L2-F3-runStop` with `legacyEntry` and `noQuick`, `RH-F5-playerBelow` with `noContinuity`. A third test runs the pose probe and switches set `false`, and requires the trace and the whole export to equal the plain run. Faults put back by `.scratch/f10/faults10f.py`, which restores each file and checks its hash:
+
+| Fault put back | Failing check |
+| --- | --- |
+| The switches as module state: the last simulation built sets them for every simulation | the switched simulation stepped beside a default one no longer matches its solo run (`L2-F3-runStop`: trace row 38, `players.R.ft`; `RH-F5-playerBelow` too) |
+| The export omits `debug` | `exportFixture().debug` is undefined, not the switches |
+| A switch set `false` is exported | the export with `noContinuity: false` and `noQuick: false` differs from the plain run's |
+| The pose probe is exported | the export with the probe on differs from the plain run's |
+
+The behaviour-neutral items have no regression of their own: the byte-identical exports are the check.

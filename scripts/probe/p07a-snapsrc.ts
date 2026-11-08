@@ -10,8 +10,8 @@
 import { Simulation } from '../../src/sim/simulation';
 import { allFixtures } from '../../src/sim/fixtures/index';
 import { add, len, qConj, qRot, scale, sub, type Vec3 } from '../../src/sim/vec';
-import { POSE_DEBUG } from '../../src/sim/pose';
-POSE_DEBUG.on = true;
+import { poseProbe } from '../../src/sim/debug';
+const PROBE = poseProbe({ on: true });
 
 const args = process.argv.slice(2);
 const re = new RegExp(args.find((a) => !a.startsWith('--') && !/^\d/.test(a)) ?? '^RH-F6-simultaneous$|^RH-F5-playerBelow$|^L2-F14-oneArmFeet$');
@@ -22,9 +22,9 @@ const LIMBS: Record<string, string[]> = { leftLeg: ['leftKnee', 'leftAnkle'], ri
 export interface SnapRow { fixture: string; key: string; t: number; d2: number; d1: number; src: string; detail: string }
 export async function snapSources(defId: string, min = MIN): Promise<{ rows: SnapRow[]; worst: Record<string, SnapRow> }> {
   const def = allFixtures().find((d) => d.id === defId)!;
-  const sim = await Simulation.create(def);
+  const sim = await Simulation.create(def, { debug: { poseProbe: PROBE } });
   const tickInfo: Record<string, { adv: number; push: number; v: Set<number>; traced: boolean }> = {};
-  POSE_DEBUG.trace = (k, r) => {
+  PROBE.trace = (k, r) => {
     const [id, limb] = k.split(':');
     const key = `${id}.${limb}`;
     const s = (tickInfo[key] ??= { adv: 0, push: 0, v: new Set(), traced: false });
@@ -77,7 +77,7 @@ export async function snapSources(defId: string, min = MIN): Promise<{ rows: Sna
       }
     }
   }
-  POSE_DEBUG.trace = undefined;
+  PROBE.trace = undefined;
   sim.dispose();
   return { rows, worst };
 }

@@ -323,6 +323,6 @@ export class WrapAttemptController implements Controller {
 
 function stripUndef<T extends object>(o: T): Partial<T> {
   const r: Partial<T> = {};
-  for (const k of Object.keys(o) as (keyof T)[]) if (o[k] !== undefined && k !== 'kind' && k !== 'plan' && k !== 'finish') r[k] = o[k];
+  for (const k of Object.keys(o) as (keyof T)[]) if (o[k] !== undefined && k !== 'kind' && k !== 'plan' && k !== 'finish' && k !== 'stance') r[k] = o[k];
   return r;
 }

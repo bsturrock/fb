@@ -31,7 +31,7 @@ for (const def of allFixtures().filter((d) => re.test(d.id))) {
             if (flat > cap) wide.push(`${(flat - cap).toFixed(3)} ${def.id} ${s.t.toFixed(4)} ${k} ${p.mode}/${p.source}>${f.mode}/${f.source} carried ${f.carried} flat ${flat.toFixed(2)} cap ${cap.toFixed(2)}`);
             total++;
             if (f.carried) carried++;
-            if (r > 1.5 + 1e-6) rows.push({ r, s: `${r.toFixed(3)} ${def.id} ${s.t.toFixed(4)} ${k} ${p.mode}/${p.source}>${f.mode}/${f.source} carried ${f.carried} stat ${f.liftRateMps.toFixed(3)} stepVy ${f.stepV.y.toFixed(3)}` });
+            if (r > 1.5 + 1e-6) rows.push({ r, s: `${r.toFixed(3)} ${def.id} ${s.t.toFixed(4)} ${k} ${p.mode}/${p.source}>${f.mode}/${f.source} carried ${f.carried} stat ${f.liftRateMps.toFixed(3)} stepVy ${f.stepY.v.toFixed(3)}` });
           }
           last.set(k, { source: f.source, mode: f.mode, target: { ...f.target }, seeds: f.seeds, carried: f.carried });
         }

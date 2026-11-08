@@ -1,6 +1,6 @@
 # 10f — Cleanup and module structure
 
-Repository-aligned plan • 2026-11-08 • Not started. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Runs last, so the splits move settled code.
+Repository-aligned plan • 2026-11-08 • **Implemented 2026-11-08** ([handoff](../handoff/plan10.md#10f--cleanup-and-module-structure)): full suite green; the summary file and every trace byte-identical to 10e apart from three named profile fields (`ragdoll.endBandM` removed, `locomotion.contact.clipWeightRadPerS` added, the wrap controller's resolved `stance` removed); debug switches per simulation and exported; `simulation.ts` and `footwork.ts` split behind narrow hosts with byte-identical exports; 92 unreferenced probes archived. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Runs last, so the splits move settled code.
 
 **Goal:** remove what no longer earns its keep and split the two largest modules along their existing seams, with no behaviour change. **Every summary, trace and export must be byte-identical** before and after each item, apart from export fields an item names. Audit-on and audit-off identity must hold.
 

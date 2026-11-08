@@ -12,13 +12,8 @@ import { initPhysics, PhysicsWorld, RAPIER } from '../src/sim/physics';
 import { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { assertUniqueIds, runFixtures } from '../scripts/fixture-runner';
-import { breathe, create, run, runSim, traceRowsDiff } from './helpers';
+import { breathe, create, FIX, run, runSim, traceRowsDiff } from './helpers';
 
-const FIX = (id: string): FixtureDef => {
-  const f = allFixtures().find((d) => d.id === id);
-  if (!f) throw new Error(`no fixture ${id}`);
-  return f;
-};
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
 /** Key-order independent serialization (deep equality of plain profile data). */
 const stable = (v: unknown): string =>

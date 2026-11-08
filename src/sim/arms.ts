@@ -12,12 +12,12 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
 import type { ArmProfile, ArmSetup, BodyProfile, RagdollProfile, RetentionMode } from './profiles';
-import type { Ragdoll } from './ragdoll';
+import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { twoBone } from './pose';
 import {
-  add, addScaled, clamp, cross, dot, horiz, len, norm, qFromUnitVectors, qInvRot, qMul, qConj, qRot, qSlerp, round, rv, scale, sub,
-  toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
+  add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
+  relPose, round, rv, scale, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
 } from './vec';
 
 export type ArmPhase = 'rest' | 'reach' | 'close' | 'hold' | 'recover' | 'physical';
@@ -222,22 +222,6 @@ interface ArmRt {
 const SIDES: ArmSide[] = ['left', 'right'];
 const ELIGIBLE: ColliderRegion[] = ['torso', 'pelvis', 'support', 'capsule'];
 
-const poseOfRb = (rb: RAPIER.RigidBody): Pose => ({ p: vc(rb.translation()), q: { ...rb.rotation() } });
-const landmarkOf = (r: Ragdoll, name: string): Vec3 => {
-  const l = r.landmarks[name];
-  return toWorld(poseOfRb(r.bodies[l.seg]), l.local);
-};
-const composePose = (a: Pose, b: Pose): Pose => ({ p: toWorld(a, b.p), q: qMul(a.q, b.q) });
-const relPose = (a: Pose, b: Pose): Pose => ({ p: toLocal(a, b.p), q: qMul(qConj(a.q), b.q) });
-const quatAngle = (a: Quat, b: Quat): number => {
-  const d = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
-  return 2 * Math.acos(Math.min(1, d));
-};
-const moveToward = (from: Vec3, to: Vec3, maxStep: number): Vec3 => {
-  const d = sub(to, from);
-  const l = len(d);
-  return l <= maxStep ? { ...to } : addScaled(from, d, maxStep / l);
-};
 
 export class ArmSystem {
   readonly grips = new Map<string, Grip>();
@@ -777,7 +761,6 @@ export class ArmSystem {
       }
       demands.forEach((d, i) => {
         const f = capScales[i] * shared;
-        const tgt = this.player(d.target)!;
         let forceOnTarget: Vec3;
         let pointOwner: Vec3;
         let allocated = 0;
@@ -808,7 +791,6 @@ export class ArmSystem {
           if (f < 1 || d.frictionSat) c.tangentElasticDisplacementM = normalActual > 0 ? scale(ftActual, -1 / P.clamp.tangentStiffness) : v3();
         }
         const forceOnOwner = scale(forceOnTarget, -1);
-        void tgt;
         if (actual > 0) {
           d.rbT.addForceAtPoint(forceOnTarget, d.p, true);
           d.rbO.addForceAtPoint(forceOnOwner, pointOwner, true);
@@ -1031,7 +1013,7 @@ export class ArmSystem {
           const rq = relPose(ownerPost, composePose(bodyPost, o.local));
           relPre.set(o, rp);
           relPost.set(o, rq);
-          maxDisp = Math.max(maxDisp, len(sub(rq.p, rp.p)) + quatAngle(rp.q, rq.q) * 0.6);
+          maxDisp = Math.max(maxDisp, len(sub(rq.p, rp.p)) + qAngleBetween(rp.q, rq.q) * 0.6);
         }
         const n = Math.max(1, Math.ceil(maxDisp / P.queryStepM));
         let palm = a.palmLocal;
@@ -1151,9 +1133,9 @@ export class ArmSystem {
   private physicalSolve(pl: ArmHostPlayer, a: ArmRt): void {
     const r = pl.ragdoll!;
     a.solve = {
-      elbow: landmarkOf(r, `${a.side}Elbow`),
-      wrist: landmarkOf(r, `${a.side}Wrist`),
-      palm: landmarkOf(r, `${a.side}Palm`),
+      elbow: landmarkWorld(r, `${a.side}Elbow`),
+      wrist: landmarkWorld(r, `${a.side}Wrist`),
+      palm: landmarkWorld(r, `${a.side}Palm`),
       pole: a.poleLocal,
       valid: true,
       worst: null,
@@ -1331,7 +1313,7 @@ export class ArmSystem {
         mode: a.mode,
         phase: a.phase,
         action: a.action,
-        shoulderWorld: pl.ragdoll ? landmarkOf(pl.ragdoll, `${side}Shoulder`) : toWorld(pose, shoulderLocal(pl.body, side)),
+        shoulderWorld: pl.ragdoll ? landmarkWorld(pl.ragdoll, `${side}Shoulder`) : toWorld(pose, shoulderLocal(pl.body, side)),
         elbowWorld: s.elbow,
         wristWorld: s.wrist,
         palmContactWorld: s.palm,
