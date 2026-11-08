@@ -14,7 +14,10 @@ import { type Pose, type Vec3, add, dot, horiz, len, round, rv, scale, toLocal, 
 
 export type EndingKind = 'groundDown' | 'runnerCoreDown' | 'progressStopped' | 'sidelineOut';
 
-/** Ground-contact region labels. Hand/wrist and foot/ankle (and the virtual foot support) are never eligible. */
+/**
+ * Ground-contact region labels. Hand/wrist and foot/ankle (and the virtual foot support) are never eligible: a profile
+ * that lists one is refused (plan 10e E4). Ground is the floor only (`isGround`, plan 10c C3, U6).
+ */
 export type GroundRegion =
   | 'torso' | 'pelvis' | 'head' | 'upperArm' | 'elbow' | 'forearm' | 'wrist' | 'hand' | 'thigh' | 'knee' | 'shin' | 'ankle' | 'foot' | 'footSupport';
 export const EXCLUDED_GROUND_REGIONS: GroundRegion[] = ['wrist', 'hand', 'ankle', 'foot', 'footSupport'];
@@ -169,6 +172,8 @@ export class RuleObserver {
     readonly ragProfile: RagdollProfile,
     private readonly emit: Emit,
   ) {
+    const bad = profile.eligibleRegions.filter((r) => (EXCLUDED_GROUND_REGIONS as string[]).includes(r));
+    if (bad.length) throw new Error(`rule profile ${profile.id}: ${bad.join(', ')} can never end a play (EXCLUDED_GROUND_REGIONS)`);
     const f = horiz(profile.forwardAxis);
     this.fwd = scale(f, 1 / Math.max(1e-9, len(f)));
     this.shapes = limbShapes(ragProfile);
@@ -273,7 +278,10 @@ export class RuleObserver {
     const req = horiz(f.request);
     const rq = len(req);
     const along = rq > 1e-6 ? dot(horiz(f.velocity), scale(req, 1 / rq)) : rq;
-    const free = f.representation === 'proxy' && f.controlMode === 'supported' && f.grounded && along >= this.profile.influence.unrestrainedFraction * rq;
+    // plan 10e E2 (revision 2): a touch under the source impulse or an unloaded clamp or grip is still contact, and a
+    // zero request then never reads as moving freely (before, `along` = 0 >= 0 held trivially)
+    const untouched = this.profile.revision !== 2 || (f.opponentContacts.length === 0 && f.retention.length === 0);
+    const free = untouched && f.representation === 'proxy' && f.controlMode === 'supported' && f.grounded && along >= this.profile.influence.unrestrainedFraction * rq;
     this.infl.freeS = free ? this.infl.freeS + f.dt : 0;
     if (this.infl.freeS >= this.profile.influence.clearAfterSupportedS - 1e-9) {
       this.emit('influenceCleared', this.runnerId, { since: round(this.infl.since, 5), lastSourceT: round(this.infl.lastT, 5), freeS: round(this.infl.freeS, 4), step: f.step });
@@ -353,7 +361,9 @@ export class RuleObserver {
         ret = add(ret, r.forceOnRunner);
         retIds.push(r.id);
       }
-      const retN = len(ret);
+      // plan 10e E3 (revision 2): the retention opposing progress (along -fwd), as the body contacts below; the
+      // historical profile counts the whole force, sideways or forward
+      const retN = P.revision === 2 ? Math.max(0, -dot(ret, this.fwd)) : len(ret);
       let bodyOppose = 0;
       const bodyIds: string[] = [];
       for (const o of f.opponentContacts) {

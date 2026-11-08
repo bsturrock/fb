@@ -396,3 +396,44 @@ Brace outcomes across L4: 33 palm contacts and 21 misses (11 late, 5 too far, 4 
 - **D3 is latent in the fixtures.** No fixture gives the carrying arm to an arm task, so no summary moves with it; the regressions build the poses through `buildProxyPose` with the pose memory.
 - **A drag fixture carries an infeasible fit.** In `L3-F5-dragMirror` the carry arm sits in alternatives with about 0.7 m residual before and after 10d, and the ball crosses behind the back in both. The fit is now reported (`limbClearance.carriedBall`, `carriedBallTorso`) rather than hidden in the residual.
 - **The proxy torso is coarse for the ball.** The authored carry presses the ball centre up to 1.6 cm into the proxy torso box at the Sprint back key, while the mesh's worst torso gap through the Sprint is −0.047 m (inside the donor's −0.08). The torso is therefore a soft ranking cost on the ball's centre, not a validity limit.
+
+## 10e — Rules and referee correctness
+
+**Result:** full suite exit 0, no unhandled error: 21 files, 817 tests, 200 s wall. Typecheck and build pass. 410 fixtures export. Every historical export (G, L1, L2, RH, HC) is byte-identical to 10d, so the 238 committed summaries stand as 10c left them (233 identical to `736d90a`, the five HC changed by 10c). 33 L3/L4 exports change: all carry the new rules id, and the only behavioural difference in them is E3's progress measure. Two summaries change (`L3-F5-drag`, `-dragMirror`: progress-window events only). No result, ending, spot, influence event or physical trace value changes.
+
+### What changed
+
+- **Revision 2 (U8).** `RuleProfile.revision` (absent on every historical profile) and `rulesRevision2` (`+revision=2` on the id; a profile already on it is returned as it is). `asL3` puts every L3 rule profile on it after its `ballSource=carryPose` variant, and `asL4` every L4 one (an L3-derived fixture's rules are on it already; the tipped falls' own profiles join here). The exported profile carries `revision: 2`; historical exports have no such key. The official spot stays frozen at the ending and `ballRef` is unchanged.
+- **E1, the settle window (U9).** After a referee ending the override still drops arm requests, posture lean and drive, and brakes facing the current heading with effort 1. On revision 2 it keeps each player's `locomotion.stance` (ride height and stagger) and its `yawEffort` when one was requested: how the player stands and turns, not a tackle action. The ending substep itself runs on the intent decided before it; the override starts with the next substep.
+- **E2, influence with a zero request.** On revision 2 influence can clear only on a substep with no opponent contact at all (a touch under the source impulse included) and no retention relationship (an unloaded clamp or grip included), in addition to supported, grounded, unrestrained movement. A zero request out of contact still counts as unopposed (the defender has gone). Before, `along` was the request itself when the request was zero, so `along >= 0.5 x 0` held and influence cleared after 0.2 s whatever held the runner.
+- **E3, progress retention.** On revision 2 the summed retention force counts only along −`forwardAxis` (the force opposing progress, as the body contacts already were), so a sideways or forward grip is not progress retained. `retentionN` in the progress events and ending evidence is that component.
+- **E4, ground touch.** Rule ground is the floor only since 10c C3 (`isGround`, U6): obstacles never end a play, which is the ruling, not a defect. `EXCLUDED_GROUND_REGIONS` is now enforced: a rule profile that lists wrist, hand, ankle, foot or the foot support as eligible is refused when the observer is built. Every registered profile passes.
+
+### Regressions (`tests/rules-revision.test.ts`), each shown failing with its fault restored
+
+| Fault put back | Failing check |
+| --- | --- |
+| E1: the override drops stance and yaw effort on revision 2 | the defender's stance during settling is `null`, not 0.78 m |
+| E2: a zero request reads as free in contact | an unloaded clamp with a zero request clears influence |
+| E3: retention counted by its magnitude | a sideways 100 N grip stops progress |
+| E4: the exclusion list not enforced | a profile with `hand` eligible is accepted |
+| L4 built without the revision | `L4-F9-transferFailed` referees on the historical profile |
+
+The E2 and E3 checks feed `RuleObserver` frames directly and run both profiles side by side; the historical profile keeps the old behaviour in every case (the test asserts it). E1 runs `L3-F1-phase0` with the defender wrapping at a 0.78 m stance under both profiles: they end at the same substep, the defender stays a supported proxy for 0.15 s after it, keeps 0.78 m on revision 2 and drops it on the historical profile, where its core rises more.
+
+### Changed summaries
+
+Every L3 and L4 fixture with rules (33) exports `profiles.rule` with `revision: 2` and the `+revision=2` id, which the events' and the ending's `profile` field repeat. Beyond that, only the progress measure differs:
+
+| Fixtures | Difference |
+| --- | --- |
+| `L3-F5-drag`, `L3-F5-dragMirror` | Summary: `progressWindow` events 3 → 7 and 2 → 6. The defender's grip drags the runner, so it no longer counts as progress retained (`retentionN` 72.8 and 121.3 N → 0 at the first window); each window now lasts only while the body contact opposes progress, and ends (`restraintLost`) when it stops. Result (`practiceOutOfBounds`), times and positions unchanged. |
+| `L3-F4-twoArm`, `L4-F10-wrap-on`, `-off`, `L4-F9-transferFailed` | `progressWindow` event values (`retentionN`, phase timing); counts unchanged; summary unchanged. |
+| 21 more L3/L4 rule fixtures | The trace's per-substep progress row (`rule.prog`: window time, advance) on 2 to 9 rows each. |
+
+Revision 2's E1 and E2 change nothing in the registered fixtures: no player with a stance request is still a supported proxy after an L3/L4 ending (`L3-F1-low`'s runner, the one rule fixture with a stance request, is a ragdoll by then), every scripted player's kept yaw effort is the default 1, and no influence begins or clears at a different time. Both are established by their regressions.
+
+### Findings
+
+- **E1 and E2 are latent in the fixtures** (above). They will act in any L3/L4 fixture where a lowered defender is still supported at the ending, or a runner stands held after a contact.
+- **L4 rule fixtures not built from an L3 fixture join revision 2 through `asL4`.** The shoved and tipped falls (`L4-F10-knee`, `-elbow`, `-palm`) and `L4-F9-transferFailed` take `RULES_FOOTBALL` or `RULES_LAB_CORE` directly; the opt-in sits in `asL4`, so no L4 rule profile is missed (the profile test fails with it removed).

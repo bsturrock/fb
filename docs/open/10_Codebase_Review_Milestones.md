@@ -1,6 +1,6 @@
 # Codebase review milestones
 
-Repository-aligned plan • 2026-11-08 • **In progress** ([handoff](../handoff/plan10.md)): checkpoint commit `02eba2a` made (U1); all eleven user decisions taken, each the recommended option. 10a, 10b, 10c and 10d implemented. Findings from an intensive review of the whole working tree on `model-integration`: committed gates 1–4 and plans 05–07a (HEAD `736d90a`) plus the uncommitted 08, 08a and 09 work.
+Repository-aligned plan • 2026-11-08 • **In progress** ([handoff](../handoff/plan10.md)): checkpoint commit `02eba2a` made (U1); all eleven user decisions taken, each the recommended option. 10a to 10e implemented. Findings from an intensive review of the whole working tree on `model-integration`: committed gates 1–4 and plans 05–07a (HEAD `736d90a`) plus the uncommitted 08, 08a and 09 work.
 
 ## Review baseline
 

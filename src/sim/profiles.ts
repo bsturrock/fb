@@ -860,6 +860,13 @@ export interface RuleProfile {
   sideline: { enabled: boolean; outwardNormal: Vec3; offsetM: number; touchTolM: number };
   /** Passive settling after an ending before the trial stops (s). */
   settleS: number;
+  /**
+   * Plan 10e (U8, U9): the rule corrections, on a revision opted in on L3 and L4 (`rulesRevision2`). Absent on every
+   * historical profile, which keeps the behaviour it was recorded with. 2: the settle window keeps each player's stance
+   * request and yaw effort (E1); influence clears only out of opponent contact and retention (E2); progress counts the
+   * retention force opposing it, not its magnitude (E3).
+   */
+  revision?: 2;
 }
 
 const FOOTBALL_ELIGIBLE = ['torso', 'pelvis', 'head', 'upperArm', 'elbow', 'forearm', 'thigh', 'knee', 'shin'];
@@ -900,6 +907,9 @@ export const RULES_FOOTBALL = (
 
 /** A rule profile with some values replaced, under an id that names the change (`<base id>+<label>`). */
 export const ruleVariant = (base: RuleProfile, label: string, patch: Partial<Omit<RuleProfile, 'id'>>): RuleProfile => ({ ...base, ...patch, id: `${base.id}+${label}` });
+
+/** Plan 10e: a rule profile on the corrected revision (`+revision=2`); a profile already on it is returned as it is. */
+export const rulesRevision2 = (r: RuleProfile): RuleProfile => (r.revision === 2 ? r : ruleVariant(r, 'revision=2', { revision: 2 }));
 
 export const RULES_LAB_CORE = (runnerId: string): RuleProfile => ({
   ...RULES_FOOTBALL(runnerId, { progress: false, sideline: false }),

@@ -956,10 +956,14 @@ export class Simulation {
         });
       }
       // After a referee ending: no tackle acceleration, arm requests or posture lean. A supported player may still
-      // brake with its finite motor and keep upright support; physics settles passively.
+      // brake with its finite motor and keep upright support; physics settles passively. Plan 10e E1 (rules revision 2,
+      // U9): the player keeps its stance request (ride height and stagger) and its yaw effort, which are how it stands
+      // and turns, not tackle actions; the historical profile returns it to the profile's standing height.
       if (this.rules?.ending) {
         const f = this.coreBody(pl);
-        pl.intent = { locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: norm(horiz(forwardOf(f.rotation())), v3(0, 0, 1)), effort: 1 } };
+        const was = pl.intent.locomotion;
+        const keep = this.rules.profile.revision === 2 ? { ...(was.yawEffort !== undefined ? { yawEffort: was.yawEffort } : {}), ...(was.stance ? { stance: { ...was.stance } } : {}) } : {};
+        pl.intent = { locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: norm(horiz(forwardOf(f.rotation())), v3(0, 0, 1)), effort: 1, ...keep } };
         decided = true;
       }
       // plan 10b: the ramp reads this substep's locomotion mode (decided from the last solve's contacts and motion, which

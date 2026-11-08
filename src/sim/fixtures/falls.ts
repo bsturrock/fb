@@ -3,7 +3,7 @@
 // is the motor-off twin of a comparison.
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import { modelArm } from '../model/profiles';
-import { ARM_G2, DEFAULT_MOTOR, ENVELOPE_L4, FALL_L4, RAGDOLL_G4, RAGDOLL_L4, RULES_FOOTBALL, RULES_LAB_CORE, SOLVER_G4_ZEROG, type FallResponseProfile } from '../profiles';
+import { ARM_G2, DEFAULT_MOTOR, ENVELOPE_L4, FALL_L4, RAGDOLL_G4, RAGDOLL_L4, RULES_FOOTBALL, RULES_LAB_CORE, SOLVER_G4_ZEROG, rulesRevision2, type FallResponseProfile } from '../profiles';
 import { scale, v3, type Vec3 } from '../vec';
 import { armsSetup } from './gate2';
 import { base4, bodyG4, g4f3TwoArm, g4f6Joint } from './gate4';
@@ -17,7 +17,8 @@ export function asL4(def: FixtureDef, id: string, title: string, response: FallR
   const ragdoll = fitted ? { ...def.ragdoll!, id: `${def.ragdoll!.id}+${ENVELOPE_L4.id}`, envelope: ENVELOPE_L4 } : RAGDOLL_L4;
   // a fixture without arms never met the limb contract: the response's shared allocator needs its fitted lengths too
   const armProfile = fitted && !def.players.some((p) => p.arms) ? modelArm(def.armProfile ?? ARM_G2) : def.armProfile;
-  return { ...def, id, milestone: 'L4', title, ragdoll, armProfile, fallResponse: response ?? undefined, notes: [def.notes, notes].filter(Boolean).join(' ') };
+  // plan 10e: L4 referees on the corrected rules revision (an L3 fixture's rules are on it already)
+  return { ...def, id, milestone: 'L4', title, ragdoll, armProfile, fallResponse: response ?? undefined, ...(def.rules ? { rules: rulesRevision2(def.rules) } : {}), notes: [def.notes, notes].filter(Boolean).join(' ') };
 }
 
 type Dir = 'forward' | 'back' | 'side' | 'sideLeft' | 'oblique' | 'obliqueLeft';

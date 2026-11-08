@@ -1,6 +1,6 @@
 # 10e — Rules and referee correctness
 
-Repository-aligned plan • 2026-11-08 • Not started. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Uses the ground predicate from [10c C3](10c_Active_Fall_Contract_Repairs.md#c3-three-different-definitions-of-ground-p3-reported-decision-u6).
+Repository-aligned plan • 2026-11-08 • **Implemented 2026-11-08** ([handoff](../handoff/plan10.md#10e--rules-and-referee-correctness)): full suite green; rules revision 2 (`+revision=2`) opted in on every L3 and L4 rule profile, historical exports byte-identical; the settle window keeps stance and yaw effort, influence clears only out of contact, progress counts opposing retention, excluded regions refused; two L3 summaries changed (progress windows only), no ending or spot changed. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Uses the ground predicate from [10c C3](10c_Active_Fall_Contract_Repairs.md#c3-three-different-definitions-of-ground-p3-reported-decision-u6).
 
 **Goal:** the settle window keeps what it should, influence and progress follow contact and direction, and ground touch uses the shared ground definition.
 
