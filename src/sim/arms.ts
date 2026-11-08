@@ -105,6 +105,33 @@ export interface ForceLedgerEntry {
   xT: number;
 }
 
+/** Plan 09: joint torque an arm asks for this substep, allocated with grasp tension before either is applied. */
+export interface ArmEffortDemand {
+  shoulderNm: number;
+  elbowNm: number;
+}
+
+/** Plan 09: one arm's share of the owner budget in one substep (shared with `ForceLedgerEntry`'s grasp entry). */
+export interface EffortLedgerEntry {
+  tick: number;
+  step: number;
+  owner: PlayerId;
+  arm: ArmSide;
+  shoulderNm: number;
+  elbowNm: number;
+  /** Conservative force equivalent of the torque demand (N). */
+  equivalentN: number;
+  /** Grasp tension after the per-arm ceiling, before the shared allocation (N). */
+  graspN: number;
+  /** Scale on this arm's combined demand from the per-arm ceiling, and from the owner budget. */
+  armFactor: number;
+  sharedScale: number;
+  /** Allocated combined demand (N). */
+  allocatedN: number;
+  perArmN: number;
+  ownerBudgetN: number;
+}
+
 export interface ArmHostPlayer {
   id: PlayerId;
   body: BodyProfile;
@@ -116,6 +143,8 @@ export interface ArmHostPlayer {
   falling?: boolean;
   /** Gate 4: active ragdoll (segment bodies); `rb` is then its core body. */
   ragdoll?: Ragdoll | null;
+  /** Plan 09: this substep's arm torque demands (accepted ragdoll owners only). */
+  armEffort?: Partial<Record<ArmSide, ArmEffortDemand>>;
 }
 
 export interface ArmHost {
@@ -187,6 +216,8 @@ interface ArmRt {
   touching: PlayerId | null;
   lastRelease: { reason: ReleaseReason; t: number } | null;
   clampSerial: number;
+  /** Plan 09: a forearm hold kept physically after its owner converted: the time it lapses without a solved contact. */
+  contactHoldUntil: number | null;
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -244,6 +275,12 @@ export class ArmSystem {
   lastAllocation = new Map<PlayerId, { sumDemand: number; scale: number; sumActual: number }>();
   /** Last substep's ledger entry per `owner:side`. */
   lastForce = new Map<string, ForceLedgerEntry>();
+  /** Plan 09: arm torque allocation, one entry per arm with a demand per substep. */
+  effortLedger: EffortLedgerEntry[] = [];
+  /** Plan 09: this substep's scale on each arm's torque demand, per owner (set by `preStep`). */
+  readonly effortScale = new Map<PlayerId, Record<ArmSide, number>>();
+  /** Plan 09: how long a forearm hold survives without a solved contact (0: no physical holds are tracked). */
+  holdMemoryS = 0;
 
   constructor(
     readonly host: ArmHost,
@@ -288,6 +325,7 @@ export class ArmSystem {
           touching: null,
           lastRelease: null,
           clampSerial: 0,
+          contactHoldUntil: null,
         };
       }
       this.arms.set(pl.id, rec);
@@ -434,6 +472,7 @@ export class ArmSystem {
     const players = host.players();
     this.prePoses.clear();
     this.lastForce.clear();
+    this.effortScale.clear();
     for (const pl of players) {
       this.prePoses.set(pl.rb.handle, poseOfRb(pl.rb));
       if (pl.ragdoll) for (const rb of Object.values(pl.ragdoll.bodies)) this.prePoses.set(rb.handle, poseOfRb(rb));
@@ -442,13 +481,14 @@ export class ArmSystem {
     const sides = host.reverseOrder ? [...SIDES].reverse() : SIDES;
     for (const pl of order) {
       const rec = this.arms.get(pl.id);
-      if (!rec) continue;
+      const effort = pl.ragdoll ? pl.armEffort : undefined;
+      if (!rec && !effort) continue;
       const ownerPose = this.prePose(pl.rb);
       const obstacles = this.opponents(pl.id);
       type Demand = { a: ArmRt; kind: 'hold' | 'clamp' | 'passive'; vec: Vec3; raw: number; normalReq: number; ftWanted: Vec3; ftCone: Vec3; frictionSat: boolean; grip?: Grip; n?: Vec3; p: Vec3; s?: Vec3; target: PlayerId; id: string; rbT: RAPIER.RigidBody; rbO: RAPIER.RigidBody };
       const demands: Demand[] = [];
       const falling = !!pl.falling;
-      for (const side of sides) {
+      if (rec) for (const side of sides) {
         if (pl.ragdoll) {
           // Physical arm (Gate 4): no query arm, no closing force; only a surviving palm grasp as a passive link.
           const a = rec[side];
@@ -719,8 +759,35 @@ export class ArmSystem {
         sumDemand += m * c;
         return c;
       });
+      // Plan 09: arm torque joins the same budget. Conservative force equivalent per arm: shoulder torque / upper arm
+      // plus elbow torque / forearm, added to that arm's grasp tension; one per-arm ceiling and one shared scale.
+      const armFactor: Record<ArmSide, number> = { left: 1, right: 1 };
+      const grasp: Record<ArmSide, number> = { left: 0, right: 0 };
+      const equiv: Record<ArmSide, number> = { left: 0, right: 0 };
+      if (effort) {
+        demands.forEach((d, i) => (grasp[d.a.side] += len(d.vec) * capScales[i]));
+        sumDemand = 0;
+        for (const side of SIDES) {
+          const e = effort[side];
+          equiv[side] = e ? e.shoulderNm / P.upperArmM + e.elbowNm / P.forearmM : 0;
+          const total = grasp[side] + equiv[side];
+          armFactor[side] = total > perArm ? perArm / total : 1;
+          sumDemand += total * armFactor[side];
+        }
+      }
       const shared = sumDemand > ownerBudget ? ownerBudget / sumDemand : 1;
       let sumActual = 0;
+      if (effort) {
+        this.effortScale.set(pl.id, { left: armFactor.left * shared, right: armFactor.right * shared });
+        for (const side of SIDES) {
+          const e = effort[side];
+          if (!e) continue;
+          const combined = (grasp[side] + equiv[side]) * armFactor[side] * shared;
+          sumActual += equiv[side] * armFactor[side] * shared;
+          if (this.keepLedger)
+            this.effortLedger.push({ tick: host.tick, step: host.steps, owner: pl.id, arm: side, shoulderNm: e.shoulderNm, elbowNm: e.elbowNm, equivalentN: equiv[side], graspN: grasp[side], armFactor: armFactor[side], sharedScale: shared, allocatedN: combined, perArmN: perArm, ownerBudgetN: ownerBudget });
+        }
+      }
       demands.forEach((d, i) => {
         const f = capScales[i] * shared;
         const tgt = this.player(d.target)!;
@@ -732,9 +799,10 @@ export class ArmSystem {
         let ftActual = v3();
         if (d.kind === 'hold' || d.kind === 'passive') {
           const g = d.grip!;
-          const demand = Math.min(d.raw, perArm);
+          const af = armFactor[d.a.side];
+          const demand = Math.min(d.raw, perArm) * af;
           actual = demand * shared;
-          allocated = shared < 1 ? actual : perArm;
+          allocated = shared < 1 || af < 1 ? actual : perArm;
           forceOnTarget = scale(d.n!, -actual);
           pointOwner = d.s!;
           // overload exposure (guard zero capacity)
@@ -898,6 +966,7 @@ export class ArmSystem {
       const ownerPose: Pose = { p: vc(pl.rb.translation()), q: { ...pl.rb.rotation() } };
       for (const side of SIDES) {
         const a = rec[side];
+        a.contactHoldUntil = null;
         if (a.gripId) this.release(pl, a, 'playEnded', ownerPose);
         if (a.clamp) {
           this.host.emit('clampEnd', pl.id, { arm: side, clamp: a.clamp.id, reason: 'playEnded', gap: null });
@@ -1146,7 +1215,12 @@ export class ArmSystem {
         }
       }
       this.physicalSolve(pl, a);
-      a.touching = this.physicalArmContact(pl, side)?.target ?? null;
+      const touch = this.physicalArmContact(pl, side);
+      a.touching = touch?.target ?? null;
+      if (a.contactHoldUntil !== null) {
+        if (this.host.t > a.contactHoldUntil) a.contactHoldUntil = null;
+        else if (touch) a.contactHoldUntil = this.host.t + this.holdMemoryS;
+      }
     }
     this.classifyWrap(pl, rec, ownerPost);
   }
@@ -1235,6 +1309,8 @@ export class ArmSystem {
           // owner converted: the virtual closing normal/friction force stops before the first ragdoll step
           host.emit('clampEnd', pl.id, { arm: side, clamp: a.clamp.id, reason: 'ownerRagdoll', gap: null });
           a.clamp = null;
+          // plan 09: the physical forearm carries the hold on, for as long as solved contact keeps it alive
+          if (this.holdMemoryS > 0) a.contactHoldUntil = host.t + this.holdMemoryS;
         } else if (switched.includes(a.clamp.targetId)) {
           // target converted: the supported owner's query forearm is requeried against the new segments next substep;
           // only a continuing contact on the same part/region keeps its elastic history
@@ -1288,6 +1364,17 @@ export class ArmSystem {
       };
     }
     return out;
+  }
+
+  /**
+   * Plan 09: the hold this ragdoll owner's arm still has. A palm grip keeps its passive link; a forearm hold is the
+   * clamp the arm had at conversion, kept by solved contact. Nothing here starts a new hold.
+   */
+  retained(id: PlayerId, side: ArmSide): 'grip' | 'contact' | null {
+    const a = this.arms.get(id)?.[side];
+    if (!a) return null;
+    if (a.gripId && this.grips.get(a.gripId)?.passive) return 'grip';
+    return a.contactHoldUntil !== null ? 'contact' : null;
   }
 
   clampOf(id: PlayerId, side: ArmSide): ClampContact | null {

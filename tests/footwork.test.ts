@@ -14,7 +14,7 @@ import { DEFAULT_MOTOR, RAGDOLL_G4, SUSPENSION_L2, SUSPENSION_L2_BRAKE, SUSPENSI
 import { computeDrive } from '../src/sim/motors';
 import { advanceBraking, advanceStance, brakingDemand, composeTarget, newSuspensionRuntime, suspensionForce, suspensionGains } from '../src/sim/support';
 import { FOOTWORK_L2, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
-import { buildProxyPose, flexReach, footFrame, hingeChain, legRequestLocal, legShapes, maxFlexRad, twoBone, type FootRequest, type PhysicalPose, type PoseShape, type ProxyPoseInput } from '../src/sim/pose';
+import { buildProxyPose, flexReach, footFrame, hingeChain, legRequestLocal, legShapes, maxFlexRad, stablePole, twoBone, type FootRequest, type PhysicalPose, type PoseShape, type ProxyPoseInput } from '../src/sim/pose';
 import { RunClipError, validateRunClipProfile } from '../src/sim/run-clip';
 import { bodyG4 } from '../src/sim/fixtures/gate4';
 import { add, dist, dot, len, qFromYaw, qRot, sub, v3, type Vec3 } from '../src/sim/vec';
@@ -441,6 +441,7 @@ describe('L2 braking limit (user, 2026-11-05): locomotion fixtures brake at most
   });
   it('opt-in: L2 locomotion fixtures use the braking motor; RH, tackle copies and support repairs keep theirs', () => {
     for (const d of allFixtures()) {
+      if (d.id.startsWith('L3-')) continue; // plan 08 copies keep the motor of the fixture each was built from
       // L2-F3-runStopHard: the same run stopped by the original motor (plan 07 item 3 regression), deliberately unbraked
       const loco = /^L2-F(1|2|3|4|5|6|7|11|12)-/.test(d.id) && d.id !== 'L2-F3-runStopHard';
       const ms = [d.motor, ...d.players.map((p) => p.motor).filter((m) => m !== undefined)];
@@ -578,6 +579,20 @@ describe('L2-F9 IK singularities and the foot request path', () => {
   const hip = v3(0.1, 0.9, 0);
   const minR = flexReach(a, b, maxFlexRad(R, 'knee'));
   const finite = (p: Vec3): boolean => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z);
+  it('a nearly parallel L3 knee pole retains the achieved bend plane instead of chasing its unreliable heading', () => {
+    const target = v3(0, -0.4, -0.6);
+    const previous = v3(0.2, -0.2, -0.3);
+    const pole = v3(-0.001, -0.4, -0.6);
+    const solve = (damp: boolean) => twoBone(v3(), target, a, b, stablePole(v3(), target, pole, previous, 2.5 / 240, 6 / 240, damp), undefined, minR);
+    const held = twoBone(v3(), target, a, b, v3(1, 0, 0), undefined, minR);
+    expect(dist(solve(true).mid, held.mid)).toBeLessThan(0.001);
+    expect(dist(solve(false).mid, held.mid)).toBeGreaterThan(0.005);
+    for (const damp of [false, true]) {
+      const r = solve(damp);
+      expect(dist(v3(), r.mid)).toBeCloseTo(a, 10);
+      expect(dist(r.mid, r.end)).toBeCloseTo(b, 10);
+    }
+  });
   it('zero distance, full extension, an extreme target and a pole along the limb give finite fixed-length solves', () => {
     for (const [target, pole] of [
       [hip, v3(0, 0, 1)],
@@ -1333,11 +1348,11 @@ describe('L2 braking stance (closeout item 4): the root physically lowers while 
     const users = allFixtures().filter((d) => d.support === SUSPENSION_L2_BRAKE);
     expect(users.length).toBeGreaterThan(0);
     for (const d of users) {
-      expect(d.id.startsWith('L2-'), d.id).toBe(true);
+      expect(/^L[23]-/.test(d.id), d.id).toBe(true);
       expect(d.motor.braking, d.id).toBeDefined();
     }
     // historical, RH, tackle/repair copies and the original-motor hard stop keep their profiles
-    for (const d of allFixtures()) if (!d.id.startsWith('L2-')) expect((d.support as SuspensionSupport | undefined)?.brakingStance, d.id).toBeUndefined();
+    for (const d of allFixtures()) if (!/^L[23]-/.test(d.id)) expect((d.support as SuspensionSupport | undefined)?.brakingStance, d.id).toBeUndefined();
     expect(FIX('L2-F3-runStopHard').support).toBe(SUSPENSION_L2);
   });
 

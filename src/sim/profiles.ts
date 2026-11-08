@@ -256,6 +256,8 @@ export const SOLVER_G1: SolverProfile = {
  * limits on hard ground impacts (scripts/probe/g4sep5.ts); four substeps keep both small. Prior gates keep SOLVER_G1.
  */
 export const SOLVER_G4: SolverProfile = { ...SOLVER_G1, id: 'solver-g4-4x60', substeps: 4 };
+/** Plan 09 L4-F8 only: a labelled zero-gravity diagnostic for the whole-body torque-pair audit. Gameplay gravity is unchanged. */
+export const SOLVER_G4_ZEROG: SolverProfile = { ...SOLVER_G4, id: 'solver-g4-4x60-zeroG-diagnostic', gravityY: 0 };
 
 // ---------------------------------------------------------------- support (plan 06a)
 /**
@@ -609,7 +611,152 @@ export interface RagdollProfile {
   passiveGrip: { stiffness: number; damping: number; maxSeparationM: number; budgetFraction: number };
   /** Wrist/ankle exclusion band for ground-contact classification (m from the landmark along the limb). */
   endBandM: number;
+  /** Plan 09: shoulder/hip swing-twist envelope (absent: spherical joints stay unrestricted, the Gate 4 passive path). */
+  envelope?: RagdollEnvelope;
 }
+
+/**
+ * One spherical joint's anatomical range in the parent (core) frame. Swing is measured from the limb hanging along the
+ * core's -Y; the limit at any direction comes from the four quadrant values on an ellipse. Twist is measured about the
+ * limb from `neutralTwistDeg`, positive external. Engineering settings, not measured athlete ranges.
+ */
+export interface JointEnvelope {
+  /**
+   * Swing range: a cone about a centre tilted `tiltDeg` from the hanging limb, toward `towardDeg` (0 forward, 90 out),
+   * with an elliptical boundary `alongDeg` from the centre in the tilt plane and `acrossDeg` across it. A tilted cone,
+   * not limits per quadrant about the hanging limb: those fall steeply with azimuth near the limb's overhead pole.
+   */
+  cone: { tiltDeg: number; towardDeg: number; alongDeg: number; acrossDeg: number };
+  twistDeg: [number, number];
+  neutralTwistDeg: number;
+  swing: { stiffnessNmPerRad: number; dampingNmsPerRad: number };
+  twist: { stiffnessNmPerRad: number; dampingNmsPerRad: number };
+  /**
+   * Cap of each limit's restoring moment, swing and twist apart (finite: a hard enough impact overruns the envelope). The
+   * spring is capped as a function of its own excess, so the limit keeps an energy; a cap on the summed torque would not.
+   */
+  maxTorqueNm: number;
+}
+
+/**
+ * Plan 09: Rapier 0.21 has no spherical limit, so this envelope is soft: a one-sided spring-damper torque pair, passive
+ * and independent of any muscle budget. A joint that starts outside (a generated pose may) keeps a start slack, which
+ * follows the limb inward and decays at a bounded rate, so conversion adds no kick.
+ */
+export interface RagdollEnvelope {
+  id: string;
+  mode: 'soft';
+  /** Declared tested overshoot, and how long a joint may stay beyond it before that counts as persistent. */
+  toleranceDeg: number;
+  persistS: number;
+  slackDecayDegPerS: number;
+  shoulder: JointEnvelope;
+  hip: JointEnvelope;
+}
+
+export const ENVELOPE_L4: RagdollEnvelope = {
+  id: 'envelope-l4-v1',
+  mode: 'soft',
+  toleranceDeg: 5,
+  persistS: 0.25,
+  slackDecayDegPerS: 30,
+  shoulder: {
+    cone: { tiltDeg: 55, towardDeg: 45, alongDeg: 115, acrossDeg: 115 },
+    twistDeg: [-100, 100],
+    neutralTwistDeg: 180,
+    swing: { stiffnessNmPerRad: 1500, dampingNmsPerRad: 30 },
+    twist: { stiffnessNmPerRad: 400, dampingNmsPerRad: 2 },
+    maxTorqueNm: 500,
+  },
+  hip: {
+    cone: { tiltDeg: 46, towardDeg: 14, alongDeg: 85, acrossDeg: 60 },
+    twistDeg: [-50, 50],
+    neutralTwistDeg: 0,
+    // 2500 let a leg folded under the body's weight sit 5-6 degrees past its range for a quarter second
+    swing: { stiffnessNmPerRad: 3500, dampingNmsPerRad: 50 },
+    twist: { stiffnessNmPerRad: 800, dampingNmsPerRad: 3 },
+    maxTorqueNm: 800,
+  },
+};
+
+/**
+ * Plan 09 active fall response: bounded internal joint torque on an accepted ragdoll only. Every value is an initial
+ * engineering setting, not a measured athlete strength. The falling arm budget is the ragdoll profile's own; arm torque
+ * shares it with passive grasp tension through the arm allocator.
+ */
+export interface FallResponseProfile {
+  id: string;
+  timing: { delayS: number; rampS: number; fadeStartS: number; fadeS: number };
+  ceilingsNm: { shoulder: number; elbow: number; hip: number; knee: number };
+  gains: Record<'shoulder' | 'elbow' | 'hip' | 'knee', { kp: number; kd: number }>;
+  knee: { flexDeg: number; maxDeg: number; rampS: number };
+  hip: { flexDeg: number; rampS: number };
+  arms: {
+    carryArm: 'left' | 'right';
+    /** Gain scale of a holding arm around its achieved pose, and of a brace after it touches the ground (yield). */
+    holdScale: number;
+    yieldScale: number;
+    /** How long a forearm hold survives without a solved contact. */
+    holdMemoryS: number;
+  };
+  brace: {
+    /** Prediction horizon, and the shoulder height the prediction aims at inside it. */
+    horizonS: [number, number];
+    shoulderHeightM: number;
+    /** Hand lead along the horizontal motion, outward offset, the largest offset from under the shoulder, palm height. */
+    leadS: number;
+    lateralM: number;
+    maxOffsetM: number;
+    palmYM: number;
+    /** A bracing elbow keeps this flexion, so a load bends it instead of locking it. */
+    minElbowDeg: number;
+    /** Target travel limits: the target starts at the achieved pose. */
+    maxDirRateRadPerS: number;
+    maxElbowRateRadPerS: number;
+    /** Keeps a shoulder target this far inside its envelope. */
+    envelopeMarginDeg: number;
+  };
+  /**
+   * Caps apply before the solve, and every realized substep is audited against them with `toleranceFraction`: any
+   * exceedance fails, impact or not. Planned positive power is held to `planFraction` of the cap, because the per-joint
+   * prediction leaves out how one joint's torque moves its neighbours. Effort stops for good once less work remains
+   * than one substep at the tolerated power could use, so the last substep cannot pass the work cap. A substep whose
+   * joint speed jumped more than `impactOmegaRadPerS` beyond what the torque explains is tagged an impact, for diagnosis.
+   */
+  power: { maxPositiveW: number; maxPositiveWorkJ: number; toleranceFraction: number; planFraction: number; impactOmegaRadPerS: number };
+  /**
+   * Contact changes joint speeds inside the solve faster than any cap set before it can follow, so effort holds off a
+   * limb (the whole body, for the core or head) in a substep where its geometry meets something closing faster than
+   * `closingMPerS` within `lookaheadSubsteps`, or after a solve that gave it a contact impulse over `impulseNs`.
+   */
+  impactGuard: { closingMPerS: number; impulseNs: number; lookaheadSubsteps: number; predictionM: number; skinM: number };
+  enable: { knee: boolean; hip: boolean; arms: boolean };
+}
+
+export const FALL_L4: FallResponseProfile = {
+  id: 'fall-response-l4-v1',
+  timing: { delayS: 0.04, rampS: 0.08, fadeStartS: 0.8, fadeS: 0.2 },
+  ceilingsNm: { shoulder: 15, elbow: 10, hip: 18, knee: 22 },
+  gains: { shoulder: { kp: 60, kd: 6 }, elbow: { kp: 35, kd: 3 }, hip: { kp: 45, kd: 6 }, knee: { kp: 40, kd: 5 } },
+  knee: { flexDeg: 40, maxDeg: 110, rampS: 0.25 },
+  hip: { flexDeg: 30, rampS: 0.3 },
+  arms: { carryArm: 'right', holdScale: 0.4, yieldScale: 0.35, holdMemoryS: 0.1 },
+  brace: {
+    horizonS: [0.1, 0.25],
+    shoulderHeightM: 0.55,
+    leadS: 0.06,
+    lateralM: 0.12,
+    maxOffsetM: 0.4,
+    palmYM: 0.02,
+    minElbowDeg: 12,
+    maxDirRateRadPerS: 14,
+    maxElbowRateRadPerS: 14,
+    envelopeMarginDeg: 8,
+  },
+  power: { maxPositiveW: 150, maxPositiveWorkJ: 100, toleranceFraction: 0.05, planFraction: 0.9, impactOmegaRadPerS: 1 },
+  impactGuard: { closingMPerS: 0.5, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002 },
+  enable: { knee: true, hip: true, arms: true },
+};
 
 export const RAGDOLL_G4: RagdollProfile = {
   id: 'ragdoll-g4-v1',
@@ -635,6 +782,9 @@ export const RAGDOLL_G4: RagdollProfile = {
   endBandM: 0.03,
 };
 
+/** Plan 09: the Gate 4 ragdoll with the anatomical envelope; everything else is the same blueprint. */
+export const RAGDOLL_L4: RagdollProfile = { ...RAGDOLL_G4, id: 'ragdoll-l4-v1', envelope: ENVELOPE_L4 };
+
 // ---------------------------------------------------------------- rule observer (Gate 4)
 /**
  * Referee-observation profile. `labCoreOnly` keeps the historical diagnostic (runner torso/pelvis-ground contact after
@@ -654,7 +804,7 @@ export interface RuleProfile {
    * Where the ball is: `coreOffset` (default) = ballLocal in the core frame; `carryPalm` = the runner's ball-arm palm in
    * the sim-owned physical pose (plan 06: the run-clip carry arm moves the ball), ballLocal when no pose exists.
    */
-  ballSource?: 'coreOffset' | 'carryPalm';
+  ballSource?: 'coreOffset' | 'carryPalm' | 'carryPose';
   /**
    * Ground-region labels that can produce the ending (rules.ts GroundRegion). Hand/wrist, foot/ankle and the virtual
    * foot support are never eligible; the wrist/ankle band is classified per contact point, not per limb.

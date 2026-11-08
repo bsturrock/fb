@@ -188,7 +188,7 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
   });
 
   it('first solved steps after acceptance: no penetration spike, anchor separation or launch impulse', async () => {
-    for (const id of ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror']) {
+    for (const id of ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror', 'L3-F4-twoArm', 'L3-F9-convert-contact', 'L3-F9-noProbe-contact', 'L3-F9-defenderRising', 'L3-F10-both', 'L3-F10-defender']) {
       await breathe();
       const post = await postSwitch(FIX(id));
       expect(Object.keys(post).length, id).toBeGreaterThan(0);

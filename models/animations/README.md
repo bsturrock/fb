@@ -6,6 +6,8 @@ Both extracted clips have 17 samples at 30 FPS (0.5333 s between first and last 
 
 Fast Run was supplied in-place. Sprint originally traveled 3.4505 m forward. Its derivative removes linear accumulated horizontal travel from every joint, preserving local stride sway, vertical bob and rotations. Originals are unchanged. This is translation normalization, not a loop-seam or retargeting guarantee. Duration alone does not establish Fast Run's nominal speed; Sprint's original average travel speed is about 6.47 m/s.
 
+`Standard Walk.fbx`, supplied on 2026-11-06, is `walk`: 36 samples at 30 FPS, a closed in-place cycle of 1.1667 s, nominal 1.59 m/s. It joins the run clips only on the L3 path (`runClipsL3`). `Start Walking (1).fbx` and `Idle To Sprint (1).fbx` were used as templates for speed curves and are not in this directory.
+
 Rebuild from repository root using the installed Blender executable:
 
 ```sh
@@ -25,3 +27,9 @@ Plan 06 wires both clips into the simulator ([handoff](../../docs/handoff/plan06
 - the playback bounds.
 
 The simulator refuses a record that no longer matches these files, and `tests/locomotion.test.ts` checks the committed record against them. The physics-owned pose stays authoritative: the clips drive leg targets around the calibrated hips and free-arm swing only. Visual acceptance of the retargeted run is pending.
+
+## Idle
+
+`source/idle.fbx` was supplied for plan 08. Its bake, `idle.json`, has 251 frames at 30 FPS (8.33 s), in place, with a measured seam of 0. Hashes and intake metadata are in `manifest.json`.
+
+Policy: static. `npm run intake-clips` (`scripts/model/idle-intake.ts`) measures the cycle and writes one representative frame, 71, to `src/sim/model/idle-pose.record.json`. The simulator fits that frame through the pose path; the cycle is not played ([handoff](../../docs/handoff/plan08.md)).

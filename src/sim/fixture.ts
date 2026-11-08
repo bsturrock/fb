@@ -1,8 +1,10 @@
 // Fixture definition: starting conditions and requests, never post-contact trajectories.
+import type { CarryProfile } from './carry';
 import type { ArmSide, PlayerId, Role, StanceRequest } from './contracts';
-import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, MotorProfile, RagdollProfile, RuleProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
+import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, FallResponseProfile, MotorProfile, RagdollProfile, RuleProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
 import type { CandidateEdit } from './ragdoll';
 import type { FootworkProfile } from './footwork';
+import type { LocomotionProfile } from './locomotion';
 import type { RunClipProfile } from './run-clip';
 import type { ScriptSpec } from './controllers/base';
 import type { CoachedEntrySpec } from './controllers/coached';
@@ -78,11 +80,21 @@ export interface FixtureDef {
    * suspension support (the planner reads its probed ground).
    */
   footwork?: FootworkProfile;
+  /** Plan 08: locomotion composition (free-arm poses, locomotion mode; absent: the plan 07 path unchanged). Pose only. */
+  locomotion?: LocomotionProfile;
+  /** Plan 08a: the ball carrier's right-arm carry and football seat; absent: the plan 06 hold. */
+  carry?: CarryProfile;
+  /** Plan 09: active fall response of accepted ragdolls (absent: passive). Needs a ragdoll profile with an envelope. */
+  fallResponse?: FallResponseProfile;
   /** Clearly labelled diagnostic interventions (never contact-driven outcomes). */
   diagnostics?: {
     conversions?: DiagnosticConversionSpec[];
     /** Labelled external force at the player's COM over [fromS, toS) (plan 06a load tests). */
     forces?: { playerId: PlayerId; fromS: number; toS: number; forceWorld: Vec3 }[];
+    /** Labelled equal and opposite torque pair across one ragdoll joint over [fromS, toS) (plan 09 limit load tests). */
+    jointLoads?: { playerId: PlayerId; joint: string; fromS: number; toS: number; torqueParentNm: Vec3 }[];
+    /** The same, always along the envelope's own gradient, so a stated load presses straight into a shoulder or hip limit. */
+    limitLoads?: { playerId: PlayerId; joint: string; fromS: number; toS: number; limit: 'swing' | 'twist'; torqueNm: number }[];
   };
   /**
    * Static diagnostic obstacles (cuboids). `surface: 'turf'` marks a turf patch the suspension probe may stand on (its

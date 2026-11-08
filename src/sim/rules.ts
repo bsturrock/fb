@@ -177,12 +177,14 @@ export class RuleObserver {
   }
 
   /**
-   * Ball reference from the physical carry pose: a fixed offset in the runner's core frame, or (ballSource carryPalm)
-   * the ball-arm palm of the sim-owned pose (cosmetic ball; no collision, no fumbles).
+   * Ball reference from the physical carry pose: a fixed offset in the runner's core frame, (ballSource carryPalm)
+   * the ball-arm palm of the sim-owned pose or (carryPose) the seated ball's centre on the achieved forearm (cosmetic
+   * ball; no collision, no fumbles).
    */
   ballRef(corePose: Pose, pose?: PhysicalPose | null): Vec3 {
-    const palm = this.profile.ballSource === 'carryPalm' ? pose?.jointLandmarksWorld.rightPalm : undefined;
-    return palm ? { ...palm } : toWorld(corePose, this.profile.ballLocal);
+    const src = this.profile.ballSource;
+    const held = src === 'carryPalm' ? pose?.jointLandmarksWorld.rightPalm : src === 'carryPose' ? pose?.jointLandmarksWorld.carriedBall : undefined;
+    return held ? { ...held } : toWorld(corePose, this.profile.ballLocal);
   }
 
   disable(reason: string, data: Record<string, unknown>): void {

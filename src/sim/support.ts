@@ -377,9 +377,12 @@ export function runHeight(
   const peakLegU = A.peakDownLegU + ((B?.peakDownLegU ?? A.peakDownLegU) - A.peakDownLegU) * t;
   const uRate = st.rate / cycleS;
   const peak = peakLegU * cal.legM * uRate * uRate;
-  const s = peak > 0 ? Math.min(1, (S.run.maxDownAccelG * Math.abs(g)) / peak) : 1;
+  // plan 08: a walk's shorter stride bobs less and it walks lower, so the stance leg reaches the ground
+  const walkW = P.walk ? Math.max(0, 1 - st.pos) : 0;
+  const s0 = peak > 0 ? Math.min(1, (S.run.maxDownAccelG * Math.abs(g)) / peak) : 1;
+  const s = walkW > 0 ? s0 * (1 - walkW * (1 - (st.stride ?? 1))) : s0;
   const hA = clipRootHeight(A, cal, st.u, s);
-  const h = B && t > 0 ? hA + (clipRootHeight(B, cal, st.u, s) - hA) * t : hA;
+  const h = (B && t > 0 ? hA + (clipRootHeight(B, cal, st.u, s) - hA) * t : hA) - (walkW > 0 ? walkW * P.walk!.dropM : 0);
   // exact time derivatives of the scaled bob at a constant phase rate (rate and blend changes are not fed forward)
   const mix = (f: (a: number[], b: number[], u: number) => number): number => {
     const x = f(A.a, A.b, st.u);
@@ -394,7 +397,7 @@ export function runHeight(
  * the reset phase, which is also the reset vertical velocity of the body). The feedforward
  * acceleration is the weighted stance-filter and bob acceleration, 0 while the range clamp or the slew limit holds.
  */
-export function composeTarget(st: SuspensionRuntime, S: SuspensionSupport, run: Pick<RunHeight, 'heightM' | 'velMps' | 'accelMps2'> | null, weight: number, dt: number): void {
+export function composeTarget(st: SuspensionRuntime, S: SuspensionSupport, run: Pick<RunHeight, 'heightM' | 'velMps' | 'accelMps2'> | null, weight: number, dt: number, dropM = 0): void {
   const w = run === null || !(weight > 0) ? 0 : clamp(weight, 0, 1);
   const raw0 = run === null || w === 0 ? st.stanceH : st.stanceH + (run.heightM - st.stanceH) * w;
   // plan 07 item 4: the braking stance blends the whole composition (stance and running height/bob) toward the braking
@@ -402,7 +405,8 @@ export function composeTarget(st: SuspensionRuntime, S: SuspensionSupport, run: 
   const B = S.brakingStance;
   const b = B ? st.brakeB : 0;
   const low = B ? Math.min(B.heightM, st.stanceH) : 0;
-  const raw = b > 0 ? raw0 + (low - raw0) * b : raw0;
+  // plan 08: a bounded, continuous drop requested by locomotion preparation (0 leaves the expression untouched)
+  const raw = (b > 0 ? raw0 + (low - raw0) * b : raw0) - dropM;
   const want = clamp(raw, S.targetRangeM[0], S.targetRangeM[1]);
   if (!(dt > 0)) {
     // reset: the steady-state rate and acceleration of the target at the reset phase (a playing clip's bob)

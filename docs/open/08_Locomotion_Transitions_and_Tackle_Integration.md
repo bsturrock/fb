@@ -1,6 +1,10 @@
 # Locomotion transitions and tackle integration
 
-Repository-aligned plan • 2026-11-05 • Ready to start from the user-accepted 07a checkpoint, including both review fixes. Incoming validation: 239 tests, build and 238 fixtures pass; all 143 historical summaries unchanged.
+Repository-aligned plan • 2026-11-05 • Implemented in all three passes with the [08 review closeout](08_Review_Closeout.md); declared finished by the user on 2026-11-07. See the [handoff](../handoff/plan08.md).
+
+**Implementation status (2026-11-05):** the 1 cm transition metric holds for free locomotion (735 boundaries, largest 0.9 cm) and does not hold in contact (274 of 1807 boundaries over 1 cm, largest 5.8 cm). Natural deceleration at normal speed has not had a human review.
+
+**Review disposition:** close the contact/airborne continuity gap, restore the declared composed foot-motion limits, and repair integration tests that do not establish recontact, falling and retained-arm geometry. Preserve this implementation as the starting point; the [closeout plan](08_Review_Closeout.md) contains the reproductions, scope and acceptance checks.
 
 Previous: [ragdoll contact handoff](07a_Ragdoll_Contact_Handoff.md). Next: [active falls](09_Active_Falls_Joint_Limits_and_Role_Responses.md).
 

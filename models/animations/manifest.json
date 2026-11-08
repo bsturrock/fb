@@ -1,5 +1,21 @@
 [
   {
+    "id": "walk",
+    "kind": "walk",
+    "source": "source/standard-walk.fbx",
+    "sourceSha256": "6137c6cba0f12218e1997f26ddd311fb261f12436118c1e525730326f7076be6",
+    "data": "walk.json",
+    "fps": 30,
+    "frames": 36,
+    "sampleSpanS": 1.1666666666666667,
+    "rootMotion": "inPlace",
+    "removedTravelM": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
     "id": "fast-run",
     "source": "source/fast-run.fbx",
     "sourceSha256": "3706070da7b57fb000f3bdfc7db539ab96f19d0fc291b418561732c49e0ae210",
@@ -28,5 +44,22 @@
       0,
       3.4505
     ]
+  },
+  {
+    "id": "idle",
+    "kind": "idle",
+    "source": "source/idle.fbx",
+    "sourceSha256": "662267cccb15fb8ea1c74de8fa85637628b65689f4436b05168d82932bc4341c",
+    "data": "idle.json",
+    "fps": 30,
+    "frames": 251,
+    "sampleSpanS": 8.333333333333334,
+    "rootMotion": "inPlace",
+    "removedTravelM": [
+      0,
+      0,
+      0
+    ],
+    "posePolicy": "static: one representative frame fitted through the pose path (src/sim/model/idle-pose.record.json); the cycle is not played"
   }
 ]

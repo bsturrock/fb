@@ -67,6 +67,38 @@ export interface FootworkProfile {
    */
   leadLateralMps: number;
   leadLateralFrac: number;
+  /** Plan 08 transition composition (absent: the plan 07 planner, bit-identical). */
+  compose?: FootComposeProfile;
+}
+
+/**
+ * Plan 08: how a foot moves between plant, step and follow. Pose only, like the rest of the planner. Every transition
+ * starts from the achieved ankle and its achieved velocity, so a released plant or an interrupted step keeps its motion:
+ * - a following foot's offset to the request is a critically damped second-order state (not a constant-speed decay);
+ * - a planner step's horizontal target is the minimum-jerk path from the current position, velocity and acceleration to
+ *   the retargeted destination, replanned every substep; its height arc takes a decaying offset from the same start;
+ * - while braking, the planner takes the legs from the clip at a held foot (not at clip weight 0), so the next foot lands
+ *   ahead of the hips instead of following the fading clip under them; a foot ahead of its home along the travel is
+ *   catching the body and stays down until the body has passed it.
+ */
+export interface FootComposeProfile {
+  /** Following foot: natural rate of the offset (rad/s). */
+  followRadPerS: number;
+  /** Planner step: smallest natural rate of the height-arc offset (rad/s); the rate rises so it ends within the step. */
+  liftRadPerS: number;
+  /** Braking blend at or above which the planner takes the legs from the clip (with a held foot), and below which it gives them back. */
+  brakeEnterB: number;
+  brakeExitB: number;
+  /** Largest travel speed (m/s) at which the planner takes the legs from the clip. */
+  brakeEnterMps: number;
+  /** The last stretch of a step (s): its destination stops moving, so the path arrives; a late step takes this long to arrive. */
+  arriveS: number;
+  /** A following foot on the ground in the clip's stance plants where it is within this of the request (m): its recovery is rate limited. */
+  landOffsetM: number;
+  /** A held foot the travel takes out of reach within this time steps now, not when the reach runs out (s). */
+  stepAheadS: number;
+  /** While the clip comes in, a planner step this close to touchdown lands instead of joining the clip in the air (s). */
+  landWithinS: number;
 }
 
 export const FOOTWORK_L2: FootworkProfile = {
@@ -85,6 +117,17 @@ export const FOOTWORK_L2: FootworkProfile = {
   clipPlantWeight: 0.95,
   leadLateralMps: 0.2,
   leadLateralFrac: 0.5,
+};
+
+/**
+ * Plan 08 planner: FOOTWORK_L2's plant, reach, swing and clearance numbers with the transition composition added. Motor,
+ * support and plant confirmation are untouched.
+ */
+export const FOOTWORK_L3: FootworkProfile = {
+  ...FOOTWORK_L2,
+  id: 'footwork-l3-v2',
+  settleTriggerM: 0.09,
+  compose: { followRadPerS: 18, liftRadPerS: 24, brakeEnterB: 0.6, brakeExitB: 0.25, brakeEnterMps: 5, arriveS: 0.05, landOffsetM: 0.12, stepAheadS: 0.25, landWithinS: 0.12 },
 };
 
 export type FootMode = 'planted' | 'swing' | 'airborne';
@@ -142,6 +185,48 @@ export interface FootState {
   why: FootReason | null;
   /** Follow: offset of the foot from the request it rejoins (world). */
   offset: Vec3;
+  /** Plan 08 (profile compose): rate of the follow offset (m/s, world). */
+  offsetV: Vec3;
+  /** Composed: decaying foot angle offset (rad, toe up) from the achieved angle at the release, its rate; the achieved angle and the pose's base angle. */
+  soleO: number;
+  soleV: number;
+  soleAngle: number;
+  soleBase: number;
+  /** Composed: the knee pole's weight of the foot heading, approaching 1 for a plant or a planner step, 0 following the request. */
+  poleW: number;
+  poleWV: number;
+  /** Plan 08 composed: the share of the clip foot angle the foot keeps (a planner step lands flat, not on the clip's toes), and its rate. */
+  soleW: number;
+  soleWV: number;
+  /** Plan 08 composed: times this foot's motion was reseeded from the achieved foot (a new owner, even of the same kind). */
+  seeds: number;
+  /** Plan 08 composed: substeps planned since the last reseed. */
+  ownN: number;
+  /** Plan 08 composed: the substep this carried step took over: its target is the old owner's, the path starts on the next. */
+  carryFirst: boolean;
+  /** Plan 08 composed: what the offset took up of a request seam or jump this substep (coordinates, not foot motion). */
+  seamOffset: Vec3;
+  /** Plan 08 composed: the request's velocity of the substep before this one. */
+  requestWasV: Vec3;
+  /** Plan 08 composed: this step took over the old owner's path of a held leg: no reseed, the leg's departure stays as it is. */
+  carried: boolean;
+  /** Plan 08: planner step horizontal target velocity and acceleration (world), height-arc offset and its rate. */
+  stepV: Vec3;
+  stepA: Vec3;
+  /** Plan 08: the step target's horizontal motion of its last update (m/s, world): `stepV` is already 0 on arrival. */
+  moveV: Vec3;
+  /** Plan 08: time left of an arrival after the step's own time ran out (s). */
+  lateS: number;
+  /** Composed: the leg's candidate in the last pose (0 primary; anything else is a clearance departure). */
+  variant: number;
+  liftO: number;
+  liftV: number;
+  /** Plan 08: this substep's request and its velocity (world); achieved ankle velocity of the last pose (m/s). */
+  lastRequest: Vec3 | null;
+  requestV: Vec3;
+  ankleV: Vec3;
+  /** Composed: the leg solve's request behind the achieved ankle (a request past the soft reach is not the ankle): a new owner starts here. */
+  solvedW: Vec3;
   /** Settle step taken since the body became still (cleared when it moves). */
   settled: boolean;
   /** The current step drags along the turf (no clearance): a reach release while the other foot is in the air. */
@@ -208,6 +293,13 @@ export interface FootPlan {
   lastStep: ArmSide | null;
   /** The last supported substep was in the clip regime (the next reactive substep is a clip-to-procedural crossing). */
   clipLast: boolean;
+  /** Plan 08: the planner holds the legs while the clip still plays (braking: profile compose). */
+  brakeHeld: boolean;
+  /** Plan 08: the planner holds the legs against a playing clip; they just came back and the clip phase should rejoin the feet. */
+  legsHeld: boolean;
+  /** Plan 08 composed: the support state the last request was built on. */
+  composition?: string;
+  clipBack: boolean;
   initialized: boolean;
   /** Substep of the last plan (s): coverage accumulation in observeFeet. */
   dtS: number;
@@ -272,6 +364,32 @@ function newFoot(): FootState {
     stepM: 0,
     why: null,
     offset: v3(),
+    offsetV: v3(),
+    soleO: 0,
+    soleV: 0,
+    soleAngle: 0,
+    soleBase: 0,
+    poleW: 1,
+    poleWV: 0,
+    soleW: 1,
+    soleWV: 0,
+    seeds: 0,
+    ownN: 0,
+    carried: false,
+    carryFirst: false,
+    seamOffset: v3(),
+    requestWasV: v3(),
+    stepV: v3(),
+    stepA: v3(),
+    moveV: v3(),
+    lateS: 0,
+    variant: 0,
+    liftO: 0,
+    liftV: 0,
+    lastRequest: null,
+    requestV: v3(),
+    ankleV: v3(),
+    solvedW: v3(),
     settled: false,
     drag: false,
     clipSwingP: null,
@@ -306,6 +424,9 @@ export function newFootPlan(profile: FootworkProfile, R: RagdollProfile): FootPl
     reachM: plantReachM(R, profile.plantTolM),
     lastStep: null,
     clipLast: false,
+    brakeHeld: false,
+    legsHeld: false,
+    clipBack: false,
     initialized: false,
     dtS: 0,
     stats: {
@@ -358,6 +479,10 @@ export interface FootPlanInput {
   /** Body lateral axis sign (world right = +1 side), for the no-crossing rule: sideSign(s) * dot(p, right). */
   rightW: Vec3;
   sideSign: Record<ArmSide, number>;
+  /** Plan 08: filtered braking blend of the support (0..1; 0 without a braking stance). */
+  brakeB?: number;
+  /** Plan 08: contact mode: the feet follow the actual movement, the clip (still fading) has no say. */
+  contactHold?: boolean;
 }
 
 /** Contact feature (world) of a planted foot at its roll fraction. */
@@ -397,11 +522,206 @@ function failProposal(plan: FootPlan, f: FootState, why: FootReason, t: number, 
   f.anchorW = null;
 }
 
-function startFollow(f: FootState, request: Vec3): void {
+function startFollow(plan: FootPlan, f: FootState, request: Vec3): void {
   f.mode = f.mode === 'airborne' ? 'airborne' : 'swing';
   f.source = 'follow';
-  f.offset = sub(f.target, request);
+  seedFollow(plan, f, request);
   f.dest = null;
+}
+
+/** Faster than any limb: the request itself jumped (its source changed), so it has no velocity to inherit. */
+const REQUEST_JUMP_MPS = 15;
+
+/** Plan 08: the largest velocity change of one substep a foot takes joining the request (m/s of the bounded recovery above rejoinMps). */
+const HANDOVER_M = 0.008;
+
+/** Composed: a leg held off its target by another body (a clearance candidate, or pushed off it): it is mid-correction. */
+const heldOff = (plan: FootPlan, f: FootState): boolean => f.ownN > 0 && (f.variant !== 0 || dist(f.solvedW, f.target) > plan.profile.plantTolM);
+
+/**
+ * Composed: an owner that may hand its foot on. A held leg is mid-correction, and an owner of one substep has shown only the motion
+ * it took over: a handover there is not from anything the owner has established. Where the foot has a choice it keeps its owner.
+ */
+const handsOn = (plan: FootPlan, f: FootState): boolean => !heldOff(plan, f) && f.ownN > 1;
+
+/** Composed: following the request now keeps the foot's motion within the bounded recovery and the transition limit. */
+function canFollow(plan: FootPlan, f: FootState): boolean {
+  const rv = len(f.requestV) > REQUEST_JUMP_MPS ? v3() : f.requestV;
+  const v = f.mode !== 'planted' && f.source === 'step' ? f.stepV : f.ankleV;
+  return (len(sub(v, rv)) - plan.profile.rejoinMps) * plan.dtS <= HANDOVER_M;
+}
+
+/** A trial copy of one foot's plan: nothing run on it reaches the live plan. */
+function trialOf(plan: FootPlan, s: ArmSide): FootPlan {
+  return { ...plan, stats: { ...plan.stats }, feet: { ...plan.feet, [s]: structuredClone(plan.feet[s]) } };
+}
+
+/** Composed: where following the request puts this foot this substep, from its offset or (seed) newly from the achieved foot. */
+function followNext(plan: FootPlan, s: ArmSide, inp: FootPlanInput, seed: boolean): Vec3 {
+  const t = trialOf(plan, s);
+  const f = t.feet[s];
+  if (seed) seedFollow(t, f, inp.request[s]);
+  decayOffset(t, f, inp.dt);
+  return add(inp.request[s], f.offset);
+}
+
+/** Composed: a step's own path and the request's agree on this substep's foot within one handover. */
+function joinsRequest(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
+  if (FOOT_DEBUG.noJoinCheck) return true;
+  const t = trialOf(plan, s);
+  advanceStep(t, s, inp);
+  return dist(t.feet[s].target, followNext(plan, s, inp, true)) <= HANDOVER_M;
+}
+
+/**
+ * Composed: an airborne foot the request is moving too differently from keeps its own motion on a receding minimum-jerk path
+ * toward the request, within the step's caps, until it can follow (no plant, no destination: there is no ground to land on).
+ */
+function chase(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
+  const f = plan.feet[s];
+  const dt = inp.dt;
+  const T = plan.profile.compose!.landWithinS;
+  const q = inp.request[s];
+  const prev = f.target;
+  const x = quinticStep(prev.x, f.stepV.x, f.stepA.x, q.x, T, dt);
+  const y = quinticStep(prev.y, f.stepV.y, f.stepA.y, q.y, T, dt);
+  const z = quinticStep(prev.z, f.stepV.z, f.stepA.z, q.z, T, dt);
+  publishStep(plan, f, inp, v3(x.p, y.p, z.p), v3(x.v, y.v, z.v), v3(x.a, y.a, z.a));
+}
+
+/**
+ * Composed: a step owner's next target within the step's speed and lift caps, recorded as published. Where a cap takes over the
+ * stored motion is the accepted one, so the next path does not start from motion that never happened.
+ */
+function publishStep(plan: FootPlan, f: FootState, inp: FootPlanInput, next: Vec3, v: Vec3, a: Vec3): void {
+  const P = plan.profile;
+  const dt = inp.dt;
+  const prev = f.target;
+  const vCap = P.swing.maxSpeedMps + P.swing.travelSpeedK * len(hz(inp.vel));
+  const wide = v3(next.x - prev.x, 0, next.z - prev.z);
+  const m = len(wide);
+  const flat = m > vCap * dt;
+  const move = flat ? scale3(wide, (vCap * dt) / m) : wide;
+  const cap = P.swing.maxLiftRateMps * dt;
+  const dy = clamp(next.y - prev.y, -cap, cap);
+  const level = Math.abs(next.y - prev.y) > cap;
+  f.target = v3(prev.x + move.x, prev.y + dy, prev.z + move.z);
+  if (dt <= 0) return;
+  f.stepV = v3(flat ? move.x / dt : v.x, level ? dy / dt : v.y, flat ? move.z / dt : v.z);
+  f.stepA = v3(flat ? 0 : a.x, level ? 0 : a.y, flat ? 0 : a.z);
+  f.speedMps = len(move) / dt;
+  f.liftRateMps = Math.abs(dy) / dt;
+  plan.stats.stepCapMarginMps = Math.min(plan.stats.stepCapMarginMps, vCap - f.speedMps);
+  plan.stats.liftRateMps = Math.max(plan.stats.liftRateMps, f.liftRateMps);
+}
+
+/** The offset of a foot joining the request: composed, from the achieved ankle and its velocity; else from the target. */
+function seedFollow(plan: FootPlan, f: FootState, request: Vec3): void {
+  if (plan.profile.compose) {
+    // against the request of the achieved ankle's substep: this substep's decay then advances both to the present
+    const rv = len(f.requestV) > REQUEST_JUMP_MPS ? v3() : f.requestV;
+    f.target = { ...f.solvedW };
+    f.offset = sub(f.solvedW, addScaled(request, rv, -plan.dtS));
+    f.offsetV = sub(f.ankleV, rv);
+    seedSole(f);
+  } else f.offset = sub(f.target, request);
+}
+
+/** The foot keeps its achieved angle when its owner changes (the shoe of a rolled plant stays clear of the floor). */
+function seedSole(f: FootState): void {
+  f.soleO = wrapPi(f.soleAngle - f.soleBase);
+  f.soleV = 0;
+  f.seeds++;
+  f.ownN = 0;
+  f.carried = false;
+  f.carryFirst = false;
+}
+
+/** The composed foot angle offset and pole weight of this substep on every request (critically damped). */
+function finishSole(plan: FootPlan, out: Record<ArmSide, FootRequest>, dt: number): void {
+  const C = plan.profile.compose;
+  if (!C) return;
+  for (const s of SIDES) {
+    const f = plan.feet[s];
+    const w = C.followRadPerS;
+    f.ownN++;
+    f.soleV += (-w * w * f.soleO - 2 * w * f.soleV) * dt;
+    f.soleO += f.soleV * dt;
+    const r = out[s];
+    r.soleO = f.soleO;
+    f.poleWV += (w * w * ((r.kind === 'offset' ? 0 : 1) - f.poleW) - 2 * w * f.poleWV) * dt;
+    f.poleW = clamp(f.poleW + f.poleWV * dt, 0, 1);
+    r.poleW = f.poleW;
+    f.soleWV += (w * w * ((r.kind === 'target' ? 0 : 1) - f.soleW) - 2 * w * f.soleWV) * dt;
+    f.soleW = clamp(f.soleW + f.soleWV * dt, 0, 1);
+    r.soleW = f.soleW;
+    r.seed = f.seeds;
+    f.carried &&= r.kind === 'target';
+    r.carried = f.carried;
+    if (r.kind === 'offset') r.headingRad = f.headingRad;
+  }
+}
+
+/**
+ * Composed: this substep's ordinary requests and their velocity, on every foot, whoever owns it. `composition` is the support
+ * state the request was built on: the live plan passes it, a request of the old composition (the audit's) does not.
+ */
+function takeRequests(plan: FootPlan, inp: FootPlanInput, composition?: string): void {
+  if (!plan.profile.compose) return;
+  // the request is built differently from here (support lost or regained, falling)
+  const seam = composition !== undefined && plan.composition !== undefined && composition !== plan.composition;
+  if (composition !== undefined) plan.composition = composition;
+  for (const s of SIDES) {
+    const f = plan.feet[s];
+    const q = inp.request[s];
+    const was = f.requestV;
+    f.requestWasV = was;
+    f.seamOffset = v3();
+    f.requestV = f.lastRequest && inp.dt > 0 ? scale3(sub(q, f.lastRequest), 1 / inp.dt) : v3();
+    // the request itself jumped (its source changed): a following foot carries on as it was going, the offset takes it up (a leg
+    // held off its target has none of the request's motion to carry on: it stays where it is)
+    if (f.lastRequest && (seam || len(f.requestV) > REQUEST_JUMP_MPS)) {
+      if (f.source === 'follow') {
+        f.seamOffset = sub(heldOff(plan, f) ? f.lastRequest : addScaled(f.lastRequest, was, inp.dt), q);
+        f.offset = add(f.offset, f.seamOffset);
+      }
+      f.requestV = was;
+    }
+    f.lastRequest = q;
+  }
+}
+
+/**
+ * Plan 08: a step taking over a leg held off its target (a planner seed from the achieved foot would take the departure away at
+ * once, with the foot jammed against another body) goes on from the old owner's path: this substep's target is the old owner's
+ * and the leg keeps its departure, so nothing changes at the handover; the path runs on from there at the motion it had. The
+ * step owns this update, so its caps hold from here: where the old path was moving faster the target falls behind it by the
+ * difference. A cap that took over leaves the accepted motion for the path to go on from.
+ */
+function carryPath(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
+  const f = plan.feet[s];
+  f.stepV = v3();
+  f.stepA = v3();
+  if (!f.wait) publishStep(plan, f, inp, followNext(plan, s, inp, false), add(f.requestWasV, f.offsetV), v3());
+  f.moveV = hz(f.stepV);
+  f.lateS = 0;
+  f.liftO = 0;
+  f.liftV = 0;
+  f.carried = true;
+  f.carryFirst = true;
+}
+
+/** A planner step of a composed profile starts from the achieved ankle and its velocity. */
+function seedStep(plan: FootPlan, f: FootState): void {
+  if (!plan.profile.compose) return;
+  f.target = { ...f.solvedW };
+  f.stepV = { ...f.ankleV };
+  f.stepA = v3();
+  f.moveV = hz(f.ankleV);
+  f.lateS = 0;
+  f.liftO = 0;
+  f.liftV = 0;
+  seedSole(f);
 }
 
 /**
@@ -414,11 +734,15 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
   const bodyHeading = headingOf(qRot(inp.core.q, v3(0, 0, 1)));
   const speed = len(hz(inp.vel));
   plan.dtS = inp.dt;
+  takeRequests(plan, inp, `${inp.supported}:${inp.falling}`);
   // ---------------- no support: no anchors, no new plants (airborne feet follow the request with a decaying offset)
   if (!inp.supported || inp.ragdoll) {
     const why: FootReason = inp.ragdoll ? 'ragdoll' : inp.falling ? 'falling' : 'supportLost';
     for (const s of SIDES) {
       const f = plan.feet[s];
+      // plan 08: losing support takes a composed step's destination, not its path; a leg held off its target keeps its path too
+      const onPath = !!P.compose && f.mode === 'swing' && !f.wait && !f.rejoin && f.source === 'step';
+      const held = !!P.compose && f.mode === 'swing' && !f.wait && !f.rejoin && f.source === 'follow' && heldOff(plan, f);
       f.rejoin = false;
       f.eligible = false;
       f.wait = false;
@@ -428,31 +752,82 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
         release(plan, f, why, inp.t, ev, s);
         ev.push({ type: 'footSwing', side: s, data: { mode: 'airborne', reason: why } });
         f.mode = 'airborne';
-        f.source = 'follow';
-        f.offset = sub(f.target, inp.request[s]);
         f.dest = null;
+        // (a step out of time has arrived on paper: its motion is the one it last moved at)
+        if (onPath && f.elapsedS >= f.durS) f.stepV = v3(f.moveV.x, f.stepV.y, f.moveV.z);
+        if (held) {
+          carryPath(plan, s, inp);
+          f.source = 'step';
+        } else if (!onPath) {
+          if (P.compose && !canFollow(plan, f)) {
+            f.source = 'step';
+            seedStep(plan, f);
+          } else {
+            f.source = 'follow';
+            seedFollow(plan, f, inp.request[s]);
+          }
+        }
       }
-      decayOffset(f, P, inp.dt);
+      if (P.compose && f.source === 'step') {
+        if (canFollow(plan, f) && handsOn(plan, f)) {
+          f.source = 'follow';
+          seedFollow(plan, f, inp.request[s]);
+        } else {
+          if (!f.carryFirst) chase(plan, s, inp);
+          f.carryFirst = false;
+          out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
+          continue;
+        }
+      }
+      decayOffset(plan, f, inp.dt);
       f.target = add(inp.request[s], f.offset);
       out[s] = { kind: 'offset', offsetW: f.offset };
     }
+    finishSole(plan, out, inp.dt);
     plan.clipLast = false;
     return out;
   }
-  const clip = inp.clip;
+  // plan 08: while braking the planner takes the legs at a held foot and keeps them until the brake lets go (the crossing
+  // below runs from there, with the clip still fading: a swing continues as a planner step that lands ahead of the hips)
+  const C = P.compose;
+  if (C) {
+    const b = inp.brakeB ?? 0;
+    // the planner takes the legs only if the foot in the air can land, within the lift rate, before the held foot runs out
+    // of reach: otherwise the held foot is released with the other still up, and the two legs land together
+    const handsOver = (s: ArmSide): boolean => {
+      const f = plan.feet[s];
+      const o = plan.feet[other(s)];
+      if (f.mode !== 'planted' || f.tentative) return false;
+      return o.mode === 'planted' || descentS(plan, o, inp) <= reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM);
+    };
+    if (!inp.clip) plan.brakeHeld = false;
+    else if (plan.brakeHeld) plan.brakeHeld = b >= C.brakeExitB;
+    else plan.brakeHeld = b >= C.brakeEnterB && speed <= C.brakeEnterMps && SIDES.some(handsOver);
+  }
+  const clip = plan.brakeHeld || inp.contactHold ? null : inp.clip;
+  // plan 08: the planner held the legs against a playing clip: on their return the clip takes the phase of the achieved feet
+  if (C && clip) {
+    plan.clipBack ||= plan.legsHeld;
+    plan.legsHeld = false;
+  } else if (C && inp.clip) plan.legsHeld = true;
   for (const s of SIDES) {
     const f = plan.feet[s];
     if (f.rejoin) {
-      // a plant released after the last pose continues from the achieved ankle
+      // a plant released after the last pose continues from the achieved ankle: it follows if the request is moving near enough
+      // to its motion, else it steps
       f.rejoin = false;
-      f.source = 'follow';
-      f.offset = sub(f.target, inp.request[s]);
+      if (C && !canFollow(plan, f)) startStep(plan, s, inp, 'step', ev);
+      else {
+        f.source = 'follow';
+        seedFollow(plan, f, inp.request[s]);
+      }
     }
     // support regained: an airborne foot does not snap down; it swings to its home (reactive) or follows the clip
     if (f.mode === 'airborne') {
+      const onPath = !!C && f.source === 'step';
       f.mode = 'swing';
-      if (clip) startFollow(f, inp.request[s]);
-      else startStep(plan, s, inp, 'settle', ev);
+      if (clip && (!C || canFollow(plan, f))) startFollow(plan, f, inp.request[s]);
+      else startStep(plan, s, inp, 'settle', ev, false, onPath);
       ev.push({ type: 'footSwing', side: s, data: { mode: 'swing', source: f.source, reason: 'supportRegained' } });
     }
   }
@@ -468,23 +843,38 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       f.released = false;
       if (f.mode === 'planted') {
         if (!clip.stance[s]) {
-          release(plan, f, 'liftoff', inp.t, ev, s);
-          f.mode = 'swing';
-          startFollow(f, inp.request[s]);
+          // plan 08: while the clip comes in a held foot stays until the other foot is down or it runs out of reach
+          const o = plan.feet[other(s)];
+          const reachable = dist(add(f.heelW!, v3(0, inp.soleM, 0)), inp.hips[s]) <= plan.reachM;
+          const holds = !!C && !f.tentative && reachable && ((clip.weight < 1 && !(o.mode === 'planted' && !o.tentative)) || f.solves * inp.dt < C.landWithinS);
+          if (!holds) {
+            release(plan, f, 'liftoff', inp.t, ev, s);
+            f.mode = 'swing';
+            // composed: a request already running away from the foot is not followed from rest: the foot steps
+            if (C && !canFollow(plan, f)) startStep(plan, s, inp, 'liftoff', ev);
+            else startFollow(plan, f, inp.request[s]);
+          }
         } else if (c) {
           f.rollF = clamp(c.rollF, 0, 1);
           f.edgeX = 0;
         }
       } else {
-        if (f.source === 'step') startFollow(f, inp.request[s]);
+        // plan 08: while the clip comes in a planner step lands if it is near touchdown (the clip phase was chosen for that
+        // landing) or too far from the request to recover before its stance; a step the request is moving too differently
+        // from always stays on its path (following would stop it dead)
+        const landing = !!C && clip.weight < 1 && (f.durS - f.elapsedS <= C.landWithinS || dist(f.target, inp.request[s]) > P.rejoinMps * C.stepAheadS);
+        if (f.source === 'step' && !(C && (landing || !canFollow(plan, f) || !handsOn(plan, f) || !joinsRequest(plan, s, inp)))) startFollow(plan, f, inp.request[s]);
+        if (f.source === 'step') continue;
         // touchdown proposal: inside the stance interval, the clip contact made, the shoe on the ground where it is now
         // (a fresh achieved solve, not the failed proposal's), and the anchor reachable from the current hip with the
         // reach margin; the solve of this substep confirms it or not (observeFeet)
-        if (clip.stance[s] && c && c.weight >= P.clipPlantWeight && len(f.offset) <= P.plantTolM && !f.stale && f.gapM <= P.plantTolM) {
+        if (clip.stance[s] && c && c.weight >= P.clipPlantWeight && len(f.offset) <= (C ? C.landOffsetM : P.plantTolM) && !f.stale && f.gapM <= P.plantTolM) {
           const rollF = clamp(c.rollF, 0, 1);
-          const feat = add(f.ankleW, qRot(f.footQ, v3(0, -inp.soleM, c.toeZ * rollF)));
-          const ankleAt = add(f.ankleW, v3(0, inp.groundY - feat.y, 0));
-          if (FOOT_DEBUG.noReachCheck || dist(ankleAt, inp.hips[s]) <= plan.reachM) {
+          // composed: where the moving foot is this substep, not where the last solve left it
+          const here = C ? addScaled(f.ankleW, f.ankleV, inp.dt) : f.ankleW;
+          const feat = add(here, qRot(f.footQ, v3(0, -inp.soleM, c.toeZ * rollF)));
+          const ankleAt = add(here, v3(0, inp.groundY - feat.y, 0));
+          if ((FOOT_DEBUG.noReachCheck || dist(ankleAt, inp.hips[s]) <= plan.reachM) && (!C || dist(here, followNext(plan, s, inp, false)) <= HANDOVER_M)) {
             f.featureW = feat;
             proposePlant(plan, f, inp, clip.headingRad, rollF, c.toeZ);
           }
@@ -510,10 +900,12 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
         if (crossing && f.mode === 'planted' && !f.tentative) f.inherited = true;
         continue;
       }
-      if (crossing) {
+      const cross = crossing;
+      if (cross) {
         f.wait = true;
         f.inherited = true;
-        f.headingRad = headingOf(norm(hz(qRot(f.footQ, v3(0, 0, 1))), v3(0, 0, 1)));
+        // plan 08: the shoe of a high swing can point up or down: its projection is no heading, the body's is
+        f.headingRad = C ? bodyHeading : headingOf(norm(hz(qRot(f.footQ, v3(0, 0, 1))), v3(0, 0, 1)));
       }
       if (!f.wait) {
         // outside the crossing a following foot (initialization, a failed touchdown, a released plant) steps now; a plant
@@ -527,10 +919,12 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       // current hip); else, crossing in the air, its own clip swing continues as a planner step (no new lift); else it
       // waits for its turn (one ordinary step at a time, below)
       const ankleAt = add(f.ankleW, v3(0, inp.groundY - f.featureW.y, 0));
-      if (f.gapM <= P.plantTolM && !f.stale && dist(ankleAt, inp.hips[s]) <= plan.reachM - P.reachMarginM) {
+      // composed: a shoe moving more than the plant tolerance a substep cannot stay on its anchor: no proposal from it
+      const settled = !C || len(hz(f.ankleV)) * inp.dt <= P.plantTolM;
+      if (f.gapM <= P.plantTolM && !f.stale && settled && dist(ankleAt, inp.hips[s]) <= plan.reachM - P.reachMarginM) {
         f.wait = false;
         proposePlant(plan, f, inp, headingOf(norm(hz(qRot(f.footQ, v3(0, 0, 1))), v3(0, 0, 1))), 0, inp.toeM);
-      } else if (crossing && f.gapM > P.plantTolM) {
+      } else if (cross && (f.gapM > P.plantTolM || !settled)) {
         f.wait = false;
         continueSwing(plan, s, inp, ev);
       }
@@ -556,7 +950,13 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
         startStep(plan, s, inp, why, ev, o.mode !== 'planted');
         continue;
       }
-      if (err > P.stepTriggerM) want.push({ s, why: 'step', urgency: err - P.stepTriggerM });
+      // plan 08: a foot ahead of its home along the travel is catching the body: it stays until the body has passed it
+      const catching = !!C && speed > P.settleSpeedMps && dot(hz(sub(ankleAt, inp.home[s])), hz(inp.vel)) > 0;
+      const sideErr = catching ? Math.abs(dot(hz(sub(ankleAt, inp.home[s])), v3(-inp.vel.z / speed, 0, inp.vel.x / speed))) : err;
+      // (a fresh plant is held like one under a clip: it is not stepped from the moment it lands)
+      const leaving = !!C && speed > P.settleSpeedMps && f.solves * inp.dt >= C.landWithinS && reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM) < C.stepAheadS;
+      if (sideErr > P.stepTriggerM) want.push({ s, why: 'step', urgency: sideErr - P.stepTriggerM });
+      else if (leaving) want.push({ s, why: 'reach', urgency: 0.5 * (C!.stepAheadS - reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM)) });
       else if (yawErr > rad(P.yawTriggerDeg)) want.push({ s, why: 'yaw', urgency: yawErr - rad(P.yawTriggerDeg) });
       else if (reach > plan.reachM - P.reachMarginM) want.push({ s, why: 'reach', urgency: reach - plan.reachM + P.reachMarginM });
       else if (still && !f.settled && err > P.settleTriggerM) want.push({ s, why: 'settle', urgency: (err - P.settleTriggerM) * 0.1 });
@@ -571,8 +971,8 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       const ready = waiting.filter((s) => held(other(s)));
       const pickS = ready.length ? ready[0] : waiting.length === 2 ? (far('right') > far('left') ? 'right' : 'left') : null;
       if (pickS) {
-        plan.feet[pickS].wait = false;
         startStep(plan, pickS, inp, 'step', ev);
+        plan.feet[pickS].wait = false;
       }
     } else if (swinging.length === 0 && held('left') && held('right') && want.length) {
       // one foot at a time: the most urgent, then the foot that did not step last (alternation). Sideways travel is a
@@ -607,19 +1007,26 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       f.liftRateMps = 0;
       f.followMps = 0;
       f.offset = sub(f.target, inp.request[s]);
+      f.offsetV = v3();
       out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
       continue;
     }
     if (f.source === 'follow') {
       const o0 = f.offset;
-      decayOffset(f, P, inp.dt);
+      decayOffset(plan, f, inp.dt);
       const prev = f.target;
       f.target = add(inp.request[s], f.offset);
       f.speedMps = inp.dt > 0 ? len(hz(sub(f.offset, o0))) / inp.dt : 0;
       f.liftRateMps = inp.dt > 0 ? Math.abs(f.offset.y - o0.y) / inp.dt : 0;
       f.followMps = inp.dt > 0 ? len(hz(sub(f.target, prev))) / inp.dt : 0;
-      plan.stats.offsetDecayMps = Math.max(plan.stats.offsetDecayMps, inp.dt > 0 ? len(sub(f.offset, o0)) / inp.dt : 0);
+      if (!C) plan.stats.offsetDecayMps = Math.max(plan.stats.offsetDecayMps, inp.dt > 0 ? len(sub(f.offset, o0)) / inp.dt : 0);
       out[s] = { kind: 'offset', offsetW: f.offset };
+      continue;
+    }
+    if (f.carryFirst) {
+      f.carryFirst = false;
+      f.elapsedS += inp.dt;
+      out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
       continue;
     }
     if (advanceStep(plan, s, inp)) out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX };
@@ -631,10 +1038,74 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     const c = clip?.contact[s];
     f.eligible = clip ? !!(clip.stance[s] && c && c.weight >= P.clipPlantWeight) : !(f.mode === 'swing' && f.source === 'step');
   }
+  finishSole(plan, out, inp.dt);
   return out;
 }
 
-function decayOffset(f: FootState, P: FootworkProfile, dt: number): void {
+/**
+ * Plan 08 audit: what each foot's owner of the last substep would request now, had nothing changed hands. Runs on a copy of
+ * the plan taken after that substep's observation (the live plan is never touched): the same request bookkeeping as
+ * `planFeet`, then a plant stays on its anchor, a waiting foot on its held target, a following foot takes one more offset
+ * update and a step one more trajectory update. A plant the last observation ended has no anchor to continue on: what
+ * remains of that owner is the achieved foot and its motion.
+ *
+ * `stopped` is the one thing a step's update does that no owner could show: with no time left, `quinticStep` arrives in
+ * one substep and its velocity is dropped. A retimed step runs out of time at the speed cap, so its request stands still
+ * the substep after moving 5 cm. That is the old path's own snap, not a composition to compare with: `stopped` is where
+ * the step's last target motion was taking it, read from the plan and not from the achieved pose. A step that keeps its
+ * speed or gathers it has not stopped: its path is the old composition as it is.
+ */
+export function continueOwners(copy: FootPlan, inp: FootPlanInput, was: Partial<Record<ArmSide, FootRequest>>): { requests: Record<ArmSide, FootRequest>; stopped: Partial<Record<ArmSide, Vec3>>; tookUp: Partial<Record<ArmSide, boolean>> } {
+  const out = {} as Record<ArmSide, FootRequest>;
+  const stopped: Partial<Record<ArmSide, Vec3>> = {};
+  const tookUp: Partial<Record<ArmSide, boolean>> = {};
+  copy.dtS = inp.dt;
+  for (const s of SIDES) {
+    const last = copy.feet[s].lastRequest;
+    tookUp[s] = !!last && inp.dt > 0 && dist(inp.request[s], last) / inp.dt > REQUEST_JUMP_MPS;
+  }
+  takeRequests(copy, inp);
+  for (const s of SIDES) {
+    const f = copy.feet[s];
+    const q = was[s];
+    if (f.mode === 'planted' && q?.kind === 'plant') out[s] = q;
+    else if (f.rejoin) out[s] = { kind: 'target', ankleW: addScaled(f.solvedW, f.ankleV, inp.dt), headingRad: f.headingRad };
+    else if (f.mode === 'airborne' && f.source === 'step') {
+      chase(copy, s, inp);
+      out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
+    } else if (f.mode === 'swing' && f.source === 'step') {
+      const from = f.target;
+      const v = f.moveV;
+      advanceStep(copy, s, inp);
+      if (f.elapsedS >= f.durS && (len(v) - len(f.moveV)) * inp.dt >= STOP_M) stopped[s] = addScaled(from, v, inp.dt);
+      out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
+    } else if (f.mode === 'swing' && f.wait) out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
+    else {
+      decayOffset(copy, f, inp.dt);
+      out[s] = { kind: 'offset', offsetW: f.offset };
+    }
+  }
+  finishSole(copy, out, inp.dt);
+  return { requests: out, stopped, tookUp };
+}
+
+/** The audit's smallest loss of a step's substep motion that counts as stopping (m). */
+const STOP_M = 1e-3;
+
+function decayOffset(plan: FootPlan, f: FootState, dt: number): void {
+  const P = plan.profile;
+  const C = P.compose;
+  if (C) {
+    // critically damped toward the request from the seeded offset and rate (semi-implicit; dt 0 holds), at most rejoinMps:
+    // the stored rate is the accepted one
+    const w = C.followRadPerS;
+    const v = addScaled(f.offsetV, add(scale3(f.offset, -w * w), scale3(f.offsetV, -2 * w)), dt);
+    const m = len(v);
+    f.offsetV = m > P.rejoinMps ? scale3(v, P.rejoinMps / m) : v;
+    f.offset = addScaled(f.offset, f.offsetV, dt);
+    plan.stats.offsetDecayMps = Math.max(plan.stats.offsetDecayMps, len(f.offsetV));
+    return;
+  }
   const L = len(f.offset);
   if (L <= 0) return;
   const step = P.rejoinMps * dt;
@@ -694,7 +1165,7 @@ function destination(plan: FootPlan, s: ArmSide, inp: FootPlanInput, remainS: nu
 const scale3 = (a: Vec3, k: number): Vec3 => v3(a.x * k, a.y * k, a.z * k);
 const other = (s: ArmSide): ArmSide => (s === 'left' ? 'right' : 'left');
 
-function startStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput, why: FootReason, ev: FootEvent[], drag = false): void {
+function startStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput, why: FootReason, ev: FootEvent[], drag = false, onPath = false): void {
   const P = plan.profile;
   const f = plan.feet[s];
   f.mode = 'swing';
@@ -707,6 +1178,12 @@ function startStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput, why: FootReas
   f.p0 = 0;
   f.liftExcessM = 0;
   f.short = false;
+  // plan 08: a foot already on a planner path keeps it; only its destination is new
+  if (!onPath) seedStep(plan, f);
+  if (P.compose) {
+    f.liftO = f.target.y - (inp.groundY + inp.soleM);
+    f.liftV = onPath ? f.stepV.y : f.ankleV.y;
+  }
   const d0 = destination(plan, s, inp, P.swing.minS);
   const L = len(hz(sub(d0, f.target)));
   const vCap = P.swing.maxSpeedMps + P.swing.travelSpeedK * len(hz(inp.vel));
@@ -736,14 +1213,19 @@ function continueSwing(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootE
   f.drag = false;
   f.wait = false;
   f.short = false;
+  if (P.compose && heldOff(plan, f)) carryPath(plan, s, inp);
+  else seedStep(plan, f);
   const vCap = P.swing.maxSpeedMps + P.swing.travelSpeedK * len(hz(inp.vel));
   // remaining time: what is left to do, the remaining distance to the (touchdown-time) destination and the descent from
   // the current height within the lift rate (smooth: peak rate 1.5 x mean), not a nominal fraction of a new step
   const h0 = Math.max(0, f.target.y - (inp.groundY + inp.soleM));
   let remS = P.swing.minS * (1 - p0);
+  // composed: it keeps the time its descent takes
+  const descent = P.compose ? descentS(plan, f, inp) : (1.5 * h0) / P.swing.maxLiftRateMps;
+  const longest = P.compose ? Math.max(P.swing.maxS, descent) : P.swing.maxS;
   for (let i = 0; i < 3; i++) {
     const L = len(hz(sub(destination(plan, s, inp, remS), f.target)));
-    remS = clamp(Math.max(1.6 * (L / vCap), (1.5 * h0) / P.swing.maxLiftRateMps), inp.dt, P.swing.maxS);
+    remS = clamp(Math.max(1.6 * (L / vCap), descent), inp.dt, longest);
   }
   f.durS = remS / (1 - p0);
   f.elapsedS = p0 * f.durS;
@@ -752,6 +1234,7 @@ function continueSwing(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootE
   f.stepM = len(hz(sub(f.dest, f.target)));
   f.destHeadingRad = headingOf(qRot(inp.core.q, v3(0, 0, 1)));
   f.liftExcessM = f.target.y - (inp.groundY + inp.soleM) - stepClearance(P, f) * Math.sin(Math.PI * p0) ** 2;
+  if (P.compose) f.liftExcessM = 0; // the descent is a minimum-jerk path from the achieved height and rate (advanceStep)
   plan.lastStep = s;
   ev.push({ type: 'footSwing', side: s, data: { mode: 'swing', source: 'step', reason: 'continue', durS: round(remS, 4), stepM: round(f.stepM, 4), p0: round(p0, 4) } });
 }
@@ -777,10 +1260,18 @@ function fitStance(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
   if (p >= 1 || !(left < remain)) return;
   // not below a quarter of the shortest nominal step (no vanishing shuffles): a window shorter than that releases the
   // stance foot (its hard reach release) while this one finishes
-  const rem = Math.min(remain, Math.max(left, 0.25 * plan.profile.swing.minS, inp.dt));
+  // plan 08: a foot descending from a clip swing keeps the time its descent needs
+  const C = plan.profile.compose;
+  const descent = C && f.why === 'continue' ? descentS(plan, f, inp) : 0;
+  const rem = Math.min(remain, Math.max(left, 0.25 * plan.profile.swing.minS, inp.dt, descent));
   f.short = true;
   f.durS = rem / (1 - p);
   f.elapsedS = p * f.durS;
+}
+
+/** Composed: time a foot needs to come down from its height within the lift rate (a minimum-jerk descent peaks at 1.875 x its mean rate). */
+function descentS(plan: FootPlan, f: FootState, inp: FootPlanInput): number {
+  return (1.9 * Math.max(0, f.target.y - (inp.groundY + inp.soleM))) / plan.profile.swing.maxLiftRateMps;
 }
 
 /** Time (s) until a planted foot's anchor leaves the plant reach of a hip moving at `vel` (0: already out; Infinity: still). */
@@ -794,7 +1285,49 @@ function reachTimeLeft(plan: FootPlan, f: FootState, hip: Vec3, vel: Vec3, soleM
   return (b + Math.sqrt(b * b - vv * c)) / vv;
 }
 
+/**
+ * One substep along the quintic from (p, v, a) to the destination at rest in time T (the minimum-jerk path for those
+ * boundary conditions); the remaining time shorter than the substep arrives.
+ */
+function quinticStep(p: number, v: number, a: number, dest: number, T: number, dt: number): { p: number; v: number; a: number } {
+  if (T <= dt + 1e-9) return { p: dest, v: 0, a: 0 };
+  const D = dest - p;
+  const T2 = T * T;
+  const T3 = T2 * T;
+  const c3 = (20 * D - 12 * v * T - 3 * a * T2) / (2 * T3);
+  const c4 = (-30 * D + 16 * v * T + 3 * a * T2) / (2 * T3 * T);
+  const c5 = (12 * D - 6 * v * T - a * T2) / (2 * T3 * T2);
+  const t = dt;
+  return {
+    p: p + t * (v + t * (0.5 * a + t * (c3 + t * (c4 + t * c5)))),
+    v: v + t * (a + t * (3 * c3 + t * (4 * c4 + t * 5 * c5))),
+    a: a + t * (6 * c3 + t * (12 * c4 + t * 20 * c5)),
+  };
+}
+
 /** Advance a planner step one substep: retargeted destination, bounded horizontal and vertical target speeds. */
+/**
+ * A composed step touches down on the lowest sole corner of the achieved foot, where that corner is this substep: a foot
+ * short of its target (at the reach limit, tilted with the shin) does not jump to the flat footprint below the target.
+ */
+function landOnCorner(plan: FootPlan, f: FootState, inp: FootPlanInput): void {
+  const { he, centerFoot } = plan.shoe;
+  // the step's own path this substep: the achieved foot is on it (advanceStep)
+  const here = f.target;
+  let low = { x: 0, z: 0, y: Infinity, w: v3() };
+  for (const x of [-he.x, he.x])
+    for (const z of [centerFoot.z - he.z, centerFoot.z + he.z]) {
+      const w = add(here, qRot(f.footQ, v3(x, -inp.soleM, z)));
+      if (w.y < low.y) low = { x, z, y: w.y, w };
+    }
+  f.featureW = low.w;
+  const dir = dirOf(f.headingRad);
+  const lat = v3(dir.z, 0, -dir.x);
+  proposePlant(plan, f, inp, f.headingRad, low.z / inp.toeM, inp.toeM);
+  f.edgeX = low.x;
+  f.heelW = addScaled(f.heelW!, lat, -low.x);
+}
+
 function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
   const P = plan.profile;
   const f = plan.feet[s];
@@ -806,19 +1339,51 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
   fitStance(plan, s, inp);
   f.elapsedS += dt;
   const remainS = Math.max(0, f.durS - f.elapsedS);
-  f.dest = destination(plan, s, inp, remainS);
+  const C = P.compose;
+  // composed: the destination stops moving for the last stretch, so the path arrives at rest; a step whose time ran out away
+  // from it takes that stretch again (a replanned path with no time left has no bounded acceleration)
+  const arriving = !!C && f.dest !== null && (f.lateS > 0 || (remainS > 0 && remainS <= C.arriveS));
+  if (!arriving) {
+    f.dest = destination(plan, s, inp, remainS);
+    // plan 08: a step shortened to the other foot's stance lands where it has got to, it does not run back to the nearer point
+    const along = len(hz(inp.vel)) > 1e-6 ? dot(sub(prev, f.dest), norm(hz(inp.vel))) : 0;
+    if (C && f.short && len(hz(inp.vel)) >= P.settleSpeedMps && along > 0) f.dest = addScaled(f.dest, norm(hz(inp.vel)), along);
+    // a step held off its destination by another body lands where the leg has got to
+    if (C && remainS <= 0 && f.variant !== 0) f.dest = v3(f.ankleW.x, f.dest.y, f.ankleW.z);
+  }
+  if (C && remainS <= 0 && f.lateS <= 0 && len(hz(sub(f.dest!, prev))) >= 1e-3) f.lateS = C.arriveS;
+  const horizonS = remainS > 0 ? remainS + dt : Math.max(f.lateS, dt);
+  if (C) f.lateS = Math.max(0, f.lateS - dt);
   f.destHeadingRad = headingOf(qRot(inp.core.q, v3(0, 0, 1)));
   const p0 = f.durS > 0 ? clamp((f.elapsedS - dt) / f.durS, 0, 1) : 1;
   const p = f.durS > 0 ? clamp(f.elapsedS / f.durS, 0, 1) : 1;
   // horizontal: the remaining distance to the (retargeted) destination is covered along the remainder of a minimum-jerk
   // schedule in the step progress (the progress never restarts), capped in speed
   const mj = (x: number): number => x * x * x * (10 - 15 * x + 6 * x * x);
-  const rem = hz(sub(f.dest, prev));
+  const rem = hz(sub(f.dest!, prev));
   const rl = len(rem);
   const frac = p0 >= 1 || 1 - mj(p0) < 1e-12 ? 1 : (mj(p) - mj(p0)) / (1 - mj(p0));
   const vCap = P.swing.maxSpeedMps + P.swing.travelSpeedK * len(hz(inp.vel));
-  const step = Math.min(rl * frac, rl, vCap * dt);
-  const h = rl > 1e-12 ? addScaled(hz(prev), rem, step / rl) : hz(prev);
+  let step = Math.min(rl * frac, rl, vCap * dt);
+  let h = rl > 1e-12 ? addScaled(hz(prev), rem, step / rl) : hz(prev);
+  if (C) {
+    // minimum-jerk from the current position, velocity and acceleration to the destination (at rest) in the remaining
+    // time, replanned every substep: the path keeps the foot's motion through a start, a retime and a retarget
+    const x = quinticStep(prev.x, f.stepV.x, f.stepA.x, f.dest!.x, horizonS, dt);
+    const z = quinticStep(prev.z, f.stepV.z, f.stepA.z, f.dest!.z, horizonS, dt);
+    let move = v3(x.p - prev.x, 0, z.p - prev.z);
+    const m = len(move);
+    if (m > vCap * dt) move = scale3(move, (vCap * dt) / m);
+    h = add(hz(prev), move);
+    step = len(move);
+    f.stepV = v3(x.v, f.stepV.y, z.v);
+    f.stepA = v3(x.a, f.stepA.y, z.a);
+    // the speed cap took over: the next path starts from the accepted motion
+    if (m > vCap * dt) {
+      f.stepV = v3(move.x / dt, f.stepV.y, move.z / dt);
+      f.stepA = v3(0, f.stepA.y, 0);
+    }
+  }
   // vertical: clearance arc over the step progress (sin^2: no vertical speed at liftoff and touchdown; short steps lift
   // less), rate-capped; a continued clip swing adds its inherited height above the arc, faded out by touchdown
   const clr = stepClearance(P, f);
@@ -827,7 +1392,25 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
     const u = clamp((p - f.p0) / (1 - f.p0), 0, 1);
     yWant = Math.max(inp.groundY + inp.soleM, yWant + f.liftExcessM * (1 - u * u * (3 - 2 * u)));
   }
-  const y = prev.y + clamp(yWant - prev.y, -P.swing.maxLiftRateMps * dt, P.swing.maxLiftRateMps * dt);
+  if (C && (f.liftO !== 0 || f.liftV !== 0)) {
+    // the start height and rate decay over the rest of the step (critically damped, ending by touchdown)
+    const w = Math.min(0.5 / dt, Math.max(C.liftRadPerS, 6 / Math.max(remainS, dt)));
+    f.liftV += (-w * w * f.liftO - 2 * w * f.liftV) * dt;
+    f.liftO += f.liftV * dt;
+    if (Math.abs(f.liftO) < 1e-4 && Math.abs(f.liftV) < 1e-3) f.liftO = f.liftV = 0;
+    yWant = Math.max(inp.groundY + inp.soleM, yWant + f.liftO);
+  }
+  let y = prev.y + clamp(yWant - prev.y, -P.swing.maxLiftRateMps * dt, P.swing.maxLiftRateMps * dt);
+  if (C && f.why === 'continue' && dt > 0) {
+    // a continued clip swing descends along the minimum-jerk path from its achieved height and rate to the sole at rest
+    const q = quinticStep(prev.y, f.stepV.y, f.stepA.y, inp.groundY + inp.soleM, horizonS, dt);
+    const cap = P.swing.maxLiftRateMps * dt;
+    y = prev.y + clamp(q.p - prev.y, -cap, cap);
+    const limited = Math.abs(q.p - prev.y) > cap;
+    f.stepV.y = limited ? (y - prev.y) / dt : q.v;
+    f.stepA.y = limited ? 0 : q.a;
+  }
+  f.moveV = dt > 0 ? scale3(hz(sub(h, prev)), 1 / dt) : v3();
   f.target = v3(h.x, y, h.z);
   f.headingRad += clamp(wrapPi(f.destHeadingRad - f.headingRad), -rad(P.swing.maxYawRateDegPerS) * dt, rad(P.swing.maxYawRateDegPerS) * dt);
   f.speedMps = dt > 0 ? step / dt : 0;
@@ -840,12 +1423,41 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
   // touches down where it is at the end of its time when that is within reach (else it continues to the destination)
   const down = f.target.y - (inp.groundY + inp.soleM) < 1e-4;
   const little = f.short && dist(f.target, inp.hips[s]) <= plan.reachM - P.reachMarginM;
-  if (p >= 1 && down && (len(hz(sub(f.dest, f.target))) < 1e-3 || little)) {
-    f.featureW = sub(f.target, v3(0, inp.soleM, 0));
-    proposePlant(plan, f, inp, f.headingRad, 0, inp.toeM);
+  // composed: and the achieved foot is on the ground on its primary leg (a leg held off by clearance comes down first: the
+  // proposal starts from the achieved foot, however long that takes, no teleport to the target)
+  if (p >= 1 && down && (len(hz(sub(f.dest!, f.target))) < 1e-3 || little) && (!C || (f.gapM <= P.plantTolM && f.variant === 0 && dist(f.ankleW, f.target) <= P.plantTolM))) {
+    if (C) landOnCorner(plan, f, inp);
+    else {
+      f.featureW = sub(f.target, v3(0, inp.soleM, 0));
+      proposePlant(plan, f, inp, f.headingRad, 0, inp.toeM);
+    }
     return true;
   }
   return false;
+}
+
+/**
+ * Plan 08: how the achieved feet join a run clip that comes in: the foot that takes (or holds) the next stance, its
+ * fore-aft offset from the hip at that stance along `dirW`, and the time until it is down. A planner step lands where its
+ * destination is; otherwise the held foot furthest ahead. Null when neither foot is on or near the ground.
+ */
+export function clipJoin(plan: FootPlan, hips: Record<ArmSide, Vec3>, dirW: Vec3, vel: Vec3): { side: ArmSide; offsetM: number; delayS: number } | null {
+  let held: { side: ArmSide; offsetM: number; delayS: number } | null = null;
+  // two steps in the air: the clip's next stance is the later landing, the earlier foot is by then on its way off
+  let landing: { side: ArmSide; offsetM: number; delayS: number } | null = null;
+  for (const s of SIDES) {
+    const f = plan.feet[s];
+    if (f.mode === 'swing' && f.source === 'step' && f.dest) {
+      const delayS = Math.max(0, f.durS - f.elapsedS);
+      if (!landing || delayS > landing.delayS) landing = { side: s, offsetM: dot(hz(sub(f.dest, add(hz(hips[s]), scale3(vel, delayS)))), dirW), delayS };
+      continue;
+    }
+    if (f.mode === 'planted') {
+      const offsetM = dot(hz(sub(f.heelW!, hips[s])), dirW);
+      if (!held || offsetM > held.offsetM) held = { side: s, offsetM, delayS: 0 };
+    }
+  }
+  return landing ?? held;
 }
 
 /** Height of the lowest shoe-box corner above the ground (negative: penetration). */
@@ -890,6 +1502,15 @@ function observeFoot(plan: FootPlan, s: ArmSide, pose: PhysicalPose, soleM: numb
   const ankle = pose.jointLandmarksWorld[`${s}Ankle`];
   const q = footFrame(pose, s);
   const info = pose.legInfo?.[s];
+  if (P.compose) {
+    f.ankleV = plan.dtS > 0 ? scale3(sub(ankle, f.ankleW), 1 / plan.dtS) : v3();
+    f.solvedW = info?.request ?? ankle;
+    f.variant = info?.variant ?? 0;
+    const z = qRot(q, v3(0, 0, 1));
+    // measured in the leg's own sagittal plane, the one the next solve applies it in (a heading can lie across a high shoe)
+    f.soleAngle = info?.soleAngle ?? Math.atan2(z.y, dot(z, dirOf(f.headingRad)));
+    f.soleBase = info?.soleBase ?? 0;
+  }
   f.ankleW = ankle;
   f.footQ = q;
   f.residualM = pose.targetResidualM?.[`${s}Leg`] ?? 0;
@@ -973,8 +1594,10 @@ export function initFeet(plan: FootPlan, pose: PhysicalPose, inp: FootPlanInput,
     const ankle = pose.jointLandmarksWorld[`${s}Ankle`];
     const q = footFrame(pose, s);
     f.ankleW = ankle;
+    f.solvedW = ankle;
     f.footQ = q;
     f.target = { ...ankle };
+    if (plan.profile.compose) f.headingRad = headingOf(qRot(inp.core.q, v3(0, 0, 1)));
     const c0 = inp.clip?.contact[s];
     f.featureW = add(ankle, qRot(q, v3(0, -inp.soleM, c0 ? c0.toeZ * clamp(c0.rollF, 0, 1) : 0)));
     f.mode = inp.supported ? 'swing' : 'airborne';
@@ -1042,4 +1665,4 @@ export function footTrace(plan: FootPlan): Record<'l' | 'r', Record<string, unkn
  * `legacyEntry` restores the reactive entry before plan 07 item 3 (every following foot starts a step at once);
  * `noQuick` disables the quick-step rules of item 3 (stance-window retiming, little-step touchdown, drag lift).
  */
-export const FOOT_DEBUG = { noReachCheck: false, legacyEntry: false, noQuick: false };
+export const FOOT_DEBUG = { noReachCheck: false, legacyEntry: false, noQuick: false, noJoinCheck: false };

@@ -97,7 +97,7 @@ const label = (def: FixtureDef, id: string, title: string, notes?: string): Fixt
 });
 
 /** Every player requests (and starts in) the stance, whatever its controller. */
-function withStance(def: FixtureDef, stance: StanceRequest, ids?: string[]): FixtureDef {
+export function withStance(def: FixtureDef, stance: StanceRequest, ids?: string[]): FixtureDef {
   return {
     ...def,
     players: def.players.map((p) => {
@@ -112,7 +112,7 @@ function withStance(def: FixtureDef, stance: StanceRequest, ids?: string[]): Fix
 }
 
 /** Low stance request: the bottom quarter of the support's target range (both players' requests). */
-const LOW: StanceRequest = { heightM: 0.78 };
+export const LOW: StanceRequest = { heightM: 0.78 };
 
 const simultaneous = (): FixtureDef => rhf6().find((d) => d.id === 'RH-F6-simultaneous')!;
 
@@ -153,12 +153,12 @@ export const hcf2 = (): FixtureDef[] => [
 
 // ------------------------------------------------------------------ HC-F3 one-arm defender with planted feet
 const oneArm = (): FixtureDef => l2f14OneArmFeet();
-const defenderPhase = (def: FixtureDef, phase: number): FixtureDef => ({
+export const defenderPhase = (def: FixtureDef, phase: number): FixtureDef => ({
   ...def,
   players: def.players.map((p) => (p.id === 'D' ? { ...p, initial: { ...p.initial, runPhase: phase } } : p)),
 });
 /** The running defender converted (labelled) at its first rising / falling substep from 0.7 s, in contact with the runner. */
-const defenderBob = (def: FixtureDef, when: 'rising' | 'falling'): FixtureDef => ({
+export const defenderBob = (def: FixtureDef, when: 'rising' | 'falling'): FixtureDef => ({
   ...def,
   diagnostics: { ...def.diagnostics, conversions: [...(def.diagnostics?.conversions ?? []), { playerId: 'D', atS: 0.7, when }] },
   notes: [def.notes, `Diagnostic conversion of D (labelled) at the first ${when} substep from 0.7 s.`].filter(Boolean).join(' '),

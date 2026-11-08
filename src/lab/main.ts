@@ -8,7 +8,9 @@ import { allFixtures } from '../sim/fixtures/index';
 import type { FixtureDef } from '../sim/fixture';
 import { Simulation, type PlayerRuntime } from '../sim/simulation';
 import { FixedStepDriver } from '../sim/driver';
-import type { PhysicalPose } from '../sim/pose';
+import { lerpSeat } from '../sim/carry';
+import { forwardBallQ } from './football';
+import { carriedBall, type PhysicalPose } from '../sim/pose';
 import { initPhysics } from '../sim/physics';
 import { forwardOf, horiz, len, qInvRot, qRot, round, toLocal, toWorld, v3, type Pose, type Quat, type Vec3 } from '../sim/vec';
 import type { ArmSide } from '../sim/contracts';
@@ -131,6 +133,7 @@ function lerpPose(a: PhysicalPose, b: PhysicalPose, t: number): PhysicalPose {
   const jointLandmarksWorld: Record<string, Vec3> = {};
   for (const [k, v] of Object.entries(b.jointLandmarksWorld)) jointLandmarksWorld[k] = a.jointLandmarksWorld[k] ? lerpV(a.jointLandmarksWorld[k], v, t) : v;
   const out: PhysicalPose = { ...b, segments, jointLandmarksWorld };
+  if (a.carry && b.carry) out.carry = lerpSeat(a.carry, b.carry, t);
   if (b.anklePitchDeg) {
     const ap: NonNullable<PhysicalPose['anklePitchDeg']> = {};
     for (const s of ['left', 'right'] as const) {
@@ -387,7 +390,7 @@ function fillFixtureSelect(): void {
   const sel = $('fixture') as HTMLSelectElement;
   const groups = new Map<string, HTMLOptGroupElement>();
   for (const f of fixtures) {
-    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : f.milestone === 'RH' ? 'RH · ride height and support' : f.milestone === 'L2' ? 'L2 · support recovery and footwork' : f.milestone === 'HC' ? 'HC · ragdoll handoff during contact' : `Gate ${f.gate} · ${f.milestone}`;
+    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : f.milestone === 'RH' ? 'RH · ride height and support' : f.milestone === 'L2' ? 'L2 · support recovery and footwork' : f.milestone === 'HC' ? 'HC · ragdoll handoff during contact' : f.milestone === 'L3' ? 'L3 · locomotion transitions and contact integration' : f.milestone === 'L4' ? 'L4 · active falls and joint limits' : `Gate ${f.gate} · ${f.milestone}`;
     let g = groups.get(key);
     if (!g) {
       g = document.createElement('optgroup');
@@ -600,6 +603,18 @@ function info(): void {
       else lines.push(`  HANDOFF REJECTED @${f2(h.t, 3)} ${h.report.reasons.join(',')} — falling proxy kept`);
     }
     if (pl.ragStats) lines.push(`  ragdoll max joint sep ${f2(pl.ragStats.maxAnchorErrM * 1000, 1)} mm  max floor pen ${f2(pl.ragStats.maxFloorPenM * 1000, 1)} mm  hinge ${Object.entries(pl.pose?.hingeDeg ?? {}).filter(([kk]) => kk !== 'neck').map(([kk, vv]) => `${kk.replace('left', 'L').replace('right', 'R')} ${f2(vv, 0)}°`).join(' ')}`);
+    if (pl.fall) {
+      const fe = pl.fall;
+      const armText = (arm: typeof fe.arms.left): string => `${arm.task}${arm.brace === 'none' ? '' : `/${arm.brace}`}`;
+      const st = fe.stats;
+      lines.push(`  FALL effort ${f2(fe.effort, 2)}${fe.done ? ' done' : fe.exhausted ? ' exhausted' : ''}  L ${armText(fe.arms.left)}  R ${armText(fe.arms.right)}  work +${f2(st.positiveWorkJ, 1)} / -${f2(st.negativeWorkJ, 1)} J  peak ${f2(st.peakPositiveW, 0)} W${st.overPowerSubsteps || st.overWork ? '  OVER CAP' : ''}`);
+      const torques = fe.applied.filter((c) => c.entry.appliedNm > 0.05).map((c) => `${c.entry.joint.replace('left', 'L').replace('right', 'R')} ${f2(c.entry.appliedNm, 1)}`);
+      if (torques.length) lines.push(`  effort N·m ${torques.join(' ')}`);
+    }
+    if (pl.rag?.envelope) {
+      const past = pl.rag.envelope.filter((e) => e.overDeg > 0.05).map((e) => `${e.jointId.replace('left', 'L').replace('right', 'R')} ${f2(e.overDeg, 1)}°`);
+      lines.push(`  limits max past ${f2(Math.max(0, ...pl.rag.envelope.map((e) => e.maxOverDeg)), 1)}°${past.length ? `  now ${past.join(' ')}` : ''}`);
+    }
     lines.push(`  v ${f2(Math.hypot(v.x, v.z))} m/s  req ${f2(len(horiz(a.requestedVelocity)))}  ${pl.grounded ? 'grounded' : 'AIRBORNE'}  ${pl.controlMode}`);
     lines.push(`  drive ${f2(len(a.drive), 0)} / ${f2(a.driveCap, 0)} N${a.driveSaturated ? ' SAT' : ''}  yawT ${f2(a.yawTorque, 0)} / ${f2(a.yawCap, 0)} N·m`);
     lines.push(`  facing ${f2(yawDeg(q), 1)}°  req ${f2(headDeg(pl.intent.locomotion.desiredFacingWorld), 1)}°  ωy ${f2(k.w.y)}`);
@@ -640,6 +655,7 @@ function info(): void {
       lines.push(`  feet ${pl.feet.profile.id}  ${one('left')}  |  ${one('right')}`);
       lines.push(`  plants confirmed ${st.confirmed}/${st.attempts} proposed, failed ${st.failed}, sustained ${st.sustained}; eligible stance planted L ${cov('left')} R ${cov('right')}`);
     }
+    if (pl.loco && !pl.rag) lines.push(`  locomotion ${pl.loco.mode} (${pl.loco.reason})  prep ${f2(pl.loco.prepW, 2)}  contact ${f2(pl.loco.contactW, 2)}  arm swing ${f2(pl.loco.swing, 2)}${pl.feet?.brakeHeld ? '  planner holds legs (braking)' : ''}`);
     balanceInfo(pl, lines);
     armInfo(pl.id, lines);
     const d = pl.intent.debug;
@@ -747,8 +763,12 @@ function frame(now: number): void {
     const mapDir = (id: string, d: Vec3): Vec3 => qRot(interp.get(id)!.q, qInvRot(current.get(id)!.q, d));
     if (ruleOverlay && sim.rules && interp.has(sim.rules.runnerId)) {
       const rid = sim.rules.runnerId;
-      const palm = sim.rules.profile.ballSource === 'carryPalm' ? poses.get(rid)?.jointLandmarksWorld.rightPalm : undefined;
-      ruleOverlay.update(palm ?? toWorld(interp.get(rid)!, sim.rules.profile.ballLocal), sim.ending?.ballSpot ?? null);
+      const src = sim.rules.profile.ballSource;
+      const rp = poses.get(rid) ?? null;
+      const core = interp.get(rid)!;
+      const seated = src === 'carryPose' ? carriedBall(rp) : null;
+      const palm = src === 'carryPalm' ? rp?.jointLandmarksWorld.rightPalm : undefined;
+      ruleOverlay.update(seated ?? { p: palm ?? toWorld(core, sim.rules.profile.ballLocal), q: forwardBallQ(core.q) }, sim.ending?.ballSpot ?? null);
     }
     for (const v of views) {
       const pl = v.pl;

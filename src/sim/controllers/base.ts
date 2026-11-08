@@ -44,6 +44,8 @@ export interface ScriptSegment {
   posture?: { leanDeg: number; dir?: Vec3 | 'facing' | 'velocity' };
   /** Plan 06a stance request (root height, stagger); suspension support only. */
   stance?: StanceRequest;
+  /** Plan 08 evidence: free hands in the ready assignment during this segment (pose only). */
+  readyHands?: boolean;
 }
 
 /** Scripted arm request. The target is a point in the focus player's frame, the own frame, or the world. */
@@ -112,7 +114,7 @@ export class ScriptController implements Controller {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: facing, effort: seg.effort ?? 1, yawEffort: seg.yawEffort ?? 1, ...(seg.stance ? { stance: { ...seg.stance } } : {}) },
       arms: scriptedArms(ctx, this.spec.arms),
       posture,
-      debug: { phase: 'script' },
+      debug: { phase: 'script', ...(seg.readyHands ? { readyHands: true } : {}) },
     };
   }
   exportParams(tickS: number): unknown {

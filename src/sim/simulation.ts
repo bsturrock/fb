@@ -1,7 +1,7 @@
 // Simulation: fixed time, players, events, reset and fixture lifecycle. One physical-state authority (Rapier via
 // PhysicsWorld); controllers only read snapshots and emit intents; motors apply bounded forces once per substep.
 import type {
-  BalanceState, BodySnapshot, ControlMode, PlayerContactObs, PlayerId, PlayerIntent, Representation, SimEvent, Snapshot, ContactRec,
+  BalanceState, BodySnapshot, ControlMode, PlayerContactObs, PlayerId, PlayerIntent, Representation, SegmentId, SimEvent, Snapshot, ContactRec,
 } from './contracts';
 import { pairKey } from './contracts';
 import type { Controller } from './controllers/base';
@@ -11,7 +11,7 @@ import type { FixtureDef, PlayerSetup } from './fixture';
 import { computeDrive, computeYaw } from './motors';
 import { initPhysics, PhysicsWorld, RAPIER, RAPIER_VERSION, type MassReport, type ProxyBody } from './physics';
 import {
-  ARM_G2, BALANCE_G3, RAGDOLL_G4, SCHEMA_VERSION, SUPPORT_LEGACY, hipLocal, sideSignX, validateMotorBraking, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
+  ARM_G2, BALANCE_G3, RAGDOLL_G4, SCHEMA_VERSION, SUPPORT_LEGACY, hipLocal, shoulderLocal, sideSignX, validateMotorBraking, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
 } from './profiles';
 import {
@@ -19,9 +19,10 @@ import {
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
 import { buildProxyPose, advanceGait, legRequestLocal, poseLimbShapes, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from './pose';
-import { footTrace, initFeet, newFootPlan, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlan, type FootPlanInput } from './footwork';
+import { advanceLoco, newLocoState, type LocoState, type LocomotionProfile } from './locomotion';
+import { clipJoin, continueOwners, footTrace, initFeet, newFootPlan, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  anchorErrors, buildCandidate, hingeAngles, bulkOf, externalFromColliders, externalFromRagdoll, ragdollPose, removeRagdoll, switchToRagdoll,
+  anchorErrors, applyEnvelope, auditEnvelope, buildCandidate, hingeAngles, bulkOf, externalFromColliders, externalFromRagdoll, initEnvelope, limitGradients, ragdollPose, removeRagdoll, switchToRagdoll,
   validateCandidate, SEGMENTS, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll, type TransferAudit,
 } from './ragdoll';
 import {
@@ -29,15 +30,13 @@ import {
   projectedLean,
 } from './balance';
 import { ArmSystem, type ArmHost, type ArmHostPlayer, type WrapStatus } from './arms';
+import { FallResponse, type ArmTask, type BraceState, type FallEpisode } from './fall-response';
 import {
-  advanceRunPlayback, newRunPlayback, playbackArmMean, playbackWidthAddM, playbackLabel, playbackStance, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, runClipProfileExport, validateRunClipProfile, type RunPlayback,
+  advanceRunPlayback, joinPhase, newRunPlayback, smooth, playbackArmMean, playbackWidthAddM, playbackLabel, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, runClipProfileExport, validateRunClipProfile, type RunPlayback,
 } from './run-clip';
 import { RuleObserver, ruleProfileExport, type EndingKind, type RetentionObs, type RuleEnding, type RuleTraceRow } from './rules';
 import type { ArmSide } from './contracts';
-import {
-  type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, yawOf, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul,
-  qRot, sub, forwardOf, upOf, dot, clamp, UP, deg, qInvRot, qFromUnitVectors, scale, addScaled, toWorld, clampLen,
-} from './vec';
+import { dist, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, yawOf, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, upOf, dot, clamp, UP, deg, qInvRot, qFromUnitVectors, scale, addScaled, toWorld, clampLen, neg } from './vec';
 
 /**
  * Trial labels. Referee endings (rule observer) are distinct from non-success stops: duration (timeout), the
@@ -86,6 +85,9 @@ export interface BalanceRuntime {
 export interface PlayerRuntime {
   id: PlayerId;
   setup: PlayerSetup;
+  /** Plan 08: the ramped walking request and the controller's request it advances toward (see rampWalkRequest). */
+  walkRequest?: Vec3;
+  walkWant?: Vec3;
   body: BodyProfile;
   motor: MotorProfile;
   proxy: ProxyBody;
@@ -103,6 +105,8 @@ export interface PlayerRuntime {
   /** Sim-owned physical pose after the last solve (presentation, candidate source, rule queries). */
   pose: PhysicalPose | null;
   gait: GaitState;
+  /** Plan 08: locomotion mode and composition weights (pose and bounded height request only; reset with the player). */
+  loco: LocoState | null;
   /** Plan 06: run-clip playback (phase, weight) when the fixture has a run-clip profile; reset with the player. */
   run: RunPlayback | null;
   /** Plan 06a: suspension support state (probe, height target, force, work); null under the legacy support. */
@@ -121,6 +125,8 @@ export interface PlayerRuntime {
   handoff: HandoffRecord | null;
   /** Ragdoll running audits (max joint anchor separation, max floor penetration) since the handoff. */
   ragStats: RagStats | null;
+  /** Plan 09: active fall response of an accepted ragdoll (null otherwise). */
+  fall: FallEpisode | null;
 }
 
 /** Ragdoll runtime extremes since the handoff (presentation/integrity evidence, not gates). */
@@ -174,6 +180,12 @@ export interface PlayerTraceRow {
   /** Arms (Gate 2): phase, retention id, actual force magnitude, clamp normal, clamp tangential, palm. */
   arm?: Partial<Record<ArmSide, { ph: string; id: string | null; F: number; N: number; Ft: number; palm: [number, number, number]; ok: 0 | 1 }>>;
   wrap?: WrapStatus;
+  /**
+   * Plan 09 fall response: effort window e, arm task and brace state (l, r), positive and negative work so far (J),
+   * realized positive power (W), applied joint torque (N m). `lim`: largest envelope excursion so far (deg).
+   */
+  fall?: { e: number; l: [ArmTask, BraceState]; r: [ArmTask, BraceState]; W: number; Wn: number; P: number; T: Record<string, number> };
+  lim?: number;
   /** Gate 4: representation (absent = proxy), max joint anchor separation (m), hinge angles (deg). */
   rep?: Representation;
   jsep?: number;
@@ -190,6 +202,8 @@ export interface PlayerTraceRow {
    * playback rate r, clip blend b, solved travel speed v (m/s), sampled-request residuals (m) of the pose.
    */
   run?: { clip: string; u: number; w: number; wt: number; r: number; b: number; v: number; res: Record<string, number> };
+  /** Plan 08 locomotion mode m, why it changed, preparation and contact weights p c, arm swing s, height drop d (m). */
+  loco?: { m: string; why: string; p: number; c: number; s: number; d: number };
   /**
    * Plan 06a suspension support (last substep of the tick): probed root height h, target ht and its rate vt, stance
    * request req (before the range clamp), clip-derived running height run (null when no clip plays) and its bob scale s,
@@ -224,6 +238,81 @@ export interface SimOptions {
   reverseOrder?: boolean;
   /** Record a trace row every outer tick (default true). */
   trace?: boolean;
+  /**
+   * Plan 08 evidence: at every locomotion transition boundary (foot mode or source, locomotion mode, planner hold) also
+   * build the pose of the previous composition at the same solved root from copied memory, and record the largest
+   * landmark difference (`transitionDeltas`). Read-only: the copy never touches the live pose memory or foot plan.
+   */
+  transitionAudit?: boolean;
+  /** Evidence: called after every physics substep (solved state, poses, foot plans); read-only. */
+  onSubstep?: (sim: Simulation) => void;
+}
+
+/** One audited transition boundary: same solved time and root, old versus new composition. */
+export interface TransitionDelta {
+  t: number;
+  playerId: PlayerId;
+  from: string;
+  to: string;
+  /**
+   * Largest landmark difference against the reference (m), the measure the limit applies to. The reference is the old
+   * composition with its own snaps taken out at their source: the ordinary request's jump of this substep from a following
+   * foot (a collision turns the clip's heading with the travel in one substep; that jump belongs to the old path whether or
+   * not ownership changes) and a timed-out step's dead stop. Everything else about the old composition stands.
+   */
+  deltaM: number;
+  landmark: string;
+  /** Every compared landmark's difference (m). */
+  by: Record<string, number>;
+  /** The same comparison against the old composition as it stands, with the request jump in it (m). */
+  rawM: number;
+  rawBy: Record<string, number>;
+  /** Largest difference of any landmark from its own body-frame motion carried on one substep (its second difference, m); reported only, never part of `deltaM`. */
+  continuedM: number;
+  /** Size of the ordinary request's jump removed from each following foot (m); 0 for other owners. */
+  requestJumpM: Record<ArmSide, number>;
+  /** Size of the dead stop removed from each timed-out step (m, see `continueOwners`); 0 for other owners. */
+  stepStopM: Record<ArmSide, number>;
+  /** Both compositions' requests and solved legs at the boundary. */
+  legs: Record<ArmSide, { old: AuditLeg; now: AuditLeg }>;
+}
+
+/** One leg of an audited composition: its request kind, the solved request, ankle, candidate and blends. */
+export interface AuditLeg {
+  kind: string;
+  request: Vec3;
+  ankle: Vec3;
+  variant: number;
+  softM: number;
+  liftM: number;
+  soleO: number;
+  poleW: number;
+}
+
+/** The old composition's pose input at a boundary, and the reference feet (see TransitionDelta.deltaM). */
+type AuditOld = ProxyPoseInput & { from: string; to: string; reference: NonNullable<ProxyPoseInput['feet']>; requestJumpM: Record<ArmSide, number>; stepStopM: Record<ArmSide, number> };
+
+/** The composition of one substep, kept for the next substep's audit. */
+interface AuditPrev {
+  key: string;
+  /** Per side foot and arm owner. */
+  foot: Record<ArmSide, string>;
+  arm: Record<ArmSide, string>;
+  feet: NonNullable<ProxyPoseInput['feet']>;
+  /** The foot plan after this substep's observation. */
+  plan: FootPlan | null;
+  /** Ordinary leg requests (body frame) of this substep and the one before. */
+  reqL: Record<ArmSide, Vec3>;
+  reqL2: Record<ArmSide, Vec3>;
+  /** Substeps recorded: the request has a motion of its own from the second. */
+  reqN: number;
+  /** Achieved arms in the body frame, the free arm composition and the support state. */
+  armsL: Partial<Record<ArmSide, { elbow: Vec3; wrist: Vec3; palm: Vec3 }>>;
+  readyHands: boolean;
+  contactW: number;
+  supported: boolean;
+  falling: boolean;
+  mode: string;
 }
 
 /** Labelled diagnostic conversion request (G4-F1/F2/F6); contact-driven fixtures never use this. */
@@ -270,6 +359,27 @@ const DEFAULT_POSE_PROFILE = RAGDOLL_G4;
  * classification all read the same lengths and radii. A fixture pairing an arm profile with a ragdoll/pose profile of
  * different geometry is rejected at construction.
  */
+/** Plan 08: critically damped toward the clip's smoothed weight, so a reversal (a contact that ends mid-fade) is no velocity step. */
+const CLIP_WEIGHT_RADPS = 24;
+function followClipWeight(st: RunPlayback, dt: number): void {
+  const want = smooth(st.w);
+  if (st.wF === undefined || dt <= 0) {
+    st.wF = want;
+    st.wFV = 0;
+    return;
+  }
+  const w = CLIP_WEIGHT_RADPS;
+  st.wFV = (st.wFV ?? 0) + (w * w * (want - st.wF) - 2 * w * (st.wFV ?? 0)) * dt;
+  st.wF = clamp(st.wF + st.wFV * dt, 0, 1);
+  // a rejoined phase slides in the same way: the clip it left may still be shown
+  st.uSlipV = (st.uSlipV ?? 0) + (-w * w * (st.uSlip ?? 0) - 2 * w * (st.uSlipV ?? 0)) * dt;
+  st.uSlip = (st.uSlip ?? 0) + st.uSlipV * dt;
+  if (st.w <= 0 && st.wF < 1e-3) {
+    st.wF = 0;
+    st.wFV = 0;
+  }
+}
+
 export function checkLimbContract(A: ArmProfile, R: RagdollProfile): void {
   const pairs: [string, number, number][] = [
     ['upperArm', A.upperArmM, R.lengths.upperArm],
@@ -309,6 +419,12 @@ export class Simulation {
   trace: TraceRow[] = [];
   contacts: ContactRec[] = [];
   contactObs: Record<PlayerId, PlayerContactObs[]> = {};
+  /** Plan 08 evidence (SimOptions.transitionAudit). */
+  transitionDeltas: TransitionDelta[] = [];
+  private auditPrev = new Map<PlayerId, AuditPrev>();
+  /** Plan 08 audit: the achieved landmarks of the last two substeps in the body frame. */
+  private auditHist = new Map<PlayerId, Record<string, Vec3>[]>();
+  private auditRun = new Map<PlayerId, RunPlayback>();
   pairGap: Record<string, number> = {};
   pairClosest: Record<string, { gap: number; points: Record<PlayerId, Vec3> }> = {};
   private history: Snapshot[] = [];
@@ -317,6 +433,7 @@ export class Simulation {
   minPairGap = Infinity;
   /** Arm authority (Gate 2); null when no player has arms. */
   arms: ArmSystem | null = null;
+  fall: FallResponse | null = null;
   /** Diagnostic conversion requests already issued (index into def.diagnostics.conversions). */
   private diagDone = new Set<number>();
   /** Diagnostic static obstacles (cuboid colliders on the fixed floor body). */
@@ -506,8 +623,10 @@ export class Simulation {
         lastVy: 0,
         poseMemory: {},
         feet: def.footwork && S && setup.body.kind === 'upperBodyCompound' ? newFootPlan(def.footwork, def.ragdoll ?? DEFAULT_POSE_PROFILE) : null,
+        loco: def.locomotion ? newLocoState() : null,
         handoff: null,
         ragStats: null,
+        fall: null,
       };
       proxy.body.userData = { playerId: setup.id, segment: 'proxy' };
       const supLocal = sub(vc(proxy.support.translation()), pose.p);
@@ -559,9 +678,28 @@ export class Simulation {
     }
     // Colliders follow bodies only during a step; publish the reset-time placement to queries now.
     this.physics.world.propagateModifiedBodyPositionsToColliders();
-    if (def.players.some((p) => p.arms)) {
+    if (def.fallResponse || def.players.some((p) => p.arms)) {
       checkLimbContract(def.armProfile ?? ARM_G2, def.ragdoll ?? DEFAULT_POSE_PROFILE);
       this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip);
+    }
+    if (def.fallResponse) {
+      const sim = this;
+      if (!def.ragdoll?.envelope) throw new Error(`fixture ${def.id}: a fall response needs a ragdoll profile with an envelope`);
+      this.fall = new FallResponse(def.fallResponse, {
+        get dt() {
+          return sim.physics.dt;
+        },
+        get t() {
+          return sim.t;
+        },
+        get steps() {
+          return sim.steps;
+        },
+        gravity: Math.abs(def.solver.gravityY),
+        emit: (type, id, data) => sim.emit(type, id, data),
+        closingSpeeds: (rag, lookaheadS, predictionM, skinM) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM),
+      });
+      if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
     }
     this.rules = def.rules ? new RuleObserver(def.rules, def.ragdoll ?? DEFAULT_POSE_PROFILE, (type, id, data) => this.emit(type, id, data)) : null;
     this.settleUntil = null;
@@ -621,12 +759,17 @@ export class Simulation {
     this.trace = [];
     this.contacts = [];
     this.contactObs = {};
+    this.transitionDeltas = [];
+    this.auditPrev.clear();
+    this.auditHist.clear();
+    this.auditRun.clear();
     this.pairGap = {};
     this.pairClosest = {};
     this.history = [];
     this.episodes.clear();
     this.minPairGap = Infinity;
     this.arms = null;
+    this.fall = null;
     this.diagDone.clear();
     this.obstacleColliders = [];
     this.rules = null;
@@ -652,6 +795,7 @@ export class Simulation {
           armIntent: pl.intent.arms,
           falling: pl.controlMode === 'falling',
           ragdoll: pl.rag,
+          armEffort: pl.fall?.armDemand,
         }));
       },
       regionOf: (c) => {
@@ -740,7 +884,9 @@ export class Simulation {
     for (const pl of this.players) {
       const c = pl.controller;
       const every = Math.max(1, Math.round(c.decisionIntervalS / this.physics.dt));
+      let decided = false;
       if (this.steps % every === 0) {
+        decided = true;
         const observed = this.observed(c.observationDelayS);
         pl.intent = c.decide({
           self: pl.id,
@@ -758,7 +904,9 @@ export class Simulation {
       if (this.rules?.ending) {
         const f = this.coreBody(pl);
         pl.intent = { locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: norm(horiz(forwardOf(f.rotation())), v3(0, 0, 1)), effort: 1 } };
+        decided = true;
       }
+      this.rampWalkRequest(pl, decided);
     }
     // 4. clear application-owned force/torque accumulators (once, before any contribution)
     for (const pl of this.players)
@@ -772,6 +920,7 @@ export class Simulation {
     if (S)
       for (const pl of this.players) {
         if (pl.rag || !pl.sus) continue;
+        this.advanceLocoMode(pl, this.physics.dt);
         this.advanceLocomotion(pl, this.physics.dt);
         this.supportTargets(pl, S, this.physics.dt);
         this.applySupport(pl, S, this.physics.dt, false);
@@ -853,11 +1002,22 @@ export class Simulation {
         leanScale: ls,
       };
     }
+    // 5b. plan 09: passive soft envelopes of every ragdoll, then this substep's effort proposals (accepted ragdolls only)
+    for (const pl of this.players) {
+      if (pl.rag) applyEnvelope(pl.rag, this.physics.dt);
+      if (pl.fall) this.fall!.request(pl.fall, this.contacts, this.arms);
+    }
     // 6. arms: collision-aware reach, acquisitions, retention demands, shared budget, reciprocal forces (once)
     this.arms?.preStep();
+    // 6b. plan 09: effort applied after the shared allocation, under its power and work caps, as internal torque pairs
+    for (const pl of this.players) if (pl.fall) this.fall!.apply(pl.fall, this.arms?.effortScale.get(pl.id));
     // 7. solve
     this.physics.step();
     this.steps++;
+    for (const pl of this.players) {
+      if (pl.rag) auditEnvelope(pl.rag, this.physics.dt);
+      if (pl.fall) this.fall!.audit(pl.fall);
+    }
     // 8. read solved state; 9-10. reconstruct arms against solved roots, release failures, classify wraps
     this.postStep(false);
     this.arms?.postStep();
@@ -871,6 +1031,7 @@ export class Simulation {
       pl.prevVy = pl.lastVy;
       pl.lastVy = this.bulk(pl).v.y;
     }
+    this.opts.onSubstep?.(this);
   }
 
   // ------------------------------------------------------------------ plan 06a: suspension support
@@ -937,7 +1098,12 @@ export class Simulation {
       const want = supported ? brakingDemand(B, reqH, horiz(vc(pl.proxy.body.linvel())), loco.effort, pl.motor.velocityResponseTimeS, pl.motor.braking?.maxDecelMps2) : null;
       advanceBraking(st, B, want, dt);
     }
-    composeTarget(st, S, runM, pl.run?.w ?? 0, dt);
+    composeTarget(st, S, runM, pl.run?.w ?? 0, dt, this.prepDrop(pl));
+  }
+
+  /** Plan 08: the bounded height drop preparation requests (m), continuous with its weight; 0 without a locomotion profile. */
+  private prepDrop(pl: PlayerRuntime): number {
+    return pl.loco ? this.def.locomotion!.contact.prepDropM * smooth(pl.loco.prepW) : 0;
   }
 
   /**
@@ -998,14 +1164,31 @@ export class Simulation {
 
   /** Labelled diagnostic external forces at the COM (plan 06a load fixtures); after the support force. */
   private applyDiagnosticForces(): void {
-    const F = this.def.diagnostics?.forces;
-    if (!F) return;
-    for (const d of F) {
+    for (const d of this.def.diagnostics?.forces ?? []) {
       if (this.t < d.fromS - 1e-9 || this.t >= d.toS - 1e-9) continue;
       const pl = this.byId.get(d.playerId);
       if (!pl) continue;
       if (pl.rag) pl.rag.bodies.core.addForce(vc(d.forceWorld), true);
       else pl.proxy.body.addForce(vc(d.forceWorld), true);
+    }
+    // plan 09 L4-F1: a labelled load across one ragdoll joint, an equal and opposite torque pair (parent frame)
+    for (const d of this.def.diagnostics?.jointLoads ?? []) {
+      if (this.t < d.fromS - 1e-9 || this.t >= d.toS - 1e-9) continue;
+      const rag = this.byId.get(d.playerId)?.rag;
+      const j = rag?.joints.find((x) => x.id === d.joint);
+      if (!rag || !j) continue;
+      const t = qRot(rag.bodies[j.parent].rotation(), d.torqueParentNm);
+      rag.bodies[j.child].addTorque(t, true);
+      rag.bodies[j.parent].addTorque(neg(t), true);
+    }
+    for (const d of this.def.diagnostics?.limitLoads ?? []) {
+      if (this.t < d.fromS - 1e-9 || this.t >= d.toS - 1e-9) continue;
+      const rag = this.byId.get(d.playerId)?.rag;
+      const j = rag?.joints.find((x) => x.id === d.joint);
+      if (!rag || !j) continue;
+      const t = scale(limitGradients(rag, j)[d.limit], d.torqueNm);
+      rag.bodies[j.child].addTorque(t, true);
+      rag.bodies[j.parent].addTorque(neg(t), true);
     }
   }
 
@@ -1025,6 +1208,51 @@ export class Simulation {
    * initialization). Legacy support: called by pose generation after the solve (plan 06 order). Suspension: called
    * before the support force (plan 06a order); pose generation then only reads the phase.
    */
+  /** Plan 08: the locomotion mode from this substep's observations (solved contact, retention, opponents, falling). */
+  private advanceLocoMode(pl: PlayerRuntime, dt: number): void {
+    const P = this.def.locomotion;
+    const st = pl.loco;
+    if (!P || !st) return;
+    const b = pl.proxy.body;
+    const p = vc(b.translation());
+    const v = vc(b.linvel());
+    let closing = false;
+    for (const o of this.players) {
+      if (o === pl || o.setup.role === pl.setup.role) continue;
+      const q = vc(this.coreBody(o).translation());
+      const d = horiz(sub(q, p));
+      const gap = len(d);
+      const rel = horiz(sub(v, vc(this.coreBody(o).linvel())));
+      if (gap <= P.contact.prepRangeM && gap > 1e-6 && dot(rel, d) / gap >= P.contact.prepClosingMps) closing = true;
+    }
+    const ch = advanceLoco(
+      st,
+      P,
+      {
+        contact: (this.contactObs[pl.id] ?? []).length > 0,
+        retained: this.retained(pl),
+        closing,
+        falling: pl.controlMode === 'falling',
+        clipSettled: !pl.run || Math.abs(pl.run.w - pl.run.wTarget) < 0.02,
+      },
+      this.t,
+      dt,
+    );
+    if (ch) this.emit('locoMode', pl.id, ch);
+  }
+
+  /** A held grip or clamp on or by this player (owner or target). */
+  private retained(pl: PlayerRuntime): boolean {
+    if (!this.arms) return false;
+    for (const g of this.arms.grips.values()) if (g.ownerId === pl.id || g.targetId === pl.id) return true;
+    for (const o of this.players)
+      for (const s of ['left', 'right'] as ArmSide[]) {
+        const c = this.arms.clampOf(o.id, s);
+        if (c && (o === pl || c.targetId === pl.id)) return true;
+      }
+    return false;
+  }
+
   private advanceLocomotion(pl: PlayerRuntime, dt: number): void {
     if (pl.rag || pl.body.kind !== 'upperBodyCompound') return;
     const b = pl.proxy.body;
@@ -1038,15 +1266,44 @@ export class Simulation {
     const RP = this.def.ragdoll ?? DEFAULT_POSE_PROFILE;
     // while the clip is off its phase follows the procedural gait (and the gait follows the clip while it plays)
     if (st.w <= 0 && dt > 0) st.u = (((pl.gait.phase / (2 * Math.PI)) % 1) + 1) % 1;
-    advanceRunPlayback(st, P, {
+    const off = st.w <= 0;
+    const input = {
       coreP: core.p,
       forward: forwardOf(core.q),
-      supported: pl.grounded && pl.controlMode === 'supported',
+      supported: pl.grounded && pl.controlMode === 'supported' && pl.loco?.mode !== 'contact',
       dt,
       initSpeed: sp,
       initDir: v,
       legM: RP.lengths.thigh + RP.lengths.shin,
-    });
+      ...(P.walk ? { requestMps: len(horiz(pl.intent.locomotion.desiredVelocityWorld)), braking: (pl.sus?.brakeB ?? 0) > P.walk.brakeB } : {}),
+    };
+    // the audit's old composition has its own playback: a change of mode changes the clip's weight target
+    if (this.opts.transitionAudit) {
+      const pv = this.auditPrev.get(pl.id);
+      const was = pv ? pv.supported && pv.mode !== 'contact' : input.supported;
+      this.auditRun.delete(pl.id);
+      if (was !== input.supported) {
+        const copy = structuredClone(st);
+        advanceRunPlayback(copy, P, { ...input, supported: was });
+        if (pl.feet?.profile.compose) followClipWeight(copy, dt);
+        this.auditRun.set(pl.id, copy);
+      }
+    }
+    advanceRunPlayback(st, P, input);
+    if (pl.feet?.profile.compose) followClipWeight(st, dt);
+    // plan 08: a clip that comes in takes the phase of the achieved feet (the foot taking the next stance), not the gait's
+    const back = !!pl.feet?.clipBack;
+    if (pl.feet) pl.feet.clipBack = false;
+    if ((off || back) && st.w > 0 && pl.feet?.profile.compose) {
+      const hips = { left: toWorld(core, hipLocal(pl.body, 'left')), right: toWorld(core, hipLocal(pl.body, 'right')) };
+      const dir = v3(Math.sin(st.heading), 0, Math.cos(st.heading));
+      const join = clipJoin(pl.feet, hips, dir, v);
+      if (join) {
+        const was = st.u + (st.uSlip ?? 0);
+        st.u = joinPhase(st, P, join.side, join.offsetM, join.delayS, RP.lengths.thigh + RP.lengths.shin);
+        st.uSlip = ((((was - st.u + 0.5) % 1) + 1) % 1) - 0.5;
+      }
+    }
     if (st.w > 0) pl.gait.phase = 2 * Math.PI * st.u;
   }
 
@@ -1139,6 +1396,29 @@ export class Simulation {
         });
       }
     }
+  }
+
+  /**
+   * Plan 09 impact guard: per segment of a ragdoll, the fastest closing speed of a contact its geometry meets within
+   * `lookaheadS` (floor, obstacles, other players' active colliders), read before the solve. Observation only.
+   */
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number): Partial<Record<SegmentId, number>> {
+    const out: Partial<Record<SegmentId, number>> = {};
+    const others: RAPIER.Collider[] = [this.physics.floorCollider, ...this.obstacleColliders];
+    for (const o of this.players) if (o.id !== rag.playerId) others.push(...this.activeColliders(o));
+    for (const rc of rag.colliders) {
+      const own = rc.collider;
+      const body = rag.bodies[rc.segment];
+      for (const c of others) {
+        const r = c.shape.contactShape(c.translation(), c.rotation(), own.shape, own.translation(), own.rotation(), predictionM);
+        if (!r) continue;
+        const other = c.parent();
+        const vRel = sub(vc(body.velocityAtPoint(r.point2)), other ? vc(other.velocityAtPoint(r.point1)) : v3());
+        const closing = -dot(vRel, vc(r.normal1));
+        if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+      }
+    }
+    return out;
   }
 
   /** Read contacts, support, classification and gaps after a solve. */
@@ -1384,6 +1664,11 @@ export class Simulation {
       const oldHandle = pl.proxy.body.handle;
       const audit = switchToRagdoll(this.physics, pl.proxy.body, c.rag);
       pl.rag = c.rag;
+      // plan 08: an accepted conversion ends the locomotion composition (a rejected one keeps it: falling already cleared it)
+      if (pl.loco) {
+        if (pl.loco.mode !== 'free') this.emit('locoMode', pl.id, { from: pl.loco.mode, to: 'free', reason: 'conversion' });
+        pl.loco = newLocoState();
+      }
       pl.representation = 'ragdoll';
       const after = this.bodyCount(pl.id);
       const proxyRemoved = !this.physics.world.bodies.contains(oldHandle) || !this.physics.world.getRigidBody(oldHandle)?.isEnabled();
@@ -1420,6 +1705,9 @@ export class Simulation {
       for (const id of switched) {
         const pl = this.byId.get(id)!;
         pl.pose = ragdollPose(pl.rag!);
+        // plan 09: the anatomical range starts with the ragdoll; the effort layer only after an accepted transfer
+        initEnvelope(pl.rag!);
+        if (this.fall && pl.handoff?.accepted) pl.fall = this.fall.begin(pl.id, pl.rag!, pl.setup.role, this.arms);
       }
     }
   }
@@ -1459,15 +1747,7 @@ export class Simulation {
         const st = pl.run;
         // the sampled request is built at every weight (0 = the procedural targets through the same continuous leg
         // solve), so the clip fades in and out without a solver switch
-        if (!pl.rag) {
-          sampled = retargetSample(playbackSample(st, P) ?? sampleRunClip(P.clips[st.k], st.u), st.w, pl.body, RP, core, st.heading, {
-            armSwing: P.armSwing,
-            carrySwing: P.carrySwing,
-            restToe: P.clips[st.k].restToe,
-            armMean: playbackArmMean(st, P),
-            ...(P.stanceWidthAddM ? { widthAddM: playbackWidthAddM(st, P) } : {}),
-          });
-        }
+        if (!pl.rag) sampled = this.sampledLimbs(pl, st, core);
       }
       const armObs = this.arms?.obs(pl.id);
       const arms = armObs
@@ -1488,6 +1768,7 @@ export class Simulation {
         arms,
         readyHands: !!pl.intent.debug?.readyHands,
         carriesBall: pl.setup.role === 'runner',
+        ...(this.def.carry ? { carry: this.def.carry } : {}),
         localVelDir: sp > 0.2 ? v3(localV.x / sp, 0, localV.z / sp) : v3(0, 0, 1),
         clearance: R ? this.poseClearance(pl, limbs) : undefined,
         memory: pl.poseMemory,
@@ -1497,6 +1778,7 @@ export class Simulation {
           : undefined,
         dtS: dt,
         handoffPossible: !!this.def.ragdoll && !pl.rag && !pl.handoff,
+        ...(this.def.locomotion ? { loco: { profile: this.def.locomotion, brakeB: pl.sus?.brakeB ?? 0, swing: this.walkSwing(pl, this.def.locomotion, core, sp, dt), contactW: pl.loco?.braceW ?? 0 } } : {}),
       };
       // plan 07: the foot plan reads the solved state and this substep's ordinary leg requests, writes foot requests for
       // the same leg solve, then observes the achieved pose (pose only)
@@ -1508,13 +1790,203 @@ export class Simulation {
         ftIn = this.footInput(pl, poseIn, sampled, dt);
         poseIn.feet = fp.initialized ? planFeet(fp, ftIn, ev) : {};
       }
+      const oldIn = this.opts.transitionAudit && ftIn ? this.auditInput(pl, poseIn, ftIn) : null;
       pl.pose = buildProxyPose(poseIn);
+      if (oldIn) this.recordTransition(pl, oldIn, poseIn, pl.pose);
+      if (this.opts.transitionAudit) this.keepLandmarks(pl, poseIn, pl.pose);
       if (fp && ftIn) {
         if (!fp.initialized) initFeet(fp, pl.pose, ftIn, ev);
         else observeFeet(fp, pl.pose, ftIn.soleM, ftIn.groundY, ev, ftIn.t);
         this.emitFeet(pl, ev);
+        const prev = this.auditPrev.get(pl.id);
+        if (prev && this.opts.transitionAudit) prev.plan = structuredClone(fp);
       }
     }
+  }
+
+  /** The clip's limb requests of a playback at the solved root. */
+  private sampledLimbs(pl: PlayerRuntime, st: RunPlayback, core: ProxyPoseInput['pose']): ReturnType<typeof retargetSample> {
+    const P = this.def.runClips!;
+    const composed = !!pl.feet?.profile.compose;
+    return retargetSample(composed ? shownSample(st, P) : (playbackSample(st, P) ?? sampleRunClip(P.clips[st.k], st.u)), composed ? (st.wF ?? smooth(st.w)) : st.w, pl.body, this.def.ragdoll ?? DEFAULT_POSE_PROFILE, core, st.heading, {
+      armSwing: P.armSwing,
+      carrySwing: P.carrySwing,
+      restToe: P.clips[st.k].restToe,
+      armMean: playbackArmMean(st, P),
+      ...(P.stanceWidthAddM ? { widthAddM: playbackWidthAddM(st, P) } : {}),
+      ...(st.stride !== undefined ? { strideScale: st.stride, carryShare: clamp(st.pos, 0, 1) } : {}),
+      ...(this.def.carry ? { carryRaw: true } : {}),
+    });
+  }
+
+  /**
+   * Plan 08 audit: when this substep's composition differs from the last one, the pose input of the old composition at the
+   * same solved state and time. Each owner that changed continues as if nothing had happened: the feet from a copy of the
+   * plan (`continueOwners`), the arms from their last owner (an achieved arm kept in the body frame, the last ready and
+   * contact state), the legs' support state. The phases have advanced once, for the live substep; the copies share them.
+   * Null when nothing changed.
+   */
+  private auditInput(pl: PlayerRuntime, inp: ProxyPoseInput, ftIn: FootPlanInput): AuditOld | null {
+    const fp = pl.feet;
+    if (!fp?.initialized || !inp.feet) return null;
+    const SD: ArmSide[] = ['left', 'right'];
+    // (with its reseed count: the pose takes a reseed as a new owner of the same kind)
+    const foot = (s: ArmSide): string => `${fp.feet[s].mode}/${fp.feet[s].source}${fp.feet[s].mode === 'swing' && fp.feet[s].wait ? '+wait' : ''}#${fp.feet[s].seeds}`;
+    const contactW = inp.loco?.contactW ?? 0;
+    const arm = (s: ArmSide): string => (inp.arms?.[s] ? 'achieved' : inp.readyHands ? 'ready' : inp.carriesBall && s === 'right' ? 'carry' : 'free') + (contactW > 0 ? '+contact' : '');
+    const supported = pl.controlMode === 'supported' && !!pl.sus?.probe.valid;
+    const falling = pl.controlMode === 'falling';
+    const footO = { left: foot('left'), right: foot('right') };
+    const armO = { left: arm('left'), right: arm('right') };
+    const key = [footO.left, footO.right, pl.loco?.mode ?? '', fp.brakeHeld ? 'held' : 'clip', armO.left, armO.right, falling ? 'falling' : supported ? 'supported' : 'unsupported'].join(' ');
+    const prev = this.auditPrev.get(pl.id);
+    const armsL: AuditPrev['armsL'] = {};
+    for (const s of SD) {
+      const a = inp.arms?.[s];
+      if (a) armsL[s] = { elbow: qInvRot(inp.pose.q, sub(a.elbow, inp.pose.p)), wrist: qInvRot(inp.pose.q, sub(a.wrist ?? a.palm, inp.pose.p)), palm: qInvRot(inp.pose.q, sub(a.palm, inp.pose.p)) };
+    }
+    const reqNow = { left: legRequestLocal(inp, 'left'), right: legRequestLocal(inp, 'right') };
+    this.auditPrev.set(pl.id, { key, foot: footO, arm: armO, feet: { ...inp.feet }, plan: null, reqL: reqNow, reqL2: prev?.reqL ?? reqNow, reqN: (prev?.reqN ?? 0) + 1, armsL, readyHands: !!inp.readyHands, contactW, supported, falling, mode: pl.loco?.mode ?? '' });
+    if (!prev?.plan || prev.key === key) return null;
+    const old: AuditOld = { ...inp, memory: structuredClone(pl.poseMemory), from: prev.key, to: key, reference: {}, requestJumpM: { left: 0, right: 0 }, stepStopM: { left: 0, right: 0 } };
+    // the legs' support composition: the ordinary request of the old state at this root
+    const v = vc(pl.proxy.body.linvel());
+    const seam = prev.supported !== supported || prev.falling !== falling;
+    if (seam) {
+      old.speed = prev.supported ? len(horiz(v)) : 0;
+      old.ground = { ...inp.ground!, bodyRelative: prev.falling ? true : undefined };
+    }
+    const run = this.auditRun.get(pl.id);
+    if (run) old.sampled = this.sampledLimbs(pl, run, inp.pose);
+    const request = {} as FootPlanInput['request'];
+    for (const s of SD) request[s] = toWorld(inp.pose, legRequestLocal(old, s));
+    const { requests: cont, stopped, tookUp } = continueOwners(prev.plan, { ...ftIn, request }, prev.feet);
+    const feet = { ...inp.feet };
+    // a foot whose ownership did not change keeps this substep's request: only the handover is compared. Across a change of the
+    // request's composition its offset is the old one: the live offset has taken the new request's seam up
+    const kept = (s: ArmSide): boolean => prev.foot[s] === footO[s] && !seam;
+    for (const s of SD) if (!kept(s)) feet[s] = cont[s];
+    old.feet = feet;
+    // the reference: the same composition with the old path's own snaps taken out where they start: a following foot's
+    // ordinary request carried on in the body frame, a step out of time carried on along its stored motion
+    const ref = { ...feet };
+    for (const s of SD) {
+      const q = feet[s];
+      // (a carried foot has the old path's request itself: nothing of it was corrected, its comparison is with that path as it is)
+      if (kept(s) || inp.feet[s]?.carried) continue;
+      const on = stopped[s];
+      // (a jump the old owner's offset took up is already out of its path)
+      if (q?.kind === 'offset' && prev.reqN > 1 && !tookUp[s]) {
+        const L = legRequestLocal(old, s);
+        const jump = sub(L, sub(scale(prev.reqL[s], 2), prev.reqL2[s]));
+        ref[s] = { ...q, offsetW: sub(q.offsetW, qRot(inp.pose.q, jump)) };
+        old.requestJumpM[s] = len(jump);
+      } else if (q?.kind === 'target' && on) {
+        ref[s] = { ...q, ankleW: on };
+        old.stepStopM[s] = dist(q.ankleW, on);
+      }
+    }
+    old.reference = ref;
+    // an arm whose owner changed keeps the old owner
+    const arms = { ...(inp.arms ?? {}) };
+    for (const s of SD) {
+      if (prev.arm[s].split('+')[0] === armO[s].split('+')[0]) continue;
+      const q = prev.armsL[s];
+      if (q) arms[s] = { shoulder: toWorld(inp.pose, shoulderLocal(pl.body, s)), elbow: toWorld(inp.pose, q.elbow), wrist: toWorld(inp.pose, q.wrist), palm: toWorld(inp.pose, q.palm) };
+      else delete arms[s];
+    }
+    old.arms = inp.arms ? arms : undefined;
+    old.readyHands = prev.readyHands;
+    if (inp.loco && (prev.contactW > 0) !== (contactW > 0)) old.loco = { ...inp.loco, contactW: prev.contactW };
+    return old;
+  }
+
+  private keepLandmarks(pl: PlayerRuntime, inp: ProxyPoseInput, pose: PhysicalPose): void {
+    const local: Record<string, Vec3> = {};
+    for (const [n, p] of Object.entries(pose.jointLandmarksWorld)) local[n] = qInvRot(inp.pose.q, sub(p, inp.pose.p));
+    const h = this.auditHist.get(pl.id) ?? [];
+    h.push(local);
+    if (h.length > 2) h.shift();
+    this.auditHist.set(pl.id, h);
+  }
+
+  private recordTransition(pl: PlayerRuntime, oldIn: AuditOld, nowIn: ProxyPoseInput, now: PhysicalPose): void {
+    const diff = (o: PhysicalPose): { m: number; k: string; by: Record<string, number> } => {
+      const by: Record<string, number> = {};
+      let m = 0;
+      let k = '';
+      for (const [n, p] of Object.entries(now.jointLandmarksWorld)) {
+        const q = o.jointLandmarksWorld[n];
+        if (!q) continue;
+        const d = len(sub(p, q));
+        by[n] = d;
+        if (d > m) [m, k] = [d, n];
+      }
+      return { m, k, by };
+    };
+    const old = buildProxyPose({ ...oldIn, memory: structuredClone(oldIn.memory) });
+    const reference = buildProxyPose({ ...oldIn, feet: oldIn.reference, memory: structuredClone(oldIn.memory) });
+    const raw = diff(old);
+    const rf = diff(reference);
+    // reported beside the limit, never part of it: the largest landmark departure from its own body-frame motion carried on
+    const h = this.auditHist.get(pl.id);
+    let continuedM = 0;
+    if (h?.length === 2)
+      for (const n of Object.keys(rf.by)) {
+        if (!h[0][n] || !h[1][n]) continue;
+        continuedM = Math.max(continuedM, len(sub(qInvRot(nowIn.pose.q, sub(now.jointLandmarksWorld[n], nowIn.pose.p)), sub(scale(h[1][n], 2), h[0][n]))));
+      }
+    const leg = (i: ProxyPoseInput, o: PhysicalPose, s: ArmSide): AuditLeg => {
+      const r = i.feet?.[s];
+      const n = o.legInfo?.[s];
+      return { kind: r?.kind ?? 'none', request: n?.request ?? v3(), ankle: o.jointLandmarksWorld[`${s}Ankle`], variant: n?.variant ?? 0, softM: n?.softM ?? 0, liftM: n?.liftM ?? 0, soleO: r?.soleO ?? 0, poleW: r?.poleW ?? 0 };
+    };
+    const legs = { left: { old: leg(oldIn, old, 'left'), now: leg(nowIn, now, 'left') }, right: { old: leg(oldIn, old, 'right'), now: leg(nowIn, now, 'right') } };
+    this.transitionDeltas.push({ t: this.t, playerId: pl.id, from: oldIn.from, to: oldIn.to, deltaM: rf.m, landmark: rf.k, by: rf.by, rawM: raw.m, rawBy: raw.by, continuedM, requestJumpM: oldIn.requestJumpM, stepStopM: oldIn.stepStopM, legs });
+  }
+
+  /**
+   * Plan 08 walking arm swing (-1..1, + = right foot ahead): the achieved feet's fore-aft spread along the body, low-pass
+   * filtered (the planner's steps are not continuous), faded in with the supported travel speed.
+   */
+  /**
+   * Plan 08: starts and stops go over steps, at the speed curves of the supplied start clips. A free player's request
+   * slews at the profile's walk ramp while it and the ramp are at walking speed, and at its start ramp (optional) while
+   * it asks for more than the ramp has reached (from the solved speed, so a run that picks up again never brakes first).
+   * A stop from a run, any contact and a referee ending pass through unchanged. The ramp's output replaces the intent's request, so the
+   * controller's own request is kept apart: a decision updates it, every substep advances the ramp toward it.
+   */
+  private rampWalkRequest(pl: PlayerRuntime, decided: boolean): void {
+    const W = this.def.runClips?.walk;
+    if (!W) return;
+    const loco = pl.intent.locomotion;
+    if (decided || !pl.walkWant) pl.walkWant = horiz(loco.desiredVelocityWorld);
+    const want = pl.walkWant;
+    let was = pl.walkRequest ?? want;
+    const free = !this.rules?.ending && pl.controlMode === 'supported' && pl.loco?.mode === 'free';
+    let rate = 0;
+    if (free && len(want) <= W.requestMps[1] && len(was) <= W.requestMps[1]) rate = W.rampMps2;
+    else if (free && W.startMps2 && len(want) > len(was)) {
+      rate = W.startMps2;
+      const v = horiz(vc(pl.proxy.body.linvel()));
+      if (len(v) > len(was)) was = v;
+    }
+    pl.walkRequest = rate > 0 ? add(was, clampLen(sub(want, was), rate * this.physics.dt)) : want;
+    pl.intent = { ...pl.intent, locomotion: { ...loco, desiredVelocityWorld: pl.walkRequest } };
+  }
+
+  private walkSwing(pl: PlayerRuntime, P: LocomotionProfile, core: ProxyPoseInput['pose'], speed: number, dt: number): number {
+    const fp = pl.feet;
+    if (!fp || !fp.initialized) return 0;
+    const fwd = forwardOf(core.q);
+    const fwdH = norm(v3(fwd.x, 0, fwd.z), v3(0, 0, 1));
+    const d = dot(sub(fp.feet.right.ankleW, fp.feet.left.ankleW), fwdH);
+    const W = P.walk;
+    const supported = pl.grounded && pl.controlMode === 'supported';
+    const want = supported ? clamp(d / W.strideM, -1, 1) * smooth((speed - W.fadeMps[0]) / (W.fadeMps[1] - W.fadeMps[0])) : 0;
+    const st = pl.loco!;
+    st.swing += (want - st.swing) * (dt > 0 ? 1 - Math.exp(-dt / W.tauS) : 0);
+    return st.swing;
   }
 
   /** Foot planner input from the solved state, the support probe and control mode, and the pose path's requests. */
@@ -1536,7 +2008,9 @@ export class Simulation {
       const hip = toWorld(core, hipLocal(pl.body, s));
       hips[s] = hip;
       const st = (s === 'left' ? 0.5 : -0.5) * (inp.ground?.staggerM ?? 0);
-      home[s] = v3(hip.x + fwdH.x * st, gy + soleM, hip.z + fwdH.z * st);
+      // plan 08: the fitted idle stance opens as the travel stops (the same width as the ordinary request)
+      const wide = inp.loco ? inp.loco.profile.idle.widthAddM * (s === 'left' ? -1 : 1) * (1 - Math.min(1, inp.speed / 1.5)) : 0;
+      home[s] = v3(hip.x + fwdH.x * st + rightW.x * wide, gy + soleM, hip.z + fwdH.z * st + rightW.z * wide);
       request[s] = toWorld(core, legRequestLocal(inp, s));
     }
     const P = this.def.runClips;
@@ -1569,6 +2043,8 @@ export class Simulation {
       toeM: R.shoe.forwardM + 0.5 * R.shoe.halfExtents.z,
       rightW,
       sideSign: { left: -1, right: 1 },
+      brakeB: sus.brakeB,
+      contactHold: pl.loco?.mode === 'contact',
     };
   }
 
@@ -1621,7 +2097,7 @@ export class Simulation {
       }
       return d;
     };
-    const push = (shapes: PoseShape[]): Vec3 => {
+    const push = (shapes: PoseShape[], toleranceM = 0): Vec3 => {
       const v = v3();
       for (const s of shapes) {
         const q = poseShapeToRapier(s);
@@ -1631,7 +2107,7 @@ export class Simulation {
           const r = e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, 0);
           if (r && r.distance < 0 && (!best || -r.distance > best.d)) best = { d: -r.distance, n: vc(r.normal1) };
         }
-        if (best) Object.assign(v, addScaled(v, best.n, best.d));
+        if (best) Object.assign(v, addScaled(v, best.n, Math.max(0, best.d - toleranceM)));
       }
       return v;
     };
@@ -1771,7 +2247,21 @@ export class Simulation {
         players[pl.id].jsep = round(Math.max(...Object.values(ae)), 5);
         players[pl.id].hinge = Object.fromEntries(Object.entries(pl.pose?.hingeDeg ?? {}).map(([kk, vv]) => [kk, round(vv, 2)]));
       }
+      if (pl.fall) {
+        const f = pl.fall;
+        players[pl.id].fall = {
+          e: round(f.effort, 3),
+          l: [f.arms.left.task, f.arms.left.brace],
+          r: [f.arms.right.task, f.arms.right.brace],
+          W: round(f.stats.positiveWorkJ, 3),
+          Wn: round(f.stats.negativeWorkJ, 3),
+          P: round(f.applied.reduce((s, a) => s + Math.max(0, a.entry.realizedW), 0), 2),
+          T: Object.fromEntries(f.applied.map((a) => [a.entry.joint, round(a.entry.appliedNm, 2)])),
+        };
+      }
+      if (pl.rag?.envelope) players[pl.id].lim = round(Math.max(0, ...pl.rag.envelope.map((e) => e.maxOverDeg)), 2);
       if (pl.feet && !pl.rag) players[pl.id].ft = footTrace(pl.feet);
+      if (pl.loco && !pl.rag) players[pl.id].loco = { m: pl.loco.mode, why: pl.loco.reason, p: round(pl.loco.prepW, 3), c: round(pl.loco.contactW, 3), s: round(pl.loco.swing, 3), d: round(this.prepDrop(pl), 4) };
       if (pl.run && this.def.runClips && !pl.rag) {
         const st = pl.run;
         players[pl.id].run = {
@@ -1865,6 +2355,9 @@ export class Simulation {
         runClips: def.runClips?.id,
         support: this.supportProfile.id,
         footwork: def.footwork?.id,
+        locomotion: def.locomotion?.id,
+        carry: def.carry?.id,
+        fallResponse: def.fallResponse?.id,
       },
       profiles: {
         body: bodyProfiles,
@@ -1878,11 +2371,19 @@ export class Simulation {
         runClips: def.runClips ? runClipProfileExport(def.runClips) : undefined,
         support: this.supportProfile,
         footwork: def.footwork,
+        locomotion: def.locomotion,
+        fallResponse: def.fallResponse,
         supportHeights: this.heightModels ?? undefined,
       },
       diagnostics: def.diagnostics,
       obstacles: def.obstacles,
       handoffs: Object.fromEntries(this.players.filter((p) => p.handoff).map((p) => [p.id, p.handoff])),
+      ...(def.ragdoll?.envelope
+        ? {
+            fallEffort: Object.fromEntries(this.players.filter((p) => p.fall).map((p) => [p.id, this.fall!.report(p.fall!)])),
+            jointLimits: Object.fromEntries(this.players.filter((p) => p.rag).map((p) => [p.id, this.limitReport(p)])),
+          }
+        : {}),
       ruleEnding: this.rules?.ending ?? null,
       timing: {
         outerTickS: def.solver.outerTickS,
@@ -1905,6 +2406,27 @@ export class Simulation {
         measuredMass: this.byId.get(p.id)?.mass,
       })),
       randomSeed: null,
+    };
+  }
+
+  /** Plan 09: measured limit error per joint since the handoff (native hinges and soft envelopes), with its mode. */
+  limitReport(pl: PlayerRuntime): Record<string, unknown> {
+    const rs = pl.ragStats;
+    return {
+      hinges: { mode: 'native', maxOverDeg: round(rs?.maxHingeOverDeg ?? 0, 3), overJoint: rs?.hingeOverJoint ?? null, maxReverseDeg: round(rs?.maxHingeReverseDeg ?? 0, 3), reverseJoint: rs?.hingeReverseJoint ?? null },
+      envelope: {
+        mode: this.def.ragdoll?.envelope?.mode ?? null,
+        profile: this.def.ragdoll?.envelope?.id ?? null,
+        joints: (pl.rag?.envelope ?? []).map((e) => ({
+          joint: e.jointId,
+          startOutsideDeg: round(e.startOutsideDeg, 3),
+          maxOverDeg: round(e.maxOverDeg, 3),
+          maxNominalOverDeg: round(e.maxNominalOverDeg, 3),
+          maxOverRunS: round(e.maxOverRunS, 4),
+          passivePositiveJ: round(e.passivePositiveJ, 4),
+          passiveNegativeJ: round(e.passiveNegativeJ, 4),
+        })),
+      },
     };
   }
 

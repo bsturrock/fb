@@ -15,6 +15,7 @@
 // - arms are unit segment directions in the clip's chest frame (Spine2 rotation), so the arm-to-trunk relation is
 //   kept on the player's own (physical, rigid) core.
 // The Hips bob, pelvis rotation and spine lean are not transferred: the physical core stays authoritative.
+import { carryArmSwing } from './carry';
 import type { ArmSide } from './contracts';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
 import {
@@ -483,6 +484,22 @@ export interface RunClipProfile {
    * width (bit-identical).
    */
   stanceWidthAddM?: Readonly<Record<string, number>>;
+  /**
+   * Plan 08 (optional): `clips[0]` is a walk, played only for a walking request (requestMps, m/s) and faded in over
+   * fadeMps. A walk that speeds up crosses to the run clips; other movement keeps `fadeMps` and the clips after it.
+   */
+  walk?: {
+    requestMps: [number, number];
+    fadeMps: [number, number];
+    /** Below the clip's nominal speed the stride shortens, not the cadence, down to this share of it; its height drops by dropM (m), so the feet reach the ground. */
+    minStride: number;
+    dropM: number;
+    /** Walking requests slew at rampMps2 (m/s^2); with startMps2, a request above the walk rises at that rate. */
+    rampMps2: number;
+    startMps2?: number;
+    /** Braking blend above which the walk is not played (a ramped stop stays under it, a hard stop does not). */
+    brakeB: number;
+  };
 }
 
 /** Profile export without sample data (identity, nominal speeds, bounds and policy). */
@@ -506,6 +523,7 @@ export function runClipProfileExport(p: RunClipProfile): Record<string, unknown>
     headingFadeDeg: p.headingFadeDeg,
     weightRatePerS: p.weightRatePerS,
     blendRatePerS: p.blendRatePerS,
+    ...(p.walk ? { walk: p.walk } : {}),
     armSwing: p.armSwing,
     carrySwing: p.carrySwing,
     ...(p.stanceWidthAddM ? { stanceWidthAddM: { ...p.stanceWidthAddM } } : {}),
@@ -518,6 +536,7 @@ export function validateRunClipProfile(p: RunClipProfile, R: RagdollProfile): vo
   for (let i = 1; i < p.clips.length; i++)
     if (!(p.clips[i].record.nominalSpeedMps > p.clips[i - 1].record.nominalSpeedMps)) throw new RunClipError(p.id, 'profile clips must be in ascending nominal speed');
   if (!(p.fadeMps[0] >= 0 && p.fadeMps[1] > p.fadeMps[0])) throw new RunClipError(p.id, 'invalid fade band');
+  if (p.walk && !(p.clips.length > 1 && p.walk.fadeMps[1] > p.walk.fadeMps[0] && p.walk.requestMps[1] > p.walk.requestMps[0] && p.walk.minStride > 0 && p.walk.minStride <= 1 && p.walk.rampMps2 > 0 && (p.walk.startMps2 ?? 1) > 0)) throw new RunClipError(p.id, 'invalid walk band');
   if (!(p.weightRatePerS > 0)) throw new RunClipError(p.id, 'invalid weight rate');
   if (!(p.blendRatePerS > 0)) throw new RunClipError(p.id, 'invalid blend rate');
   if (!(p.carrySwing >= 0 && p.carrySwing <= 1)) throw new RunClipError(p.id, 'carrySwing must be within 0..1');
@@ -539,6 +558,12 @@ export interface RunPlayback {
   w: number;
   /** Weight target of the last update. */
   wTarget: number;
+  /** Plan 08 composed: the weight the limbs show (critically damped toward the smoothed weight) and its rate. */
+  wF?: number;
+  wFV?: number;
+  /** Plan 08 composed: shown phase minus playback phase while a clip that is still shown rejoins the feet, and its rate. */
+  uSlip?: number;
+  uSlipV?: number;
   /** Playback rate relative to the blended nominal speed (bounded). */
   rate: number;
   /** Blend between neighbouring clips (0 = clips[k], 1 = clips[k + 1]). */
@@ -547,6 +572,9 @@ export interface RunPlayback {
   k: number;
   /** Blend position k + blend (rate-limited toward the speed-selected position). */
   pos: number;
+  /** Plan 08: on the profile's walk (a walking request, or a walk speeding up into the run), and its stride scale. */
+  walking?: boolean;
+  stride?: number;
   /** Actual horizontal speed from solved travel (m/s). */
   speed: number;
   /** World travel heading used for the clip frame (rad, as headingOf). */
@@ -559,7 +587,7 @@ export function newRunPlayback(u0: number): RunPlayback {
   return { u: frac(u0), w: 0, wTarget: 0, rate: 1, blend: 0, k: 0, pos: 0, speed: 0, heading: 0, prevP: null };
 }
 
-const smooth = (x: number): number => {
+export const smooth = (x: number): number => {
   const s = clamp(x, 0, 1);
   return s * s * (3 - 2 * s);
 };
@@ -601,6 +629,9 @@ export interface RunPlaybackInput {
   initDir?: Vec3;
   /** Player leg length (thigh + shin) and the clip rest leg scale it implies. */
   legM: number;
+  /** Plan 08: requested travel speed (m/s) and whether the player is braking: they choose the walk. */
+  requestMps?: number;
+  braking?: boolean;
 }
 
 /**
@@ -624,15 +655,35 @@ export function advanceRunPlayback(st: RunPlayback, p: RunClipProfile, inp: RunP
   st.heading = hf + clamp(off, -maxO, maxO);
   st.speed = speed;
   const headingW = 1 - smooth((Math.abs(off) - maxO) / rad(Math.max(1e-6, p.headingFadeDeg)));
-  st.wTarget = inp.supported ? smooth((speed - p.fadeMps[0]) / (p.fadeMps[1] - p.fadeMps[0])) * headingW : 0;
   const scaleLeg = inp.legM / p.clips[0].record.restLegM;
-  const posTarget = clipPosition(p, speed / scaleLeg);
-  if (init) st.pos = posTarget;
+  const runW = smooth((speed - p.fadeMps[0]) / (p.fadeMps[1] - p.fadeMps[0]));
+  let bandW = runW;
+  let posTarget = clipPosition(p, speed / scaleLeg);
+  const W = p.walk;
+  if (W) {
+    const req = inp.requestMps ?? 0;
+    const walks = !inp.braking && req >= W.requestMps[0] && req <= W.requestMps[1];
+    // a walk speeding up stays on the clips until the run has it
+    st.walking = walks || (!!st.walking && !inp.braking && req > W.requestMps[1] && runW < 1);
+    if (st.walking) {
+      bandW = Math.max(smooth((speed - W.fadeMps[0]) / (W.fadeMps[1] - W.fadeMps[0])), runW);
+      const v0 = p.clips[0].record.nominalSpeedMps;
+      posTarget = clamp((speed / scaleLeg - v0) / (p.fadeMps[1] - v0), 0, 1);
+    } else if (st.w > 0 && st.pos < 1 && runW <= 0) posTarget = st.pos; // a walk fading out stays the walk
+    else posTarget = Math.max(1, posTarget);
+  }
+  st.wTarget = inp.supported ? bandW * headingW : 0;
+  if (init || (st.walking && st.w <= 0)) st.pos = posTarget;
   else st.pos += clamp(posTarget - st.pos, -p.blendRatePerS * inp.dt, p.blendRatePerS * inp.dt);
   const sel = selectClips(p, st.pos);
   st.k = sel.k;
   st.blend = sel.blend;
-  const nominalScaled = (sel.strideM * scaleLeg) / sel.cycleS;
+  if (W) {
+    // the walk's stride follows the speed at the clip's cadence; the scale crosses to 1 with the blend to the run
+    const short = clamp(speed / (p.clips[0].record.nominalSpeedMps * scaleLeg), W.minStride, 1);
+    st.stride = short + (1 - short) * clamp(st.pos, 0, 1);
+  }
+  const nominalScaled = (sel.strideM * scaleLeg * (st.stride ?? 1)) / sel.cycleS;
   st.rate = clamp(speed / nominalScaled, sel.minRate, sel.maxRate);
   if (init) {
     st.w = st.wTarget;
@@ -649,6 +700,14 @@ export function playbackSample(st: RunPlayback, p: RunClipProfile): ClipSample |
   const a = sampleRunClip(p.clips[st.k], st.u);
   const b = p.clips[st.k + 1];
   return b && st.blend > 0 ? lerpSample(a, sampleRunClip(b, st.u), st.blend) : a;
+}
+
+/** Plan 08 composed: the sample the limbs show: the blended clip also while its weight fades out, at the shown phase. */
+export function shownSample(st: RunPlayback, p: RunClipProfile): ClipSample {
+  const u = frac(st.u + (st.uSlip ?? 0));
+  const a = sampleRunClip(p.clips[st.k], u);
+  const b = p.clips[st.k + 1];
+  return b && st.blend > 0 ? lerpSample(a, sampleRunClip(b, u), st.blend) : a;
 }
 
 /** Cycle-mean arm directions of the current clip blend (the reference the carry swing is measured from). */
@@ -711,6 +770,38 @@ export function playbackSwingProgress(st: RunPlayback, p: RunClipProfile): Recor
   return out;
 }
 
+/**
+ * Plan 08: the playback phase at which a clip joins an achieved foot: the phase inside `side`'s (blended) stance interval
+ * where the clip ankle's offset from the hip along the travel is closest to `offsetM`, put back by the time until that
+ * foot is down. Deterministic; the caller applies it only while the clip weight is about 0.
+ */
+export function joinPhase(st: RunPlayback, p: RunClipProfile, side: ArmSide, offsetM: number, delayS: number, legM: number): number {
+  const a = p.clips[st.k].record.stance[side];
+  const nb = p.clips[st.k + 1];
+  const b = nb?.record.stance[side];
+  const t = b && st.blend > 0 ? st.blend : 0;
+  const mix = (x: number, y: number): number => frac(x + t * (((y - x + 1.5) % 1) - 0.5));
+  const lo = b ? mix(a[0], b[0]) : a[0];
+  const hi = b ? mix(a[1], b[1]) : a[1];
+  const span = frac(hi - lo);
+  let best = lo;
+  let bestE = Infinity;
+  const N = 24;
+  for (let i = 0; i <= N; i++) {
+    const u = frac(lo + (span * i) / N);
+    const q = { ...st, u, w: 1 };
+    const e = Math.abs(playbackSample(q, p)!.leg[side].ankle.z * legM * (st.stride ?? 1) - offsetM);
+    if (e < bestE) {
+      bestE = e;
+      best = u;
+    }
+  }
+  const scaleLeg = legM / p.clips[0].record.restLegM;
+  const sel = selectClips(p, st.pos);
+  const rate = clamp(st.speed / ((sel.strideM * scaleLeg * (st.stride ?? 1)) / sel.cycleS), sel.minRate, sel.maxRate);
+  return frac(best - (delayS * rate) / sel.cycleS);
+}
+
 export function playbackLabel(st: RunPlayback, p: RunClipProfile): string {
   const b = p.clips[st.k + 1];
   return b && st.blend > 0 ? `${p.clips[st.k].id}+${b.id}` : p.clips[st.k].id;
@@ -748,8 +839,14 @@ export interface SampledLimbs {
    * (`swingLocal`) for the carry arm. Absent when the profile has no arm swing.
    */
   arms?: Record<ArmSide, { palmLocal: Vec3; poleLocal: Vec3; swingLocal: Vec3 }>;
-  /** Carry-arm share of the clip hand excursion (profile carrySwing). */
+  /** Carry-arm share of the clip hand excursion (profile carrySwing at this blend), and whether the clip drives that arm. */
   carrySwing: number;
+  carrySampled: boolean;
+  /**
+   * Plan 08a (carry profile): the clip's arm swing at this sample (carry.ts), at the same walk/run share as carrySwing: a run
+   * swings the carry between its keys, a walk keeps the settled hold.
+   */
+  carryRaw?: number;
 }
 
 /** Options of retargetSample (profile and clip data of the current playback). */
@@ -760,6 +857,26 @@ export interface RetargetOptions {
   armMean: Readonly<Record<ArmSide, { upper: Vec3; fore: Vec3 }>>;
   /** Plan 07: extra stance width per foot (m, outward), from the profile's `stanceWidthAddM`. */
   widthAddM?: number;
+  /** Plan 08: fore-aft scale of the feet (a walk's shorter stride). */
+  strideScale?: number;
+  /** Plan 08: share of carrySwing at this blend (a ball stays tucked on a walk's long arm swing). */
+  carryShare?: number;
+  /** Plan 08a: publish the clip's arm swing for the carry profile. */
+  carryRaw?: boolean;
+}
+
+/**
+ * A free arm from chest-frame segment directions (already in the body's side convention): from the player's shoulder,
+ * with its own segment lengths. Palm target and elbow pole, body-local.
+ */
+export function chestArm(body: BodyProfile, R: RagdollProfile, s: ArmSide, u: Vec3, f: Vec3): { palmLocal: Vec3; poleLocal: Vec3 } {
+  const sh = shoulderLocal(body, s);
+  const elbow = addScaled(sh, u, R.lengths.upperArm);
+  const palm = addScaled(elbow, f, R.lengths.forearm + R.lengths.palmExtension);
+  const k = closestOnSegment(elbow, sh, palm).point;
+  // a straight arm has no bend plane: elbow points back and out (the procedural arm's pole)
+  const fallback = v3(0.6 * sideSignX(body, s), -0.5, -0.6);
+  return { palmLocal: palm, poleLocal: norm(sub(elbow, k), fallback) };
 }
 
 /**
@@ -790,7 +907,8 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
     // optional extra width, outward on the body's own side of the travel line
     // (absent or 0: the unchanged expression, bit-identical)
     const wx = o.widthAddM ? o.widthAddM * sideSignX(body, s) : 0;
-    const off = qRot(yawQ, v3(wx ? a.x * leg + wx : a.x * leg, 0, a.z * leg));
+    const sz = o.strideScale ?? 1;
+    const off = qRot(yawQ, v3(wx ? a.x * leg + wx : a.x * leg, 0, a.z * leg * sz));
     const ankleW = v3(g.x + off.x, sole + c.ankle.y * leg, g.z + off.z);
     // stance contact: the clip's lower of heel and toe (blended over 3 cm of height difference) is the planted point
     const heelM = c.heelH * leg;
@@ -800,7 +918,7 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
     if (cw > 0) {
       const f = smooth((heelM - toeM) / CONTACT.rollM + 0.5);
       const pc = M(addScaled(c.ankle, sub(c.toe, c.ankle), f));
-      const po = qRot(yawQ, v3(wx ? pc.x * leg + wx : pc.x * leg, 0, pc.z * leg));
+      const po = qRot(yawQ, v3(wx ? pc.x * leg + wx : pc.x * leg, 0, pc.z * leg * sz));
       // the planted sole point in the shin frame: below the ankle (heel) to below the toe base, inside the shoe box
       const toeZ = Math.min(M(o.restToe[s]).z * leg, R.shoe.forwardM + R.shoe.halfExtents.z);
       contact = { weight: cw, pointWorld: v3(g.x + po.x, 0, g.z + po.z), soleFoot: v3(0, -sole, toeZ * f), toeZ, rollF: f };
@@ -817,17 +935,13 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
     const Lu = R.lengths.upperArm;
     const Lf = R.lengths.forearm + R.lengths.palmExtension;
     for (const s of SIDES) {
-      const sh = shoulderLocal(body, s);
       const u = M(sample.arm[s].upper);
       const f = M(sample.arm[s].fore);
-      const elbow = addScaled(sh, u, Lu);
-      const palm = addScaled(elbow, f, Lf);
-      const k = closestOnSegment(elbow, sh, palm).point;
-      // a straight arm has no bend plane: elbow points back and out (the procedural arm's pole)
-      const fallback = v3(0.6 * sideSignX(body, s), -0.5, -0.6);
       const swing = add(scale(sub(u, M(o.armMean[s].upper)), Lu), scale(sub(f, M(o.armMean[s].fore)), Lf));
-      arms[s] = { palmLocal: palm, poleLocal: norm(sub(elbow, k), fallback), swingLocal: swing };
+      arms[s] = { ...chestArm(body, R, s, u, f), swingLocal: swing };
     }
   }
-  return { weight, legs, arms, carrySwing: o.carrySwing };
+  const out: SampledLimbs = { weight, legs, arms, carrySwing: o.carrySwing * (o.carryShare ?? 1), carrySampled: o.carrySwing > 0 };
+  if (o.carryRaw) out.carryRaw = (o.carryShare ?? 1) * carryArmSwing(sample.arm.right.upper, sample.arm.left.upper);
+  return out;
 }

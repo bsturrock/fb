@@ -4,15 +4,17 @@
 import RECORD from './run-clips.record.json';
 import FAST_RUN from '../../../models/animations/fast-run.json';
 import SPRINT from '../../../models/animations/sprint.json';
+import WALK from '../../../models/animations/walk.json';
 import { decodeRunClip, RunClipError, type RunClip, type RunClipProfile, type RunClipRecord } from '../run-clip';
 
 /** Committed intake record (scripts/model/clip-intake.ts). */
-export const RUN_CLIPS_RECORD = RECORD as unknown as { policy: unknown; calibrationSha256: string; clips: RunClipRecord[] };
+export const RUN_CLIPS_RECORD = RECORD as unknown as { policy: unknown; calibrationSha256: string; clips: RunClipRecord[]; walk: RunClipRecord };
 
 /** Baked derivative data by record `data` path. */
 const SOURCES: Record<string, unknown> = {
   'models/animations/fast-run.json': FAST_RUN,
   'models/animations/sprint.json': SPRINT,
+  'models/animations/walk.json': WALK,
 };
 
 /** Decode every clip of a record against its data (a missing data entry or a stale record is a RunClipError). */
@@ -50,5 +52,29 @@ export function runClipsBew(over: Partial<RunClipProfile> = {}): RunClipProfile 
     armSwing: true,
     carrySwing: 0.6,
     ...over,
+  };
+}
+
+let cachedWalk: RunClip | null = null;
+/** The supplied walk cycle, decoded once. */
+export function suppliedWalkClip(): RunClip {
+  cachedWalk ??= decodeRunClips([RUN_CLIPS_RECORD.walk], SOURCES)[0]!;
+  return cachedWalk;
+}
+
+/**
+ * Plan 08: an L3 run-clip profile: the supplied walk first (the slowest clip), the run clips and their fade band as they
+ * were, and the stance widths the user chose by eye (Fast Run lands both feet on one line under the hips). The walk plays
+ * for a walking request only, so a run start and a stop from a run never pass through it; walking requests ramp at the
+ * supplied Start Walking's speed curve (about 1.2 m/s^2), so a walk starts and stops over steps.
+ */
+export function runClipsL3(base: RunClipProfile = runClipsBew()): RunClipProfile {
+  const walk = suppliedWalkClip();
+  return {
+    ...base,
+    id: `${base.id}+${walk.identity}+l3`,
+    clips: [walk, ...base.clips],
+    walk: { requestMps: [0.05, 2.1], fadeMps: [0.15, 0.5], minStride: 0.5, dropM: 0.025, rampMps2: 1.2, brakeB: 0.3 },
+    stanceWidthAddM: { walk: 0, 'fast-run': 0.065, sprint: 0.025 },
   };
 }

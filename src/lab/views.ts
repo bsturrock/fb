@@ -4,10 +4,11 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { RAPIER } from '../sim/physics';
 import type { PlayerRuntime } from '../sim/simulation';
-import { footFrame, type PhysicalPose } from '../sim/pose';
+import { carriedBall, footFrame, type PhysicalPose } from '../sim/pose';
 import { RAGDOLL_G4, shoulderLocal, type RagdollProfile } from '../sim/profiles';
+import { createFootball, forwardBallQ } from './football';
 import type { PlayerModel } from './player-model';
-import type { Vec3 } from '../sim/vec';
+import type { Pose, Vec3 } from '../sim/vec';
 import { toWorld } from '../sim/vec';
 
 export const PALETTES: Record<string, Record<'runner' | 'defender', { jersey: number; pants: number; helmet: number; skin: number }>> = {
@@ -149,7 +150,7 @@ export class PlayerView {
   private readonly aimMarker = marker(0xffd23f, 0.05);
   private readonly label: CSS2DObject;
   private readonly labelEl: HTMLDivElement;
-  readonly ball: THREE.Mesh | null;
+  readonly ball: THREE.Group | null;
 
   constructor(
     readonly pl: PlayerRuntime,
@@ -245,10 +246,7 @@ export class PlayerView {
         this.prim.add(hand);
       }
     }
-    this.ball =
-      role === 'runner' && ownBall
-        ? new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8).scale(0.62, 0.62, 1.0), std(0x7a4520, false))
-        : null;
+    this.ball = role === 'runner' && ownBall ? createFootball() : null;
     if (this.ball) this.root.add(this.ball);
     this.syncColliders(colliders);
     // overlays
@@ -325,9 +323,11 @@ export class PlayerView {
       this.joints[1].position.copy(tv(lm.rightHand ?? lm.rightPalm));
     }
     if (this.ball) {
-      const bp = lm?.rightPalm ? lm.rightPalm : toWorld(core, { x: 0.2, y: 0.25, z: 0.25 });
+      const seated = carriedBall(pose);
+      const bp = seated?.p ?? (lm?.rightPalm ? lm.rightPalm : toWorld(core, { x: 0.2, y: 0.25, z: 0.25 }));
+      const bq = seated?.q ?? forwardBallQ(core.q);
       this.ball.position.copy(tv(bp));
-      this.ball.quaternion.set(core.q.x, core.q.y, core.q.z, core.q.w);
+      this.ball.quaternion.set(bq.x, bq.y, bq.z, bq.w);
     }
     for (const { c, m } of this.colliderMeshes) {
       m.visible = flags.colliders;
@@ -571,14 +571,11 @@ export class BalanceOverlay {
  */
 export class RuleOverlay {
   readonly root = new THREE.Group();
-  private readonly ball: THREE.Mesh;
+  private readonly ball: THREE.Group;
   private readonly spot: THREE.Group;
 
   constructor(sideline: { outwardNormal: Vec3; offsetM: number } | null) {
-    const bg = new THREE.SphereGeometry(0.11, 18, 12);
-    bg.scale(1, 0.62, 0.62);
-    this.ball = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ color: 0x7a4422, roughness: 0.7 }));
-    this.ball.castShadow = true;
+    this.ball = createFootball();
     this.root.add(this.ball);
     this.spot = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd400, side: THREE.DoubleSide }));
@@ -599,8 +596,9 @@ export class RuleOverlay {
     }
   }
 
-  update(ball: Vec3, spot: Vec3 | null): void {
-    this.ball.position.copy(tv(ball));
+  update(ball: Pose, spot: Vec3 | null): void {
+    this.ball.position.copy(tv(ball.p));
+    this.ball.quaternion.set(ball.q.x, ball.q.y, ball.q.z, ball.q.w);
     this.spot.visible = !!spot;
     if (spot) this.spot.position.set(spot.x, 0, spot.z);
   }

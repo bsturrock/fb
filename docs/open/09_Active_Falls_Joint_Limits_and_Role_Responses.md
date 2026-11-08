@@ -4,6 +4,8 @@ Repository-aligned plan • 2026-11-05 • Planned after integrated passive fall
 
 Previous: [locomotion integration](08_Locomotion_Transitions_and_Tackle_Integration.md).
 
+**Status (2026-11-07):** implemented and uncommitted on `model-integration`; the three implementation-review fixes are applied; awaiting user review. Results, decisions and disclosures are in the [handoff](../handoff/plan09.md).
+
 ## Prerequisites and support boundary
 
 Accept passive integrated falls from plans 06a–08 first, including handoffs at low ride height and both signs of vertical velocity. Active responses must not conceal support or transfer failures. All suspension, grounded drive and supported posture effort is disabled before this layer activates; rejected conversion stays a passive falling proxy. Test bob extrema and saturated-support exits in L4-F9. Preserve the accepted shoe pitch at conversion, then keep the shoe fixed to its shin.
