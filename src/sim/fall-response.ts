@@ -3,7 +3,7 @@
 // with grasp tension, then power and work caps apply before the solve. It adds no external force, floor anchor, velocity
 // correction or body rotation: finite torque and real contact decide what happens, and a miss stays a miss.
 import type { ArmEffortDemand, ArmSystem } from './arms';
-import type { ArmSide, ContactRec, PlayerId, Role, SegmentId } from './contracts';
+import { isGround, type ArmSide, type ContactRec, type PlayerId, type Role, type SegmentId } from './contracts';
 import type { FallResponseProfile, JointEnvelope } from './profiles';
 import { twoBone } from './pose';
 import { clampDirToEnvelope, hingeAngles, hingeAxisWorld, landmarkWorld, limbDirWorld, relativeOmega, type Ragdoll, type RagdollJoint } from './ragdoll';
@@ -28,7 +28,11 @@ interface ArmState {
   floorTarget: Vec3 | null;
   reachable: boolean;
   everReachable: boolean;
-  obstructed: boolean;
+  /**
+   * Plan 10c C4: when a seeking brace last touched an opponent or an obstacle with its forearm or palm (s), never a hold
+   * the arm system retains; null: never. A miss within the brace's shortest prediction horizon of it is `obstructed`.
+   */
+  obstructedAtS: number | null;
 }
 
 interface JointCmd {
@@ -60,7 +64,6 @@ export interface JointEffortEntry {
   appliedNm: number;
   onChild: Vec3;
   onParent: Vec3;
-  pairSum: number;
   /** Positive-power prediction before the solve and realized power across it (W). */
   predictedW: number;
   realizedW: number;
@@ -151,18 +154,28 @@ function dirTorque(cur: Vec3, tgt: Vec3, w: Vec3, kp: number, kd: number, spring
   return spring && s > 1e-6 ? addScaled(damp, c, (kp * ang) / s) : damp;
 }
 
-const rotateToward = (from: Vec3, to: Vec3, maxRad: number): Vec3 => {
+/**
+ * Unit `from` turned toward unit `to` by at most maxRad. Plan 10c C5: opposite vectors (no cross product) turn about an
+ * axis perpendicular to `from`, its cross product with the least-aligned basis axis, instead of jumping half a turn.
+ */
+export const rotateToward = (from: Vec3, to: Vec3, maxRad: number): Vec3 => {
   const c = cross(from, to);
   const s = len(c);
   const a = Math.atan2(s, dot(from, to));
-  if (a <= maxRad || s < 1e-9) return { ...to };
-  return norm(qRot(qFromAxisAngle(scale(c, 1 / s), maxRad), from));
+  if (a <= maxRad) return { ...to };
+  let axis = s >= 1e-9 ? scale(c, 1 / s) : null;
+  if (!axis) {
+    const [x, y, z] = [Math.abs(from.x), Math.abs(from.y), Math.abs(from.z)];
+    axis = norm(cross(from, x <= y && x <= z ? v3(1, 0, 0) : y <= z ? v3(0, 1, 0) : v3(0, 0, 1)));
+  }
+  return norm(qRot(qFromAxisAngle(axis, maxRad), from));
 };
 
 export class FallResponse {
   readonly episodes = new Map<PlayerId, FallEpisode>();
   ledger: JointEffortEntry[] = [];
-  keepLedger = true;
+  /** Plan 10c (C7): set by the simulation from `SimOptions.ledgers` (off by default). */
+  keepLedger = false;
 
   constructor(
     readonly P: FallResponseProfile,
@@ -185,13 +198,17 @@ export class FallResponse {
     return qInvRot(this.coreQ(ep), limbDirWorld(ep.rag, seg));
   }
 
-  /** Start at an accepted conversion, from the actual angles, tasks and holds at that boundary. */
-  begin(playerId: PlayerId, rag: Ragdoll, role: Role, arms: ArmSystem | null): FallEpisode {
+  /**
+   * Start at an accepted conversion, from the actual angles, tasks and holds at that boundary. `carry`: the arm the ball
+   * is actually on (null: no ball); plan 10c C2: that arm protects, and the profile's declared carry arm must agree.
+   */
+  begin(playerId: PlayerId, rag: Ragdoll, role: Role, arms: ArmSystem | null, carry: ArmSide | null): FallEpisode {
+    if (carry && carry !== this.P.arms.carryArm) throw new Error(`fall response ${this.P.id}: declared carry arm ${this.P.arms.carryArm}, but ${playerId} carries the ball on the ${carry} arm`);
     const hinge = hingeAngles(rag);
     const mk = (side: ArmSide): ArmState => {
       const dir = qInvRot(rag.bodies.core.rotation(), limbDirWorld(rag, `${side}UpperArm`));
       const elbow = rad(hinge[`${side}Elbow`]);
-      return { side, task: 'passive', brace: 'none', refDirCore: dir, refElbowRad: elbow, targetDirCore: dir, targetElbowRad: elbow, floorTarget: null, reachable: false, everReachable: false, obstructed: false };
+      return { side, task: 'passive', brace: 'none', refDirCore: dir, refElbowRad: elbow, targetDirCore: dir, targetElbowRad: elbow, floorTarget: null, reachable: false, everReachable: false, obstructedAtS: null };
     };
     const ep: FallEpisode = {
       playerId,
@@ -216,7 +233,7 @@ export class FallResponse {
     for (const side of SIDES) {
       const a = ep.arms[side];
       if (!this.P.enable.arms) continue;
-      if (role === 'runner' && side === this.P.arms.carryArm) a.task = 'protect';
+      if (side === carry) a.task = 'protect';
       else if (arms?.retained(playerId, side)) a.task = 'hold';
       else {
         a.task = 'brace';
@@ -259,10 +276,16 @@ export class FallResponse {
       for (const [own, other] of [[c.a, c.b], [c.b, c.a]] as const) {
         if (own.playerId !== ep.playerId) continue;
         const arm = own.side && (own.region === 'palm' || own.region === 'forearm') ? own.side : null;
-        if (other.key === 'floor' && other.playerId === null) {
+        if (isGround(other)) {
           if (arm && !onFloor[arm]) onFloor[arm] = own.region;
           if (own.region === 'torso' || own.region === 'pelvis' || own.region === 'head') ep.coreDown = true;
-        } else if (arm && other.playerId !== ep.playerId) ep.arms[arm].obstructed = true;
+        } else if (arm && other.playerId !== ep.playerId) {
+          // plan 10c C4: only a seeking brace is obstructed (a hold's own contact is not), and not by a hold the arm
+          // system retains, the arm's own or an opponent's on it
+          const a = ep.arms[arm];
+          const held = !!other.playerId && !!other.side && (other.region === 'palm' || other.region === 'forearm') && !!arms?.retained(other.playerId, other.side);
+          if (a.task === 'brace' && a.brace === 'seek' && !held && !arms?.retained(ep.playerId, arm)) a.obstructedAtS = this.host.t;
+        }
       }
     }
     for (const side of SIDES) {
@@ -284,7 +307,10 @@ export class FallResponse {
         a.refDirCore = this.dirCore(ep, `${side}UpperArm`);
         a.refElbowRad = rad(hingeAngles(ep.rag)[`${side}Elbow`]);
         this.host.emit('braceContact', ep.playerId, { arm: side, part, tS: round(this.host.t - ep.t0, 4), palm: rv(landmarkWorld(ep.rag, `${side}Palm`), 4) });
-      } else if (ep.coreDown) this.missBrace(ep, a, a.obstructed ? 'obstructed' : a.reachable ? 'late' : 'tooFar');
+      } else if (ep.coreDown) {
+        const obstructed = a.obstructedAtS !== null && this.host.t - a.obstructedAtS <= this.P.brace.horizonS[0] + 1e-9;
+        this.missBrace(ep, a, obstructed ? 'obstructed' : a.reachable ? 'late' : 'tooFar');
+      }
     }
   }
 
@@ -490,6 +516,7 @@ export class FallResponse {
       s = lo;
     }
     let predicted = 0;
+    let torqued = false;
     ep.cmds.forEach((c, i) => {
       const ps = positive[i] ? s : 1;
       const t = scale(torques[i], ps);
@@ -497,11 +524,12 @@ export class FallResponse {
       predicted += positive[i] ? pred : 0;
       const m = len(t);
       if (m > 0) {
+        torqued = true;
         ep.rag.bodies[c.joint.child].addTorque(t, true);
         ep.rag.bodies[c.joint.parent].addTorque(scale(t, -1), true);
       }
       const onParent = scale(t, -1);
-      const entry: JointEffortEntry = { t: this.host.t, step: this.host.steps, owner: ep.playerId, joint: c.joint.id, task: c.task, requestedNm: c.requestedNm, capNm: c.capNm, budgetScale: budget[i], powerScale: ps, appliedNm: m, onChild: t, onParent, pairSum: len(add(t, onParent)), predictedW: pred, realizedW: 0 };
+      const entry: JointEffortEntry = { t: this.host.t, step: this.host.steps, owner: ep.playerId, joint: c.joint.id, task: c.task, requestedNm: c.requestedNm, capNm: c.capNm, budgetScale: budget[i], powerScale: ps, appliedNm: m, onChild: t, onParent, predictedW: pred, realizedW: 0 };
       ep.applied.push({ entry, cmd: c });
       if (this.keepLedger) this.ledger.push(entry);
       const k = c.joint.kind as keyof FallStats['peakNm'];
@@ -509,7 +537,8 @@ export class FallResponse {
       if (m > 0) ep.stats.lastEffortS = this.host.t - ep.t0;
     });
     ep.stats.peakPredictedW = Math.max(ep.stats.peakPredictedW, predicted);
-    ep.stats.activeSubsteps++;
+    // plan 10c (C7): a substep whose commands were all scaled to nothing applied no effort
+    if (torqued) ep.stats.activeSubsteps++;
   }
 
   /** Realized work across the solve, measured from the velocities either side of it. Nothing here refunds capacity. */

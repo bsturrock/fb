@@ -613,7 +613,30 @@ export interface RagdollProfile {
   endBandM: number;
   /** Plan 09: shoulder/hip swing-twist envelope (absent: spherical joints stay unrestricted, the Gate 4 passive path). */
   envelope?: RagdollEnvelope;
+  /**
+   * Plan 10c (C6): the longer push-out a convertible player's shown leg takes when the ordinary continuity push leaves it
+   * past the pose's validity depth (another body moves into the pose-only leg near the hip, where moving the ankle moves
+   * the thigh little), so the published pose, and the candidate built from it, stays valid. Absent: the ordinary push
+   * only (historical profiles).
+   */
+  poseGuard?: PoseGuard;
 }
+
+export interface PoseGuard {
+  id: string;
+  /**
+   * Push-out iterations and largest total push in one substep (m) of the longer push. The cap is the ordinary one, so
+   * the shown leg moves no faster than the continuity budget allows.
+   */
+  deepPushIterations: number;
+  deepPushM: number;
+}
+
+/** Plan 10c (C6): adopted by the HC natural-contact variants, whose no-rigid-proxy guarantee holds in both player orders. */
+export const POSE_GUARD_C6: PoseGuard = { id: 'poseGuard-v1', deepPushIterations: 12, deepPushM: 0.05 };
+
+/** The ragdoll profile with the convertible-pose guard, under an id that names it. */
+export const withPoseGuard = (r: RagdollProfile, g: PoseGuard = POSE_GUARD_C6): RagdollProfile => ({ ...r, id: `${r.id}+${g.id}`, poseGuard: g });
 
 /**
  * One spherical joint's anatomical range in the parent (core) frame. Swing is measured from the limb hanging along the
@@ -736,8 +759,15 @@ export interface FallResponseProfile {
   enable: { knee: boolean; hip: boolean; arms: boolean };
 }
 
+/**
+ * v2 (plan 10c): the same numbers under changed behaviour. C1: a hold's grasp is allocated before any arm effort, which
+ * gets only what is left of the owner budget. C2: the protect arm is the arm the ball is on (a profile declaring
+ * another fails at the conversion). C3: ground is the floor only. C4: a brace miss is `obstructed` only when the seeking
+ * brace was blocked within its shortest prediction horizon, never by a hold. C5: the brace direction turns at its rate
+ * limit also between opposite vectors. Bookkeeping (C7): `activeSubsteps` counts only substeps that applied torque.
+ */
 export const FALL_L4: FallResponseProfile = {
-  id: 'fall-response-l4-v1',
+  id: 'fall-response-l4-v2',
   timing: { delayS: 0.04, rampS: 0.08, fadeStartS: 0.8, fadeS: 0.2 },
   ceilingsNm: { shoulder: 15, elbow: 10, hip: 18, knee: 22 },
   gains: { shoulder: { kp: 60, kd: 6 }, elbow: { kp: 35, kd: 3 }, hip: { kp: 45, kd: 6 }, knee: { kp: 40, kd: 5 } },

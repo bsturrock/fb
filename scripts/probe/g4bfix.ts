@@ -1,5 +1,6 @@
 // Run every G4-B fixture and print the handoff / grip / clamp event story.
-import { Simulation } from '../../src/sim/simulation';
+import { SIM_DEFAULTS, Simulation } from '../../src/sim/simulation';
+SIM_DEFAULTS.ledgers = true; // reads the ledgers (plan 10c: off by default)
 import { gate4Fixtures } from '../../src/sim/fixtures/gate4';
 const only = process.argv[2];
 for (const def of gate4Fixtures().filter((d) => d.milestone === 'G4-B' && (!only || d.id.includes(only)))) {

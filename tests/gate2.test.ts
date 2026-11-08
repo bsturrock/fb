@@ -36,8 +36,9 @@ function commonArmChecks(sim: Simulation): void {
   expect(sim.result).toBe('duration');
   for (const e of evs(sim, 'gripBegin')) expect(e.data!.palmGap as number).toBeLessThanOrEqual(TOL + 1e-9);
   for (const e of evs(sim, 'clampBegin')) expect(e.data!.gap as number).toBeLessThanOrEqual(TOL + 1e-9);
+  // plan 10c (C7): the ledger's pair sum (of the commanded pair, always 0) is gone; the owner's force is the target's
+  // negated in the same call
   for (const l of sim.arms?.ledger ?? []) {
-    expect(l.pairSum).toBeLessThanOrEqual(1e-6);
     expect(Number.isFinite(l.actual)).toBe(true);
     expect(l.actual).toBeLessThanOrEqual(P.hold.perArmCeilingN + 0.01);
   }

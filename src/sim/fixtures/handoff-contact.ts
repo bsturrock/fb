@@ -6,7 +6,7 @@
 import type { ArmSide, SegmentId, StanceRequest } from '../contracts';
 import type { ControllerSpec, FixtureDef, PlayerSetup } from '../fixture';
 import type { ArmScriptSegment, ScriptSegment } from '../controllers/base';
-import { ruleVariant, type RuleProfile } from '../profiles';
+import { ruleVariant, withPoseGuard, type RuleProfile } from '../profiles';
 import { rhf5PlayerBelow, rhf6, rhf7 } from './ride-height';
 import { asL2, l2f14OneArmFeet, l2f15PlayerBelow, withFeet } from './footwork';
 import { v3, type Vec3 } from '../vec';
@@ -200,6 +200,11 @@ export const hcf5 = (): FixtureDef[] => {
   ];
 };
 
+/**
+ * Plan 10c (C6): every registered HC variant carries the convertible-pose guard, so its no-rigid-proxy guarantee holds
+ * in both player orders. The base cases (RH-F5-playerBelow, L2-F15-playerBelow, ...) and fixtures derived from the
+ * builders (L3-F11-invalid) keep their historical profiles.
+ */
 export function handoffContactFixtures(): FixtureDef[] {
-  return [...hcf1(), ...hcf2(), ...hcf3(), ...hcf4(), ...hcf5()];
+  return [...hcf1(), ...hcf2(), ...hcf3(), ...hcf4(), ...hcf5()].map((d) => (d.ragdoll ? { ...d, ragdoll: withPoseGuard(d.ragdoll) } : d));
 }

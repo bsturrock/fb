@@ -1,5 +1,6 @@
 // Probe (review finding 1): passive grasp force direction, duration and separation in the G4-F4 owner conversions.
-import { Simulation } from '../../src/sim/simulation';
+import { SIM_DEFAULTS, Simulation } from '../../src/sim/simulation';
+SIM_DEFAULTS.ledgers = true; // reads the ledgers (plan 10c: off by default)
 import * as G4 from '../../src/sim/fixtures/gate4';
 import { dot, len, sub, toWorld, vc } from '../../src/sim/vec';
 

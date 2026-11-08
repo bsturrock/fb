@@ -1,7 +1,8 @@
 // Plan 09 review: would a pre-solve impact guard (geometric closing speed per limb, or the last solve's contact impulse)
 // have removed every effort power overrun, and how many substeps would it hold off? Offline estimate: a guarded
 // joint's realized power is dropped, the others kept as measured.
-import { Simulation } from '../../src/sim/simulation';
+import { SIM_DEFAULTS, Simulation } from '../../src/sim/simulation';
+SIM_DEFAULTS.ledgers = true; // reads the ledgers (plan 10c: off by default)
 import { fallFixtures } from '../../src/sim/fixtures/falls';
 import { FallResponse } from '../../src/sim/fall-response';
 import { dot, sub, vc } from '../../src/sim/vec';

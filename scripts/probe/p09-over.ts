@@ -1,4 +1,5 @@
-import { Simulation } from '../../src/sim/simulation';
+import { SIM_DEFAULTS, Simulation } from '../../src/sim/simulation';
+SIM_DEFAULTS.ledgers = true; // reads the ledgers (plan 10c: off by default)
 import { asL4, tippedFall } from '../../src/sim/fixtures/falls';
 const out: string[] = [];
 for (const dir of ['forward', 'back', 'side', 'oblique'] as const)

@@ -1,6 +1,7 @@
 // Usage: vite-node scripts/probe/arm.ts <fixtureId> [every]
 import { allFixtures } from '../../src/sim/fixtures/index';
-import { Simulation } from '../../src/sim/simulation';
+import { SIM_DEFAULTS, Simulation } from '../../src/sim/simulation';
+SIM_DEFAULTS.ledgers = true; // reads the ledgers (plan 10c: off by default)
 const id = process.argv[2];
 const every = Number(process.argv[3] ?? 6);
 const def = allFixtures().find((f) => f.id === id)!;

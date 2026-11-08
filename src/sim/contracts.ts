@@ -182,4 +182,10 @@ export interface Snapshot {
   balance: Record<PlayerId, BalanceState>;
 }
 
+/**
+ * Plan 10c C3 (U6): ground is the floor only. An obstacle collider carries the floor's part and region (it is static
+ * scenery), but its own key, and is not ground: not for ragdoll grounding, the fall response's core-down, or the rules.
+ */
+export const isGround = (t: ColliderTag): boolean => t.playerId === null && t.key === 'floor';
+
 export const pairKey = (a: PlayerId, b: PlayerId): string => (a < b ? `${a}|${b}` : `${b}|${a}`);

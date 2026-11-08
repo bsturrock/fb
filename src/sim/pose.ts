@@ -6,7 +6,7 @@
 // (the limb extends along -Y), local X = the elbow/knee hinge axis, Z = X x Y. The hinge angle about X from the
 // proximal to the distal frame is zero for a straight limb and positive in flexion.
 import type { ArmSide, SegmentId } from './contracts';
-import { carryRequest, seatBallLocal, seatBallWorld, seatPalmLocal, type CarryProfile, type CarrySeat } from './carry';
+import { CARRY_ARM, carryRequest, seatBallLocal, seatBallWorld, seatPalmLocal, type CarryProfile, type CarrySeat } from './carry';
 import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
@@ -449,7 +449,7 @@ export function proceduralLocal(body: BodyProfile, s: ArmSide, p: Vec3): Vec3 {
 
 /** Ball-arm carry palm (body-local, the right arm). */
 export function carryPalmLocal(body: BodyProfile): Vec3 {
-  return proceduralLocal(body, 'right', v3(0.13 * sideSignX(body, 'right'), 0.24, 0.24));
+  return proceduralLocal(body, CARRY_ARM, v3(0.13 * sideSignX(body, CARRY_ARM), 0.24, 0.24));
 }
 
 export function pelvisMidLocal(body: BodyProfile): Vec3 {
@@ -460,7 +460,7 @@ export function pelvisMidLocal(body: BodyProfile): Vec3 {
 export function proceduralArmTargetLocal(s: ArmSide, inp: ProxyPoseInput): Vec3 {
   const body = inp.body;
   const sx = sideSignX(body, s);
-  if (inp.carriesBall && s === 'right') return carryPalmLocal(body);
+  if (inp.carriesBall && s === CARRY_ARM) return carryPalmLocal(body);
   if (inp.readyHands) return proceduralLocal(body, s, v3(0.2 * sx, 0.27, 0.38));
   const swing = Math.cos(inp.gait.phase + (s === 'left' ? 0 : Math.PI)) * Math.min(1, inp.speed / 4);
   return proceduralLocal(body, s, v3(0.27 * sx, 0.05 + 0.08 * Math.abs(swing), 0.1 + 0.22 * swing));
@@ -761,7 +761,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     // plan 08a: the carry arm's request and the hand and ball seat on whatever forearm is achieved. The clip's arm swing fades
     // with the shown clip weight into the static carry (swing 0, between the keys). An achieved arm keeps its solve and its
     // palm: the hand stays straight on it and only the ball's seat remains.
-    const carryArm = inp.carry && inp.carriesBall && s === 'right' ? carryRequest(inp.carry, (smp?.weight ?? 0) * (smp?.carryRaw ?? 0), R.lengths.forearm, (p) => v3(p.x * (sideSignX(body, 'left') > 0 ? 1 : -1), p.y, p.z)) : null;
+    const carryArm = inp.carry && inp.carriesBall && s === CARRY_ARM ? carryRequest(inp.carry, (smp?.weight ?? 0) * (smp?.carryRaw ?? 0), R.lengths.forearm, (p) => v3(p.x * (sideSignX(body, 'left') > 0 ? 1 : -1), p.y, p.z)) : null;
     const carried = given ? null : carryArm;
     /** `palm`: the shown palm landmark; `reach`: the solved chain's end, where the arm's request is measured. */
     type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; reach: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number; tgtL?: Vec3; poleL?: Vec3 };
@@ -796,7 +796,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // plan 08: a free arm rests in the fitted idle posture and swings opposite the achieved feet (the gait swing target
       // above is only 25% at walking speed, and the planner's steps do not follow the gait phase)
       const lo = inp.loco;
-      const freeArm = !!lo && !inp.readyHands && !(inp.carriesBall && s === 'right');
+      const freeArm = !!lo && !inp.readyHands && !(inp.carriesBall && s === CARRY_ARM);
       if (freeArm) {
         const mx = sideSignX(body, 'left') > 0 ? 1 : -1;
         const dir = (a: readonly number[]): Vec3 => v3(a[0] * mx, a[1], a[2]);
@@ -816,7 +816,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // adds a share of the clip hand's excursion (the ball stays in that hand); ready hands keep their procedural
       // assignment. The blend starts from the pose the procedural path showed (its last chosen variant, kept while
       // the clip is off), so the clip fades in without a jump.
-      const carry = !!inp.carriesBall && s === 'right';
+      const carry = !!inp.carriesBall && s === CARRY_ARM;
       const sw = smp?.arms && !inp.readyHands ? smp.arms[s] : null;
       const sampledArm = !!sw && smp!.weight > 0 && (!carry || smp!.carrySampled);
       if (carried) {
@@ -1167,20 +1167,21 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const extOk = Math.max(HARD_OK, chosen.depth) + 1e-9;
         const floorOk = Math.max(CONT_FLOOR_OK, floorC) + 1e-9;
         // the blended target, pushed out along the contact normals (and up off the floor) while it penetrates
-        const at = (al: number): LegC & { good: boolean; rank: number } => {
+        const at = (al: number, deep = false): LegC & { good: boolean; rank: number } => {
           const t0 = W(add(base, lerp(dp, dc, al)));
           let t = t0;
           const sol = legSolver(qRot(pose.q, towardDir(pp, pc, al)));
           let c = sol.solve(t);
           let de = ext(c.shapes);
           // pushed toward validity (HARD_OK), also when no candidate is valid (tangled with another body)
-          for (let i = 0; i < CONT_PUSH_IT && (de > HARD_OK || c.depth > floorOk) && inp.clearance?.push; i++) {
+          const G = deep ? inp.ragdoll.poseGuard : undefined;
+          for (let i = 0; i < (G ? G.deepPushIterations : CONT_PUSH_IT) && (de > HARD_OK || c.depth > floorOk) && inp.clearance?.push; i++) {
             // Correct only the excess depth: a full push at the validity threshold jumps by the whole tolerance.
             const pv = inp.clearance.push(c.shapes, inp.loco ? HARD_OK - 0.001 : 0);
             if (c.depth > floorOk) pv.y += inp.loco ? c.depth - floorOk + 0.001 : c.depth;
             const m = len(pv);
             if (m < 1e-6) break;
-            t = add(t0, clampLen(sub(addScaled(t, pv, inp.loco ? 1 : 1 + 0.001 / m), t0), CONT_PUSH_MAX_M));
+            t = add(t0, clampLen(sub(addScaled(t, pv, inp.loco ? 1 : 1 + 0.001 / m), t0), G ? G.deepPushM : CONT_PUSH_MAX_M));
             c = sol.solve(t);
             de = ext(c.shapes);
           }
@@ -1202,6 +1203,14 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // out as well, also once the blend toward it is complete (HC-F2-lowCarrier: A's shoe stood 13 cm in B's head)
         const shownPushed = al < 1 || ext(chosen.shapes) > HARD_OK;
         if (shownPushed) l = atM(al);
+        // plan 10c (C6, RagdollProfile.poseGuard): a convertible player's shown leg still past HARD_OK after the ordinary
+        // push (4 iterations: reversed HC-F2-bothFallL2, B's ragdoll forearm 8 cm into A's thigh, where moving the ankle
+        // moves the thigh little) takes the longer push, within the same per-substep cap, so the published pose, and the
+        // candidate built from it, stays valid
+        if (inp.ragdoll.poseGuard && guard && shownPushed && l.depth > HARD_OK) {
+          const dl = at(al, true);
+          if (dl.rank < atM(al).rank) l = dl;
+        }
         if (POSE_DEBUG.trace) contDbg = { ...(POSE_DEBUG.contLast ?? { a0: al, dd: 0 }), al, push: dist(Lw(l.req!), add(base, lerp(dp, dc, al))) };
         // the shown target (with its push-out) is the next pose's start: each step then only needs a shallow push
         setMemVec(mem, `${k}:d`, shownPushed ? sub(Lw(l.req!), base) : dc);

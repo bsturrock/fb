@@ -3,7 +3,7 @@
 import type {
   BalanceState, BodySnapshot, ControlMode, PlayerContactObs, PlayerId, PlayerIntent, Representation, SegmentId, SimEvent, Snapshot, ContactRec,
 } from './contracts';
-import { pairKey } from './contracts';
+import { isGround, pairKey } from './contracts';
 import type { Controller } from './controllers/base';
 import { makeController } from './controllers/index';
 import { observePlayerContacts, type ClassifyInput } from './contact';
@@ -19,6 +19,7 @@ import {
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
 import { buildProxyPose, advanceGait, legRequestLocal, poseLimbShapes, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from './pose';
+import { CARRY_ARM } from './carry';
 import { advanceLoco, idleStanceFade, idleWidthAddM, newLocoState, type LocoState, type LocomotionProfile } from './locomotion';
 import { clipJoin, continueOwners, footTrace, initFeet, newFootPlan, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlan, type FootPlanInput } from './footwork';
 import {
@@ -263,7 +264,18 @@ export interface SimOptions {
   transitionAudit?: boolean;
   /** Evidence: called after every physics substep (solved state, poses, foot plans); read-only. */
   onSubstep?: (sim: Simulation) => void;
+  /**
+   * Plan 10c (C7): keep the per-substep arm force, arm effort and joint effort ledgers (default `SIM_DEFAULTS.ledgers`).
+   * Off, nothing is pushed, so a long lab session does not grow them; the running totals stay in the stats either way.
+   */
+  ledgers?: boolean;
 }
+
+/**
+ * Process-wide option defaults. Ledgers are off (the lab); the test setup turns them on for every test file, so a test
+ * reading a ledger never reads an empty one by omission.
+ */
+export const SIM_DEFAULTS: { ledgers: boolean } = { ledgers: false };
 
 /** One audited transition boundary: same solved time and root, old versus new composition. */
 export interface TransitionDelta {
@@ -721,6 +733,9 @@ export class Simulation {
       });
       if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
     }
+    const keep = this.opts.ledgers ?? SIM_DEFAULTS.ledgers;
+    if (this.arms) this.arms.keepLedger = keep;
+    if (this.fall) this.fall.keepLedger = keep;
     this.rules = def.rules ? new RuleObserver(def.rules, def.ragdoll ?? DEFAULT_POSE_PROFILE, (type, id, data) => this.emit(type, id, data)) : null;
     this.settleUntil = null;
     this.postStep(true);
@@ -1471,13 +1486,14 @@ export class Simulation {
     this.contacts = this.physics.collectContacts();
     for (const pl of this.players) {
       if (pl.rag) {
-        // ragdoll: grounded = any solved segment-floor manifold (observation only; no support capability)
+        // ragdoll: grounded = any solved segment-floor manifold (observation only; no support capability; plan 10c: the
+        // floor only, not an obstacle)
         let g = false;
         let pen = 0;
         for (const c of this.contacts) {
           const own = c.a.playerId === pl.id ? c.a : c.b.playerId === pl.id ? c.b : null;
           const other = own === c.a ? c.b : c.a;
-          if (!own || other.region !== 'floor' || other.playerId !== null) continue;
+          if (!own || !isGround(other)) continue;
           g = true;
           for (const p of c.points) pen = Math.max(pen, -p.dist);
         }
@@ -1775,7 +1791,7 @@ export class Simulation {
         pl.pose = ragdollPose(pl.rag!);
         // plan 09: the anatomical range starts with the ragdoll; the effort layer only after an accepted transfer
         initEnvelope(pl.rag!);
-        if (this.fall && pl.handoff?.accepted) pl.fall = this.fall.begin(pl.id, pl.rag!, pl.setup.role, this.arms);
+        if (this.fall && pl.handoff?.accepted) pl.fall = this.fall.begin(pl.id, pl.rag!, pl.setup.role, this.arms, this.carrySide(pl));
       }
     }
   }
@@ -1901,7 +1917,7 @@ export class Simulation {
     // (with its reseed count: the pose takes a reseed as a new owner of the same kind)
     const foot = (s: ArmSide): string => `${fp.feet[s].mode}/${fp.feet[s].source}${fp.feet[s].mode === 'swing' && fp.feet[s].wait ? '+wait' : ''}#${fp.feet[s].seeds}`;
     const contactW = inp.loco?.contactW ?? 0;
-    const arm = (s: ArmSide): string => (inp.arms?.[s] ? 'achieved' : inp.readyHands ? 'ready' : inp.carriesBall && s === 'right' ? 'carry' : 'free') + (contactW > 0 ? '+contact' : '');
+    const arm = (s: ArmSide): string => (inp.arms?.[s] ? 'achieved' : inp.readyHands ? 'ready' : inp.carriesBall && s === CARRY_ARM ? 'carry' : 'free') + (contactW > 0 ? '+contact' : '');
     const supported = pl.controlMode === 'supported' && !!pl.sus?.probe.valid;
     const falling = pl.controlMode === 'falling';
     const footO = { left: foot('left'), right: foot('right') };
@@ -2020,6 +2036,16 @@ export class Simulation {
    * A stop from a run, any contact and a referee ending pass through unchanged. The ramp's output replaces the intent's request, so the
    * controller's own request is kept apart: a decision updates it, every substep advances the ramp toward it.
    */
+  /**
+   * Plan 10c C2: the arm the ball is actually on: the ragdoll's carried-ball segment (the 08a seat), else the pose's
+   * carry arm of a ball carrier (`carriesBall`); null for a player without the ball.
+   */
+  private carrySide(pl: PlayerRuntime): ArmSide | null {
+    const seg = pl.rag?.landmarks.carriedBall?.seg;
+    if (seg) return seg.startsWith('left') ? 'left' : 'right';
+    return pl.setup.role === 'runner' ? CARRY_ARM : null;
+  }
+
   private rampWalkRequest(pl: PlayerRuntime, decided: boolean): void {
     const W = this.def.runClips?.walk;
     if (!W) return;
@@ -2483,6 +2509,12 @@ export class Simulation {
       envelope: {
         mode: this.def.ragdoll?.envelope?.mode ?? null,
         profile: this.def.ragdoll?.envelope?.id ?? null,
+        // plan 10c (C7): the two measures differ in their twist term; twist overshoot is the scaled one
+        measures: {
+          startOutsideDeg: 'range slack at the handoff: swing excess, or twist excess about the limb (unscaled)',
+          maxOverDeg: 'excursion past the range in force: swing excess, or twist excess scaled by cos(swing / 2)',
+          maxNominalOverDeg: 'excursion past the nominal range, measured as maxOverDeg',
+        },
         joints: (pl.rag?.envelope ?? []).map((e) => ({
           joint: e.jointId,
           startOutsideDeg: round(e.startOutsideDeg, 3),

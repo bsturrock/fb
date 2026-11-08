@@ -1,6 +1,6 @@
 # 10c — Active fall contract repairs
 
-Repository-aligned plan • 2026-11-08 • Not started. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Repairs plan [09](09_Active_Falls_Joint_Limits_and_Role_Responses.md) before its user review.
+Repository-aligned plan • 2026-11-08 • **Implemented 2026-11-08** ([handoff](../handoff/plan10.md#10c--active-fall-contract-repairs)): full suite green; holds allocated before effort, the protect arm from the actual carry (`L4-F12-carryLeft` removed), ground the floor only, obstruction timed and never a hold, the brace turn rate-limited between opposite vectors; reversed `HC-F2-bothFallL2` converts (validation unchanged; the HC variants carry `poseGuard-v1`); five HC and three L4 summaries changed and listed. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Repairs plan [09](09_Active_Falls_Joint_Limits_and_Role_Responses.md) before its user review.
 
 **Goal:** the response obeys its own role priorities, tasks act on the real carry and real contacts, and the effort evidence measures something. The power, work, envelope and momentum audits stay as they are; they were checked and are sound.
 

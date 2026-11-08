@@ -12,6 +12,7 @@ import { FixedStepDriver } from '../src/sim/driver';
 import type { FixtureDef } from '../src/sim/fixture';
 import { POSE_DEBUG, stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
+import { POSE_GUARD_C6 } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { pace, run, runSim, stepWhile, traceDiff } from './helpers';
 
@@ -222,20 +223,33 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
     }
   });
 
-  it('every HC natural-contact variant: each fall that happens is an audited ragdoll; nobody ends as a rigid falling proxy', async () => {
+  it('every HC natural-contact variant, in both player orders: each fall that happens is an audited ragdoll; nobody ends as a rigid falling proxy', async () => {
+    // plan 10c (C6, U7): the guarantee holds for either body order (reversed HC-F2-bothFallL2 rejected A as
+    // externalPenetration before the convertible-pose guard: its shown thigh stood 8 cm in B's ragdoll forearm)
     const rows: string[] = [];
     for (const def of HC()) {
-      await breathe();
       if (def.id.startsWith('HC-F5')) continue;
-      const sim = await run(def);
-      rows.push(`${def.id.padEnd(20)} ${handoffs(sim)}`);
-      for (const pl of sim.players) {
-        if (pl.handoff) expectAudited(pl, def.id);
-        expect(pl.controlMode === 'falling' && !pl.rag, `${def.id} ${pl.id} rigid falling proxy`).toBe(false);
+      for (const reverseOrder of [false, true]) {
+        await breathe();
+        const sim = await run(def, { reverseOrder });
+        const tag = `${def.id}${reverseOrder ? ' reversed' : ''}`;
+        rows.push(`${tag.padEnd(29)} ${handoffs(sim)}`);
+        for (const pl of sim.players) {
+          if (pl.handoff) expectAudited(pl, tag);
+          expect(pl.controlMode === 'falling' && !pl.rag, `${tag} ${pl.id} rigid falling proxy`).toBe(false);
+        }
+        sim.dispose();
       }
-      sim.dispose();
     }
     console.log(`[HC] handoffs per variant:\n  ${rows.join('\n  ')}`);
+  });
+
+  it('the convertible-pose guard is carried by the HC variants only; the base cases keep their historical profiles', () => {
+    const guarded = allFixtures().filter((d) => d.ragdoll?.poseGuard).map((d) => d.id);
+    expect(guarded.length).toBeGreaterThan(20);
+    expect(guarded.every((id) => id.startsWith('HC-')), guarded.filter((id) => !id.startsWith('HC-')).join(' ')).toBe(true);
+    expect(HC().filter((d) => d.ragdoll && !d.ragdoll.poseGuard).map((d) => d.id)).toEqual([]);
+    for (const d of HC()) if (d.ragdoll) expect(d.ragdoll.id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
   });
 
   it('both sides, conversion phases and low stance of the simultaneous wrap: both players convert', async () => {

@@ -5,8 +5,15 @@
 //
 // Chest frame: +X anatomical left, +Y up, +Z forward (the clip and donor frame). A body with anatomical left on -X gets
 // the directions mirrored (`M`); the seat numbers are measured in the mirrored directions, so they stay rigid rotations.
+import type { ArmSide } from './contracts';
 import type { Pose, Quat, Vec3 } from './vec';
 import { addScaled, clamp, cross, dot, neg, norm, qFromAxisAngle, qFromBasis, qMul, qRot, toWorld, v3 } from './vec';
+
+/**
+ * The arm that carries the ball: the pose's carry arm (plan 06 hold, plan 08a seat), the ragdoll's `carriedBall`
+ * segment and the rules' `carryPalm` all take it from here. Switching hands was outside 08a (plan 10c C2).
+ */
+export const CARRY_ARM: ArmSide = 'right';
 
 /**
  * One carry key: upper arm and forearm directions (chest frame), the ball's seat side on the forearm, the ball centre along

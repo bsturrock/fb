@@ -3,7 +3,7 @@
 // PlayerId and segment identity live in collider tags and body userData.
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
-import { seatBallLocal, seatPalmLocal, type CarrySeat } from './carry';
+import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry';
 import type { PhysicsWorld } from './physics';
 import { pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type RagdollProfile } from './profiles';
@@ -50,8 +50,13 @@ export interface EnvelopeRuntime {
   swingSlack: number;
   twistSlackLo: number;
   twistSlackHi: number;
+  /** The largest start slack, deg: swing excess, or twist excess about the limb unscaled (the slack's own measure). */
   startOutsideDeg: number;
-  /** Excursion past the range in force (nominal plus slack) now, and the largest of it, deg; the same past the nominal range. */
+  /**
+   * Excursion past the range in force (nominal plus slack) now, and the largest of it, deg; the same past the nominal
+   * range. Plan 10c (C7): the twist term is the twist excess scaled by cos(swing / 2) (the envelope's moment measure), so
+   * a twist overshoot reads smaller here than in `startOutsideDeg` at the same pose.
+   */
   overDeg: number;
   maxOverDeg: number;
   maxNominalOverDeg: number;
@@ -215,7 +220,7 @@ export function buildCandidate(
   };
   // palm landmark and the palm ball's centre on the forearm; plan 08a: the carry hand turned over the ball's nose
   const palmLocal = (side: ArmSide): { palm: Vec3; hand: Vec3 } => {
-    if (side !== 'right' || !pose.carry) return { palm: v3(0, -(L.forearm + L.palmExtension), 0), hand: v3(0, -(L.forearm + L.palmExtension - R.radii.palm), 0) };
+    if (side !== CARRY_ARM || !pose.carry) return { palm: v3(0, -(L.forearm + L.palmExtension), 0), hand: v3(0, -(L.forearm + L.palmExtension - R.radii.palm), 0) };
     const palm = seatPalmLocal(pose.carry, L.forearm, L.palmExtension);
     return { palm, hand: addScaled(palm, norm(sub(palm, v3(0, -L.forearm, 0)), v3(0, -1, 0)), -R.radii.palm) };
   };
@@ -298,7 +303,7 @@ export function buildCandidate(
   if (pose.carry) {
     // plan 08a: the hand and ball stay as published on their forearm, with no further carry motion
     rag.carry = { ...pose.carry };
-    landmarks.carriedBall = { seg: 'rightForearm', local: seatBallLocal(pose.carry) };
+    landmarks.carriedBall = { seg: `${CARRY_ARM}Forearm`, local: seatBallLocal(pose.carry) };
   }
   return rag;
 }

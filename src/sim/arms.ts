@@ -100,7 +100,6 @@ export interface ForceLedgerEntry {
   pointOnTarget: Vec3;
   forceOnOwner: Vec3;
   pointOnOwner: Vec3;
-  pairSum: number;
   exposure: number;
   xT: number;
 }
@@ -121,12 +120,12 @@ export interface EffortLedgerEntry {
   elbowNm: number;
   /** Conservative force equivalent of the torque demand (N). */
   equivalentN: number;
-  /** Grasp tension after the per-arm ceiling, before the shared allocation (N). */
+  /** This arm's allocated grasp tension (N): allocated first, as with no effort (plan 10c). */
   graspN: number;
-  /** Scale on this arm's combined demand from the per-arm ceiling, and from the owner budget. */
+  /** Scale on this arm's torque demand from the room its grasp leaves under the per-arm ceiling, and from the room all grasps leave in the owner budget. */
   armFactor: number;
   sharedScale: number;
-  /** Allocated combined demand (N). */
+  /** Allocated grasp plus allocated effort equivalent (N). */
   allocatedN: number;
   perArmN: number;
   ownerBudgetN: number;
@@ -262,7 +261,8 @@ export class ArmSystem {
   readonly grips = new Map<string, Grip>();
   /** Ledger of every retention force pair (one entry per active arm per substep). */
   ledger: ForceLedgerEntry[] = [];
-  keepLedger = true;
+  /** Plan 10c (C7): set by the simulation from `SimOptions.ledgers` (off by default). */
+  keepLedger = false;
   readonly wrap = new Map<PlayerId, { status: WrapStatus; target: PlayerId | null; azimuthDeg: Partial<Record<ArmSide, number>>; basis: { near: Vec3; side: Vec3 } | null; reasons: string[] }>();
   private readonly arms = new Map<PlayerId, Record<ArmSide, ArmRt>>();
   private obstacles = new Map<PlayerId, Obstacle[]>();
@@ -759,33 +759,38 @@ export class ArmSystem {
         sumDemand += m * c;
         return c;
       });
+      // the grasp's allocation: the per-demand ceiling and one shared scale over the grasps alone
+      const shared = sumDemand > ownerBudget ? ownerBudget / sumDemand : 1;
       // Plan 09: arm torque joins the same budget. Conservative force equivalent per arm: shoulder torque / upper arm
-      // plus elbow torque / forearm, added to that arm's grasp tension; one per-arm ceiling and one shared scale.
+      // plus elbow torque / forearm. Plan 10c (U4, grasp first): it takes only what the grasps leave, the arm's ceiling
+      // less its grasp and the owner budget less all of them, so a hold never loses tension to its own arm's effort and
+      // its overload exposure comes from the grasp alone.
       const armFactor: Record<ArmSide, number> = { left: 1, right: 1 };
       const grasp: Record<ArmSide, number> = { left: 0, right: 0 };
       const equiv: Record<ArmSide, number> = { left: 0, right: 0 };
+      let effortShared = 1;
+      let sumActual = 0;
       if (effort) {
-        demands.forEach((d, i) => (grasp[d.a.side] += len(d.vec) * capScales[i]));
-        sumDemand = 0;
+        demands.forEach((d, i) => (grasp[d.a.side] += len(d.vec) * capScales[i] * shared));
+        let sumEquiv = 0;
         for (const side of SIDES) {
           const e = effort[side];
           equiv[side] = e ? e.shoulderNm / P.upperArmM + e.elbowNm / P.forearmM : 0;
-          const total = grasp[side] + equiv[side];
-          armFactor[side] = total > perArm ? perArm / total : 1;
-          sumDemand += total * armFactor[side];
+          const room = Math.max(0, perArm - grasp[side]);
+          armFactor[side] = equiv[side] > room ? room / equiv[side] : 1;
+          sumEquiv += equiv[side] * armFactor[side];
         }
-      }
-      const shared = sumDemand > ownerBudget ? ownerBudget / sumDemand : 1;
-      let sumActual = 0;
-      if (effort) {
-        this.effortScale.set(pl.id, { left: armFactor.left * shared, right: armFactor.right * shared });
+        const ownerRoom = Math.max(0, ownerBudget - grasp.left - grasp.right);
+        effortShared = sumEquiv > ownerRoom ? ownerRoom / sumEquiv : 1;
+        sumDemand += sumEquiv;
+        this.effortScale.set(pl.id, { left: armFactor.left * effortShared, right: armFactor.right * effortShared });
         for (const side of SIDES) {
           const e = effort[side];
           if (!e) continue;
-          const combined = (grasp[side] + equiv[side]) * armFactor[side] * shared;
-          sumActual += equiv[side] * armFactor[side] * shared;
+          const effortN = equiv[side] * armFactor[side] * effortShared;
+          sumActual += effortN;
           if (this.keepLedger)
-            this.effortLedger.push({ tick: host.tick, step: host.steps, owner: pl.id, arm: side, shoulderNm: e.shoulderNm, elbowNm: e.elbowNm, equivalentN: equiv[side], graspN: grasp[side], armFactor: armFactor[side], sharedScale: shared, allocatedN: combined, perArmN: perArm, ownerBudgetN: ownerBudget });
+            this.effortLedger.push({ tick: host.tick, step: host.steps, owner: pl.id, arm: side, shoulderNm: e.shoulderNm, elbowNm: e.elbowNm, equivalentN: equiv[side], graspN: grasp[side], armFactor: armFactor[side], sharedScale: effortShared, allocatedN: grasp[side] + effortN, perArmN: perArm, ownerBudgetN: ownerBudget });
         }
       }
       demands.forEach((d, i) => {
@@ -799,10 +804,9 @@ export class ArmSystem {
         let ftActual = v3();
         if (d.kind === 'hold' || d.kind === 'passive') {
           const g = d.grip!;
-          const af = armFactor[d.a.side];
-          const demand = Math.min(d.raw, perArm) * af;
+          const demand = Math.min(d.raw, perArm);
           actual = demand * shared;
-          allocated = shared < 1 || af < 1 ? actual : perArm;
+          allocated = shared < 1 ? actual : perArm;
           forceOnTarget = scale(d.n!, -actual);
           pointOwner = d.s!;
           // overload exposure (guard zero capacity)
@@ -850,7 +854,6 @@ export class ArmSystem {
             pointOnTarget: d.p,
             forceOnOwner,
             pointOnOwner: pointOwner,
-            pairSum: len(add(forceOnTarget, forceOnOwner)),
             exposure: d.grip?.overloadExposureS ?? 0,
           xT: d.a.clamp ? len(d.a.clamp.tangentElasticDisplacementM) : 0,
         };

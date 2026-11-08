@@ -9,6 +9,8 @@
 
 **The full suite sometimes prints a vitest error that is not an assertion failure.** Earlier runs reported `[vitest-worker]: Timeout calling "onTaskUpdate"`: once with this plan's tests, three times with `tests/falls.test.ts` excluded, where all 600 earlier tests still passed. So the fall tests do not cause it. The reviewer's run exited unsuccessfully with three of them. The run after the review fixes printed none and exited 0. The likely cause is long synchronous tests starving the worker's event loop, but I did not prove that, and I did not check whether it predates this plan. Vitest warns that such errors can hide failures.
 
+> **Correction ([plan 10a](plan10.md#10a--test-gate-and-evidence-integrity), 2026-11-08):** the clean exit was not repeatable. The 2026-11-08 run of this tree passed all 675 tests and exited 1 on one unhandled `onTaskUpdate` timeout, so "exited 0" described one run, not the gate. Plan 10a paces long synchronous test loops with a wall-time yield and splits the transitions file; three consecutive full runs then exited 0 with no unhandled error.
+
 **Started before 08a's visual acceptance.** The [closeout](../open/08_Review_Closeout.md#visual-review-after-numeric-closeout) asks for that review, and the README recorded it as the next step, but the user declared 08 finished on 2026-11-07 and asked for this plan directly. The 08a review is still outstanding.
 
 ## Review fixes (2026-11-07)
@@ -98,8 +100,12 @@ Over 53 responses in the L4 falls:
 
 - **Power:** 0 substeps over the 157.5 W ceiling, impact or not; the largest realized substep is 148.4 W. **0 episodes over the work cap.** Peak work 46.6 J with the labelled load (`L4-F7-overcome`), 45.1 J in natural falls.
 - **Momentum:** L4-F8 conserves net momentum, and energy change is explained by logged work within 1.5 J.
+
+> **Correction ([plan 10c](plan10.md#10c--active-fall-contract-repairs) C7, 2026-11-08):** the effort ledger's `pairSum`, asserted to be 0 in `tests/falls.test.ts`, was the commanded torque plus its own negation, so it was 0 by construction and showed nothing; the arm force ledger's was the same for grasp forces. Both are removed. Equal and opposite torque pairs rest on this L4-F8 momentum test. Grasp force pairs rest on the construction only (the owner receives the target's force negated in the same call); no zero-gravity grasp test exists.
 - **Zero cap:** `L4-F7-zeroCap` matches its motor-off twin exactly.
 - **Braces:** 30 palm contacts (one of them in `L4-F7-overcome`), 24 misses (9 late, 7 too far, 7 obstructed, 1 expired), the same counts as before the review fixes. No forearm-first contacts occurred.
+
+> **Correction ([plan 10c](plan10.md#10c--active-fall-contract-repairs) C4, 2026-11-08):** after plan 10b's L3 changes the counts were 31 palm contacts and 24 misses (13 late, 5 too far, 5 obstructed, 1 expired). The `obstructed` label was sticky: one arm contact with the opponent or an obstacle at any time, by any task, the arm's own hold included, marked the next miss. It now needs a seeking brace blocked within its shortest prediction horizon, never a hold. After 10c: 31 palm contacts, 23 misses (13 late, 5 too far, 4 obstructed, 1 expired); `L4-F6-break` D left, touched only by its own hold, reads `late`, and `L4-F12-carryLeft` is gone.
 
 ### Impacts hold effort off; they excuse nothing
 
@@ -143,6 +149,8 @@ Before the fix, exhaustion only zeroed commands predicted to add energy; absorbi
 | L4-F11 | Settle, disturbed, exhausted | No refill |
 | L4-F12 | Mirror, left carry, render rates, pause, 20 resets | Same fixed-step trace |
 
+> **Correction ([plan 10c](plan10.md#10c--active-fall-contract-repairs) C2 and C8, 2026-11-08):** `L4-F12-carryLeft` declared the profile's carry arm left while the ball stayed on the runner's right forearm, so the protecting arm held no ball. It is removed (U5); the protect arm is now the arm the ball is on, and a profile declaring another arm fails at the conversion. The 20-reset test's checks straight after each reset (no episodes, an empty ledger) were always true, because `reset()` builds a new fall response and arm system; each cycle is now compared at the same tick in the fall (counts and a trace hash) as well as over the whole run.
+
 Mutation check: 17 deliberate faults in the response, envelope and allocator. Two survived the first pass, because no fixture exercised a failed transfer or a limb returning inside its slack. Both gaps now have tests, and all 17 fail the suite.
 
 The review fixes were checked the same way, on the final settings. Each of these nine, put back, fails the suite: the twist torque without its swing term, the normalized swing axis, a cap on the summed envelope torque, absorbing commands left on after exhaustion, the impact guard switched off, the guard off together with the old impact exemption, the guard at 1 m/s, planning to 100% of the power cap, and hip swing stiffness back at 2500 N·m/rad.
@@ -178,6 +186,8 @@ Differences a reviewer should look at:
 ## Disclosures
 
 - **`L4-F5-twoPalm-on` loses its holds.** Both break by `overload` at 1.72 s, under the budget now shared with shoulder and elbow effort, while the off twin keeps them. The plan allows this ("can persist or break"), but a reviewer may want holds to last longer.
+
+  > **Correction ([plan 10c](plan10.md#10c--active-fall-contract-repairs) C1, 2026-11-08):** the hold arm's own effort broke these holds, not their load. Its shoulder and elbow effort was added to the grasp demand before the owner budget was shared, and the scaling that caused counted as overload exposure. That contradicts the plan's "a holding defender prioritizes its valid hold". Grasps are now allocated first and effort gets only what is left (U4); `L4-F5-twoPalm-on` keeps both holds to the end of the window with no overload exposure, as its off twin does.
 - **The knee is flexor only.** It never drives extension, but it does resist extension, which is where most of its negative work comes from.
 - **The elbow ending occurs only in the off twin.** The on case ends on another eligible region. Rule regions were not changed.
 - **The defaults are not calibrated.** Ceilings and gains are initial engineering settings, not athlete strengths.

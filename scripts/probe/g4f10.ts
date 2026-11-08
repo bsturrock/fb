@@ -1,5 +1,6 @@
 // G4-F10 probe: canonical forearm wrap (G2-F5 layout, balanced, Gate 4 profile); diagnostic conversions while wrapped.
-import { Simulation } from '../../src/sim/simulation';
+import { SIM_DEFAULTS, Simulation } from '../../src/sim/simulation';
+SIM_DEFAULTS.ledgers = true; // reads the ledgers (plan 10c: off by default)
 import * as G2 from '../../src/sim/fixtures/gate2';
 import * as G3 from '../../src/sim/fixtures/gate3';
 import { RAGDOLL_G4, SOLVER_G4 } from '../../src/sim/profiles';

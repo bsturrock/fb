@@ -6,7 +6,8 @@
 //    runnerCoreDown. No influence, progress or sideline observation.
 //  - footballTackleSubset: eligible-region ground contact with continuing defensive influence (groundDown), sustained
 //    physically restrained progress (progressStopped) and a configured sideline plane (sidelineOut).
-import type { ColliderTag, ContactRec, PlayerContactObs, PlayerId, SegmentId } from './contracts';
+import { isGround, type ColliderTag, type ContactRec, type PlayerContactObs, type PlayerId, type SegmentId } from './contracts';
+import { CARRY_ARM } from './carry';
 import type { PhysicalPose } from './pose';
 import type { RagdollProfile, RuleProfile } from './profiles';
 import { type Pose, type Vec3, add, dot, horiz, len, round, rv, scale, toLocal, toWorld, v3 } from './vec';
@@ -184,7 +185,7 @@ export class RuleObserver {
    */
   ballRef(corePose: Pose, pose?: PhysicalPose | null): Vec3 {
     const src = this.profile.ballSource;
-    const held = src === 'carryPalm' ? pose?.jointLandmarksWorld.rightPalm : src === 'carryPose' ? pose?.jointLandmarksWorld.carriedBall : undefined;
+    const held = src === 'carryPalm' ? pose?.jointLandmarksWorld[`${CARRY_ARM}Palm`] : src === 'carryPose' ? pose?.jointLandmarksWorld.carriedBall : undefined;
     return held ? { ...held } : toWorld(corePose, this.profile.ballLocal);
   }
 
@@ -202,7 +203,7 @@ export class RuleObserver {
     for (const c of f.contacts) {
       const own: ColliderTag | null = c.a.playerId === f.runnerId ? c.a : c.b.playerId === f.runnerId ? c.b : null;
       const other = own === c.a ? c.b : c.a;
-      if (!own || other.playerId !== null || other.key !== 'floor') continue;
+      if (!own || !isGround(other)) continue;
       for (const p of c.points) {
         if (!(p.dist <= 0 || p.impulse >= this.profile.groundImpulseMinNs)) continue;
         let label: GroundRegion;

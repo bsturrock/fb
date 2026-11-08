@@ -248,3 +248,76 @@ Final positions moved by up to 2.76 m (`L3-F9-convert-free`, where D no longer f
 - `L3-F1-phase5` D right: slide plants at 0.029–0.050 s drop the target 2.4–5.6 cm vertically at the reseed. Pre-existing; it passes the audit, and it is a reseed onto the achieved foot, not a planner path.
 - The reseed level gap's worst case sits exactly at its cap (one substep at the speed cap).
 - **Overdue steps still hover in contact** (the plan 08 open item, not fixed here). In `L3-F4-twoArm` D's left foot swings from 0.479 s until D falls at 1.40 s, and the right plants once, at 1.375 s; at 10a the dead stop put both down (left 0.896 s, right 1.012 s). Without the settled-landing rule D plants nothing in contact and the contact-stepping test fails; with it the test passes on that one plant, as narrowly as plan 08 reported.
+
+## 10c — Active fall contract repairs
+
+**Result:** full suite exit 0, no unhandled error: 19 files, 805 tests, 171 s wall. Typecheck and build pass. 410 fixtures export (`L4-F12-carryLeft` removed, U5). Eight summaries change: five committed HC summaries (C6, the change the item names, under U7) and three L4. Every other summary is byte-identical to 10b, and so is every other export, except the ragdoll `grounded` observation in six obstacle fixtures (C3, U6; their summaries are byte-identical). Brace outcomes across L4: 31 palm contacts and 23 misses (13 late, 5 too far, 4 obstructed, 1 expired); 10b had 31 and 24 (13, 5, 5, 1).
+
+### What changed
+
+- **C1, a hold's own effort broke it (U4, grasp first).** `ArmSystem` shares the owner budget among the grasps first (`shared` from grasp demand alone), then gives arm effort only what is left: per arm the room under `perArmN` after its grasp, then the owner room after both grasps. Effort scaling no longer reaches a grasp's tension or its overload exposure. The effort ledger records `graspN`, `armFactor`, the effort's own `sharedScale` and `allocatedN` = grasp + effort. At 10b the fault was still live in `L4-F5-twoPalm-on` (194 hold entries scaled below demand, 0.08 s of overload exposure), although it no longer reached the `overload` release that the review reproduced at 1.717 s; the 10b changes upstream had moved the fall. Now no hold entry in any L4 fixture is allocated less than its grasp alone gets, and `L4-F5-twoPalm-on` keeps both holds to the end of the window (exposure 0), as its off twin does.
+- **C2, the carry arm (U5).** `CARRY_ARM` (`src/sim/carry.ts`) is the one place the carry side is named: the pose's carry palm, the ragdoll's `carriedBall` landmark, the rules' ball reference and the simulation's arm label read it. The fall response's protect arm is the arm the ball is actually on (`carriedBall.seg` after the conversion; `CARRY_ARM` for a runner with no carry seat), and `begin` throws when the profile's declared `arms.carryArm` disagrees. `L4-F12-carryLeft` (declared left while the ball stayed on the right forearm) is removed: 410 fixtures.
+- **C3, ground (U6).** `isGround(tag)` (`contracts.ts`): the floor collider only (`playerId === null && key === 'floor'`). Ragdoll grounding, the fall response's floor contacts and the rules' ground touches all use it. Ragdoll grounding took any collider with the floor region, obstacles included. No committed fixture changes (the obstacle fixtures `G4-F7-wallNoOpponent`, `RH-F5-invalidNormal`, `RH-F5-obstacle`, `L3-F9-noProbe-*`, `L4-F4-obstructed` are byte-identical).
+- **C4, obstruction.** A miss is `obstructed` only when the arm was a seeking brace and its forearm or palm touched an opponent or an obstacle within the brace's shortest prediction horizon (`horizonS[0]`, 0.1 s) before the miss, and that contact was not a hold the arm system retains (the arm's own, or an opponent's palm or forearm). Before, one touch at any time, by any task, set a flag that never cleared.
+- **C5, brace direction.** `rotateToward` turns opposite vectors about an axis perpendicular to the start (its cross product with the least-aligned basis axis) at the rate limit, instead of returning the target at once.
+- **C6, player order (U7).** Traced: in reversed order `HC-F2-bothFallL2` A loses support at 0.9417 s (step 226) while B's ragdoll lies against it. A's published pose had its right leg in B's ragdoll for 11 substeps (thigh up to 8.1 cm into B's left forearm), because the shown leg's continuity push stops at 5 cm in 4 iterations and B's forearm moves into the pose-only leg faster than that; at the conversion the shin was 1.86 cm into B's left shoe, over the 1.5 cm tolerance, so the candidate was rejected and A fell as a rigid proxy. Validation is unchanged. The fix is to the candidate's source, the published pose. The thigh was the part in B's forearm, near the hip, where moving the ankle target moves the thigh little, so 4 push iterations did not get it out. A convertible player's shown leg that the ordinary push leaves past the pose's validity depth (`HARD_OK`, 1.2 cm) now takes 12 iterations within the same 5 cm per-substep cap (`RagdollProfile.poseGuard`, `poseGuard-v1`). A leg that was valid is unchanged. A first try with a 0.2 m cap also fixed the rejection but failed two HC continuity tests (a 12.5 cm knee move in one substep in `HC-F2-offset` against its 8.5 cm budget, a 0.327 m ankle move in one tick in `HC-F2-lowCarrier` against 0.3 m); with the ordinary cap both pass. Reversed, A's leg is still up to 3.6 cm into B's forearm at 0.892–0.900 s and clear from 0.904 s; A converts at the same substep as before (0.9417 s) with 1.05 cm worst penetration (its right upper arm against B's shoe). The guard is a profile behaviour under its own id: every registered HC variant carries it (`+poseGuard-v1` on the ragdoll id), and the base cases keep their historical profiles. The HC variant test now asserts "nobody ends as a rigid falling proxy" in both player orders.
+- **C7, bookkeeping.** `pairSum` is removed from both ledgers and from the tests: it summed the commanded vector and its negation (always 0). Measuring what the bodies received instead (their Rapier user-force change) was tried: it is f32 and carries the rounding of every other force on the body, up to 6.8e-5 N in `G2-F7-balanced` against the gate 2 bound of 1e-6, so keeping it would have meant raising that bound. Equal and opposite torque pairs stay established by the L4-F8 zero-gravity momentum test; grasp force pairs rest on the construction (the owner receives the target's force negated in the same call), with no zero-gravity grasp test. `activeSubsteps` counts only substeps that applied torque. The force, effort and joint ledgers are off by default (`SimOptions.ledgers`, default `SIM_DEFAULTS.ledgers`, which `tests/setup.ts` turns on for every test file; the eight probes that read ledgers turn it on too); the running totals stay in the stats. The twist measures are labelled: `startOutsideDeg` is the slack's measure (twist unscaled), `maxOverDeg` and `maxNominalOverDeg` scale the twist excess by cos(swing / 2), and the export's `jointLimits.*.envelope.measures` says so. Twist overshoot is the scaled measure.
+- **C8, tests.** The 20-reset test compares each cycle at the same tick in the fall (episode count, ledger lengths, event count, a SHA-256 of the trace so far) and over the whole run; the checks straight after a reset, always true because `reset()` builds a new fall response and arm system, are gone. "The arm yields once it lands" measures the palm against the point where it landed (0.31 m) and the elbow's bend after contact (24.8°), not the forearm's world translation. Per-item loops in `tests/falls.test.ts` that could run over nothing assert at least one item (`L4-F4-occupied` tasked effort entries, `L4-F7-zeroCap` ledger entries, and at least one release and one lost hold across the hold-ending fixtures).
+- **C9, plan 09 handoff.** Dated corrections in place, linked here: the clean exit, `pairSum` as evidence, the brace counts, the twoPalm hold loss, the left carry and the 20 resets.
+- **Profile.** `FALL_L4` is `fall-response-l4-v2` (same numbers; C1–C5 and the C7 count change its behaviour or its evidence).
+
+### Profile ids
+
+| Profile | 10b | 10c |
+| --- | --- | --- |
+| Fall response (L4) | `fall-response-l4-v1` | `fall-response-l4-v2` |
+| Ragdoll (HC variants) | `ragdoll-g4-v1+...` | `...+poseGuard-v1` (`RagdollProfile.poseGuard`) |
+
+### Regressions, each shown failing with its fault restored
+
+| Fault put back | Failing check |
+| --- | --- |
+| C1: effort added to the grasp demand before sharing | allocation mismatch in `L4-F4-occupied`; `L4-F5-twoPalm-on` exposure 0.0799 s |
+| C2: protect arm from the declared profile arm, no agreement check | the declared-left profile converts instead of failing |
+| C3: ragdoll grounding by region | the raised-deck fall is grounded (0.317 s) |
+| C4: obstruction flag kept for the whole fall, any task | `L4-F6-break` D left reads `obstructed` at 1.4375 s |
+| C5: opposite vectors return the target | a 3.14 rad step against the 0.3 rad limit |
+| C6: no longer push | reversed `HC-F2-bothFallL2` A rejected |
+| C7: every commanded substep counted active | `L4-F2-forward-on` R 213 against 46 |
+| C7: ledgers always kept | ledgers-off run keeps 1772 / 840 / 450 entries |
+
+### Brace contacts and misses (all L4 fixtures)
+
+| Count | Plan 09 | 10b | 10c |
+| --- | --- | --- | --- |
+| Palm contacts | 30 | 31 | 31 |
+| Misses: late | 9 | 13 | 13 |
+| Misses: too far | 7 | 5 | 5 |
+| Misses: obstructed | 7 | 5 | 4 |
+| Misses: expired | 1 | 1 | 1 |
+
+Plan 09 to 10b is the L3 changes feeding the L4 falls. 10b to 10c: `L4-F12-carryLeft`'s late miss (R right, 0.354 s) is gone with the fixture, and `L4-F6-break` D left goes from `obstructed` (1.417 s) to `late` (1.438 s): its only arm contact was its own hold, which C4 no longer counts. The four remaining obstructions (`L4-F4-obstructed`, `L4-F5-oneClamp-on`, `L4-F9-defenderFalling`, `L4-F9-defenderRising`) touched the box or the opponent 0.033–0.079 s before the miss. C3 changes no brace outcome: these two are the only per-fixture differences in contacts and misses.
+
+### Changed summaries
+
+| Fixture | Change | Cause |
+| --- | --- | --- |
+| `HC-F2-bothFall` | Final positions up to 0.63 m; contact events 29 → 20, `grounded` 33 → 47; conversions unchanged | C6 guard (A's leg out of B before both convert) |
+| `HC-F2-bothFallL2` | Final positions up to 0.17 m; contact events 26 → 20, `techniqueFailure` 17 → 13; conversions unchanged | C6 guard |
+| `HC-F2-lift3.0` | Final position 0.01 m; `grounded` 21 → 17 | C6 guard |
+| `HC-F3-phase50` | Final positions 0.01 m; `minPairGap` −0.0096 → −0.0088 m; `groundDown` still at 1.1792 s, spot unchanged | C6 guard |
+| `HC-F5-strictTransfer` | Final positions 0.04 m; `contactRegion` 22 → 24; both transfers still fail their strict audit at the same substeps | C6 guard |
+| `L4-F4-occupied` | D final position 1 mm | C1 |
+| `L4-F5-twoPalm-on` | Final positions 4 mm; contact events 5 → 4 | C1 (no effort scaling on the holds; exposure 0.08 s → 0) |
+| `L4-F6-break` | Final positions 3 cm; the overload release 1.175 → 1.179 s (from grasp alone); D left miss `obstructed` → `late` | C1, C4 |
+| `L4-F12-carryLeft` | Removed | C2 (U5) |
+
+Every result label is unchanged, every handoff is at the same substep with the same outcome, and the one ending among these (`HC-F3-phase50`) is unchanged in kind, time and spot.
+
+The six obstacle fixtures whose exports change under C3 (summaries byte-identical, only the trace's `g` field and `grounded` events): `L3-F9-noProbe-contact` (`grounded` events 70 → 26, 60 rows), `-exit` (76 → 40, 22 rows), `-free` (58 → 48, 3 rows), `-prep` (56 → 26, 30 rows), `RH-F5-invalidNormal` (15 → 19, 4 rows) and `RH-F5-obstacle` (1 → 0, 138 rows: the ragdoll lying on the box no longer reads grounded). This is U6 applied to committed fixtures without a new profile id: the `grounded` flag of a ragdoll is observation only and feeds nothing, so no summary moves. If the user wants historical exports byte-identical, it can go behind a profile flag.
+
+### Findings
+
+- **The guard's deficit exists outside HC, under historical profiles.** Counted with the guard off: in 62 non-HC fixtures some convertible player's shown leg sits past `HARD_OK` after the ordinary push, from 1 to 101 substeps per fixture, deepest 8.9 cm (`L3-F9-playerBelow`), 6.0 cm (`RH-F5-playerBelow`), 5.0 cm (`L3-F1-phase3`), 4.6 cm (`L2-F15-playerBelow`, `-overload`). None of these conversions is rejected in the fixture's order, so no test fails; the published pose is invalid there for those substeps. Adopting `poseGuard-v1` for RH, L2, L3 or L4 would change their summaries (an unconditional trial, with a 0.2 m cap, changed `RH-F5-playerBelow` and both `L2-F15` summaries) and is the user's call.
+- **Reversed-order deviations of natural falls remain** and are recorded by the reversed-order test, as before. Most are conversion timing (`HC-F2-lift1.4`, `-lift3.0`, `-bothFall`, `-bothFallL2`, `HC-F3-phase50`, `-phase75`, `-rising`, `-falling`, `-lowRunner`, `HC-F5-strictTransfer`); in two the fall itself depends on the order: `HC-F2-lowCarrier` A and `HC-F3-mirror` D fall and convert only in reversed order. Each fall that happens is an audited ragdoll in both orders, and nobody ends as a rigid proxy.
+- **10b's open item stands:** overdue steps still hover in contact (`L3-F4-twoArm`).

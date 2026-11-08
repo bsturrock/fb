@@ -252,11 +252,11 @@ export const l4f11 = (): FixtureDef[] => [
 ];
 
 // ------------------------------------------------------------------ L4-F12 mirror
-const LEFT_CARRY: FallResponseProfile = { ...FALL_L4, id: `${FALL_L4.id}-leftCarry`, arms: { ...FALL_L4.arms, carryArm: 'left' } };
+// (plan 10c C2: L4-F12-carryLeft is gone: it declared a left carry arm on a body that carries on the right, so the empty
+// arm protected while the ball arm braced. A mirrored carry would be its own plan.)
 export const l4f12 = (): FixtureDef[] => [
   asL4(tippedFall({ id: 'x', dir: 'oblique', role: 'defender' }), 'L4-F12-base', 'Oblique fall without a ball, base of the mirror pair'),
   asL4(mirrorZ(tippedFall({ id: 'x', dir: 'oblique', role: 'defender' })), 'L4-F12-mirror', 'Oblique fall without a ball, mirrored'),
-  asL4(mirrorZ(tippedFall({ id: 'x', dir: 'oblique' })), 'L4-F12-carryLeft', 'Oblique fall, a declared left-arm carry', LEFT_CARRY),
 ];
 
 export const fallFixtures = (): FixtureDef[] => [...l4f1(), ...l4f2(), ...l4f3(), ...l4f4(), ...l4f5(), ...l4f6(), ...l4f7(), ...l4f8(), ...l4f9(), ...l4f10(), ...l4f11(), ...l4f12()];

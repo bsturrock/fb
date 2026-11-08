@@ -1,5 +1,6 @@
 // Plan 09 review: every substep whose realized positive effort power passes 150 W, and what made it.
-import { Simulation } from '../../src/sim/simulation';
+import { SIM_DEFAULTS, Simulation } from '../../src/sim/simulation';
+SIM_DEFAULTS.ledgers = true; // reads the ledgers (plan 10c: off by default)
 import { fallFixtures } from '../../src/sim/fixtures/falls';
 const only = process.argv[2];
 for (const def of fallFixtures()) {
