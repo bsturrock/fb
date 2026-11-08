@@ -1,6 +1,6 @@
 # 10d — Ball carry evidence and presentation
 
-Repository-aligned plan • 2026-11-08 • Not started. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Repairs plan [08a](08a_Ball_Carry_Pose_and_Placement.md) evidence before its visual acceptance.
+Repository-aligned plan • 2026-11-08 • **Implemented 2026-11-08** ([handoff](../handoff/plan10.md#10d--ball-carry-evidence-and-presentation)): full suite green; the drawn ball, the rules' reference and the evidence checked as one ball on every L3 rule tick; mesh controls at 3–5 cm, 30° and 90° failing at every pose; an achieved arm's hand blended out of the carry over 0.15 s; the seat side read on the achieved forearm and the ball in the arm's clearance (`carry-sim6-v2`); 21 L3/L4 summaries changed and listed, no rule ending or spot changed. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first. Repairs plan [08a](08a_Ball_Carry_Pose_and_Placement.md) evidence before its visual acceptance.
 
 **Goal:** the 08a contracts are proven by tests with an independent reference, the hand and ball look right on achieved arms, and the lab stops allocating per frame. The carry math itself needs no change: it matches the donor to about 1e-16, mirrors exactly, and the calibration roll holds. One football per scene, interpolation reset and slerp sign handling were also checked.
 

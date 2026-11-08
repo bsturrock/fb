@@ -321,3 +321,78 @@ The six obstacle fixtures whose exports change under C3 (summaries byte-identica
 - **The guard's deficit exists outside HC, under historical profiles.** Counted with the guard off: in 62 non-HC fixtures some convertible player's shown leg sits past `HARD_OK` after the ordinary push, from 1 to 101 substeps per fixture, deepest 8.9 cm (`L3-F9-playerBelow`), 6.0 cm (`RH-F5-playerBelow`), 5.0 cm (`L3-F1-phase3`), 4.6 cm (`L2-F15-playerBelow`, `-overload`). None of these conversions is rejected in the fixture's order, so no test fails; the published pose is invalid there for those substeps. Adopting `poseGuard-v1` for RH, L2, L3 or L4 would change their summaries (an unconditional trial, with a 0.2 m cap, changed `RH-F5-playerBelow` and both `L2-F15` summaries) and is the user's call.
 - **Reversed-order deviations of natural falls remain** and are recorded by the reversed-order test, as before. Most are conversion timing (`HC-F2-lift1.4`, `-lift3.0`, `-bothFall`, `-bothFallL2`, `HC-F3-phase50`, `-phase75`, `-rising`, `-falling`, `-lowRunner`, `HC-F5-strictTransfer`); in two the fall itself depends on the order: `HC-F2-lowCarrier` A and `HC-F3-mirror` D fall and convert only in reversed order. Each fall that happens is an audited ragdoll in both orders, and nobody ends as a rigid proxy.
 - **10b's open item stands:** overdue steps still hover in contact (`L3-F4-twoArm`).
+
+## 10d — Ball carry evidence and presentation
+
+**Result:** full suite exit 0, no unhandled error: 20 files, 812 tests, 186 s wall. Typecheck and build pass. 410 fixtures export. All 238 historical summaries are as 10c left them (233 byte-identical to `736d90a`, the five HC summaries 10c changed unchanged since). 21 L3/L4 summaries change, all through the runner's carry arm at or before a conversion or contact; every result label, rule ending (kind, time and spot) and handoff is unchanged. Two D conversions change (one appears, one disappears) and two late brace misses become contacts. Carry profile `carry-sim6-v2`. The lab loads `L3-F1-phase0` (rules) and `L3-F16-sprint` (no rules) and runs them with no console errors; that is a load check, not the 08a visual review, which stays with the user.
+
+### What changed
+
+- **D1, carry tests with an independent reference.** (a) The lab's ball choice is one pure function, `drawnBall` (`src/lab/render-pose.ts`), used by the rule overlay and the player view. `tests/ball-carry-evidence.test.ts` runs all 20 L3 rule fixtures tick by tick and checks that the lab's drawn ball at alpha 1 (through its own interpolation) equals the rules' `ballRef` and the seated ball within 1e-9, that the trace's `rule.ball` read back through JSON matches within its 4-decimal rounding, and that at the ending the drawn ball at the ending substep equals `ending.ballSpot` and the export's `ruleEnding.ballSpot` within 1e-12 and the event's within rounding; the spot stays frozen after it. (b) The blocked-arm test rebuilds the requested ball from `carryRequest`, the published shoulder and the body's segment lengths: the residual is measured from that request (within 1e-6), the drawn ball is 0.3 to 1.3 residuals from the requested ball, and it sits on the achieved forearm measured on the landmarks (along, out and on the chest side, 1e-6), not through `seatBallLocal`. (c) The lab's `lerpPose` is exported (`render-pose.ts`) and tested between two ticks where the forearm turns fastest, at t = 0.25, 0.5 and 0.75: the drawn wrist and the model's hand stay rigid on the blended forearm, the palm and ball sit at their blended places on it, and a world-space blend of the wrist would leave it by more than 0.1 mm. (d) The reset test runs to the end, calls `reset()`, runs again and compares t, seat and ball on every row. (e) The historical test covers every G, L1, L2, RH and HC fixture (238, no slice), and separately asserts that the 22 L4 falls built from L3 fixtures inherit `CARRY_L3` on purpose and name it in their notes.
+- **D2, mesh controls.** `tests/ball-carry-mesh.test.ts` tightens the forearm to −0.035…0 and the front to < 0 and adds the hand (−0.02…0), the elbow end against the upper arm (< 0), the ball's axis against the drawn forearm (within ±0.02 rad of the seat's tilt, the donor's check made two-sided), the laces' azimuth from the forearm (< 0.1 rad) and the palm normal, the hand vertices' thinnest axis, against the ball's radial direction (< 1.0 rad). The donor's torso, upper-arm and tip tolerances are unchanged. 27 controls each fail at every one of 78 poses (Sprint, Fast Run, stand, walk), none on the tip alone; the ball roll must fail on the laces, the hand rolls and the legacy rig on the palm, the out-of-plane tilts on the axis. The donor's blend-against-rise correlation is back on the drawn forearm.
+- **D3, the achieved arm's hand.** `CarrySeat.handW` is the hand's share of the carry's roll and flex. It steps toward 0 while an arm task owns the right arm and toward 1 while the carry does, over `CarryProfile.handBlendS` (0.15 s, `stepHandW`). The sim's palm (`seatPalmLocal` through `seatHand`) and `RigAdapter` (forearm roll and hand flex) both scale by it, so an achieved arm's hand is drawn as without a carry once the blend is over. The ball stays seated on the achieved forearm.
+- **D4, the seat on the achieved arm.** `seatOn` sets the seat side on each candidate's achieved forearm frame from the request's chest-frame inside direction taken perpendicular to that forearm, so an alternative arm or the near-straight hinge fallback keeps the ball on the chest side. The ball is one of the carry arm's clearance shapes: its capsule (the football's tips and radius, `CarryProfile.ball`) adds to the arm's depth (external and floor), and its centre inside the player's own torso or pelvis is a soft ranking cost. The pose publishes `limbClearance.carriedBall` (the ball's depth) and `limbClearance.carriedBallTorso`.
+- **D5, lab hot paths.** `RigAdapter` keeps per-bone world matrices and scratch vectors; the lab keeps one reusable previous pose per player (`capturePose`) in place of a `structuredClone` per tick; `lerpV`, `slerpQ` and the three.js quaternions are gone (`qSlerp` moved to `vec.ts`, unchanged; the core frame blends with it too); `lerpPose` places every landmark on its blended segment, so the drawn hand, palm, ball and model agree mid-frame; shared football geometry and materials are disposed once.
+- **D6, plan 08a handoff.** Dated corrections in place in [plan08.md](plan08.md#plan-08a-ball-carry): the achieved-arm hand, the drawn ball and evidence, the exported carry profile, the mesh controls and the four other circular tests.
+
+### Profile ids
+
+| Profile | 10c | 10d |
+| --- | --- | --- |
+| Carry (L3, and L4 falls built from L3) | `carry-sim6-v1` | `carry-sim6-v2` (same keys and swing; adds `handBlendS` 0.15 s and `ball` 0.14 / 0.085 m) |
+
+### Regressions, each shown failing with its fault restored
+
+| Fault put back | Test | Failing check |
+| --- | --- | --- |
+| D1(a): the lab draws the palm for a `carryPose` rule | evidence, every tick | `L3-F1-phase0` t = 0.0167: drawn ball 0.123 m from `ballRef` (limit 1e-9) |
+| D1(b): the ball placed on the requested forearm, not the achieved one | blocked arm | `L3-F7-phase0` t = 0.521: ball 1.17 cm from the requested ball, needs over 0.3 residuals (2.47 cm) |
+| D1(c): the old blend, landmarks lerped in world space | render blend | t = 0.25: wrist 0.34 mm off the blended forearm (limit 1e-9) |
+| D1(d): `reset()` keeps the previous players' pose memory | reset | row 177: seat differs from the fresh run |
+| D1(e): the last RH fixture given the carry | historical fixtures | `RH-F7-both`: carry `carry-sim6-v2` present |
+| D2: the 08a mesh criteria | mesh controls | 3 cm sideways: passes at Sprint pose 0 |
+| D3: the hand's share switched in one substep | owner change | palm step 12.3 cm (limit 1 cm) |
+| D3: the rig rolls an achieved forearm by the full seat roll | achieved arm | forearm bone 1.26 rad from the rig without a carry (limit 1e-6) |
+| D4: the seat roll from the request frame | near-straight, alternatives | ball on the far side of the forearm (side error 2.0, limit 1e-6) |
+| D4: no torso cost for the ball's centre | blocked carry arm | `carriedBallTorso` 0.034 m (expected 0) |
+| D4: the ball left out of the arm's clearance | infeasible ball | `rightArm` 0 (expected 0.03) |
+
+The D1(d) fault first tried (not resetting the tick counter) passes: time comes from the substep counter, which `reset()` zeroes, and the tick numbers are not compared. The pose-memory leak is the fault kept. The 11 demonstrations run from `.scratch/d10/faults.py`, which restores every file it patches.
+
+### Changed summaries
+
+Each change starts on the runner's carry arm. In 20 fixtures the runner's achieved arm at its conversion is the same as at 10c (the wrist identical, at the same substep), and the seat roll is now read on that forearm (D4), so the carried palm starts the ragdoll's hand elsewhere: under 0.1 mm in `L3-F16-handoff` and `L3-F9-noProbe-free`; 3.5 to 10.4 mm in eleven (`L3-F9-convert-free`, `-prep`, `-contact`, `L3-F9-low`, `L3-F9-noProbe-contact`, `L4-F3-run-on`, `-off`, `L4-F9-free`, `-prep`, `-contact`, `-low`; roll −1.32 to −1.36 rad in `L3-F9-convert-free`); 2.3 to 2.9 cm in `L3-F9-convert-exit`, `L3-F9-noProbe-exit` and `L4-F9-exit`; 2.5 cm in the three grips (`L3-F4-gripTarget`, `-gripBoth`, `L4-F4-occupied`; roll −1.834 to −1.234 rad, the request's roll far from the pushed forearm); 6.7 cm in `L3-F10-bothMirror` (−1.307 to −0.673 rad). In `L3-F3-collision` the ball's clearance chooses another arm before the contact: at the conversion (0.8125 s, unchanged) the wrist is 0.32 m elsewhere.
+
+| Fixture | First difference | Final positions | Events |
+| --- | --- | --- | --- |
+| `L3-F3-collision` | R 0.583 s | 0.36 m | `grounded` 54 → 34 |
+| `L3-F4-gripTarget` | R 0.917 s | 0.01 m | `contactBegin` 11 → 10, `contactRegion` 26 → 24, `grounded` 6 → 8 |
+| `L3-F4-gripBoth` | R, D 0.917 s | 0.04 m | `techniqueFailure` 5 → 6 |
+| `L3-F9-convert-free` | R 0.217 s | 1.21 m | D now converts at 1.658 s (loss of support); `contactBegin` 6 → 5, `grounded` 44 → 60 |
+| `L3-F9-convert-prep` | R 0.467 s | 0.69 m | `grounded` 42 → 32 |
+| `L3-F9-convert-contact` | R 0.667 s | 0.34 m | `grounded` 34 → 36 |
+| `L3-F9-convert-exit` | R 0.833 s | 0.41 m | `grounded` 34 → 38 |
+| `L3-F9-noProbe-free` | R 0.250 s | 6.40 m | D's conversion at 0.771 s is gone (D keeps running); `contactBegin` 14 → 4, `minPairGap` −0.0011 → 0 |
+| `L3-F9-noProbe-contact` | R 0.650 s | 0.56 m | `contactBegin` 17 → 11, `techniqueFailure` 1 → 0, `minPairGap` −0.0074 → −0.0124 |
+| `L3-F9-noProbe-exit` | R 0.833 s | 0.36 m | `grounded` 40 → 22 |
+| `L3-F9-low` | R 0.667 s | 0.08 m | `grounded` 36 → 24 |
+| `L3-F10-bothMirror` | R, D 1.217 s | 0.32 m | `contactBegin` 16 → 13, `wrapStatus` 12 → 10, `grounded` 30 → 36 |
+| `L3-F16-handoff` | R 2.617 s | 0.82 m | `grounded` 30 → 36 |
+| `L4-F3-run-on` | R 0.217 s | 0.25 m | D converts at 0.971 s (was 0.933); D's right brace contacts at 1.371 s (was a late miss at 1.383); `minPairGap` −0.0115 → −0.0066 |
+| `L4-F3-run-off` | R 0.217 s | 0.78 m | foot plants 6 → 8 |
+| `L4-F4-occupied` | R, D 0.917 s | 0.01 m | `contactBegin` 5 → 6, `grounded` 4 → 10 |
+| `L4-F9-free` | R 0.217 s | 0.25 m | as `L4-F3-run-on` (same fall) |
+| `L4-F9-prep` | R 0.467 s | 0.42 m | `grounded` 26 → 24 |
+| `L4-F9-contact` | R 0.667 s | 0.16 m | `grounded` 30 → 50 |
+| `L4-F9-exit` | R 0.833 s | 0.38 m | `grounded` 24 → 22 |
+| `L4-F9-low` | R 0.667 s | 0.99 m | `grounded` 18 → 20 |
+
+Brace outcomes across L4: 33 palm contacts and 21 misses (11 late, 5 too far, 4 obstructed, 1 expired); 10c had 31 and 23 (13, 5, 4, 1). The two changes are D's right arm in `L4-F3-run-on` and `L4-F9-free`.
+
+**Rules ball.** No rule ending in L3 or L4 changes kind, time or spot. The per-tick rule ball moves where the seat roll now follows the achieved forearm: 3.5 mm at most in 22 L3/L4 rule fixtures (about 35 ticks each, around 0.23 s), 2.8 and 2.9 cm in `L3-F1-mirror4` and `-mirror0`, 11 cm in `L3-F5-drag` and 65 cm in `L3-F5-dragMirror` (156 ticks, see the findings).
+
+### Findings
+
+- **D3 is latent in the fixtures.** No fixture gives the carrying arm to an arm task, so no summary moves with it; the regressions build the poses through `buildProxyPose` with the pose memory.
+- **A drag fixture carries an infeasible fit.** In `L3-F5-dragMirror` the carry arm sits in alternatives with about 0.7 m residual before and after 10d, and the ball crosses behind the back in both. The fit is now reported (`limbClearance.carriedBall`, `carriedBallTorso`) rather than hidden in the residual.
+- **The proxy torso is coarse for the ball.** The authored carry presses the ball centre up to 1.6 cm into the proxy torso box at the Sprint back key, while the mesh's worst torso gap through the Sprint is −0.047 m (inside the donor's −0.08). The torso is therefore a soft ranking cost on the ball's centre, not a validity limit.

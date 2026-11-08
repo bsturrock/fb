@@ -42,6 +42,13 @@ export interface CarryProfile {
   swing: number;
   foreSwing: number;
   swingIn: number;
+  /**
+   * Plan 10d D3: seconds over which the hand passes between the carry (roll and wrist flex over the nose) and an achieved
+   * arm's own straight hand, when the arm's owner changes.
+   */
+  handBlendS: number;
+  /** Plan 10d D4: the football the seat holds (long half-length and radius, m), a clearance capsule along its axis. */
+  ball: { halfM: number; radiusM: number };
 }
 
 /**
@@ -50,7 +57,9 @@ export interface CarryProfile {
  * - `rollRad`: the seat side about the forearm: -X (where a resting palm faces) turned about +Y;
  * - `flexRad`: the wrist flex turning the fingers from the forearm toward the seat side;
  * - `alongM`, `outM`: ball centre along the forearm from the elbow and out toward the seat side;
- * - `tiltRad`: the ball's long axis from the forearm toward the seat side (negative: nose away from it, as authored).
+ * - `tiltRad`: the ball's long axis from the forearm toward the seat side (negative: nose away from it, as authored);
+ * - `handW` (plan 10d D3): the share of the roll and the flex the hand takes: 1 the carry's hand over the nose, 0 an
+ *   achieved arm's own hand (no roll, no flex). The ball keeps the full seat either way.
  */
 export interface CarrySeat {
   rollRad: number;
@@ -58,12 +67,18 @@ export interface CarrySeat {
   alongM: number;
   outM: number;
   tiltRad: number;
+  handW: number;
 }
 
-/** A chest-frame arm and seat for one arm swing. `blend`: 0 at the back key, 1 at the forward key. */
+/**
+ * A chest-frame arm and seat for one arm swing. `blend`: 0 at the back key, 1 at the forward key. `inside` (plan 10d D4):
+ * the seat side in the chest frame (unit, perpendicular to `fore`); `seat.rollRad` is that side in the request's own
+ * forearm frame, and `seatOn` re-reads it in whatever forearm frame was achieved.
+ */
 export interface CarryRequest {
   upper: Vec3;
   fore: Vec3;
+  inside: Vec3;
   seat: CarrySeat;
   blend: number;
 }
@@ -75,9 +90,13 @@ const F = v3(0, -1, 0);
 /**
  * sim-6 CARRY (src/anim/ballCarry.ts at the user's lab fit of 2026-10-30), values unchanged; the swing range reads the run
  * clip's extremes. Model checksum in both repositories: 5aaab36942e3ec55...792d3.
+ *
+ * v2 (plan 10d): the same keys. The seat side is re-read in the achieved forearm frame against the chest-frame inside
+ * direction (D4, `seatOn`), the ball is a clearance shape of the carry arm (D4), and an achieved arm's hand takes no
+ * roll or flex, with `handBlendS` between the two at an owner change (D3). The football is the donor's prop.
  */
 export const CARRY_L3: CarryProfile = {
-  id: 'carry-sim6-v1',
+  id: 'carry-sim6-v2',
   back: { upper: norm(v3(-0.156, -0.907, 0.391)), fore: norm(v3(0.292, -0.017, 0.956)), inside: v3(0.412, 0.904, -0.11), along: 0.175, out: 0.117, tilt: 0, wristFlex: 0.942 },
   fwd: { upper: norm(v3(-0.156, -0.922, 0.354)), fore: norm(v3(0.016, 0.423, 0.906)), inside: v3(0.42, 0.82, -0.39), along: 0.175, out: 0.117, tilt: -0.314, wristFlex: 1.065 },
   fitForearmM: 0.23217,
@@ -85,6 +104,8 @@ export const CARRY_L3: CarryProfile = {
   swing: 0.6,
   foreSwing: 0.716,
   swingIn: 0.6,
+  handBlendS: 0.15,
+  ball: { halfM: 0.14, radiusM: 0.085 },
 };
 
 const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -125,15 +146,38 @@ export function carryRequest(C: CarryProfile, raw: number, forearmM: number = C.
   const hx = norm(cross(upper, fore));
   const hz = cross(hx, neg(fore));
   const rollRad = Math.atan2(dot(inside, hz), -dot(inside, hx));
-  return { upper, fore, blend, seat: { rollRad, flexRad: K.wristFlex, alongM: K.along * (forearmM / C.fitForearmM), outM: K.out, tiltRad: K.tilt } };
+  return { upper, fore, inside, blend, seat: { rollRad, flexRad: K.wristFlex, alongM: K.along * (forearmM / C.fitForearmM), outM: K.out, tiltRad: K.tilt, handW: 1 } };
+}
+
+/**
+ * Plan 10d D4: a request's seat on an achieved forearm frame (world `forearmQ`, X hinge axis, -Y elbow to wrist) of a
+ * body whose core (chest frame) is `coreQ`. The seat side is the request's chest-frame inside direction taken
+ * perpendicular to the achieved forearm, so the ball keeps its side of the arm whatever bend plane the solve chose (an
+ * alternative arm, a pushed one, or a near-straight arm's fallback hinge axis). On the requested arm itself this is the
+ * request's own roll.
+ */
+export function seatOn(req: CarryRequest, forearmQ: Quat, coreQ: Quat, handW = 1): CarrySeat {
+  const fx = qRot(forearmQ, X);
+  const fz = qRot(forearmQ, v3(0, 0, 1));
+  const along = qRot(forearmQ, F);
+  const inW = qRot(coreQ, req.inside);
+  const i = norm(addScaled(inW, along, -dot(inW, along)), qRot(forearmQ, seatInside(req.seat)));
+  return { ...req.seat, rollRad: Math.atan2(dot(i, fz), -dot(i, fx)), handW };
 }
 
 /** The seat side, forearm-local. */
-const seatInside = (c: CarrySeat): Vec3 => v3(-Math.cos(c.rollRad), 0, Math.sin(c.rollRad));
+const seatInside = (c: CarrySeat): Vec3 => sideAt(c.rollRad);
+const sideAt = (roll: number): Vec3 => v3(-Math.cos(roll), 0, Math.sin(roll));
 
-/** The palm contact landmark, forearm-local: the wrist, then the hand turned over the nose. */
+/** Plan 10d D3: the hand's own roll and wrist flex (the seat's, scaled by the hand's share). */
+export function seatHand(c: CarrySeat): { rollRad: number; flexRad: number } {
+  return { rollRad: c.rollRad * c.handW, flexRad: c.flexRad * c.handW };
+}
+
+/** The palm contact landmark, forearm-local: the wrist, then the hand turned over the nose (by the hand's share). */
 export function seatPalmLocal(c: CarrySeat, forearmM: number, palmExtensionM: number): Vec3 {
-  const fingers = addScaled(addScaled(v3(), F, Math.cos(c.flexRad)), seatInside(c), Math.sin(c.flexRad));
+  const h = seatHand(c);
+  const fingers = addScaled(addScaled(v3(), F, Math.cos(h.flexRad)), sideAt(h.rollRad), Math.sin(h.flexRad));
   return addScaled(v3(0, -forearmM, 0), fingers, palmExtensionM);
 }
 
@@ -155,7 +199,34 @@ export function seatBallWorld(forearm: Pose, c: CarrySeat): Pose {
   return { p: toWorld(forearm, seatBallLocal(c)), q: qMul(forearm.q, seatBallQ(c)) };
 }
 
-/** Seat between two poses of one representation (the lab's render interpolation). */
+/**
+ * Plan 10d D4: the carried ball's clearance capsule (world): along the ball's long axis, the radius of the football, its
+ * ends at the football's tips.
+ */
+export function seatBallCapsule(forearm: Pose, c: CarrySeat, ball: CarryProfile['ball']): { a: Vec3; b: Vec3; r: number } {
+  const w = seatBallWorld(forearm, c);
+  const axis = qRot(w.q, Y);
+  const h = Math.max(0, ball.halfM - ball.radiusM);
+  return { a: addScaled(w.p, axis, -h), b: addScaled(w.p, axis, h), r: ball.radiusM };
+}
+
+/**
+ * Seat between two poses of one representation (the lab's render interpolation). The roll is interpolated the short way
+ * round (the seat side is an angle about the forearm).
+ */
 export function lerpSeat(a: CarrySeat, b: CarrySeat, t: number): CarrySeat {
-  return { rollRad: mix(a.rollRad, b.rollRad, t), flexRad: mix(a.flexRad, b.flexRad, t), alongM: mix(a.alongM, b.alongM, t), outM: mix(a.outM, b.outM, t), tiltRad: mix(a.tiltRad, b.tiltRad, t) };
+  let dr = b.rollRad - a.rollRad;
+  dr -= 2 * Math.PI * Math.round(dr / (2 * Math.PI));
+  return { rollRad: a.rollRad + dr * t, flexRad: mix(a.flexRad, b.flexRad, t), alongM: mix(a.alongM, b.alongM, t), outM: mix(a.outM, b.outM, t), tiltRad: mix(a.tiltRad, b.tiltRad, t), handW: mix(a.handW, b.handW, t) };
+}
+
+/**
+ * Plan 10d D3: the hand's share after one substep: toward 1 while the carry owns the arm, toward 0 while an arm task
+ * does, at 1 / `blendS` per second. Without a previous share or a step length it is the target.
+ */
+export function stepHandW(prev: number | undefined, carried: boolean, dtS: number, blendS: number): number {
+  const target = carried ? 1 : 0;
+  if (prev === undefined || !(dtS > 0) || !(blendS > 0)) return target;
+  const step = dtS / blendS;
+  return Math.abs(target - prev) <= step ? target : prev + Math.sign(target - prev) * step;
 }

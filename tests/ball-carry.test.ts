@@ -1,12 +1,17 @@
 // Plan 08a: the sim-6 carry ported into the L3 pose path. Donor fit, composition, authority, handoff and lifecycle.
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { CARRY_L3, carryArmSwing, carryRequest, lerpSeat, seatBallLocal, seatBallQ, seatBallWorld, seatPalmLocal, type CarrySeat } from '../src/sim/carry';
+import { glbScene } from '../scripts/model/glb-scene';
+import { capturePose, lerpPose } from '../src/lab/render-pose';
+import { RigAdapter, cloneRig } from '../src/lab/rig-adapter';
+import { CARRY_L3, carryArmSwing, carryRequest, seatBallLocal, seatBallQ, seatPalmLocal, type CarrySeat } from '../src/sim/carry';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
-import { buildProxyPose, carriedBall, hingeChain, type PhysicalPose } from '../src/sim/pose';
+import { MODEL_CALIBRATION } from '../src/sim/model/profiles';
+import { buildProxyPose, carriedBall, hingeChain, proceduralLocal, type PhysicalPose, type PoseClearance, type PoseShape, type ProxyPoseInput } from '../src/sim/pose';
+import { shoulderLocal, sideSignX, type BodyProfile } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
-import { addScaled, dist, dot, norm, qIdentity, qInvRot, qRot, sub, toLocal, toWorld, v3, vc, type Pose, type Vec3 } from '../src/sim/vec';
+import { add, addScaled, cross, dist, dot, len, lerp, norm, qFromAxisAngle, qIdentity, qInvRot, qRot, sub, toLocal, toWorld, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { pace, runSim } from './helpers';
 
 const tv = (p: Vec3): THREE.Vector3 => new THREE.Vector3(p.x, p.y, p.z);
@@ -134,6 +139,32 @@ const corr = (a: number[], b: number[]): number => {
   return n / Math.sqrt(da * db);
 };
 
+/** The supplied model on the rig adapter (one clone for the file): world positions and rotations of its bones for a pose. */
+let rigOnce: { apply: (pose: PhysicalPose) => (bone: string) => { p: Vec3; q: Quat } } | null = null;
+function rig(): NonNullable<typeof rigOnce> {
+  if (rigOnce) return rigOnce;
+  const c = cloneRig(glbScene().scene);
+  const adapter = new RigAdapter(c.bones, MODEL_CALIBRATION);
+  const p = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  const sc = new THREE.Vector3();
+  rigOnce = {
+    apply: (pose) => {
+      adapter.apply(pose);
+      c.root.updateMatrixWorld(true);
+      return (bone) => {
+        c.bones[bone].matrixWorld.decompose(p, q, sc);
+        return { p: v3(p.x, p.y, p.z), q: { x: q.x, y: q.y, z: q.z, w: q.w } };
+      };
+    },
+  };
+  return rigOnce;
+}
+/** Angle between two rotations (rad). */
+const qAngleBetween = (a: Quat, b: Quat): number => 2 * Math.acos(Math.min(1, Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w)));
+/** The carry's chest-frame side convention for a body (carry.ts `M`). */
+const mirrorOf = (body: BodyProfile) => (p: Vec3): Vec3 => v3(p.x * (sideSignX(body, 'left') > 0 ? 1 : -1), p.y, p.z);
+
 describe('plan 08a donor fit through the simulation', () => {
   // a settled run on each supplied run clip: Fast Run (the stop's run-up) and Sprint
   for (const [id, from, to] of [['L3-F16-runStop', 1.6, 2.5], ['L3-F16-sprint', 1.6, 2.5]] as const) {
@@ -225,11 +256,47 @@ describe('plan 08a composition and continuity', () => {
     expect(moved).toBeLessThan(1e-6);
   }, 60000);
 
-  it('a blocked arm carries the ball where the arm went, not at the request', async () => {
-    const { sim, rows } = await follow(FIX('L3-F7-phase0'));
-    const moved = rows.filter((r) => (r.pose.targetResidualM?.rightArm ?? 0) > 0.05);
-    expect(moved.length).toBeGreaterThan(5);
-    for (const r of moved) expect(dist(r.pose.jointLandmarksWorld.carriedBall, r.ball.p)).toBeLessThan(1e-6);
+  it('a blocked arm carries the ball where the arm went, not at the request (plan 10d D1 b)', async () => {
+    const def = FIX('L3-F7-phase0');
+    const { sim, rows } = await follow(def);
+    const R = carrier(sim);
+    const L = def.ragdoll!.lengths;
+    const C = CARRY_L3;
+    const [b0, b1] = C.swingRange;
+    let n = 0;
+    let worstFit = 0;
+    for (const r of rows) {
+      const res = r.pose.targetResidualM?.rightArm ?? 0;
+      // the blend (tilt is 0 at the back key) gives the swing back while it is inside the swing range
+      const blend = r.seat.tiltRad / C.fwd.tilt;
+      if (r.rag || res <= 0.05 || blend <= 1e-6 || blend >= 1 - 1e-6) continue;
+      n++;
+      // the request, rebuilt from the carry's chest-frame arm, the published shoulder and the body's segment lengths
+      const req = carryRequest(C, b0 + blend * (b1 - b0), L.forearm, mirrorOf(R.body));
+      const cq = r.pose.segments.core.rotationWorld;
+      const lm = r.pose.jointLandmarksWorld;
+      const elbowR = addScaled(lm.rightShoulder, qRot(cq, req.upper), L.upperArm);
+      const foreR = qRot(cq, req.fore);
+      const palmR = addScaled(elbowR, foreR, L.forearm + L.palmExtension);
+      const asked = addScaled(addScaled(elbowR, foreR, r.seat.alongM), qRot(cq, req.inside), r.seat.outM);
+      // it is the request the residual is measured from: the achieved (straight) chain end is that far from its palm
+      const u = norm(sub(lm.rightWrist, lm.rightElbow));
+      const reach = addScaled(lm.rightWrist, u, L.palmExtension);
+      expect(Math.abs(dist(reach, palmR) - res), `t=${r.t}`).toBeLessThan(1e-6);
+      // the drawn ball moved with the arm: about the residual (scaled to where the ball sits on the arm) away from it
+      const off = dist(r.ball.p, asked);
+      expect(off, `t=${r.t}`).toBeGreaterThan(0.3 * res);
+      expect(off, `t=${r.t}`).toBeLessThan(1.3 * res);
+      // and it sits on the achieved forearm, measured on the landmarks: along it from the elbow, out of it toward the
+      // request's chest-frame seat side (plan 10d D4)
+      const rel = sub(r.ball.p, lm.rightElbow);
+      const along = dot(rel, u);
+      const out = sub(rel, addScaled(v3(), u, along));
+      const side = norm(addScaled(qRot(cq, req.inside), u, -dot(qRot(cq, req.inside), u)));
+      worstFit = Math.max(worstFit, Math.abs(along - r.seat.alongM), Math.abs(len(out) - r.seat.outM), dist(norm(out), side) * r.seat.outM);
+    }
+    expect(n).toBeGreaterThan(5);
+    expect(worstFit).toBeLessThan(1e-6);
     sim.dispose();
   }, 30000);
 
@@ -246,19 +313,185 @@ describe('plan 08a composition and continuity', () => {
     free.sim.dispose();
   }, 30000);
 
-  it('an achieved right arm keeps its solve: straight hand, the ball stays seated on it', async () => {
+  it('an achieved right arm keeps its solve and its own hand; the ball stays seated on it (plan 10d D3)', async () => {
     const def = FIX('L3-F13-carrier');
     const sim = await Simulation.create(def);
     const R = carrier(sim);
     const inp = { playerId: R.id, body: R.body, ragdoll: def.ragdoll!, pose: { p: v3(0, 1, 0), q: qIdentity() }, gait: R.gait, speed: 0, carriesBall: true, carry: CARRY_L3 };
-    const sh = v3(-0.2, 1.3, 0);
-    const elbow = v3(-0.3, 1.1, 0.2);
+    const sh = toWorld(inp.pose, shoulderLocal(R.body, 'right'));
+    const elbow = addScaled(sh, norm(v3(-0.1, -0.8, 0.3)), def.ragdoll!.lengths.upperArm);
     const wrist = addScaled(elbow, norm(v3(0.1, 0.2, 1)), def.ragdoll!.lengths.forearm);
     const palm = addScaled(wrist, norm(sub(wrist, elbow)), def.ragdoll!.lengths.palmExtension);
     const pose = buildProxyPose({ ...inp, arms: { right: { shoulder: sh, elbow, wrist, palm } } });
     expect(dist(pose.jointLandmarksWorld.rightPalm, palm)).toBeLessThan(1e-6);
-    expect(pose.carry!.flexRad).toBe(0);
+    // the hand is the arm task's: no share of the carry roll or flex, and the model draws it as without a carry
+    expect(pose.carry!.handW).toBe(0);
+    expect(pose.carry!.flexRad).toBeCloseTo(CARRY_L3.fwd.wristFlex * (1.1 / 1.9) + CARRY_L3.back.wristFlex * (0.8 / 1.9), 12);
+    const withSeat = rig().apply(pose);
+    const a = { ForeArm: withSeat('RightForeArm'), Hand: withSeat('RightHand') };
+    const bare = rig().apply({ ...pose, carry: undefined });
+    for (const [k, b] of [['ForeArm', bare('RightForeArm')], ['Hand', bare('RightHand')]] as const) {
+      expect(qAngleBetween(a[k].q, b.q), k).toBeLessThan(1e-6);
+      expect(dist(a[k].p, b.p), k).toBeLessThan(1e-6);
+    }
     expect(dist(pose.jointLandmarksWorld.carriedBall, carriedBall(pose)!.p)).toBeLessThan(1e-9);
+    sim.dispose();
+  });
+
+  it('an owner change moves the hand continuously, on the published landmarks and on the rig (plan 10d D3)', async () => {
+    const def = FIX('L3-F13-carrier');
+    const sim = await Simulation.create(def);
+    const R = carrier(sim);
+    const dtS = def.solver.outerTickS / def.solver.substeps;
+    const memory: Record<string, number> = {};
+    const inp: ProxyPoseInput = { playerId: R.id, body: R.body, ragdoll: def.ragdoll!, pose: { p: v3(0, 1, 0), q: qIdentity() }, gait: R.gait, speed: 0, carriesBall: true, carry: CARRY_L3, memory, dtS };
+    const L = def.ragdoll!.lengths;
+    let pose = buildProxyPose(inp);
+    // the arm task takes the carry's own achieved chain, so only the hand's owner changes
+    const lm = pose.jointLandmarksWorld;
+    const given = { shoulder: lm.rightShoulder, elbow: lm.rightElbow, wrist: lm.rightWrist, palm: addScaled(lm.rightWrist, norm(sub(lm.rightWrist, lm.rightElbow)), L.palmExtension) };
+    const steps = Math.round(0.4 / dtS);
+    const seq = [...Array(steps).fill(true), ...Array(steps).fill(false), ...Array(steps).fill(true)];
+    let palmStep = 0;
+    let handStep = 0;
+    let foreStep = 0;
+    let prev = { palm: pose.jointLandmarksWorld.rightPalm, bones: (() => { const b = rig().apply(pose); return { f: b('RightForeArm').q, h: b('RightHand').q }; })() };
+    const shares: number[] = [];
+    for (const g of seq) {
+      pose = buildProxyPose({ ...inp, ...(g ? { arms: { right: given } } : {}) });
+      const b = rig().apply(pose);
+      const cur = { palm: pose.jointLandmarksWorld.rightPalm, bones: { f: b('RightForeArm').q, h: b('RightHand').q } };
+      palmStep = Math.max(palmStep, dist(cur.palm, prev.palm));
+      foreStep = Math.max(foreStep, qAngleBetween(cur.bones.f, prev.bones.f));
+      handStep = Math.max(handStep, qAngleBetween(cur.bones.h, prev.bones.h));
+      shares.push(pose.carry!.handW);
+      prev = cur;
+    }
+    // the hand passes over the declared interval (0.15 s) at each of the three changes, and arrives
+    expect(shares[steps - 1]).toBe(0);
+    expect(shares[2 * steps - 1]).toBe(1);
+    expect(shares[3 * steps - 1]).toBe(0);
+    // per substep: the published palm inside the transition audit's 1 cm same-time limit (an instant change moves it about
+    // 12 cm), the model's forearm and hand turn a few degrees
+    expect(palmStep).toBeLessThan(0.01);
+    expect(foreStep).toBeLessThan((3 * Math.PI) / 180);
+    expect(handStep).toBeLessThan((3 * Math.PI) / 180);
+    expect(shares.filter((w) => w > 0 && w < 1).length).toBe(3 * (Math.round(CARRY_L3.handBlendS / dtS) - 1));
+    sim.dispose();
+  });
+});
+
+describe('plan 10d D4: the seat on whatever arm is achieved', () => {
+  const def = FIX('L3-F13-carrier');
+  const L = def.ragdoll!.lengths;
+  const core: Pose = { p: v3(0, 1, 0), q: qIdentity() };
+  const base = (R: PlayerRuntime): ProxyPoseInput => ({ playerId: R.id, body: R.body, ragdoll: def.ragdoll!, pose: core, gait: R.gait, speed: 0, carriesBall: true, carry: CARRY_L3 });
+  /** The static carry's chest-frame seat side, world. */
+  const chestInside = (R: PlayerRuntime): Vec3 => qRot(core.q, carryRequest(CARRY_L3, 0, L.forearm, mirrorOf(R.body)).inside);
+  /** Where the ball sits about a pose's achieved forearm, measured on its landmarks, and the chest side there. */
+  const sides = (R: PlayerRuntime, pose: PhysicalPose): { ball: Vec3; chest: Vec3 } => {
+    const lm = pose.jointLandmarksWorld;
+    const f = norm(sub(lm.rightWrist, lm.rightElbow));
+    const rel = sub(carriedBall(pose)!.p, lm.rightElbow);
+    const i = chestInside(R);
+    return { ball: norm(addScaled(rel, f, -dot(rel, f))), chest: norm(addScaled(i, f, -dot(i, f))) };
+  };
+  /** Depth (m, > 0 inside) of a point in the body's own torso or pelvis box. */
+  const inTorso = (body: BodyProfile, p: Vec3): number => {
+    const l = toLocal(core, p);
+    const box = (b: { center: Vec3; halfExtents: Vec3 }): number => Math.min(b.halfExtents.x - Math.abs(l.x - b.center.x), b.halfExtents.y - Math.abs(l.y - b.center.y), b.halfExtents.z - Math.abs(l.z - b.center.z));
+    return Math.max(0, box(body.compound.torso), box(body.compound.pelvis));
+  };
+
+  it('near-straight arms: the ball keeps the chest side through the hinge fallback and through straight', async () => {
+    const sim = await Simulation.create(def);
+    const R = carrier(sim);
+    const sh = toWorld(core, shoulderLocal(R.body, 'right'));
+    let fallback = 0;
+    let worstSide = 0;
+    let step = 0;
+    let n = 0;
+    for (const [up, plane] of [[v3(0, -1, 0.2), v3(1, 0, 0)], [v3(-0.3, -0.7, 0.6), v3(0.2, 1, 0.1)], [v3(-1, -0.2, 0.3), v3(0, 0.3, 1)]] as const) {
+      const u = norm(up);
+      const axis = norm(cross(u, plane));
+      const elbow = addScaled(sh, u, L.upperArm);
+      let last: Vec3 | null = null;
+      // bend from +2 degrees through straight to -2 degrees (the hinge axis flips; inside 0.5 degrees it is the fallback's)
+      for (let d = 2; d >= -2 - 1e-9; d -= 0.02) {
+        const f = qRot(qFromAxisAngle(axis, (d * Math.PI) / 180), u);
+        const wrist = addScaled(elbow, f, L.forearm);
+        const pose = buildProxyPose({ ...base(R), arms: { right: { shoulder: sh, elbow, wrist, palm: addScaled(wrist, f, L.palmExtension) } } });
+        if (pose.straightFallback.includes('rightElbow')) fallback++;
+        const sd = sides(R, pose);
+        worstSide = Math.max(worstSide, dist(sd.ball, sd.chest));
+        const b = carriedBall(pose)!.p;
+        if (last) step = Math.max(step, dist(b, last));
+        last = b;
+        n++;
+      }
+    }
+    expect(n).toBeGreaterThan(500);
+    expect(fallback).toBeGreaterThan(100);
+    expect(worstSide).toBeLessThan(1e-6);
+    // the forearm itself moves 0.02 degrees a step (and up to the 0.5 degree fallback band once): no seat flip
+    expect(step).toBeLessThan(0.005);
+    sim.dispose();
+  });
+
+  it('every arm alternative carries the ball on the chest side', async () => {
+    const sim = await Simulation.create(def);
+    const R = carrier(sim);
+    const sh = toWorld(core, shoulderLocal(R.body, 'right'));
+    const sx = sideSignX(R.body, 'right');
+    // the procedural alternatives' palm targets and poles (pose.ts ARM_ALTS)
+    const alts = [[0.13, 0.3, 0.3, 0.7, -0.5, -0.3], [0.18, 0.55, 0.42, 0.6, -0.7, 0], [0.3, -0.12, -0.12, 0.5, 0, 0.8], [0.2, -0.02, 0.36, 0.7, -0.3, -0.5], [0.32, 0.95, 0.12, 0.8, 0.2, -0.4], [0.12, 0.1, -0.3, 0.6, 0, 0.6], [0.24, -0.2, 0.06, 0.3, 0, -1], [0.24, -0.2, -0.08, 0.3, 0, -1]];
+    for (const [px, py, pz, qx, qy, qz] of alts) {
+      const tgt = toWorld(core, proceduralLocal(R.body, 'right', v3(px * sx, py, pz)));
+      const pole = norm(v3(qx * sx, qy, qz));
+      // the elbow off the shoulder-palm line toward the pole (law of cosines)
+      const d = Math.min(dist(sh, tgt), L.upperArm + L.forearm + L.palmExtension - 1e-3);
+      const ax = norm(sub(tgt, sh));
+      const c = (L.upperArm ** 2 + d * d - (L.forearm + L.palmExtension) ** 2) / (2 * L.upperArm * d);
+      const perp = norm(addScaled(pole, ax, -dot(pole, ax)));
+      const elbow = add(sh, add(addScaled(v3(), ax, L.upperArm * c), addScaled(v3(), perp, L.upperArm * Math.sqrt(Math.max(0, 1 - c * c)))));
+      const f = norm(sub(addScaled(sh, ax, d), elbow));
+      const wrist = addScaled(elbow, f, L.forearm);
+      const pose = buildProxyPose({ ...base(R), arms: { right: { shoulder: sh, elbow, wrist, palm: addScaled(wrist, f, L.palmExtension) } } });
+      const sd = sides(R, pose);
+      expect(dist(sd.ball, sd.chest), `alt ${px},${py},${pz}`).toBeLessThan(1e-6);
+    }
+    sim.dispose();
+  });
+
+  it('a blocked carry arm takes the alternative that keeps the ball out of its own torso', async () => {
+    const sim = await Simulation.create(def);
+    const R = carrier(sim);
+    const mid = (sh: PoseShape): Vec3 => (sh.kind === 'capsule' ? toLocal(core, lerp(sh.a, sh.b, 0.5)) : v3());
+    // an obstacle over the front and the top of the arm's reach: the carry, the raised alternatives and the side ones
+    const clearance: PoseClearance = {
+      external: (shapes) => (shapes.some((x) => x.key === 'rightForearm' && (mid(x).z > -0.03 || mid(x).y > 0.5)) ? 0.05 : 0),
+      self: (shapes) => Math.max(0, ...shapes.map((x) => (x.key === 'carriedBall' && x.kind === 'ball' ? inTorso(R.body, x.c) : 0))),
+    };
+    const pose = buildProxyPose({ ...base(R), clearance });
+    // an alternative behind the body, valid, with the ball's centre out of the torso
+    const free = buildProxyPose(base(R));
+    expect(dist(pose.jointLandmarksWorld.rightWrist, free.jointLandmarksWorld.rightWrist)).toBeGreaterThan(0.1);
+    expect(mid({ kind: 'capsule', a: pose.jointLandmarksWorld.rightElbow, b: pose.jointLandmarksWorld.rightWrist, r: 0, key: '' }).z).toBeLessThan(-0.03);
+    expect(pose.limbClearance.rightArm).toBeLessThanOrEqual(0.004);
+    expect(pose.limbClearance.carriedBallTorso).toBe(0);
+    expect(inTorso(R.body, carriedBall(pose)!.p)).toBe(0);
+    // the choice was real: an earlier valid alternative had the ball's centre in the torso
+    const first = buildProxyPose({ ...base(R), clearance: { external: clearance.external } });
+    expect(inTorso(R.body, carriedBall(first)!.p)).toBeGreaterThan(0.01);
+    sim.dispose();
+  });
+
+  it('a ball that cannot fit is reported, not hidden in the residual', async () => {
+    const sim = await Simulation.create(def);
+    const R = carrier(sim);
+    const pose = buildProxyPose({ ...base(R), clearance: { external: (shapes) => (shapes.some((x) => x.key === 'carriedBall') ? 0.03 : 0) } });
+    expect(pose.limbClearance.carriedBall).toBeCloseTo(0.03, 9);
+    expect(pose.limbClearance.rightArm).toBeCloseTo(0.03, 9);
     sim.dispose();
   });
 });
@@ -329,22 +562,62 @@ describe('plan 08a authority and rules', () => {
     await runSim(b);
     const [p, q] = [carrier(a.sim), carrier(b)];
     expect(vc(p.proxy.body.translation())).toEqual(vc(q.proxy.body.translation()));
-    const [r0, r1] = [a.rows[300], a.rows[301]];
-    const f0 = r0.pose.segments.rightForearm;
-    const f1 = r1.pose.segments.rightForearm;
-    const mid = { p: addScaled(f0.originWorld, sub(f1.originWorld, f0.originWorld), 0.5), q: f1.rotationWorld };
-    const seat = lerpSeat(r0.seat, r1.seat, 0.5);
-    const ball = seatBallWorld(mid, seat);
-    expect(dist(ball.p, mid.p)).toBeCloseTo(Math.hypot(seat.alongM, seat.outM), 9);
+    // plan 10d D1(c): the lab's own blend between two drawn ticks (one tick apart), where the forearm turns fastest
+    const fa = (r: Row): Pose => ({ p: r.pose.segments.rightForearm.originWorld, q: r.pose.segments.rightForearm.rotationWorld });
+    const tick = def.solver.substeps;
+    let i0 = 0;
+    for (let i = 0; i + tick < a.rows.length; i++) if (!a.rows[i].rag && !a.rows[i + tick].rag && qAngleBetween(fa(a.rows[i]).q, fa(a.rows[i + tick]).q) > qAngleBetween(fa(a.rows[i0]).q, fa(a.rows[i0 + tick]).q)) i0 = i;
+    const [r0, r1] = [a.rows[i0], a.rows[i0 + tick]];
+    const k0 = capturePose(null, r0.pose)!;
+    const draw = rig();
+    const hand = (pose: PhysicalPose): Vec3 => draw.apply(pose)('RightHand').p;
+    const at = (pose: PhysicalPose) => {
+      const f = { p: pose.segments.rightForearm.originWorld, q: pose.segments.rightForearm.rotationWorld };
+      const lm = pose.jointLandmarksWorld;
+      return { wrist: toLocal(f, lm.rightWrist), palm: toLocal(f, lm.rightPalm), ball: toLocal(f, carriedBall(pose)!.p), hand: toLocal(f, hand(pose)) };
+    };
+    const [e0, e1] = [at(r0.pose), at(r1.pose)];
+    for (const t of [0.25, 0.5, 0.75]) {
+      const P = lerpPose(k0, r1.pose, t);
+      const m = at(P);
+      // the drawn joints ride the blended forearm (as the model does): the wrist and the model's hand stay rigid on it
+      expect(dist(m.wrist, e1.wrist), `t=${t}`).toBeLessThan(1e-9);
+      expect(dist(m.hand, e1.hand), `t=${t}`).toBeLessThan(1e-6);
+      // the drawn palm and ball keep their blended places on it (the seat blends; the palm blends where it sits)
+      expect(dist(m.palm, lerp(e0.palm, e1.palm, t)), `t=${t}`).toBeLessThan(1e-9);
+      expect(dist(m.ball, lerp(e0.ball, e1.ball, t)), `t=${t}`).toBeLessThan(1e-3);
+      expect(dist(m.palm, m.ball) - Math.min(dist(e0.palm, e0.ball), dist(e1.palm, e1.ball)), `t=${t}`).toBeGreaterThan(-1e-3);
+      expect(dist(m.palm, m.ball) - Math.max(dist(e0.palm, e0.ball), dist(e1.palm, e1.ball)), `t=${t}`).toBeLessThan(1e-3);
+      // the case is live: a straight-line blend of the world wrist would leave the blended forearm
+      const w = lerp(r0.pose.jointLandmarksWorld.rightWrist, r1.pose.jointLandmarksWorld.rightWrist, t);
+      if (t === 0.5) expect(dist(w, P.jointLandmarksWorld.rightWrist)).toBeGreaterThan(1e-4);
+    }
+    // at the end of the blend: the solved pose itself
+    expect(lerpPose(k0, r1.pose, 1)).toBe(r1.pose);
     a.sim.dispose();
     b.dispose();
   }, 30000);
 
-  it('historical fixtures publish no carry data and keep their ball source', async () => {
-    for (const def of allFixtures().filter((d) => d.milestone !== 'L3').slice(0, 40)) {
-      expect(def.carry).toBeUndefined();
-      expect(def.rules?.ballSource).not.toBe('carryPose');
+  it('historical fixtures publish no carry data and keep their ball source; L4 inherits the carry on purpose', async () => {
+    // plan 10d D1(e): every fixture of the historical milestones (gates 1-4, L1, L2, ride height, handoff contact)
+    const hist = allFixtures().filter((d) => !/^L[34]$/.test(d.milestone));
+    expect(new Set(hist.map((d) => d.milestone.replace(/-.*$/, '').replace(/\d+$/, '')))).toEqual(new Set(['G', 'L', 'RH', 'HC']));
+    expect(hist.length).toBeGreaterThan(200);
+    for (const def of hist) {
+      expect(def.carry, def.id).toBeUndefined();
+      expect(def.rules?.ballSource, def.id).not.toBe('carryPose');
     }
+    // L4 falls built from an L3 fixture keep its carry (the ball stays on the runner's arm through the fall); the rest
+    // (zero-gravity limits, tipped falls) have no ball carrier
+    const l4 = allFixtures().filter((d) => d.milestone === 'L4');
+    const carried = l4.filter((d) => d.carry);
+    expect(carried.length).toBeGreaterThanOrEqual(20);
+    for (const def of carried) {
+      expect(def.carry, def.id).toBe(CARRY_L3);
+      expect(def.notes, def.id).toContain(`carry: ${CARRY_L3.id}`);
+      expect(def.rules?.ballSource ?? 'carryPose', def.id).toBe('carryPose');
+    }
+    for (const def of l4.filter((d) => !d.carry)) expect(def.notes ?? '', def.id).not.toContain('carry: ');
     const def = allFixtures().find((d) => d.id === 'L2-F3-runStop')!;
     const { sim, rows } = await follow(def);
     expect(rows.length).toBe(0);
@@ -395,13 +668,20 @@ describe('plan 08a handoff and lifecycle', () => {
     await convert(at(run, fwd.t, 'fwd'));
   }, 120000);
 
-  it('reset reproduces a fresh run', async () => {
+  it('reset reproduces a fresh run (plan 10d D1 d)', async () => {
     const def = FIX('L3-F16-runStop');
-    const a = await follow(def);
-    const b = await follow(def);
-    expect(b.rows.length).toBe(a.rows.length);
-    for (let i = 0; i < a.rows.length; i += 37) expect(b.rows[i].seat).toEqual(a.rows[i].seat);
-    a.sim.dispose();
-    b.sim.dispose();
+    const { sim, rows } = await follow(def);
+    const n = rows.length;
+    expect(n).toBeGreaterThan(500);
+    sim.reset();
+    await runSim(sim);
+    expect(rows.length).toBe(2 * n);
+    for (let i = 0; i < n; i++) {
+      const [a, b] = [rows[i], rows[n + i]];
+      expect(b.t, `row ${i}`).toBe(a.t);
+      expect(b.seat, `row ${i}`).toEqual(a.seat);
+      expect(b.ball, `row ${i}`).toEqual(a.ball);
+    }
+    sim.dispose();
   }, 30000);
 });

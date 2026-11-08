@@ -8,11 +8,10 @@ import { allFixtures } from '../sim/fixtures/index';
 import type { FixtureDef } from '../sim/fixture';
 import { Simulation, type PlayerRuntime } from '../sim/simulation';
 import { FixedStepDriver } from '../sim/driver';
-import { lerpSeat } from '../sim/carry';
-import { forwardBallQ } from './football';
-import { carriedBall, type PhysicalPose } from '../sim/pose';
+import { capturePose, drawnBall, lerpPose, type PoseKey } from './render-pose';
+import type { PhysicalPose } from '../sim/pose';
 import { initPhysics } from '../sim/physics';
-import { forwardOf, horiz, len, qInvRot, qRot, round, toLocal, toWorld, v3, type Pose, type Quat, type Vec3 } from '../sim/vec';
+import { forwardOf, horiz, len, lerp, qInvRot, qRot, qSlerp, round, toLocal, toWorld, v3, type Pose, type Quat, type Vec3 } from '../sim/vec';
 import type { ArmSide } from '../sim/contracts';
 import { ArmOverlay, BalanceOverlay, ContactMarkers, PALETTES, PlayerView, RuleOverlay, disposeOwned, type ArmOverlaySide, type OverlayFlags } from './views';
 import { ModelAsset } from './player-model';
@@ -101,7 +100,7 @@ let field: THREE.Group | null = null;
 const contactMarkers = new ContactMarkers();
 scene.add(contactMarkers.group);
 /** Previous solved tick per player (pose + representation) for render interpolation; reset at a handoff. */
-const prevPose = new Map<string, { core: Pose; pose: PhysicalPose | null; rep: string; com: Vec3 }>();
+const prevPose = new Map<string, { core: Pose; pose: PoseKey | null; rep: string; com: Vec3 }>();
 const seenRep = new Map<string, string>();
 let follow = true;
 let camPreset = params.get('cam') ?? 'oblique';
@@ -113,36 +112,20 @@ function corePose(pl: PlayerRuntime): { p: Vec3; q: Quat } {
   return sim.poseOf(pl);
 }
 
-const clonePose = (p: PhysicalPose | null): PhysicalPose | null => (p ? structuredClone(p) : null);
-
-function lerpV(a: Vec3, b: Vec3, t: number): Vec3 {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
-}
-function slerpQ(a: Quat, b: Quat, t: number): Quat {
-  const q = new THREE.Quaternion(a.x, a.y, a.z, a.w).slerp(new THREE.Quaternion(b.x, b.y, b.z, b.w), t);
-  return { x: q.x, y: q.y, z: q.z, w: q.w };
-}
-/** Interpolate two compatible solved poses (same representation; reset at a representation change). */
-function lerpPose(a: PhysicalPose, b: PhysicalPose, t: number): PhysicalPose {
-  const segments = { ...b.segments };
-  for (const k of Object.keys(b.segments) as (keyof PhysicalPose['segments'])[]) {
-    const sa = a.segments[k];
-    const sb = b.segments[k];
-    if (sa && sb) segments[k] = { segmentId: k, originWorld: lerpV(sa.originWorld, sb.originWorld, t), rotationWorld: slerpQ(sa.rotationWorld, sb.rotationWorld, t) };
+/** Keep a player's solved tick for the next frames' interpolation, reusing its entry (plan 10d D5: no per-tick clone). */
+function keepPrev(pl: PlayerRuntime, core: Pose = corePose(pl)): void {
+  const com = sim.bulk(pl).com;
+  const e = prevPose.get(pl.id);
+  if (!e) {
+    prevPose.set(pl.id, { core, pose: capturePose(null, pl.pose), rep: pl.representation, com: { ...com } });
+    return;
   }
-  const jointLandmarksWorld: Record<string, Vec3> = {};
-  for (const [k, v] of Object.entries(b.jointLandmarksWorld)) jointLandmarksWorld[k] = a.jointLandmarksWorld[k] ? lerpV(a.jointLandmarksWorld[k], v, t) : v;
-  const out: PhysicalPose = { ...b, segments, jointLandmarksWorld };
-  if (a.carry && b.carry) out.carry = lerpSeat(a.carry, b.carry, t);
-  if (b.anklePitchDeg) {
-    const ap: NonNullable<PhysicalPose['anklePitchDeg']> = {};
-    for (const s of ['left', 'right'] as const) {
-      const vb = b.anklePitchDeg[s] ?? 0;
-      ap[s] = (a.anklePitchDeg?.[s] ?? vb) + (vb - (a.anklePitchDeg?.[s] ?? vb)) * t;
-    }
-    out.anklePitchDeg = ap;
-  }
-  return out;
+  e.core = core;
+  e.pose = capturePose(e.pose, pl.pose);
+  e.rep = pl.representation;
+  e.com.x = com.x;
+  e.com.y = com.y;
+  e.com.z = com.z;
 }
 
 /** The supplied model draws a fixture's players only when their body carries this asset's calibration. */
@@ -305,7 +288,7 @@ function buildViews(): void {
     const v = new PlayerView(pl, palette, sim.activeColliders(pl), !sim.rules, R, model);
     views.push(v);
     scene.add(v.root);
-    prevPose.set(pl.id, { core: corePose(pl), pose: clonePose(pl.pose), rep: pl.representation, com: { ...sim.bulk(pl).com } });
+    keepPrev(pl);
     seenRep.set(pl.id, pl.representation);
     if (sim.arms?.hasArms(pl.id)) {
       const o = new ArmOverlay();
@@ -418,7 +401,7 @@ function stepOnce(): void {
 }
 
 function capturePrev(): void {
-  for (const pl of sim.players) prevPose.set(pl.id, { core: corePose(pl), pose: clonePose(pl.pose), rep: pl.representation, com: { ...sim.bulk(pl).com } });
+  for (const pl of sim.players) keepPrev(pl);
 }
 
 function exportJson(): void {
@@ -747,28 +730,22 @@ function frame(now: number): void {
       // a representation change resets the interpolation history (no blend from the proxy into ten new bodies)
       if (seenRep.get(pl.id) !== pl.representation) {
         seenRep.set(pl.id, pl.representation);
-        prevPose.set(pl.id, { core: cur, pose: clonePose(pl.pose), rep: pl.representation, com: { ...sim.bulk(pl).com } });
+        keepPrev(pl, cur);
         v.syncColliders(sim.activeColliders(pl));
       }
       const pp = prevPose.get(pl.id);
       const compatible = pp && pp.rep === pl.representation;
       const prev = compatible ? pp.core : cur;
       poses.set(pl.id, compatible && pp.pose && pl.pose ? lerpPose(pp.pose, pl.pose, alpha) : pl.pose);
-      const p = new THREE.Vector3(prev.p.x, prev.p.y, prev.p.z).lerp(new THREE.Vector3(cur.p.x, cur.p.y, cur.p.z), alpha);
-      const q = new THREE.Quaternion(prev.q.x, prev.q.y, prev.q.z, prev.q.w).slerp(new THREE.Quaternion(cur.q.x, cur.q.y, cur.q.z, cur.q.w), alpha);
-      interp.set(pl.id, { p: v3(p.x, p.y, p.z), q: { x: q.x, y: q.y, z: q.z, w: q.w } });
+      // the core blends as `lerpPose` blends segments; at alpha 1 it is the current core itself
+      interp.set(pl.id, alpha >= 1 ? cur : { p: lerp(prev.p, cur.p, alpha), q: qSlerp(prev.q, cur.q, alpha) });
       current.set(pl.id, cur);
     }
     const mapPt = (id: string, w: Vec3): Vec3 => toWorld(interp.get(id)!, toLocal(current.get(id)!, w));
     const mapDir = (id: string, d: Vec3): Vec3 => qRot(interp.get(id)!.q, qInvRot(current.get(id)!.q, d));
     if (ruleOverlay && sim.rules && interp.has(sim.rules.runnerId)) {
       const rid = sim.rules.runnerId;
-      const src = sim.rules.profile.ballSource;
-      const rp = poses.get(rid) ?? null;
-      const core = interp.get(rid)!;
-      const seated = src === 'carryPose' ? carriedBall(rp) : null;
-      const palm = src === 'carryPalm' ? rp?.jointLandmarksWorld.rightPalm : undefined;
-      ruleOverlay.update(seated ?? { p: palm ?? toWorld(core, sim.rules.profile.ballLocal), q: forwardBallQ(core.q) }, sim.ending?.ballSpot ?? null);
+      ruleOverlay.update(drawnBall(poses.get(rid) ?? null, interp.get(rid)!, sim.rules.profile), sim.ending?.ballSpot ?? null);
     }
     for (const v of views) {
       const pl = v.pl;

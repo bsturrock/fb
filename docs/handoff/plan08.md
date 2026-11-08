@@ -625,6 +625,8 @@ All 18 rule spots move: maximum **7.094 cm**; ending time shifts by at most **12
 
 **Identity:** `carry-sim6-v1` (`CARRY_L3`, `src/sim/carry.ts`), exported beside `locomotion`. L3 fixtures opt in through `asL3`, with `ballSource: 'carryPose'` on rule profiles. `carryPalm` and `coreOffset` are unchanged.
 
+> **Correction ([plan 10d](plan10.md#10d--ball-carry-evidence-and-presentation), 2026-11-08):** the exports carried the carry's id but not its values until [plan 10a A3](plan10.md#what-changed) added `profiles.carry`. 10d's seat changes ship as `carry-sim6-v2`: the same keys and swing, with the seat side read on the achieved forearm (D4), the ball in the arm's clearance (D4), the hand's share blended at an owner change (D3) and the football's size in the profile.
+
 **Provenance:** sim-6 `src/anim/ballCarry.ts` (keys and swing parameters, values unchanged), `src/movement/football.ts`, `src/rig/carryProbe.ts`, `tests/ballCarry.test.ts`. Model SHA-256 `5aaab36942e3ec558715bad264702b3419dd14f8368cf037cd72af23cc8792d3`, the same in both checkouts. No runtime dependency on sim-6.
 
 **Decisions:**
@@ -632,8 +634,14 @@ All 18 rule spots move: maximum **7.094 cm**; ending time shifts by at most **12
 - A rested palm faces along the forearm's hinge axis, about 81° from the donor's hold. The forearm bone rolls about its segment Y as the donor's does (`rollRad`, in `RigAdapter`); the physics segment keeps its hinge frame.
 - The sampled swing is scaled by the clip's `carryShare`. Walk share 0 gives a settled hold; with the full swing the wrist ranged 13.5 cm.
 - Ready hands leave the carry in place. An achieved arm keeps authority, publishing the seat with no wrist flex. No L3 fixture currently achieves the carrying arm; the test forces it.
+
+  > **Correction ([plan 10d](plan10.md#10d--ball-carry-evidence-and-presentation) D3, 2026-11-08):** the achieved arm's published seat kept the request's roll, and `RigAdapter` rolled the achieved forearm and hand by it (about −1.2 to −1.9 rad), so a reaching or holding hand was drawn twisted palm-in. At an owner change roll and flex switched in one frame (12 cm at the published palm, measured). The hand's share of the roll and flex (`CarrySeat.handW`) now passes to 0 over the profile's 0.15 s when an arm task takes the arm, and back when the carry has it again; the ball stays seated on the achieved forearm. Still no L3 fixture achieves the carrying arm.
+
 - The published palm sits at the seat. The solved chain's end stays as `reach`, where the arm's request and `targetResidualM` are measured.
 - Scenes with rules draw the ball in `RuleOverlay`; scenes without draw it in `PlayerView`. Each draws one.
+
+  > **Correction ([plan 10d](plan10.md#10d--ball-carry-evidence-and-presentation) D1 a, 2026-11-08):** "the rule reference, the drawn ball and the official spot agree" compared `lm.carriedBall` with `carriedBall(pose)`, two readings of the same forearm frame and seat, over the first 12 L3 fixtures; it never reached the lab's ball or the evidence. The lab's choice is now one pure function, `drawnBall` (`src/lab/render-pose.ts`), used by both views. `tests/ball-carry-evidence.test.ts` checks on every tick of all 20 L3 rule fixtures that it equals the rules' `ballRef` and the trace's `rule.ball`, and at the ending the event's and the export's `ballSpot`, which stays frozen after it.
+
 
 **Mesh seating** through `RigAdapter`, worst value of each measure in metres (donor tolerances: torso > -0.08, upper > -0.1, forearm -0.05 to 0.02, front < 0.02, tip < 0.04):
 
@@ -645,6 +653,8 @@ All 18 rule spots move: maximum **7.094 cm**; ending time shifts by at most **12
 | Walk | 15 | 0.010 | -0.021 | -0.016 | -0.016 | -0.005 | 0.020 |
 
 A ball shifted 10 cm forward, 8 cm back or 9 cm off the forearm fails, as does a hand flex negated or zeroed, and a palm roll of π. The donor's 25° shoulder swing passes unweakened, and the swing runs opposite the free arm (correlation below -0.7).
+
+> **Correction ([plan 10d](plan10.md#10d--ball-carry-evidence-and-presentation) D2, 2026-11-08):** those controls were too far out to show the checks were tight. With these tolerances a ball moved 3 cm sideways or along its axis, 5 cm sideways, tilted 30° about its x or z axis, or rolled 90° about its own axis passed at every one of the 78 poses, and a hand rolled ±90° or 0, or the legacy rig, failed only on the tip. The donor's axis-offset and blend-against-rise checks had been dropped. The checks are now the forearm −0.035 to 0, the hand −0.02 to 0, front < 0, the elbow end < 0 against the upper arm, the ball's axis within ±0.02 rad of the seat's tilt on the drawn forearm, the laces within 0.1 rad of the forearm and the palm normal within 1.0 rad of the ball's radial direction, with the donor's torso, upper arm and tip unchanged. 27 controls (3 and 5 cm in each direction, 30° tilts, the 90° ball roll, hand rolls, the legacy rig, flex errors and the old shifts) each fail at every pose, none on the tip alone. The real carry's worst after 10d: torso −0.047, upper arm −0.022, forearm −0.022 to −0.008, hand −0.007 to −0.005, front −0.005, tip 0.028, elbow end −0.011, axis 0, laces 0.024, palm 0.828; the blend against the drawn forearm's rise correlates at 0.998 (Sprint) and 0.999 (Fast Run).
 
 **Summaries.** 238 of 238 committed are identical. Against the 08 baseline, 41 L3 summaries changed and no others. No result changed, and no rule ending changed kind. D's representation changed in 4 fixtures, matching the handoff table below.
 
@@ -692,6 +702,8 @@ Handoffs: R's accepted times are unchanged everywhere. D's changed in 11 fixture
 **Checked in the lab** at `L3-F16-sprint` and `L3-F1-phase0`: loads with no console errors, one ball in the scene with rules and one in the scene without. Fingers stay in the bind pose, as planned, so the glove stands open past the nose. That was a look at single frames, not a visual review.
 
 **Reproduce:** `npx vitest run tests/ball-carry.test.ts tests/ball-carry-mesh.test.ts`; `npx vite-node scripts/probe/p08a-over.ts` lists boundaries over 1 cm; `npx vite-node scripts/probe/p08a-spots.ts` compares spots and handoffs against the palm hold; `npx vite-node scripts/probe/p08a-diff.ts <fixture>` shows the first trace difference.
+
+> **Correction ([plan 10d](plan10.md#10d--ball-carry-evidence-and-presentation) D1, 2026-11-08):** four more carry tests did not establish their names. "reset reproduces a fresh run" ran two fresh simulations and never called `reset()`; it now runs to the end, resets, runs again and compares seat and ball on every row. "render blend stays seated" set the blend's rotation to one end and asserted an identity; it now blends with the lab's own `lerpPose`, which places landmarks on the blended segments. "ball stays seated" and "blocked arm carries the ball where the arm went" compared the ball with numbers built from it; the blocked arm is now checked against the request rebuilt from `carryRequest`, the shoulder and the segment lengths. "historical fixtures publish no carry data" covered `slice(0, 40)`; it now covers all 238 historical fixtures, and asserts that the 22 L4 falls built from L3 fixtures inherit the carry on purpose. Each fails with its fault put back (see the 10d handoff).
 
 Visual review for the user: complete cycles and transitions at normal speed and 0.25×, front, side and oblique, beside the donor. Open plan items: nose under the hand, ball against the forearm, shoulder swing, stable idle, no detachment or twist at contact, stop or conversion.
 

@@ -84,6 +84,25 @@ export function qRot(q: Quat, v: Vec3): Vec3 {
   };
 }
 export const qInvRot = (q: Quat, v: Vec3): Vec3 => qRot(qConj(q), v);
+/** Spherical interpolation the short way round (normalised linear interpolation when the two are within ~1.8°). */
+export function qSlerp(a: Quat, b: Quat, t: number): Quat {
+  let d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  let bb = b;
+  if (d < 0) {
+    d = -d;
+    bb = { x: -b.x, y: -b.y, z: -b.z, w: -b.w };
+  }
+  if (d > 0.9995) {
+    const q = { x: a.x + (bb.x - a.x) * t, y: a.y + (bb.y - a.y) * t, z: a.z + (bb.z - a.z) * t, w: a.w + (bb.w - a.w) * t };
+    const l = Math.hypot(q.x, q.y, q.z, q.w);
+    return { x: q.x / l, y: q.y / l, z: q.z / l, w: q.w / l };
+  }
+  const th = Math.acos(d);
+  const s = Math.sin(th);
+  const wa = Math.sin((1 - t) * th) / s;
+  const wb = Math.sin(t * th) / s;
+  return { x: a.x * wa + bb.x * wb, y: a.y * wa + bb.y * wb, z: a.z * wa + bb.z * wb, w: a.w * wa + bb.w * wb };
+}
 export function qFromAxisAngle(axis: Vec3, angle: number): Quat {
   const a = norm(axis, { x: 0, y: 1, z: 0 });
   const s = Math.sin(angle / 2);

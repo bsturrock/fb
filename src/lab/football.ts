@@ -1,9 +1,11 @@
 // The cosmetic football (one prop for the player view and the rule overlay), ported from sim-6 src/movement/football.ts:
-// long axis +Y, half-length 0.14 m, radius 0.085 m, laces on +Z. No collider, mass or rule authority.
+// long axis +Y, half-length 0.14 m, radius 0.085 m, laces on +Z. No collider, mass or rule authority (the pose keeps the
+// carry arm's ball clear of other bodies as a clearance capsule, plan 10d D4).
 import * as THREE from 'three';
-import type { Quat } from '../sim/vec';
+import { CARRY_L3 } from '../sim/carry';
 
-export const FOOTBALL = { halfM: 0.14, radiusM: 0.085 };
+/** The carry profile's football (plan 10d: the seat's clearance capsule is this ball). */
+export const FOOTBALL = { ...CARRY_L3.ball };
 
 export function createFootball(): THREE.Group {
   const pts: THREE.Vector2[] = [];
@@ -27,9 +29,3 @@ export function createFootball(): THREE.Group {
   return g;
 }
 
-/** A ball without a carry seat lies along the runner's forward axis (the earlier ellipsoids' look). */
-const FORWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-export function forwardBallQ(core: Quat): Quat {
-  const q = new THREE.Quaternion(core.x, core.y, core.z, core.w).multiply(FORWARD);
-  return { x: q.x, y: q.y, z: q.z, w: q.w };
-}

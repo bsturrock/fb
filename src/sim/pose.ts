@@ -6,7 +6,7 @@
 // (the limb extends along -Y), local X = the elbow/knee hinge axis, Z = X x Y. The hinge angle about X from the
 // proximal to the distal frame is zero for a straight limb and positive in flexion.
 import type { ArmSide, SegmentId } from './contracts';
-import { CARRY_ARM, carryRequest, seatBallLocal, seatBallWorld, seatPalmLocal, type CarryProfile, type CarrySeat } from './carry';
+import { CARRY_ARM, carryRequest, seatBallCapsule, seatBallLocal, seatBallWorld, seatOn, seatPalmLocal, stepHandW, type CarryProfile, type CarrySeat } from './carry';
 import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
@@ -284,11 +284,11 @@ export type PoseShape =
   | { kind: 'ball'; c: Vec3; r: number; key: string }
   | { kind: 'box'; c: Vec3; q: Quat; he: Vec3; key: string };
 
-/** Max penetration depth (m, >= 0) of `shapes` against external obstacles; `self` = own core (forearm/palm only). */
 /**
- * Supported-state clearance queries. `external` is physical: other players' active colliders and obstacles (what
- * candidate validation checks). `soft` covers geometry that is not a collider but should not be visibly crossed
- * (opponents' query arms); `self` is the limb against the player's own torso/pelvis.
+ * Supported-state clearance queries, each the max penetration depth (m, >= 0) of `shapes`. `external` is physical: other
+ * players' active colliders and obstacles (what candidate validation checks). `soft` covers geometry that is not a
+ * collider but should not be visibly crossed (opponents' query arms); `self` is against the player's own torso/pelvis
+ * (the limb's forearm and palm, and the carried ball's centre, plan 10d D4).
  */
 export interface PoseClearance {
   external(shapes: PoseShape[]): number;
@@ -759,21 +759,49 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const sh = W(shoulderLocal(body, s));
     const given = inp.arms?.[s];
     // plan 08a: the carry arm's request and the hand and ball seat on whatever forearm is achieved. The clip's arm swing fades
-    // with the shown clip weight into the static carry (swing 0, between the keys). An achieved arm keeps its solve and its
-    // palm: the hand stays straight on it and only the ball's seat remains.
+    // with the shown clip weight into the static carry (swing 0, between the keys). Plan 10d: the seat side is re-read on
+    // each candidate's achieved forearm against the request's chest-frame inside direction (D4), and the ball is one of
+    // the arm's clearance shapes (D4). An achieved arm (an arm task's) keeps its solve and its own hand: the hand's share
+    // of the carry roll and flex passes to 0 over the profile's `handBlendS` and back when the carry has the arm again (D3);
+    // the ball stays seated on the achieved forearm.
     const carryArm = inp.carry && inp.carriesBall && s === CARRY_ARM ? carryRequest(inp.carry, (smp?.weight ?? 0) * (smp?.carryRaw ?? 0), R.lengths.forearm, (p) => v3(p.x * (sideSignX(body, 'left') > 0 ? 1 : -1), p.y, p.z)) : null;
     const carried = given ? null : carryArm;
-    /** `palm`: the shown palm landmark; `reach`: the solved chain's end, where the arm's request is measured. */
-    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; reach: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number; tgtL?: Vec3; poleL?: Vec3 };
+    let handW = 1;
+    if (carryArm) {
+      handW = stepHandW(mem.carryHand, !given, inp.dtS ?? 0, inp.carry!.handBlendS);
+      mem.carryHand = handW;
+    }
+    /**
+     * `palm`: the shown palm landmark; `reach`: the solved chain's end, where the arm's request is measured. `seat`: the
+     * carry seat on this candidate's forearm; `ball`: the ball's clearance depth (external and floor, physical) and how
+     * deep its centre is in the player's own torso or pelvis (a soft cost: a variant with the ball through the body ranks
+     * below one without).
+     */
+    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; reach: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number; tgtL?: Vec3; poleL?: Vec3; seat?: CarrySeat; ball?: { depth: number; self: number } };
     const build = (elbow: Vec3, palm: Vec3, wristIn?: Vec3): ArmC => {
       const wrist0 = wristIn ?? add(elbow, scale(sub(palm, elbow), R.lengths.forearm / (R.lengths.forearm + R.lengths.palmExtension)));
       const chain = hingeChain(sh, elbow, [wrist0, palm], [fwd, upB], straight);
       const [wrist, reach] = chain.ends;
-      const palmS = carried ? toWorld({ p: elbow, q: chain.frameB }, seatPalmLocal(carried.seat, R.lengths.forearm, R.lengths.palmExtension)) : reach;
+      const fa = { p: elbow, q: chain.frameB };
+      const seatC = carryArm ? seatOn(carryArm, chain.frameB, pose.q, handW) : undefined;
+      // an achieved arm's hand is its own; the carry's flex (by the hand's share) turns it from there
+      const palmS = !seatC ? reach : carried ? toWorld(fa, seatPalmLocal(seatC, R.lengths.forearm, R.lengths.palmExtension)) : handW > 0 ? add(reach, qRot(chain.frameB, sub(seatPalmLocal(seatC, R.lengths.forearm, R.lengths.palmExtension), seatPalmLocal({ ...seatC, handW: 0 }, R.lengths.forearm, R.lengths.palmExtension)))) : reach;
       const shapes = armShapes(R, s, sh, elbow, wrist, palmS);
       const selfD = inp.clearance?.self ? inp.clearance.self(shapes.slice(1)) : 0;
+      let depth = Math.max(ext(shapes), floorDepth(shapes));
+      let ball: ArmC['ball'];
+      if (seatC) {
+        const bc = seatBallCapsule(fa, seatC, inp.carry!.ball);
+        const bs: PoseShape = { kind: 'capsule', ...bc, key: 'carriedBall' };
+        // the ball's centre inside the player's own torso or pelvis (the authored carry presses the ball into the padded
+        // proxy torso, never its centre)
+        const centre: PoseShape = { kind: 'ball', c: lerp(bc.a, bc.b, 0.5), r: 1e-4, key: 'carriedBall' };
+        ball = { depth: Math.max(ext([bs]), floorDepth([bs])), self: inp.clearance?.self ? inp.clearance.self([centre]) : 0 };
+        depth = Math.max(depth, ball.depth);
+        shapes.push(bs);
+      }
       const so = softExt(shapes);
-      return { elbow, wrist, palm: palmS, reach, chain, shapes, depth: Math.max(ext(shapes), floorDepth(shapes)), soft: Math.max(so, 0.5 * selfD), softOther: so };
+      return { elbow, wrist, palm: palmS, reach, chain, shapes, depth, soft: Math.max(so, 0.5 * selfD, ball?.self ?? 0), softOther: so, seat: seatC, ball };
     };
     let a: ArmC;
     if (given) {
@@ -952,8 +980,11 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     lm[`${pre}Palm`] = a.palm;
     lm[`${pre}Hand`] = addScaled(a.palm, norm(sub(a.palm, a.wrist), v3(0, -1, 0)), -R.radii.palm);
     if (carryArm) {
-      seat = given ? { ...carryArm.seat, flexRad: 0 } : carryArm.seat;
+      seat = a.seat!;
       lm.carriedBall = toWorld({ p: a.elbow, q: a.chain.frameB }, seatBallLocal(seat));
+      // plan 10d D4: the ball's fit is reported, never hidden in the arm's residual
+      limbClearance.carriedBall = a.ball!.depth;
+      limbClearance.carriedBallTorso = a.ball!.self;
     }
     segs[`${pre}UpperArm` as SegmentId] = { segmentId: `${pre}UpperArm` as SegmentId, originWorld: sh, rotationWorld: a.chain.frameA };
     segs[`${pre}Forearm` as SegmentId] = { segmentId: `${pre}Forearm` as SegmentId, originWorld: a.elbow, rotationWorld: a.chain.frameB };

@@ -16,7 +16,7 @@ import type { Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { twoBone } from './pose';
 import {
-  add, addScaled, clamp, cross, dot, horiz, len, norm, qFromUnitVectors, qInvRot, qMul, qConj, qRot, round, rv, scale, sub,
+  add, addScaled, clamp, cross, dot, horiz, len, norm, qFromUnitVectors, qInvRot, qMul, qConj, qRot, qSlerp, round, rv, scale, sub,
   toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
 } from './vec';
 
@@ -229,24 +229,6 @@ const landmarkOf = (r: Ragdoll, name: string): Vec3 => {
 };
 const composePose = (a: Pose, b: Pose): Pose => ({ p: toWorld(a, b.p), q: qMul(a.q, b.q) });
 const relPose = (a: Pose, b: Pose): Pose => ({ p: toLocal(a, b.p), q: qMul(qConj(a.q), b.q) });
-function slerp(a: Quat, b: Quat, t: number): Quat {
-  let d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-  let bb = b;
-  if (d < 0) {
-    d = -d;
-    bb = { x: -b.x, y: -b.y, z: -b.z, w: -b.w };
-  }
-  if (d > 0.9995) {
-    const q = { x: a.x + (bb.x - a.x) * t, y: a.y + (bb.y - a.y) * t, z: a.z + (bb.z - a.z) * t, w: a.w + (bb.w - a.w) * t };
-    const l = Math.hypot(q.x, q.y, q.z, q.w);
-    return { x: q.x / l, y: q.y / l, z: q.z / l, w: q.w / l };
-  }
-  const th = Math.acos(d);
-  const s = Math.sin(th);
-  const wa = Math.sin((1 - t) * th) / s;
-  const wb = Math.sin(t * th) / s;
-  return { x: a.x * wa + bb.x * wb, y: a.y * wa + bb.y * wb, z: a.z * wa + bb.z * wb, w: a.w * wa + bb.w * wb };
-}
 const quatAngle = (a: Quat, b: Quat): number => {
   const d = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
   return 2 * Math.acos(Math.min(1, d));
@@ -1058,7 +1040,7 @@ export class ArmSystem {
           for (const o of obstacles) {
             const rp = relPre.get(o)!;
             const rq = relPost.get(o)!;
-            poses.set(o, { p: add(rp.p, scale(sub(rq.p, rp.p), k / n)), q: slerp(rp.q, rq.q, k / n) });
+            poses.set(o, { p: add(rp.p, scale(sub(rq.p, rp.p), k / n)), q: qSlerp(rp.q, rq.q, k / n) });
           }
           const wristL = a.solve ? toLocal(ownerPre, a.solve.wrist) : palm;
           const pc = this.palmCenter(palm, wristL);

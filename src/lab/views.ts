@@ -4,9 +4,10 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { RAPIER } from '../sim/physics';
 import type { PlayerRuntime } from '../sim/simulation';
-import { carriedBall, footFrame, type PhysicalPose } from '../sim/pose';
+import { footFrame, type PhysicalPose } from '../sim/pose';
 import { RAGDOLL_G4, shoulderLocal, type RagdollProfile } from '../sim/profiles';
-import { createFootball, forwardBallQ } from './football';
+import { createFootball } from './football';
+import { drawnBall } from './render-pose';
 import type { PlayerModel } from './player-model';
 import type { Pose, Vec3 } from '../sim/vec';
 import { toWorld } from '../sim/vec';
@@ -113,13 +114,20 @@ export interface OverlayFlags {
  * asset resources such as a cached GLB clone, released by their own owner). Removal from the scene alone frees nothing.
  */
 export function disposeOwned(root: THREE.Object3D, skip: ReadonlySet<THREE.Object3D> = new Set()): void {
+  // a geometry or material shared by several meshes (the football's seam and laces) is disposed once
+  const done = new Set<{ dispose(): void }>();
+  const once = (x: { dispose(): void } | undefined): void => {
+    if (!x || done.has(x)) return;
+    done.add(x);
+    x.dispose();
+  };
   const visit = (o: THREE.Object3D): void => {
     if (skip.has(o)) return;
     const m = o as THREE.Mesh;
-    if (m.geometry) m.geometry.dispose();
+    once(m.geometry);
     const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-    else mat?.dispose();
+    if (Array.isArray(mat)) mat.forEach(once);
+    else once(mat);
     for (const c of o.children) visit(c);
   };
   visit(root);
@@ -323,11 +331,9 @@ export class PlayerView {
       this.joints[1].position.copy(tv(lm.rightHand ?? lm.rightPalm));
     }
     if (this.ball) {
-      const seated = carriedBall(pose);
-      const bp = seated?.p ?? (lm?.rightPalm ? lm.rightPalm : toWorld(core, { x: 0.2, y: 0.25, z: 0.25 }));
-      const bq = seated?.q ?? forwardBallQ(core.q);
-      this.ball.position.copy(tv(bp));
-      this.ball.quaternion.set(bq.x, bq.y, bq.z, bq.w);
+      const b = drawnBall(pose, core, null);
+      this.ball.position.set(b.p.x, b.p.y, b.p.z);
+      this.ball.quaternion.set(b.q.x, b.q.y, b.q.z, b.q.w);
     }
     for (const { c, m } of this.colliderMeshes) {
       m.visible = flags.colliders;

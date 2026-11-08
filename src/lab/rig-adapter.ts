@@ -10,7 +10,8 @@
 // the calibrated rest pose. Twist comes from each segment quaternion (no swing-only retargeting). The feet follow the
 // shoe frame (the shin frame pitched by the pose's ankle angle; plan 06 pass 2). A carry seat (plan 08a) rolls the right
 // forearm bone about the segment's long axis so the palm faces the ball, and flexes the hand over the nose about the
-// calibrated wrist: the segment frame stays the hinge frame the physics and clearance use.
+// calibrated wrist: the segment frame stays the hinge frame the physics and clearance use. Both take the hand's share of
+// the seat (plan 10d D3, `seatHand` in carry.ts): an achieved arm's hand (an arm task's) is drawn unrolled and straight.
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { SegmentId } from '../sim/contracts';
@@ -63,6 +64,10 @@ export class RigAdapter {
   private readonly wrist: THREE.Vector3;
   private readonly pitch = new THREE.Matrix4();
   private readonly world = new Map<THREE.Object3D, THREE.Matrix4>();
+  /** One world matrix per bone, reused every apply (plan 10d D5: no per-frame allocation). */
+  private readonly boneWorld = new Map<THREE.Bone, THREE.Matrix4>();
+  private readonly pos = new THREE.Vector3();
+  private readonly rot = new THREE.Quaternion();
   private readonly tmp = new THREE.Matrix4();
   private readonly seg = new THREE.Matrix4();
   private readonly inv = new THREE.Matrix4();
@@ -104,6 +109,7 @@ export class RigAdapter {
       if ((o as THREE.Bone).isBone) all.push(o as THREE.Bone);
     });
     this.order = all;
+    for (const b of all) this.boneWorld.set(b, new THREE.Matrix4());
   }
 
   /** Bind correction of a driven bone (segment rest^-1 * bone rest), for tests and the calibration report. */
@@ -120,12 +126,12 @@ export class RigAdapter {
     for (const bone of this.order) {
       const parentWorld = this.world.get(bone.parent!)!;
       const d = this.driven.get(bone);
-      const w = new THREE.Matrix4();
+      const w = this.boneWorld.get(bone)!;
       if (d) {
         const s = pose.segments[d.segment];
         const o = s.originWorld;
         const q = s.rotationWorld;
-        this.seg.compose(new THREE.Vector3(o.x, o.y, o.z), new THREE.Quaternion(q.x, q.y, q.z, q.w), this.one);
+        this.seg.compose(this.pos.set(o.x, o.y, o.z), this.rot.set(q.x, q.y, q.z, q.w), this.one);
         if (d.foot) {
           const a = d.foot.ankle;
           const rad = ((pose.anklePitchDeg?.[d.foot.side] ?? 0) * Math.PI) / 180;
@@ -133,11 +139,12 @@ export class RigAdapter {
           if (rad !== 0) this.seg.multiply(this.pitch.makeRotationX(rad));
         }
         if (d.carry && pose.carry) {
-          this.seg.multiply(this.pitch.makeRotationY(pose.carry.rollRad));
+          const roll = pose.carry.rollRad * pose.carry.handW;
+          this.seg.multiply(this.pitch.makeRotationY(roll));
           if (d.carry === 'hand') {
             const a = this.wrist;
             this.seg.multiply(this.pitch.makeTranslation(a.x, a.y, a.z));
-            this.seg.multiply(this.pitch.makeRotationZ(-pose.carry.flexRad));
+            this.seg.multiply(this.pitch.makeRotationZ(-pose.carry.flexRad * pose.carry.handW));
             this.seg.multiply(this.pitch.makeTranslation(-a.x, -a.y, -a.z));
           }
         }
