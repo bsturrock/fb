@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { Simulation } from '../src/sim/simulation';
 import { FixedStepDriver } from '../src/sim/driver';
 import * as G3 from '../src/sim/fixtures/gate3';
@@ -10,7 +10,10 @@ import {
 import { ARM_G2, BALANCE_G3, DEFAULT_MOTOR, shoulderLocal } from '../src/sim/profiles';
 import type { FixtureDef } from '../src/sim/fixture';
 import { len, qFromAxisAngle, qMul, sub, toLocal, UP, v3, type Vec3 } from '../src/sim/vec';
-import { run, traceDiff } from './helpers';
+import { create, disposeTracked, nonEmpty, pace, run, runSim, traceDiff, traceRowsDiff } from './helpers';
+
+// free every engine world a test created (gate tests do not dispose their simulations themselves)
+afterEach(() => disposeTracked());
 
 const B = BALANCE_G3;
 const D2R = Math.PI / 180;
@@ -18,10 +21,11 @@ const R2D = 180 / Math.PI;
 const EPS = 1e-6;
 
 async function runEach(def: FixtureDef, each: (sim: Simulation) => void): Promise<Simulation> {
-  const sim = await Simulation.create(def);
+  const sim = await create(def);
   each(sim);
   while (!sim.done) {
     sim.stepTick();
+    await pace();
     each(sim);
   }
   return sim;
@@ -202,7 +206,7 @@ describe('G3-B loss of support (F3, F5)', () => {
     expect(d.projectedLeanDeg as number).toBeCloseTo((d.leanDeg as number) + Math.max(0, d.outwardLeanRateRadPerS as number) * B.lookAheadS * R2D, 2); // event fields are rounded
     // after loss: falling mode, no motors (motorBounds), proxy continues and comes down
     const after = loss.trace.filter((r) => r.t > ev[0].t + 0.02);
-    expect(after.every((r) => r.players.R.mode === 'falling')).toBe(true);
+    expect(nonEmpty(after, 'rows after the loss').every((r) => r.players.R.mode === 'falling')).toBe(true);
     const p0 = after[0].players.R.p;
     const p1 = after[after.length - 1].players.R.p;
     expect(Math.hypot(p1[0] - p0[0], p1[2] - p0[2])).toBeGreaterThan(0.3);
@@ -220,7 +224,7 @@ describe('G3-B loss of support (F3, F5)', () => {
     const Lb = leanOf(cut, 'R');
     expect(Math.max(...Lb.map((r) => r.tauB))).toBeLessThanOrEqual(168 + 1e-3);
     expect(Math.max(...La.map((r) => r.tauB))).toBeGreaterThan(200);
-    expect(Lb.slice(1, 11).every((r) => r.tauB > 167)).toBe(true); // the reduced cap binds (row 0 is the reset state)
+    expect(nonEmpty(Lb.slice(1, 11), 'lean rows').every((r) => r.tauB > 167)).toBe(true); // the reduced cap binds (row 0 is the reset state)
     expect(evs(full, 'lossOfSupport')).toHaveLength(0);
     expect(evs(cut, 'lossOfSupport', 'R')).toHaveLength(1);
   });
@@ -249,7 +253,7 @@ describe('G3-C integration, finish, defender failure, regression (F6-F10)', () =
       const D = s.byId.get('D')!;
       if (D.controlMode === 'falling') {
         if (lossTick < 0) {
-          lossTick = s.tick - 1; // index of the step that applied the falling mode (ledger tick numbering)
+          lossTick = s.tick; // the trace row of the tick that applied the falling mode (ledger and event tick numbering)
           for (const [id, g] of s.arms!.grips) lenAtLoss.set(id, g.desiredLengthM);
         }
         for (const [id, g] of s.arms!.grips) if (lenAtLoss.has(id) && g.desiredLengthM < lenAtLoss.get(id)! - 1e-9) shortened++;
@@ -262,7 +266,7 @@ describe('G3-C integration, finish, defender failure, regression (F6-F10)', () =
     expect(evs(sim, 'controlMode', 'D')[0].data!.armBudgetFraction).toBe(B.fallingArmBudgetFraction);
     expect(lenAtLoss.size).toBeGreaterThan(0); // grips existed at the moment of loss
     expect(shortened).toBe(0);
-    for (const l of sim.arms!.ledger.filter((l) => l.owner === 'D' && l.tick >= lossTick)) expect(l.allocated).toBeLessThanOrEqual(1000 * B.fallingArmBudgetFraction + 1e-6);
+    for (const l of nonEmpty(sim.arms!.ledger.filter((l) => l.owner === 'D' && l.tick >= lossTick), 'falling ledger entries')) expect(l.allocated).toBeLessThanOrEqual(1000 * B.fallingArmBudgetFraction + 1e-6);
     expect(sim.arms!.ledger.some((l) => l.owner === 'D' && l.tick >= lossTick && l.actual > 1)).toBe(true); // passive retention existed
     const rel = evs(sim, 'gripRelease').filter((e) => e.t > ev[0].t);
     for (const r of rel) expect(['unreachable', 'overload', 'invalidPose', 'invalidSurface', 'contactLost']).toContain(r.data!.reason);
@@ -275,24 +279,27 @@ describe('G3-C integration, finish, defender failure, regression (F6-F10)', () =
 
   it('F8: resets clear loss, mode and grips; render rate does not matter; balanced reruns complete', async () => {
     for (const def of [G3.g3f3Side(4, 'loss'), G3.balancedVariant(G2.g2f8())]) {
-      const sim = await Simulation.create(def);
-      sim.runToEnd();
+      const sim = await create(def);
+      await runSim(sim);
       const ref = { ev: JSON.stringify(sim.events), tr: sim.trace };
       for (let k = 0; k < 2; k++) {
         sim.reset();
         expect(sim.players.every((p) => p.controlMode === 'supported' && p.balance.counter === 0 && !p.balance.pendingLoss)).toBe(true);
         expect(evs(sim, 'lossOfSupport')).toHaveLength(0);
         if (sim.arms) expect(sim.arms.grips.size).toBe(0);
-        sim.runToEnd();
+        await runSim(sim);
         expect(JSON.stringify(sim.events)).toBe(ref.ev);
-        expect(traceDiff(sim.trace, ref.tr, sim.players.map((p) => p.id)).pos).toBe(0);
+        expect(traceRowsDiff(sim.trace, ref.tr)).toBeNull();
       }
     }
     const def = G3.g3f3Side(4, 'loss');
     const byRate = async (hz: number) => {
-      const s = await Simulation.create(def);
+      const s = await create(def);
       const d = new FixedStepDriver(def.solver.outerTickS, 8);
-      while (!s.done) for (let i = d.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+      while (!s.done) {
+        for (let i = d.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+        await pace();
+      }
       return s;
     };
     const a = await byRate(30);
@@ -316,12 +323,12 @@ describe('G3-C integration, finish, defender failure, regression (F6-F10)', () =
     expect(traceDiff(before(act), before(ctl), ['D', 'R']).pos).toBe(0);
     // control: no drive and no arm force after connection (a release may follow the first contact tick)
     const ctlAfter = ctl.trace.filter((r) => r.t > tc + 0.02);
-    expect(ctlAfter.every((r) => r.players.D.cap === 0 && Math.hypot(r.players.D.drive[0], r.players.D.drive[2]) === 0)).toBe(true);
+    expect(nonEmpty(ctlAfter, 'controlled rows after').every((r) => r.players.D.cap === 0 && Math.hypot(r.players.D.drive[0], r.players.D.drive[2]) === 0)).toBe(true);
     const lastTick = ctl.trace.find((r) => r.t > tc + 0.02)!.tick;
     expect(ctl.arms!.ledger.filter((l) => l.tick > lastTick)).toHaveLength(0);
     // sustained: bounded drive and closure continue
     const actAfter = act.trace.filter((r) => r.t > tc + 0.02 && r.t < 1.2);
-    expect(actAfter.every((r) => Math.hypot(r.players.D.drive[0], r.players.D.drive[2]) <= r.players.D.cap + EPS)).toBe(true);
+    expect(nonEmpty(actAfter, 'actual rows after').every((r) => Math.hypot(r.players.D.drive[0], r.players.D.drive[2]) <= r.players.D.cap + EPS)).toBe(true);
     expect(actAfter.some((r) => Math.hypot(r.players.D.drive[0], r.players.D.drive[2]) > 400)).toBe(true);
     expect(act.trace.some((r) => r.players.D.wrap === 'wrapped')).toBe(true);
     expect(Math.max(...act.trace.map((r) => r.players.D.req[0] ** 2 + r.players.D.req[1] ** 2))).toBeLessThanOrEqual(DEFAULT_MOTOR.maximumRequestedSpeedMps ** 2 + EPS);
@@ -374,7 +381,7 @@ describe('G3-C integration, finish, defender failure, regression (F6-F10)', () =
       expect(Math.max(...D.map((r) => r.post))).toBeCloseTo(L, 3);
       expect(evs(s, 'lossOfSupport')).toHaveLength(0);
       // loss logic uses world lean only: projected = lean + max(0, rate) * lookAhead for every row
-      for (const r of [...D, ...leanOf(s, 'R')]) expect(Math.abs(r.proj - (r.deg + Math.max(0, r.rate) * B.lookAheadS * R2D))).toBeLessThan(2e-3);
+      for (const r of nonEmpty([...D, ...leanOf(s, 'R')], 'lean rows')) expect(Math.abs(r.proj - (r.deg + Math.max(0, r.rate) * B.lookAheadS * R2D))).toBeLessThan(2e-3);
       // runner requests stay active (scripted push-back and cut)
       const at = (t: number) => s.trace.find((r) => r.t >= t)!.players.R;
       expect(at(1.3).req).toEqual([1.2, -1.6]);

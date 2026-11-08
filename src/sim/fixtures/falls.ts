@@ -201,7 +201,7 @@ const crowded = (): FixtureDef => {
 /** A copied validation profile whose 1 % energy allowance fails the transfer audit: the assembly stays as diagnostic state. */
 const transferFailed = (): FixtureDef => {
   const d = asL4(g4f3TwoArm(), 'L4-F9-transferFailed', 'Failed transfer audit: no response on a ragdoll that was not accepted');
-  return { ...d, ragdoll: { ...d.ragdoll!, validation: { ...d.ragdoll!.validation, energyGainFraction: 0.01 } } };
+  return { ...d, ragdoll: { ...d.ragdoll!, id: `${d.ragdoll!.id}+energyGainFraction=0.01`, validation: { ...d.ragdoll!.validation, energyGainFraction: 0.01 } } };
 };
 export const l4f9 = (): FixtureDef[] => [
   ...['free', 'prep', 'contact', 'exit'].map((m) => asL4(l3(`L3-F9-convert-${m}`), `L4-F9-${m}`, `Conversion in ${m} with the response`)),

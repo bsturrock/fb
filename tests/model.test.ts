@@ -16,7 +16,7 @@ import { modelFixtures } from '../src/sim/fixtures/model';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { SegmentId } from '../src/sim/contracts';
 import { add, dist, dot, len, qFromAxisAngle, qInvRot, qMul, sub, toWorld, v3, type Pose, type Vec3 } from '../src/sim/vec';
-import { run } from './helpers';
+import { pace, run } from './helpers';
 
 const C = MODEL_CALIBRATION;
 const M = (id: string): FixtureDef => {
@@ -33,6 +33,7 @@ async function runEach(def: FixtureDef, each: (sim: Simulation) => void): Promis
   each(sim);
   while (!sim.done) {
     sim.stepTick();
+    await pace();
     each(sim);
   }
   return sim;

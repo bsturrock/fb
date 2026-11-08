@@ -1,6 +1,6 @@
 # 10a — Test gate and evidence integrity
 
-Repository-aligned plan • 2026-11-08 • Not started. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first.
+Repository-aligned plan • 2026-11-08 • **Implemented 2026-11-08** ([handoff](../handoff/plan10.md#10a--test-gate-and-evidence-integrity)): three clean full runs, all 411 summaries unchanged, export diffs limited to A3/A4/A7/A8 fields. Part of the [codebase review milestones](10_Codebase_Review_Milestones.md); read its evidence labels and ground rules first.
 
 **Goal:** a test run that exits 0 when every test passes, a fixture runner that cannot damage committed evidence, exports that fully identify their profiles, and a reset that leaves nothing behind. No summary value should change; exports, trace row 0 after a reset and event tick numbers will.
 

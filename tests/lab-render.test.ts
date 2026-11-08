@@ -7,6 +7,7 @@ import { FixedStepDriver } from '../src/sim/driver';
 import { followCenter } from '../src/lab/follow';
 import * as L1 from '../src/sim/fixtures/locomotion';
 import { len, v3, type Vec3 } from '../src/sim/vec';
+import { pace } from './helpers';
 
 describe('lab render: follow camera', () => {
   it('the drawn runner holds still against the follow camera at 60 and 120 Hz display rates (no per-tick stepping)', async () => {
@@ -24,6 +25,7 @@ describe('lab render: follow camera', () => {
         for (let i = 0; i < n && !sim.done; i++) {
           prev = { core: { ...pl().pose!.segments.core.originWorld }, com: { ...sim.bulk(pl()).com } };
           sim.stepTick();
+          await pace();
         }
         if (!prev) continue;
         const a = drv.alpha();

@@ -5,5 +5,5 @@ export default defineConfig({
   // public directory (the FBX, references and build scripts must not ship).
   publicDir: false,
   server: { port: 5197, strictPort: true },
-  test: { environment: 'node', testTimeout: 120000 },
+  test: { environment: 'node', testTimeout: 120000, setupFiles: ['tests/setup.ts'] },
 } as any);

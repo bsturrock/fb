@@ -1,21 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { Simulation } from '../src/sim/simulation';
 import { FixedStepDriver } from '../src/sim/driver';
 import * as G2 from '../src/sim/fixtures/gate2';
 import { ARM_G2, shoulderLocal } from '../src/sim/profiles';
 import type { FixtureDef } from '../src/sim/fixture';
 import { len, sub, toLocal, toWorld, type Vec3 } from '../src/sim/vec';
-import { run, traceDiff } from './helpers';
+import { create, disposeTracked, nonEmpty, pace, run, runSim, traceDiff, traceRowsDiff } from './helpers';
+
+// free every engine world a test created (gate tests do not dispose their simulations themselves)
+afterEach(() => disposeTracked());
 
 const P = ARM_G2;
 const TOL = P.surfaceTolM;
 
 /** Run a fixture, calling `each` after every outer tick (substeps = 1 in these profiles). */
 async function runEach(def: FixtureDef, each: (sim: Simulation) => void, opts = {}): Promise<Simulation> {
-  const sim = await Simulation.create(def, opts);
+  const sim = await create(def, opts);
   each(sim);
   while (!sim.done) {
     sim.stepTick();
+    await pace();
     each(sim);
   }
   return sim;
@@ -176,7 +180,7 @@ describe('G2-C two arms, wraps and forearm clamps (F4-F8, F10, F11)', () => {
       expect(statuses(sim)).toContain('wrapped');
       expect(wrappedBad).toBe(0);
       expect(evs(sim, 'gripBegin')).toHaveLength(0);
-      expect(sim.arms!.ledger.every((l) => l.kind === 'clamp')).toBe(true);
+      expect(nonEmpty(sim.arms!.ledger, 'ledger').every((l) => l.kind === 'clamp')).toBe(true);
     }
   });
 
@@ -186,7 +190,7 @@ describe('G2-C two arms, wraps and forearm clamps (F4-F8, F10, F11)', () => {
     commonArmChecks(off);
     expect(off.arms!.ledger).toHaveLength(0);
     expect(evs(off, 'clampBegin')).toHaveLength(0);
-    expect(statuses(off).every((s) => s === 'noHold')).toBe(true);
+    expect(nonEmpty(statuses(off), 'statuses').every((s) => s === 'noHold')).toBe(true);
     expect(evs(off, 'contactBegin').length).toBeGreaterThan(0);
     // the runner can still pull the tackler despite the wrap
     const zR = (s: Simulation, t: number) => s.trace.find((r) => r.t >= t)!.players.R.p[2];
@@ -200,7 +204,7 @@ describe('G2-C two arms, wraps and forearm clamps (F4-F8, F10, F11)', () => {
     commonArmChecks(miss);
     expect(statuses(part)).not.toContain('wrapped');
     expect(statuses(part).some((s) => s === 'oneArmHold' || s === 'twoArmHold')).toBe(true);
-    expect(statuses(miss).every((s) => s === 'noHold')).toBe(true);
+    expect(nonEmpty(statuses(miss), 'statuses').every((s) => s === 'noHold')).toBe(true);
   });
 
   it('F7: a wrap breaks one arm at a time', async () => {
@@ -219,7 +223,7 @@ describe('G2-C two arms, wraps and forearm clamps (F4-F8, F10, F11)', () => {
     // the wrap degrades to a one-arm hold (one clamp still pressing), never straight to nothing
     expect(afterWrap[firstBreak].status).toBe('oneArmHold');
     expect(afterWrap[firstBreak].active).toBe(1);
-    for (const x of seq) if (x.status === 'oneArmHold') expect(x.active).toBe(1);
+    for (const x of nonEmpty(seq.filter((y) => y.status === 'oneArmHold'), 'oneArmHold rows')) expect(x.active).toBe(1);
   });
 
   it('F8: shared budget, reciprocal pairs and reverse-order evaluation', async () => {
@@ -232,7 +236,7 @@ describe('G2-C two arms, wraps and forearm clamps (F4-F8, F10, F11)', () => {
         if (l.kind === 'hold') expect(l.actual).toBeLessThanOrEqual(l.allocated + 0.01);
         else expect(l.tangentActual).toBeLessThanOrEqual(P.clamp.mu * l.normalActual + 0.01);
       }
-      for (const v of perStep.values()) expect(v).toBeLessThanOrEqual(P.hold.ownerBudgetN + 0.01);
+      for (const v of nonEmpty(perStep.values(), 'per-step allocations')) expect(v).toBeLessThanOrEqual(P.hold.ownerBudgetN + 0.01);
       if (def.id === 'G2-F8') expect(Math.min(...sim.arms!.ledger.map((l) => l.sharedScale))).toBeLessThan(0.99);
       if (def.id === 'G2-F8-mixed') expect(new Set(sim.arms!.ledger.map((l) => l.kind)).size).toBe(2);
       const rev = await run(def, { reverseOrder: true });
@@ -273,23 +277,26 @@ describe('G2-C two arms, wraps and forearm clamps (F4-F8, F10, F11)', () => {
 describe('G2-D robustness and continued work (F9, F12)', () => {
   it('F9: resets reproduce contacts and IDs, render rate does not matter, fast bodies do not tunnel through a palm', async () => {
     const def = G2.g2f5();
-    const sim = await Simulation.create(def);
-    sim.runToEnd();
+    const sim = await create(def);
+    await runSim(sim);
     const ref = { ev: JSON.stringify(sim.events), tr: sim.trace };
     for (let k = 0; k < 3; k++) {
       sim.reset();
       expect(sim.arms!.grips.size).toBe(0);
       expect(sim.arms!.ledger).toHaveLength(0);
-      sim.runToEnd();
+      await runSim(sim);
       expect(JSON.stringify(sim.events)).toBe(ref.ev);
-      expect(traceDiff(sim.trace, ref.tr, ['D', 'R']).pos).toBe(0);
+      expect(traceRowsDiff(sim.trace, ref.tr)).toBeNull();
     }
     expect(sim.physics.tags.size).toBe(1 + 4 * 2);
     // render rates: 30 vs 120 Hz display frames feeding the same fixed ticks
     const byRate = async (hz: number) => {
-      const s = await Simulation.create(def);
+      const s = await create(def);
       const d = new FixedStepDriver(def.solver.outerTickS, 8);
-      while (!s.done) for (let i = d.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+      while (!s.done) {
+        for (let i = d.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+        await pace();
+      }
       return s;
     };
     const a = await byRate(30);

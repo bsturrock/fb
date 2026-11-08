@@ -155,8 +155,10 @@ export interface PlayerContactObs {
 }
 
 export interface SimEvent {
+  /** The trace row that carries this event's state (Simulation.stampTick). */
   tick: number;
-  substep: number;
+  /** Physics substeps completed since t = 0 when the event was emitted (a global counter, not an index in the tick). */
+  step: number;
   t: number;
   type: string;
   playerId?: PlayerId;

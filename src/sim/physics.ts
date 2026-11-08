@@ -13,7 +13,8 @@ export function initPhysics(): Promise<void> {
 }
 export { RAPIER };
 
-export const RAPIER_VERSION = '0.21.0';
+/** The engine version reported by the loaded Rapier module (valid after initPhysics). */
+export const rapierVersion = (): string => RAPIER.version();
 
 const combine = (r: CombineRule): RAPIER.CoefficientCombineRule => RAPIER.CoefficientCombineRule[r];
 
@@ -106,7 +107,13 @@ export class PhysicsWorld {
     this.hookEvents?.clear();
   }
 
+  /** True once dispose() has freed the engine world. */
+  disposed = false;
+
+  /** Free the engine world (idempotent: a second call does nothing). */
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.hookEvents?.free();
     this.hookEvents = undefined;
     this.world.free();

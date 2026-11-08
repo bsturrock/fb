@@ -11,6 +11,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { Simulation } from '../src/sim/simulation';
 import { carriedBall, type PhysicalPose } from '../src/sim/pose';
 import { add, qRot, v3, type Pose, type Vec3 } from '../src/sim/vec';
+import { runSim } from './helpers';
 
 const PARTS = ['torso', 'upper', 'fore', 'hand'] as const;
 type Part = (typeof PARTS)[number];
@@ -82,7 +83,7 @@ async function poses(id: string, from: number, to: number, every: number): Promi
       if (s.t >= from && s.t <= to && R.pose && n++ % every === 0) out.push(structuredClone(R.pose));
     },
   });
-  sim.runToEnd();
+  await runSim(sim);
   sim.dispose();
   return out;
 }

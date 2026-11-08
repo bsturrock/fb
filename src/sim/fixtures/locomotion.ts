@@ -5,7 +5,7 @@
 // and while falling; tackle drills are the G4-M drills with the clip profile added (same requests).
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import type { ScriptSegment } from '../controllers/base';
-import { DEFAULT_MOTOR, type MotorProfile } from '../profiles';
+import { DEFAULT_MOTOR, ruleVariant, type MotorProfile } from '../profiles';
 import { runClipsBew } from '../model/run-clips';
 import { asModel } from './model';
 import { base4, bodyG4, g4f3Failed, g4f3OneArm, g4f3TwoArm } from './gate4';
@@ -23,7 +23,7 @@ export function withRunClips(def: FixtureDef, id: string, title: string, notes?:
     title: `${title} [bew-v6 + supplied run clips]`,
     notes: [notes, 'Run clips: Fast Run + Sprint sampled into the pose (legs, free-arm swing, moving carry arm; the ball stays in the carry hand); procedural gait below the clip speed band.'].filter(Boolean).join(' '),
     runClips: runClipsBew(),
-    rules: def.rules ? { ...def.rules, ballSource: 'carryPalm' } : undefined,
+    rules: def.rules ? ruleVariant(def.rules, 'ballSource=carryPalm', { ballSource: 'carryPalm' }) : undefined,
   };
 }
 

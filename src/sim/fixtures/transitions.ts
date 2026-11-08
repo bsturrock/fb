@@ -6,6 +6,7 @@ import type { ScriptSegment } from '../controllers/base';
 import { CARRY_L3 } from '../carry';
 import { FOOTWORK_L3 } from '../footwork';
 import { IDLE_POSE_RECORD, LOCOMOTION_L3 } from '../locomotion';
+import { ruleVariant } from '../profiles';
 import { v3 } from '../vec';
 import { asL2, l2f1, l2f3, l2f11, l2f12, l2f14OneArmFeet, runStop } from './footwork';
 import { defenderBob, defenderPhase, hcf5, LOW, mirrorZ, withStance } from './handoff-contact';
@@ -24,7 +25,7 @@ export function asL3(def: FixtureDef, id: string, title?: string, notes?: string
     footwork: FOOTWORK_L3,
     locomotion: LOCOMOTION_L3,
     carry: CARRY_L3,
-    ...(def.rules ? { rules: { ...def.rules, ballSource: 'carryPose' as const } } : {}),
+    ...(def.rules ? { rules: ruleVariant(def.rules, 'ballSource=carryPose', { ballSource: 'carryPose' }) } : {}),
     notes: [def.notes, notes, `Footwork: ${FOOTWORK_L3.id}; locomotion: ${LOCOMOTION_L3.id}; carry: ${CARRY_L3.id}.`].filter(Boolean).join(' '),
   };
 }

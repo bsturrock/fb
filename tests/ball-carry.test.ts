@@ -7,6 +7,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { buildProxyPose, carriedBall, hingeChain, type PhysicalPose } from '../src/sim/pose';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { addScaled, dist, dot, norm, qIdentity, qInvRot, qRot, sub, toLocal, toWorld, v3, vc, type Pose, type Vec3 } from '../src/sim/vec';
+import { pace, runSim } from './helpers';
 
 const tv = (p: Vec3): THREE.Vector3 => new THREE.Vector3(p.x, p.y, p.z);
 const close = (a: THREE.Vector3, b: Vec3, tol = 1e-4): void => expect(a.distanceTo(tv(b))).toBeLessThan(tol);
@@ -115,7 +116,7 @@ async function follow(def: FixtureDef, opts: SimOptions = {}): Promise<{ sim: Si
       rows.push({ t: s.t, pose: structuredClone(R.pose), seat: { ...R.pose.carry }, ball, rag: !!R.rag, bodyBall: c ? toLocal(c, ball.p) : ball.p, bodyPalm: c ? toLocal(c, R.pose.jointLandmarksWorld.rightPalm) : R.pose.jointLandmarksWorld.rightPalm });
     },
   });
-  sim.runToEnd();
+  await runSim(sim);
   return { sim, rows };
 }
 
@@ -274,7 +275,9 @@ describe('plan 08a authority and rules', () => {
       let bodyD = 0;
       while (!a.done && !b.done && !a.ending && !b.ending && !a.players.some((p) => p.rag) && !b.players.some((p) => p.rag)) {
         a.stepTick();
+        await pace();
         b.stepTick();
+        await pace();
         n++;
         for (let i = 0; i < a.players.length; i++) {
           const [p, q] = [a.players[i], b.players[i]];
@@ -302,6 +305,7 @@ describe('plan 08a authority and rules', () => {
       let spot: string | null = null;
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         const R = sim.players.find((p) => p.id === sim.rules!.runnerId)!;
         const drawn = carriedBall(R.pose);
         if (!drawn) continue;
@@ -322,7 +326,7 @@ describe('plan 08a authority and rules', () => {
     const def = FIX('L3-F16-runStop');
     const a = await follow(def);
     const b = await Simulation.create(def);
-    b.runToEnd();
+    await runSim(b);
     const [p, q] = [carrier(a.sim), carrier(b)];
     expect(vc(p.proxy.body.translation())).toEqual(vc(q.proxy.body.translation()));
     const [r0, r1] = [a.rows[300], a.rows[301]];

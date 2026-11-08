@@ -18,7 +18,7 @@ import { buildProxyPose, flexReach, footFrame, hingeChain, legRequestLocal, legS
 import { RunClipError, validateRunClipProfile } from '../src/sim/run-clip';
 import { bodyG4 } from '../src/sim/fixtures/gate4';
 import { add, dist, dot, len, qFromYaw, qRot, sub, v3, type Vec3 } from '../src/sim/vec';
-import { run } from './helpers';
+import { pace, run, runSim, stepWhile } from './helpers';
 
 const G = 9.81;
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -62,6 +62,7 @@ async function runFeet(def: FixtureDef, id = def.players[0].id): Promise<FootRun
   const pl = (): PlayerRuntime => sim.players.find((p) => p.id === id)!;
   while (!sim.done) {
     sim.stepTick();
+    await pace();
     const P = pl();
     if (P.rag || !P.pose || !P.feet) {
       ticks.push({ t: sim.t, supported: false, rag: !!P.rag, p: v3(NaN, NaN, NaN), v: v3(), feet: null as never, lenErr: 0, kneeMin: 0, kneeMax: 0, pen: 0, sep: 0, legClear: 0, supH: NaN });
@@ -216,6 +217,7 @@ describe('L2 repair 1: bounded load-release recovery (support)', () => {
       const hs: { t: number; h: number }[] = [];
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         const u = sim.players[0].sus!;
         if (sim.t <= rel + 1e-9) {
           if (u.bottomed) bottomed++;
@@ -662,7 +664,10 @@ describe('L2-F10 reproducibility and L2-F11/F12 running and slow fallback', () =
         while (!s.done) {
           f++;
           drv.paused = pauseEvery > 0 && f % pauseEvery < 3;
-          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) {
+            s.stepTick();
+            await pace();
+          }
         }
         return s;
       };
@@ -674,9 +679,9 @@ describe('L2-F10 reproducibility and L2-F11/F12 running and slow fallback', () =
       expect(JSON.stringify([b.trace, b.events])).toBe(ref);
       expect(JSON.stringify([p.trace, p.events])).toBe(ref);
       const c = await Simulation.create(def);
-      while (c.t < 0.9 - 1e-9 && !c.done) c.stepTick();
+      await stepWhile(c, () => c.t < 0.9 - 1e-9 && !c.done);
       c.reset();
-      c.runToEnd();
+      await runSim(c);
       expect(JSON.stringify([c.trace, c.events])).toBe(ref);
       // a confirmed plant is never released in its confirmation substep; failed proposals are not plants
       for (const e of a.events.filter((x) => x.type === 'footRelease')) expect(e.data!.plantedS as number, `${def.id} release at ${e.t}`).toBeGreaterThan(0);
@@ -754,6 +759,7 @@ describe('L2 limb continuity (ground-relative poses): no limb snapping in contac
     let at = '';
     while (!sim.done) {
       sim.stepTick();
+      await pace();
       for (const pl of sim.players) {
         if (pl.rag || !pl.pose) continue;
         const b = pl.proxy.body;
@@ -783,7 +789,7 @@ describe('L2 limb continuity (ground-relative poses): no limb snapping in contac
   });
   it('legacy body-relative poses (no support profile) keep no continuity state', async () => {
     const sim = await Simulation.create(FIX('G4-F3-oneArm'));
-    while (!sim.done) sim.stepTick();
+    await runSim(sim);
     for (const pl of sim.players) expect(Object.keys(pl.poseMemory).filter((k) => k.includes(':')), pl.id).toEqual([]);
     sim.dispose();
   });
@@ -794,7 +800,7 @@ describe('L2 run-clip stance width (look tuning, opt-in)', () => {
     const def = FIX('L2-F11-sprint');
     const plantsLat = async (d: FixtureDef) => {
       const sim = await Simulation.create(d);
-      while (!sim.done) sim.stepTick();
+      await runSim(sim);
       const z = sim.events.filter((e) => e.type === 'footPlant' && e.t > 1).map((e) => ({ s: e.data!.side as string, z: (e.data!.at as number[])[2] }));
       const tr = JSON.stringify(sim.trace);
       sim.dispose();
@@ -822,6 +828,7 @@ describe('L2 footwork never changes physics', () => {
         let conv = -1;
         while (!sim.done) {
           sim.stepTick();
+          await pace();
           if (conv < 0 && sim.players.some((p) => p.rag || p.handoff)) conv = sim.tick;
           rows.push(
             sim.players
@@ -1098,6 +1105,7 @@ describe('L2 profile validation (review closeout): braking limits and stance wid
     for (const m of [withBrakingLimit(DEFAULT_MOTOR, 5.5), DEFAULT_MOTOR]) {
       const s = await Simulation.create({ ...def, motor: m });
       s.stepTick();
+      await pace();
       expect(s.result).toBe('running');
       s.dispose();
     }
@@ -1112,7 +1120,10 @@ describe('L2 profile validation (review closeout): braking limits and stance wid
     }
     for (const w of [undefined, { sprint: 0 }, { 'fast-run': -0.02, sprint: 0.03 }] as (Record<string, number> | undefined)[]) {
       const s = await Simulation.create({ ...def, runClips: { ...P, ...(w ? { stanceWidthAddM: w } : {}) } });
-      for (let i = 0; i < 30; i++) s.stepTick();
+      for (let i = 0; i < 30; i++) {
+        s.stepTick();
+        await pace();
+      }
       expect(s.result, JSON.stringify(w)).toBe('running');
       const lm = s.players[0].pose!.jointLandmarksWorld;
       for (const k of ['leftHip', 'leftKnee', 'leftAnkle', 'rightHip', 'rightKnee', 'rightAnkle']) for (const c of ['x', 'y', 'z'] as const) expect(Number.isFinite(lm[k][c]), `${k} ${JSON.stringify(w)}`).toBe(true);
@@ -1273,6 +1284,7 @@ describe('L2 clip-to-procedural crossing (closeout item 3): stopping feet transf
       const p = P();
       const inClip = !!(p.run && p.run.w > 0);
       sim.stepTick();
+      await pace();
       const f = P().feet!;
       if (inClip) hadClip = true;
       if (hadClip && cross < 0 && !(P().run && P().run!.w > 0) && P().controlMode === 'supported') cross = sim.t;
@@ -1328,6 +1340,7 @@ describe('L2 braking stance (closeout item 4): the root physically lowers while 
     const rows: Row[] = [];
     while (!sim.done) {
       sim.stepTick();
+      await pace();
       const p = sim.players[0];
       const u = p.sus!;
       const lv = p.rag ? v3() : p.proxy.body.linvel();
@@ -1524,6 +1537,7 @@ describe('L2 braking stance (closeout item 4): the root physically lowers while 
       const p = sim.players[0];
       if (!p.rag) hAt = p.sus!.probe.heightM;
       sim.stepTick();
+      await pace();
     }
     const p = sim.players[0];
     expect(p.handoff?.outcome).toBe('accepted');
@@ -1540,6 +1554,7 @@ describe('L2 braking stance (closeout item 4): the root physically lowers while 
         const out: string[] = [];
         while (!sim.done) {
           sim.stepTick();
+          await pace();
           const p = sim.players[0];
           if (p.rag) break;
           const b = p.proxy.body;

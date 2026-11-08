@@ -27,7 +27,7 @@ import { FixedStepDriver } from '../src/sim/driver';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dist, len, qInvRot, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { footFrame } from '../src/sim/pose';
-import { run } from './helpers';
+import { pace, run, runSim, stepWhile } from './helpers';
 
 type Raw = { fps: number; frames: Record<string, number[]>[]; rest: Record<string, number[]>; rot: Record<string, number[]>[] };
 const clone = (): Raw => JSON.parse(JSON.stringify(FAST));
@@ -311,7 +311,9 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
       let ballRows = 0;
       while (!A.done && !B.done) {
         A.stepTick();
+        await pace();
         B.stepTick();
+        await pace();
         if (A.players.some((p) => p.handoff) || B.players.some((p) => p.handoff)) break;
         for (const id of ['R', 'D'])
           for (const s of ['left', 'right'] as const) {
@@ -353,6 +355,7 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
       const hist: Record<string, Record<string, Vec3>[]> = {};
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         for (const pl of sim.players) {
           if (!pl.pose || pl.rag) continue;
           const c = pl.pose.segments.core;
@@ -407,6 +410,7 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
     let frozen: Partial<Record<'left' | 'right', number>> | null = null;
     while (!sim.done) {
       sim.stepTick();
+      await pace();
       for (const pl of sim.players) {
         const pose = pl.pose;
         if (!pose) continue;
@@ -435,16 +439,19 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
       const byRate = async (hz: number) => {
         const s = await Simulation.create(def);
         const drv = new FixedStepDriver(def.solver.outerTickS, 8);
-        while (!s.done) for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+        while (!s.done) {
+          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+          await pace();
+        }
         return s;
       };
       const a = await byRate(30);
       const b = await byRate(144);
       expect(JSON.stringify(b.trace)).toBe(JSON.stringify(a.trace));
       const c = await Simulation.create(def);
-      while (c.t < 1.2 - 1e-9) c.stepTick();
+      await stepWhile(c, () => c.t < 1.2 - 1e-9);
       c.reset();
-      c.runToEnd();
+      await runSim(c);
       expect(JSON.stringify(c.trace)).toBe(JSON.stringify(a.trace));
       for (const s of [a, b, c]) s.dispose();
     }
@@ -470,6 +477,7 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
       };
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         check();
       }
       sim.dispose();
@@ -488,7 +496,9 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
       let n = 0;
       while (!A.done && !B.done) {
         A.stepTick();
+        await pace();
         B.stepTick();
+        await pace();
         if (A.players.some((p) => p.handoff) || B.players.some((p) => p.handoff)) break;
         const strip = (row: TraceRow) => JSON.stringify(Object.fromEntries(Object.entries(row.players).map(([id, r]) => [id, { ...r, run: undefined }])));
         expect(strip(B.trace.at(-1)!)).toBe(strip(A.trace.at(-1)!));
@@ -521,6 +531,7 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
     const def = L1.l1f4();
     const sim = await Simulation.create(def);
     sim.stepTick();
+    await pace();
     const ex = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
     expect(ex.profileIds.runClips).toBe(def.runClips!.id);
     expect(def.runClips!.id).toBe(`run-clips:${suppliedRunClips().map((c) => c.identity).join('+')}`);
@@ -532,6 +543,7 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
     // fixtures without a clip profile export and trace nothing new
     const g = await Simulation.create(FIX('G4-F3-twoArm-M'));
     g.stepTick();
+    await pace();
     expect((g.exportFixture() as { profileIds: Record<string, unknown> }).profileIds.runClips).toBeUndefined();
     expect(g.trace.at(-1)!.players.R.run).toBeUndefined();
     for (const s of [sim, g]) s.dispose();

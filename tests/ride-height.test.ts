@@ -24,7 +24,7 @@ import {
 } from '../src/sim/support';
 import { footFrame, legShapes, type PoseShape } from '../src/sim/pose';
 import { dist, qRot, v3 } from '../src/sim/vec';
-import { run } from './helpers';
+import { pace, run, runSim, stepWhile } from './helpers';
 
 const S = SUSPENSION_RH;
 const G = 9.81;
@@ -192,6 +192,7 @@ describe('RH-F1/F2 standing, settling and stances', () => {
       let held: { knee: number; gap: number; res: number; ahead: number } | null = null;
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         const u = pl.sus!;
         expect(Math.abs(u.targetM - prevT)).toBeLessThanOrEqual(S.targetSlewMps * def.solver.outerTickS + 1e-9);
         prevT = u.targetM;
@@ -233,6 +234,7 @@ describe('RH-F1/F2 standing, settling and stances', () => {
       let pen = 0;
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         for (const pl of sim.players) {
           if (!pl.pose || pl.rag) continue;
           const p = pl.pose;
@@ -338,6 +340,7 @@ describe('RH-F4 limits and disturbances', () => {
       let worst = 0;
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         const dp = m * (sim.bulk(pl).v.y - v0);
         worst = Math.max(worst, Math.abs(dp - (pl.sus!.impulseNs - m * G * sim.t)));
       }
@@ -390,6 +393,7 @@ describe('RH-F5 no false support', () => {
     let okAfter = 0;
     while (!sim.done) {
       sim.stepTick();
+      await pace();
       if (pl.controlMode !== 'falling') continue;
       expect(pl.sus!.appliedN).toBe(0);
       expect(pl.sus!.active).toBe(false);
@@ -438,6 +442,7 @@ describe('RH-F6 balance under the suspension: isolated defender and defeat cases
       let excess = 0;
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         const u = pl.sus!;
         if (!u.active) continue;
         // the pivot is the body's legacy support-hemisphere centre: the same COM lever as the legacy balance geometry
@@ -469,6 +474,7 @@ describe('RH-F6 balance under the suspension: isolated defender and defeat cases
       let peak = 0;
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         expect(pl.controlMode, `${def.id} t ${sim.t}`).toBe('supported');
         if (sim.t > 0.5) peak = Math.max(peak, (pl.balance.theta * 180) / Math.PI);
       }
@@ -508,6 +514,7 @@ describe('RH-F7 handoff while moving vertically', () => {
       const pl = sim.players[0];
       while (!sim.done) {
         sim.stepTick();
+        await pace();
         if (pl.rag) expect(pl.sus!.active).toBe(false), expect(pl.sus!.appliedN).toBe(0);
       }
       const h = pl.handoff!;
@@ -540,7 +547,10 @@ describe('RH-F8 fixed-step reproducibility', () => {
         while (!s.done) {
           f++;
           drv.paused = pauseEvery > 0 && f % pauseEvery < 3;
-          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) {
+            s.stepTick();
+            await pace();
+          }
         }
         return s;
       };
@@ -553,11 +563,11 @@ describe('RH-F8 fixed-step reproducibility', () => {
       const c = await Simulation.create(def);
       const counts0 = c.counts();
       for (let k = 0; k < 3; k++) {
-        while (c.t < 0.9 - 1e-9 && !c.done) c.stepTick();
+        await stepWhile(c, () => c.t < 0.9 - 1e-9 && !c.done);
         c.reset();
         expect(c.counts()).toEqual(counts0);
       }
-      c.runToEnd();
+      await runSim(c);
       expect(JSON.stringify(c.trace)).toBe(ref);
       for (const s of [a, b, p, c]) s.dispose();
     }

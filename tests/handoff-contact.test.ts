@@ -13,7 +13,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { POSE_DEBUG, stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { run, traceDiff } from './helpers';
+import { pace, run, runSim, stepWhile, traceDiff } from './helpers';
 
 const FIX = (id: string): FixtureDef => {
   const f = allFixtures().find((d) => d.id === id);
@@ -92,7 +92,7 @@ async function postSwitch(def: FixtureDef, n = 24): Promise<Record<string, { pen
       r.prevP = b.P;
     }
   };
-  while (!sim.done) sim.stepTick();
+  await runSim(sim);
   sim.dispose();
   return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { pen: v.pen, anchor: v.anchor, extBW: v.extBW }]));
 }
@@ -106,6 +106,7 @@ async function worstSnap(def: FixtureDef): Promise<{ worst: number; at: string }
   let at = '';
   while (!sim.done) {
     sim.stepTick();
+    await pace();
     for (const pl of sim.players) {
       if (pl.rag || !pl.pose) {
         delete hist[pl.id];
@@ -154,6 +155,7 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
     let fallingSupported = 0;
     while (!sim.done) {
       sim.stepTick();
+      await pace();
       // players are never ground: A's probe on B never gives A support
       if (!A.rag && A.sus && A.sus.probe.surface && A.sus.probe.surface !== 'turf' && A.sus.appliedN > 0) falseSupport++;
       for (const p of [A, B]) if (!p.rag && p.controlMode === 'falling' && p.sus && (p.sus.active || p.sus.appliedN !== 0)) fallingSupported++;
@@ -276,7 +278,7 @@ describe('HC diagnostics: invalid candidates and strict transfer fail safely', (
     const def = FIX('HC-F5-invalidOne');
     const sim = await Simulation.create(def);
     const base = sim.counts();
-    sim.runToEnd();
+    await runSim(sim);
     const R = sim.players.find((p) => p.id === 'R')!;
     const D = sim.players.find((p) => p.id === 'D')!;
     expect(D.handoff!.outcome).toBe('rejected');
@@ -337,10 +339,11 @@ describe('HC reproducibility: reset, pause, render rates and batch ordering', ()
       };
       // reset after a conversion, then run again
       const r = await Simulation.create(def);
-      while (!r.done && !r.players.some((p) => p.rag)) r.stepTick();
+      await stepWhile(r, () => !r.players.some((p) => p.rag));
       r.stepTick();
+      await pace();
       r.reset();
-      r.runToEnd();
+      await runSim(r);
       check(r, 'reset');
       // render rates and pauses (fixed-step driver)
       for (const [hz, pauseEvery] of [
@@ -355,7 +358,10 @@ describe('HC reproducibility: reset, pause, render rates and batch ordering', ()
         while (!s.done) {
           drv.paused = pauseEvery > 0 && frame % pauseEvery === 3;
           frame++;
-          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) {
+            s.stepTick();
+            await pace();
+          }
         }
         check(s, `${hz} Hz${pauseEvery ? ' paused' : ''}`);
         s.dispose();
@@ -431,7 +437,7 @@ describe('HC contact continuity of the published pose', () => {
       }
     };
     try {
-      while (!sim.done) sim.stepTick();
+      await runSim(sim);
     } finally {
       POSE_DEBUG.trace = undefined;
       sim.dispose();
@@ -475,7 +481,7 @@ describe('HC contact continuity of the published pose', () => {
         }
       };
       try {
-        while (!sim.done) sim.stepTick();
+        await runSim(sim);
       } finally {
         POSE_DEBUG.trace = undefined;
         POSE_DEBUG.on = false;

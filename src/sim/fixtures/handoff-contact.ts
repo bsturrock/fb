@@ -6,7 +6,7 @@
 import type { ArmSide, SegmentId, StanceRequest } from '../contracts';
 import type { ControllerSpec, FixtureDef, PlayerSetup } from '../fixture';
 import type { ArmScriptSegment, ScriptSegment } from '../controllers/base';
-import type { RuleProfile } from '../profiles';
+import { ruleVariant, type RuleProfile } from '../profiles';
 import { rhf5PlayerBelow, rhf6, rhf7 } from './ride-height';
 import { asL2, l2f14OneArmFeet, l2f15PlayerBelow, withFeet } from './footwork';
 import { v3, type Vec3 } from '../vec';
@@ -68,7 +68,7 @@ function mirrorPlayer(p: PlayerSetup, runClips: boolean): PlayerSetup {
   };
 }
 
-const mirrorRules = (r: RuleProfile): RuleProfile => ({ ...r, forwardAxis: mz(r.forwardAxis), ballLocal: mxl(r.ballLocal), sideline: { ...r.sideline, outwardNormal: mz(r.sideline.outwardNormal) } });
+const mirrorRules = (r: RuleProfile): RuleProfile => ruleVariant(r, 'mirror', { forwardAxis: mz(r.forwardAxis), ballLocal: mxl(r.ballLocal), sideline: { ...r.sideline, outwardNormal: mz(r.sideline.outwardNormal) } });
 
 /** The same fixture reflected across the world z = 0 plane (the contact arrives on the other side of each body). */
 export function mirrorZ(def: FixtureDef): FixtureDef {
@@ -191,6 +191,7 @@ export const hcf5 = (): FixtureDef[] => {
     const r = structuredClone(def.ragdoll!);
     r.validation.energyGainFraction = 0;
     r.validation.energyGainAbsJ = 0;
+    r.id = `${r.id}+energyGain=0`;
     return { ...def, ragdoll: r };
   };
   return [

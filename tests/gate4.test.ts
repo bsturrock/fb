@@ -7,7 +7,7 @@ import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { RAGDOLL_G4, SOLVER_G1 } from '../src/sim/profiles';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dot, len, qRot, v3 } from '../src/sim/vec';
-import { run, traceDiff } from './helpers';
+import { nonEmpty, pace, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
 import { FixedStepDriver } from '../src/sim/driver';
 
 const R = RAGDOLL_G4;
@@ -20,6 +20,7 @@ async function runEach(def: FixtureDef, each: (sim: Simulation) => void): Promis
   each(sim);
   while (!sim.done) {
     sim.stepTick();
+    await pace();
     each(sim);
   }
   return sim;
@@ -81,7 +82,7 @@ describe('G4-A blueprint: ten bodies, masses, joints and limits read back from t
       if (pl.representation === 'proxy') poseHinge = { ...pl.pose!.hingeDeg };
     });
     const rep = sim.players[0].handoff!.report;
-    for (const [k, v] of Object.entries(poseHinge!)) expect(Math.abs(rep.hingeDeg[k] - v)).toBeLessThan(0.05);
+    for (const [k, v] of nonEmpty(Object.entries(poseHinge!), 'hinges')) expect(Math.abs(rep.hingeDeg[k] - v)).toBeLessThan(0.05);
     sim.dispose();
   });
 });
@@ -320,7 +321,7 @@ describe('G4-F3 real one-arm and two-arm tackle falls', () => {
       expect(h.audit!.ok).toBe(true);
       // every clamp alive at the boundary was remapped onto the ragdoll target, and kept loading it afterwards
       const remaps = evs(sim, 'clampRemap', 'D');
-      const before = clampsAt.get(loss[0].tick) ?? 0; // state entering the step in which the conversion ran
+      const before = clampsAt.get(loss[0].tick - 1) ?? 0; // state entering the tick in which the conversion ran (the previous row)
       expect(before).toBeGreaterThan(0);
       expect(remaps).toHaveLength(before);
       for (const r of remaps) {
@@ -377,7 +378,7 @@ describe('G4-F4 grip remapping interventions', () => {
       expect(r.data!.to).toBe('core');
       const after = ledger.filter((x) => x.id === r.data!.grip && x.tick >= rep.tick);
       expect(after.length).toBeGreaterThan(0);
-      expect(after.every((x) => x.kind === 'hold' && x.target === 'R')).toBe(true);
+      expect(nonEmpty(after, 'ledger after').every((x) => x.kind === 'hold' && x.target === 'R')).toBe(true);
     }
     for (const r of evs(sim, 'gripRelease', 'D')) expect(typeof r.data!.reason).toBe('string');
     expect(evs(sim, 'gripPassive')).toHaveLength(0);
@@ -394,7 +395,7 @@ describe('G4-F4 grip remapping interventions', () => {
       expect(Number(p.data!.palmGapM)).toBeLessThanOrEqual(R.validation.anchorTolM);
       const after = ledger.filter((x) => x.id === p.data!.grip && x.tick >= rep.tick);
       expect(after.length).toBeGreaterThan(0);
-      expect(after.every((x) => x.kind === 'passive')).toBe(true);
+      expect(nonEmpty(after, 'ledger after').every((x) => x.kind === 'passive')).toBe(true);
     }
     expect(ledger.filter((x) => x.owner === 'D' && x.tick >= rep.tick && x.kind !== 'passive')).toHaveLength(0);
     // the passive links pull the held runner toward the palms (tensile), never push the players apart
@@ -404,14 +405,14 @@ describe('G4-F4 grip remapping interventions', () => {
     // a link ends only by separating past the passive limit; links still alive at the end stay within it
     const rel = evs(sim, 'gripRelease', 'D');
     expect(rel.every((r) => r.data!.reason === 'separation')).toBe(true);
-    for (const g of sim.arms!.grips.values()) expect(g.passive).toBeDefined();
+    for (const g of nonEmpty(sim.arms!.grips.values(), 'live grips')) expect(g.passive).toBeDefined();
     sim.dispose();
   });
 
   it('simultaneous: target remap and passive owner link both apply; still one force law per grip', async () => {
     const { sim, ledger } = await runLedger(G4.g4f4('simultaneous'));
     expect(evs(sim, 'representation')).toHaveLength(2);
-    expect(evs(sim, 'gripRemap', 'D').every((r) => r.data!.ok === true)).toBe(true);
+    expect(nonEmpty(evs(sim, 'gripRemap', 'D'), 'grip remaps').every((r) => r.data!.ok === true)).toBe(true);
     expect(evs(sim, 'gripPassive', 'D')).toHaveLength(2);
     const t0 = evs(sim, 'representation')[0].tick;
     expect(ledger.filter((x) => x.tick >= t0 && x.kind !== 'passive')).toHaveLength(0);
@@ -459,9 +460,9 @@ describe('G4-F10 forearm-clamp representation handoff', () => {
     const { sim, ledger, clampsAt } = await runLedger(G4.g4f10('targetOnly'));
     const rep = evs(sim, 'representation', 'R')[0];
     const remaps = evs(sim, 'clampRemap', 'D');
-    expect(remaps.length).toBe(clampsAt.get(rep.tick));
+    expect(remaps.length).toBe(clampsAt.get(rep.tick - 1));
     expect(remaps.length).toBeGreaterThan(0);
-    for (const r of remaps) expect(ledger.some((x) => x.id === r.data!.clamp && x.tick >= rep.tick && x.kind === 'clamp')).toBe(true);
+    for (const r of nonEmpty(remaps, 'clamp remaps')) expect(ledger.some((x) => x.id === r.data!.clamp && x.tick >= rep.tick && x.kind === 'clamp')).toBe(true);
     expect(evs(sim, 'gripBegin')).toHaveLength(0);
     expect(evs(sim, 'gripPassive')).toHaveLength(0);
     sim.dispose();
@@ -472,11 +473,11 @@ describe('G4-F10 forearm-clamp representation handoff', () => {
       const { sim, ledger, clampsAt } = await runLedger(G4.g4f10(k));
       const rep = evs(sim, 'representation', 'D')[0];
       const ends = evs(sim, 'clampEnd', 'D').filter((e) => e.data!.reason === 'ownerRagdoll');
-      expect(ends.length).toBe(clampsAt.get(rep.tick));
+      expect(ends.length).toBe(clampsAt.get(rep.tick - 1));
       expect(ends.length).toBeGreaterThan(0);
-      for (const e of ends) expect(e.tick).toBe(rep.tick);
+      for (const e of nonEmpty(ends, 'clamp ends')) expect(e.tick).toBe(rep.tick);
       expect(ledger.filter((x) => x.owner === 'D' && x.tick >= rep.tick)).toHaveLength(0);
-      for (const [tick, n] of clampsAt) if (tick > rep.tick) expect(n).toBe(0);
+      for (const [tick, n] of clampsAt) if (tick >= rep.tick) expect(n).toBe(0);
       expect(evs(sim, 'gripBegin')).toHaveLength(0);
       expect(evs(sim, 'gripPassive')).toHaveLength(0);
       expect(evs(sim, 'clampRemap')).toHaveLength(0);
@@ -577,7 +578,7 @@ describe('G4-F7 completion semantics (event matrix)', () => {
     const t0 = ruleEvents(sim, 'influenceBegin')[0].t;
     const after = sim.trace.filter((r) => r.t > t0 && r.rule);
     expect(after.length).toBeGreaterThan(100);
-    expect(after.every((r) => r.rule!.infl === 1)).toBe(true);
+    expect(nonEmpty(after, 'rule rows after').every((r) => r.rule!.infl === 1)).toBe(true);
     const labels = new Set(after.flatMap((r) => r.rule!.gnd));
     // virtual support (physical) and achieved-pose shoe probes ('?') only
     expect([...labels].sort()).toEqual(['foot?', 'footSupport']);
@@ -605,7 +606,7 @@ describe('G4-F7 completion semantics (event matrix)', () => {
     const ib = ruleEvents(sim, 'influenceBegin')[0];
     expect(g.t).toBeLessThan(ib.t);
     expect(sim.ending!.kind).toBe('groundDown');
-    expect(sim.ending!.substep).toBe(ib.substep);
+    expect(sim.ending!.step).toBe(ib.step);
     expect((ib.data!.sources as string[])[0].startsWith('contact:D:')).toBe(true);
     sim.dispose();
   });
@@ -656,7 +657,7 @@ describe('G4-F7 completion semantics (event matrix)', () => {
     const tag = (region: string) => ({ playerId: 'R', part: 'leftForearm' as const, region: region as 'forearm', key: `leftForearm:${region}` });
     const floor = { playerId: null, part: 'floor' as const, region: 'floor' as const, key: 'floor' };
     const frame = (points: { region: string; y: number }[], t: number) => ({
-      t, tick: 1, substep: 1, dt: 1 / 240, runnerId: 'R', representation: 'ragdoll' as const, validHandoff: true, controlMode: 'falling' as const, grounded: true,
+      t, tick: 1, step: 1, dt: 1 / 240, runnerId: 'R', representation: 'ragdoll' as const, validHandoff: true, controlMode: 'falling' as const, grounded: true,
       corePose: { p: v3(), q: { x: 0, y: 0, z: 0, w: 1 } }, pose, velocity: v3(), request: v3(),
       contacts: points.map((p) => ({ a: tag(p.region), b: floor, normalAB: v3(0, -1, 0), impulse: 1, points: [{ pointWorld: pt(p.y), dist: -0.001, impulse: 1 }] })),
       opponentContacts: [], retention: [{ id: 'D:right:g1', owner: 'D', kind: 'grip' as const, forceOnRunner: v3(0, 0, 50), loadN: 50 }], minClampNormalN: 1,
@@ -672,9 +673,12 @@ describe('G4-F7 completion semantics (event matrix)', () => {
   it('numerical failure is a separate non-success label (diagnostic NaN injection), never an ending', async () => {
     const def = G4.g4f11HeldUp();
     const sim = await Simulation.create(def);
-    for (let i = 0; i < 10; i++) sim.stepTick();
+    for (let i = 0; i < 10; i++) {
+      sim.stepTick();
+      await pace();
+    }
     sim.players.find((p) => p.id === 'R')!.proxy.body.setTranslation({ x: NaN, y: 1, z: 0 }, true);
-    sim.runToEnd();
+    await runSim(sim);
     expect(sim.result).toBe('numericalFailure');
     expect(sim.ending).toBeNull();
     sim.dispose();
@@ -717,8 +721,8 @@ describe('G4-F11 forward progress, boundary and frozen event spot', () => {
         if (!s.ending) return;
         spots.push(JSON.stringify(s.ending.ballSpot));
         if (s.trace.length && s.trace[s.trace.length - 1].rule) balls.push(s.trace[s.trace.length - 1].rule!.ball);
-        // the ending tick itself may still carry pre-ending substeps
-        if (s.tick > s.ending.tick + 1) for (const p of s.players) if (p.representation === 'proxy') postDrive = Math.max(postDrive, len(p.applied.requestedVelocity));
+        // the ending row itself may still carry pre-ending substeps
+        if (s.tick > s.ending.tick) for (const p of s.players) if (p.representation === 'proxy') postDrive = Math.max(postDrive, len(p.applied.requestedVelocity));
       });
       const e = sim.ending!;
       expect(new Set(spots).size).toBe(1);
@@ -843,7 +847,7 @@ describe('G4-F8 lifecycle and reproducibility', () => {
       expect(cleanState(sim)).toEqual([]);
       for (let rep = 0; rep < 2; rep++)
         for (const stopS of stops) {
-          while (!sim.done && sim.t < stopS - 1e-9) sim.stepTick();
+          await stepWhile(sim, () => sim.t < stopS - 1e-9);
           const reps = sim.players.map((p) => p.representation);
           states.add(sim.done ? 'completed' : reps.every((r) => r === 'ragdoll') ? 'bothConverted' : reps.includes('ragdoll') ? 'oneConverted' : sim.counts().grips + sim.counts().clamps > 0 ? 'holding' : 'supported');
           sim.reset();
@@ -851,10 +855,10 @@ describe('G4-F8 lifecycle and reproducibility', () => {
           expect(sim.counts()).toEqual(base);
           expect(cleanState(sim)).toEqual([]);
         }
-      sim.runToEnd();
+      await runSim(sim);
       expect(sim.result).toBe(ref.result);
       expect(JSON.stringify(sim.events)).toBe(ref.ev);
-      expect(traceDiff(sim.trace, ref.tr, sim.players.map((p) => p.id)).pos).toBe(0);
+      expect(traceRowsDiff(sim.trace, ref.tr)).toBeNull();
       sim.dispose();
     }
     expect(cycles).toBeGreaterThanOrEqual(30);
@@ -866,7 +870,10 @@ describe('G4-F8 lifecycle and reproducibility', () => {
       const byRate = async (hz: number, d: FixtureDef = def) => {
         const s = await Simulation.create(d);
         const drv = new FixedStepDriver(d.solver.outerTickS, 8);
-        while (!s.done) for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+        while (!s.done) {
+          for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+          await pace();
+        }
         return s;
       };
       const a = await byRate(30);

@@ -9,7 +9,7 @@ import { makeController } from './controllers/index';
 import { observePlayerContacts, type ClassifyInput } from './contact';
 import type { FixtureDef, PlayerSetup } from './fixture';
 import { computeDrive, computeYaw } from './motors';
-import { initPhysics, PhysicsWorld, RAPIER, RAPIER_VERSION, type MassReport, type ProxyBody } from './physics';
+import { initPhysics, PhysicsWorld, RAPIER, rapierVersion, type MassReport, type ProxyBody } from './physics';
 import {
   ARM_G2, BALANCE_G3, RAGDOLL_G4, SCHEMA_VERSION, SUPPORT_LEGACY, hipLocal, shoulderLocal, sideSignX, validateMotorBraking, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
@@ -44,6 +44,23 @@ import { dist, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, yawOf, 
  * player whose momentum/energy transfer audit failed: its physical evidence is invalid, so no referee completion).
  */
 export type TrialResult = 'running' | 'duration' | 'practiceOutOfBounds' | 'numericalFailure' | 'invalidHandoff' | 'invalidTransfer' | EndingKind;
+
+/**
+ * Why a trial stopped (exported as `stop`). `result` keeps its labels, which fold conditions in (an out-of-bounds or
+ * duration stop after a failed transfer is `invalidTransfer`; a duration stop with the rule observer disabled by a
+ * rejected runner handoff is `invalidHandoff`); `reason` is the stop itself and `flags` the conditions folded in.
+ */
+export interface StopRecord {
+  reason: 'ruleEnding' | 'practiceOutOfBounds' | 'duration' | 'numericalFailure';
+  result: TrialResult;
+  tick: number;
+  t: number;
+  /** The ending kind for a rule ending. */
+  ending?: string;
+  /** The player whose COM left the area, or whose state went non-finite. */
+  playerId?: PlayerId;
+  flags: { invalidTransfer: boolean; invalidHandoff: boolean };
+}
 
 export interface AppliedRecord {
   requestedVelocity: Vec3;
@@ -430,6 +447,10 @@ export class Simulation {
   private history: Snapshot[] = [];
   private episodes = new Map<string, { since: number; seen: Set<string> }>();
   private tickContactClasses: Record<PlayerId, Set<string>> = {};
+  /** True while stepTick runs its substeps (stampTick). */
+  private building = false;
+  /** Why the trial stopped, with the conditions `result` folds in (exported; `result` keeps its labels). */
+  stop: StopRecord | null = null;
   minPairGap = Infinity;
   /** Arm authority (Gate 2); null when no player has arms. */
   arms: ArmSystem | null = null;
@@ -775,7 +796,14 @@ export class Simulation {
     this.rules = null;
     this.settleUntil = null;
     this.invalidTransfer = null;
+    this.stop = null;
+    this.clearTickScratch();
     this.build();
+  }
+
+  /** Per-tick scratch: cleared at the start of every tick and by reset(), before trace row 0 is recorded. */
+  private clearTickScratch(): void {
+    this.tickContactClasses = {};
   }
 
   dispose(): void {
@@ -806,7 +834,7 @@ export class Simulation {
         return sim.physics.dt;
       },
       get tick() {
-        return sim.tick;
+        return sim.stampTick;
       },
       get steps() {
         return sim.steps;
@@ -824,14 +852,28 @@ export class Simulation {
   /** Advance exactly one outer tick (all substeps). */
   stepTick(): void {
     if (this.done) return;
-    this.tickContactClasses = {};
-    for (let s = 0; s < this.def.solver.substeps; s++) {
-      this.stepSubstep(s);
-      if (this.result === 'numericalFailure') break;
+    this.clearTickScratch();
+    this.building = true;
+    try {
+      for (let s = 0; s < this.def.solver.substeps; s++) {
+        this.stepSubstep(s);
+        if (this.result === 'numericalFailure') break;
+      }
+    } finally {
+      this.building = false;
     }
     this.tick++;
     if (this.opts.trace !== false) this.recordTrace();
     this.checkStop();
+  }
+
+  /**
+   * The tick number stamped on events, ledgers and rule frames: the trace row being built. Inside stepTick that is
+   * `tick + 1` (the row recorded when the tick completes); outside it (build, reset, checkStop) it is `tick`. So an
+   * event's `tick` equals the `tick` of the trace row that carries its state.
+   */
+  get stampTick(): number {
+    return this.building ? this.tick + 1 : this.tick;
   }
 
   runToEnd(maxTicks = Infinity): void {
@@ -1014,6 +1056,8 @@ export class Simulation {
     // 7. solve
     this.physics.step();
     this.steps++;
+    // numerical health first: a non-finite solved state stops the substep and the tick before anything reads it
+    if (!this.numericallyHealthy()) return;
     for (const pl of this.players) {
       if (pl.rag) auditEnvelope(pl.rag, this.physics.dt);
       if (pl.fall) this.fall!.audit(pl.fall);
@@ -1332,8 +1376,8 @@ export class Simulation {
     const opp = (this.contactObs[pl.id] ?? []).filter((o) => this.byId.get(o.other)?.setup.role !== pl.setup.role);
     const end = R.observe({
       t: this.t,
-      tick: this.tick,
-      substep: this.steps,
+      tick: this.stampTick,
+      step: this.steps,
       dt: this.physics.dt,
       runnerId: pl.id,
       representation: pl.representation,
@@ -1392,7 +1436,7 @@ export class Simulation {
           projectedLeanDeg: round(deg(bal.projected), 3),
           angularVelocity: rv(b.angvel(), 5),
           relevantContactAndGripIds: [...new Set(ids)],
-          substep: this.steps,
+          step: this.steps,
         });
       }
     }
@@ -1482,7 +1526,7 @@ export class Simulation {
         if (!initial && bot && !pr.valid && pl.controlMode === 'supported' && !pl.balance.pendingLoss) {
           pl.balance.pendingLoss = true;
           pl.balance.lossT = this.t;
-          this.emit('lossOfSupport', pl.id, { reason: 'unsupportedBottomOut', probe: pr.status, surface: pr.surface, heightM: Number.isFinite(pr.heightM) ? round(pr.heightM, 4) : null, substep: this.steps });
+          this.emit('lossOfSupport', pl.id, { reason: 'unsupportedBottomOut', probe: pr.status, surface: pr.surface, heightM: Number.isFinite(pr.heightM) ? round(pr.heightM, 4) : null, step: this.steps });
         }
         continue;
       }
@@ -1520,16 +1564,23 @@ export class Simulation {
         }
       }
     if (!initial) this.updateEpisodes();
-    // numerical health
-    for (const pl of this.players) {
-      for (const b of this.activeBodies(pl)) {
+  }
+
+  /**
+   * After a solve: false (once, with the result, stop record and event set) when any active body has a non-finite
+   * position or velocity. The caller then stops the substep and stepTick stops the tick, so arms, balance, pose and
+   * rules never run on that state.
+   */
+  private numericallyHealthy(): boolean {
+    for (const pl of this.players)
+      for (const b of this.activeBodies(pl))
         if (!isFiniteVec(b.translation()) || !isFiniteVec(b.linvel()) || !isFiniteVec(b.angvel())) {
           this.result = 'numericalFailure';
+          this.recordStop('numericalFailure', undefined, pl.id);
           this.emit('numericalFailure', pl.id, {});
-          return;
+          return false;
         }
-      }
-    }
+    return true;
   }
 
   private updateEpisodes(): void {
@@ -1577,6 +1628,7 @@ export class Simulation {
       // the official event and spot are frozen; bodies settle under gravity, contact and passive motion
       if (this.t >= (this.settleUntil ?? 0) - 1e-9 || this.t >= this.def.durationS - 1e-9) {
         this.result = end.kind;
+        this.recordStop('ruleEnding', end.kind);
         this.emit('trialEnd', undefined, { reason: end.kind, eventT: end.t, settledS: round(this.t - end.t, 5) });
       }
       return;
@@ -1585,19 +1637,34 @@ export class Simulation {
     for (const pl of this.players) {
       const c = this.bulk(pl).com;
       if (Math.abs(c.x) > area.halfX || Math.abs(c.z) > area.halfZ) {
+        // `result` folds an earlier failed transfer in (review finding 2); the stop record keeps the cause
         this.result = this.invalidTransfer ? 'invalidTransfer' : 'practiceOutOfBounds';
+        this.recordStop('practiceOutOfBounds', undefined, pl.id);
         this.emit('practiceOutOfBounds', pl.id, { com: rv(c) });
         return;
       }
     }
     if (this.t >= this.def.durationS - 1e-9) {
       this.result = this.invalidTransfer ? 'invalidTransfer' : this.rules?.disabledReason === 'invalidHandoff' ? 'invalidHandoff' : 'duration';
+      this.recordStop('duration');
       this.emit('trialEnd', undefined, { reason: this.result });
     }
   }
 
+  private recordStop(reason: StopRecord['reason'], ending?: string, playerId?: PlayerId): void {
+    this.stop = {
+      reason,
+      result: this.result,
+      tick: this.stampTick,
+      t: round(this.t, 5),
+      ...(ending ? { ending } : {}),
+      ...(playerId ? { playerId } : {}),
+      flags: { invalidTransfer: !!this.invalidTransfer, invalidHandoff: this.rules?.disabledReason === 'invalidHandoff' },
+    };
+  }
+
   emit(type: string, playerId: PlayerId | undefined, data: Record<string, unknown>): void {
-    this.events.push({ tick: this.tick, substep: this.steps, t: round(this.t, 5), type, playerId, data });
+    this.events.push({ tick: this.stampTick, step: this.steps, t: round(this.t, 5), type, playerId, data });
   }
 
   // ------------------------------------------------------------------ Gate 4: representation transition
@@ -2342,7 +2409,7 @@ export class Simulation {
       milestone: def.milestone,
       title: def.title,
       notes: def.notes,
-      engine: { name: '@dimforge/rapier3d-compat', version: RAPIER_VERSION },
+      engine: { name: '@dimforge/rapier3d-compat', version: rapierVersion() },
       profileIds: {
         body: Object.fromEntries(def.players.map((p) => [p.id, p.body.id])),
         motor: def.motor.id,
@@ -2372,6 +2439,7 @@ export class Simulation {
         support: this.supportProfile,
         footwork: def.footwork,
         locomotion: def.locomotion,
+        carry: def.carry,
         fallResponse: def.fallResponse,
         supportHeights: this.heightModels ?? undefined,
       },
@@ -2385,6 +2453,7 @@ export class Simulation {
           }
         : {}),
       ruleEnding: this.rules?.ending ?? null,
+      stop: this.stop,
       timing: {
         outerTickS: def.solver.outerTickS,
         substeps: def.solver.substeps,

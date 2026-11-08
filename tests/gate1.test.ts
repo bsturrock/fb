@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   g1f1, g1f2, g1f2Control, g1f3, g1f4, g1f5, g1f6Airborne, g1f6Impact, g1f7, g1f8Cases, g1f9Fit, g1f9Glance, g1f9Poor,
@@ -9,7 +9,10 @@ import { FixedStepDriver } from '../src/sim/driver';
 import { computeDrive, computeYaw } from '../src/sim/motors';
 import { DEFAULT_MOTOR } from '../src/sim/profiles';
 import { qFromYaw, v3 } from '../src/sim/vec';
-import { run, speedH, traceDiff } from './helpers';
+import { create, disposeTracked, nonEmpty, pace, run, runSim, speedH, traceDiff, traceRowsDiff } from './helpers';
+
+// free every engine world a test created (gate tests do not dispose their simulations themselves)
+afterEach(() => disposeTracked());
 
 const TOL = { pos: 0.001, vel: 0.001, yaw: 0.001 };
 
@@ -69,7 +72,7 @@ describe('G1-A: one bounded motor (F1) and unsupported movement (F6 airborne)', 
       expect(tr[0].players.P1.p[1]).toBeGreaterThan(1.2);
       const air = tr.filter((r) => r.players.P1.g === 0);
       expect(air.length).toBeGreaterThan(5);
-      for (const r of air.slice(1)) expect(Math.hypot(r.players.P1.drive[0], r.players.P1.drive[2])).toBe(0);
+      for (const r of nonEmpty(air.slice(1), 'airborne rows')) expect(Math.hypot(r.players.P1.drive[0], r.players.P1.drive[2])).toBe(0);
       // falling under gravity: height decreases while airborne
       expect(air.at(-1)!.players.P1.p[1]).toBeLessThan(air[0].players.P1.p[1]);
       const land = tr.findIndex((r) => r.players.P1.g === 1);
@@ -173,11 +176,14 @@ describe('G1-C: reproducible, inspectable drill', () => {
   it('G1-F7 render rate independence (30 vs 120 FPS), reset repeatability, cosmetic independence', async () => {
     const ticks = Math.round(g1f7().durationS / g1f7().solver.outerTickS);
     const drive = async (fps: number, palette: string) => {
-      const sim = await Simulation.create(g1f7(palette));
+      const sim = await create(g1f7(palette));
       const drv = new FixedStepDriver(sim.tickS, 1000);
       while (sim.tick < ticks && !sim.done) {
         const n = drv.frame(1 / fps);
-        for (let i = 0; i < n && !sim.done; i++) sim.stepTick();
+        for (let i = 0; i < n && !sim.done; i++) {
+          sim.stepTick();
+          await pace();
+        }
       }
       return sim;
     };
@@ -188,16 +194,19 @@ describe('G1-C: reproducible, inspectable drill', () => {
     const sim = await run(g1f7());
     const first = sim.trace;
     sim.reset();
-    sim.runToEnd();
+    await runSim(sim);
     const second = sim.trace;
     sim.reset();
-    sim.runToEnd();
+    await runSim(sim);
     const third = sim.trace;
     d = traceDiff(first, second, ['D', 'R']);
     expect(d.pos).toBeLessThanOrEqual(TOL.pos);
     expect(d.vel).toBeLessThanOrEqual(TOL.vel);
     expect(d.yaw).toBeLessThanOrEqual(TOL.yaw);
     expect(traceDiff(first, third, ['D', 'R']).pos).toBeLessThanOrEqual(TOL.pos);
+    // a reset leaves nothing behind: every field of every row repeats (10a A5)
+    expect(traceRowsDiff(first, second)).toBeNull();
+    expect(traceRowsDiff(first, third)).toBeNull();
     const cosmetic = await drive(60, 'highContrast');
     expect(traceDiff(s30.trace, cosmetic.trace, ['D', 'R'])).toEqual({ pos: 0, vel: 0, yaw: 0, ticks: 0 });
     // slow motion consumes wall time slower; the tick sequence is unchanged
@@ -306,12 +315,12 @@ describe('G1-D: coached entry and contact profile', () => {
   it('G1-F10 body-profile sensitivity: actual masses and dimensions change the fit geometry, no universal snap', async () => {
     const fits: Record<string, number> = {};
     for (const def of g1f10Cases()) {
-      const sim = await Simulation.create(def);
-      sim.runToEnd(40); // into gather
+      const sim = await create(def);
+      await runSim(sim, 40); // into gather
       const D = sim.byId.get('D')!;
       expect(D.mass.massKg).toBeCloseTo(def.players[0].body.massKg, 3);
       fits[def.id] = Number(D.intent.debug!.shoulderLanding);
-      sim.runToEnd();
+      await runSim(sim);
       expect(sim.events.some((e) => e.type === 'contactBegin'), def.id).toBe(true);
     }
     // Shoulder-landing geometry follows the actual torso/shoulder dimensions.

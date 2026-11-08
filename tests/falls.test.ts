@@ -12,7 +12,7 @@ import { ENVELOPE_L4, FALL_L4, SOLVER_G4, SOLVER_G4_ZEROG, type JointEnvelope } 
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { run, traceDiff } from './helpers';
+import { pace, run, runSim, stepWhile, traceDiff } from './helpers';
 
 const ALL = fallFixtures();
 const FIX = (id: string): FixtureDef => {
@@ -57,6 +57,7 @@ describe('L4-F1 limits under stated loads, muscles off', () => {
       let n = 0;
       while (!s.done) {
         s.stepTick();
+        await pace();
         if (s.t < a || s.t >= b) continue;
         n++;
         for (const e of s.players[0].rag?.envelope ?? []) {
@@ -269,6 +270,7 @@ describe('the limit torque follows a potential', () => {
     const prev = new Map<string, number>();
     while (!s.done) {
       s.stepTick();
+      await pace();
       for (const p of s.players)
         for (const e of p.rag?.envelope ?? []) {
           if (e.startOutsideDeg > 20) seen = true;
@@ -284,7 +286,7 @@ describe('the limit torque follows a potential', () => {
 
   it('slack takes up a start outside the range, follows the limb inward at once and never refills', async () => {
     const s = await Simulation.create(FIX('L4-F8-passive'), { trace: false });
-    while (!s.players[0].rag) s.stepTick();
+    await stepWhile(s, () => !s.players[0].rag);
     const rag = s.players[0].rag!;
     const j = rag.joints.find((x) => x.id === 'leftShoulder')!;
     const E = ENVELOPE_L4.shoulder;
@@ -455,7 +457,7 @@ describe('L4-F2 knee flexion, on and off', () => {
     it(`${dir}: the active case attempts finite flexion from the accepted angle`, async () => {
       const at = async (id: string): Promise<number> => {
         const s = await Simulation.create(FIX(id), { trace: false });
-        while (!s.done && s.t < 0.3) s.stepTick();
+        await stepWhile(s, () => s.t < 0.3);
         const h = hingeAngles(s.players[0].rag!);
         s.dispose();
         return (h.leftKnee + h.rightKnee) / 2;
@@ -503,6 +505,7 @@ describe('L4-F3 carrier with a free arm', () => {
     let moved = 0;
     while (!s.done) {
       s.stepTick();
+      await pace();
       const rag: Ragdoll | null = s.players[0].rag;
       if (rag && joints < 0) joints = s.physics.world.impulseJoints.len();
       const c = evs(s, 'braceContact')[0];
@@ -592,6 +595,7 @@ describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
     let gapRad = Infinity;
     while (!live.done && gapRad === Infinity) {
       live.stepTick();
+      await pace();
       const ep = live.players.find((p) => p.fall)?.fall;
       if (ep?.arms.left.task === 'brace') gapRad = Math.acos(Math.min(1, dot(ep.arms.left.targetDirCore, qInvRot(ep.rag.bodies.core.rotation(), limbDirWorld(ep.rag, 'leftUpperArm')))));
     }
@@ -624,7 +628,7 @@ describe('L4-F7 saturation and zero caps', () => {
     for (const e of knees) expect(e.appliedNm).toBeLessThanOrEqual(e.capNm * (1 + 1e-6));
     const at = async (id: string): Promise<number> => {
       const r = await Simulation.create(FIX(id), { trace: false });
-      while (!r.done && r.t < 0.5) r.stepTick();
+      await stepWhile(r, () => r.t < 0.5);
       const h = hingeAngles(r.players[0].rag!);
       r.dispose();
       return h.leftKnee;
@@ -639,6 +643,7 @@ describe('L4-F8 airborne torque pairs', () => {
     const out = { P: [] as Vec3[], L: [] as Vec3[], ke: [] as number[], s };
     while (!s.done) {
       s.stepTick();
+      await pace();
       const rag = s.players[0].rag;
       if (!rag) continue;
       const b = bulkOf(Object.values(rag.bodies));
@@ -772,6 +777,7 @@ describe('L4-F10 official endings', () => {
       let first: string | null = null;
       while (!s.done) {
         s.stepTick();
+        await pace();
         const e = s.rules?.ending;
         if (e) first ??= JSON.stringify(e);
         if (e) expect(JSON.stringify(e)).toBe(first);
@@ -870,7 +876,10 @@ describe('L4-F12 mirror, rates and resets', () => {
       while (!s.done) {
         drv.paused = pauseEvery > 0 && frame % pauseEvery === 3;
         frame++;
-        for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) s.stepTick();
+        for (let i = drv.frame(1 / hz); i > 0 && !s.done; i--) {
+          s.stepTick();
+          await pace();
+        }
       }
       expect(fingerprint(s), `${hz} Hz`).toBe(want);
       s.dispose();
@@ -881,7 +890,7 @@ describe('L4-F12 mirror, rates and resets', () => {
   it('20 resets: the same run, nothing stale, no growing counts', async () => {
     const def = FIX('L4-F11-exhausted');
     const s = await Simulation.create(def);
-    s.runToEnd();
+    await runSim(s);
     const want = fingerprint(s);
     const bodies = s.physics.world.bodies.len();
     const joints = s.physics.world.impulseJoints.len();
@@ -889,7 +898,7 @@ describe('L4-F12 mirror, rates and resets', () => {
       s.reset();
       expect(s.fall?.episodes.size ?? 0).toBe(0);
       expect(s.fall?.ledger.length ?? 0).toBe(0);
-      s.runToEnd();
+      await runSim(s);
       expect(fingerprint(s)).toBe(want);
       expect(s.physics.world.bodies.len()).toBe(bodies);
       expect(s.physics.world.impulseJoints.len()).toBe(joints);

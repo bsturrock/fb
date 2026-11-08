@@ -33,7 +33,7 @@ for (const def of allFixtures()) {
   const plants = sim.events.filter((e) => e.type === 'footPlant' && inWin(e)).length;
   let sustained = 0;
   for (const e of sim.events.filter((x) => x.type === 'footPlant' && inWin(x))) {
-    const rel = sim.events.find((x) => x.type === 'footRelease' && x.playerId === e.playerId && x.data?.side === e.data?.side && x.substep > e.substep);
+    const rel = sim.events.find((x) => x.type === 'footRelease' && x.playerId === e.playerId && x.data?.side === e.data?.side && x.step > e.step);
     const f = pl().feet?.feet[e.data!.side as 'left' | 'right'];
     if (rel ? (rel.data!.solves as number) >= 1 : (f?.solves ?? 0) >= 1) sustained++;
   }

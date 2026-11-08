@@ -31,7 +31,8 @@ export interface RuleEnding {
   kind: EndingKind;
   profile: string;
   tick: number;
-  substep: number;
+  /** Physics substeps completed since t = 0. */
+  step: number;
   t: number;
   /** Frozen ball reference (event spot); never moved afterwards. */
   ballSpot: Vec3;
@@ -52,8 +53,8 @@ export interface RetentionObs {
 export interface RuleFrame {
   t: number;
   tick: number;
-  /** Physics substeps completed (the substep just solved). */
-  substep: number;
+  /** Physics substeps completed since t = 0 (the substep just solved). */
+  step: number;
   dt: number;
   runnerId: PlayerId;
   representation: 'proxy' | 'ragdoll';
@@ -259,7 +260,7 @@ export class RuleObserver {
     if (src.length) {
       if (!this.infl) {
         this.infl = { since: f.t, ids: new Set(), lastT: f.t, freeS: 0 };
-        this.emit('influenceBegin', this.runnerId, { sources: src, substep: f.substep });
+        this.emit('influenceBegin', this.runnerId, { sources: src, step: f.step });
       }
       for (const s of src) this.infl.ids.add(s);
       this.infl.lastT = f.t;
@@ -274,7 +275,7 @@ export class RuleObserver {
     const free = f.representation === 'proxy' && f.controlMode === 'supported' && f.grounded && along >= this.profile.influence.unrestrainedFraction * rq;
     this.infl.freeS = free ? this.infl.freeS + f.dt : 0;
     if (this.infl.freeS >= this.profile.influence.clearAfterSupportedS - 1e-9) {
-      this.emit('influenceCleared', this.runnerId, { since: round(this.infl.since, 5), lastSourceT: round(this.infl.lastT, 5), freeS: round(this.infl.freeS, 4), substep: f.substep });
+      this.emit('influenceCleared', this.runnerId, { since: round(this.infl.since, 5), lastSourceT: round(this.infl.lastT, 5), freeS: round(this.infl.freeS, 4), step: f.step });
       this.infl = null;
     }
   }
@@ -413,8 +414,8 @@ export class RuleObserver {
   }
 
   private end(f: RuleFrame, kind: EndingKind, spot: Vec3, ids: string[], evidence: Record<string, unknown>): RuleEnding {
-    this.ending = { kind, profile: this.profile.id, tick: f.tick, substep: f.substep, t: round(f.t, 5), ballSpot: { ...spot }, ids: [...new Set(ids)], evidence };
-    this.emit('ruleEnding', this.runnerId, { kind, profile: this.profile.id, ballSpot: rv(spot), ids: this.ending.ids, substep: f.substep, ...evidence });
+    this.ending = { kind, profile: this.profile.id, tick: f.tick, step: f.step, t: round(f.t, 5), ballSpot: { ...spot }, ids: [...new Set(ids)], evidence };
+    this.emit('ruleEnding', this.runnerId, { kind, profile: this.profile.id, ballSpot: rv(spot), ids: this.ending.ids, step: f.step, ...evidence });
     return this.ending;
   }
 }

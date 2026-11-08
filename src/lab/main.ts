@@ -176,7 +176,7 @@ async function load(id: string): Promise<void> {
   modelError = error;
   driver = new FixedStepDriver(def.solver.outerTickS, def.solver.maxTicksPerFrame);
   driver.paused = true;
-  driver.speed = Number(($('speed') as HTMLSelectElement).value);
+  driver.setSpeed(Number(($('speed') as HTMLSelectElement).value));
   if (def.cosmetic?.palette && def.cosmetic.palette !== 'default') palette = def.cosmetic.palette;
   buildViews();
   // The field depends only on the practice bounds: reuse it while they match, dispose its resources when replaced.
@@ -444,7 +444,7 @@ function wire(): void {
   };
   $('reset').onclick = () => resetSim();
   ($('speed') as HTMLSelectElement).onchange = (e) => {
-    driver.speed = Number((e.target as HTMLSelectElement).value);
+    driver.setSpeed(Number((e.target as HTMLSelectElement).value));
   };
   document.querySelectorAll<HTMLButtonElement>('[data-cam]').forEach((b) => (b.onclick = () => setCamera(b.dataset.cam!, true)));
   $('follow').onclick = () => {
@@ -677,7 +677,7 @@ function info(): void {
       if (row.prog) lines.push(`  progress window ${f2(row.prog.win, 2)} / ${R.profile.progress.windowS} s  advance ${f2(row.prog.adv, 3)} m  request ${f2(row.prog.req, 1)} m/s  restraint ${f2(row.prog.res, 0)} N`);
     }
     const e = sim.ending;
-    if (e) lines.push(`  ENDING ${e.kind} @${f2(e.t, 3)} s (substep ${e.substep})  spot (${f2(e.ballSpot.x, 2)}, ${f2(e.ballSpot.z, 2)})  ${String(e.evidence.region ?? '')}`);
+    if (e) lines.push(`  ENDING ${e.kind} @${f2(e.t, 3)} s (step ${e.step})  spot (${f2(e.ballSpot.x, 2)}, ${f2(e.ballSpot.z, 2)})  ${String(e.evidence.region ?? '')}`);
   }
   const recent = sim.events.filter((e) => e.type !== 'grounded').slice(-6);
   if (recent.length) {

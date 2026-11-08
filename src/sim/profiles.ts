@@ -831,11 +831,26 @@ export interface RuleProfile {
 
 const FOOTBALL_ELIGIBLE = ['torso', 'pelvis', 'head', 'upperArm', 'elbow', 'forearm', 'thigh', 'knee', 'shin'];
 
+const fmtAxis = (a: Vec3): string => `${a.x},${a.y},${a.z}`;
+const sameAxis = (a: Vec3, b: Vec3): boolean => a.x === b.x && a.y === b.y && a.z === b.z;
+
+/**
+ * The football rule profile. Every option that departs from the default appears in the id (`+fwd=0,0,-1`,
+ * `+sideline=off`, ...), so one id always stands for one set of values; variants built by spreading a profile derive
+ * their id the same way (`ruleVariant`).
+ */
 export const RULES_FOOTBALL = (
   runnerId: string,
   o: { forwardAxis?: Vec3; sidelineNormal?: Vec3; sidelineOffsetM?: number; progress?: boolean; sideline?: boolean } = {},
 ): RuleProfile => ({
-  id: 'rules-g4-footballTackleSubset-v1',
+  id: [
+    'rules-g4-footballTackleSubset-v1',
+    ...(o.forwardAxis && !sameAxis(o.forwardAxis, v3(1, 0, 0)) ? [`fwd=${fmtAxis(o.forwardAxis)}`] : []),
+    ...(o.sidelineNormal && !sameAxis(o.sidelineNormal, v3(0, 0, 1)) ? [`sidelineN=${fmtAxis(o.sidelineNormal)}`] : []),
+    ...(o.sidelineOffsetM !== undefined && o.sidelineOffsetM !== 4 ? [`sidelineOffset=${o.sidelineOffsetM}`] : []),
+    ...(o.progress === false ? ['progress=off'] : []),
+    ...(o.sideline === false ? ['sideline=off'] : []),
+  ].join('+'),
   kind: 'footballTackleSubset',
   runnerId,
   forwardAxis: o.forwardAxis ?? v3(1, 0, 0),
@@ -849,6 +864,9 @@ export const RULES_FOOTBALL = (
   sideline: { enabled: o.sideline ?? true, outwardNormal: o.sidelineNormal ?? v3(0, 0, 1), offsetM: o.sidelineOffsetM ?? 4, touchTolM: 0 },
   settleS: 0.5,
 });
+
+/** A rule profile with some values replaced, under an id that names the change (`<base id>+<label>`). */
+export const ruleVariant = (base: RuleProfile, label: string, patch: Partial<Omit<RuleProfile, 'id'>>): RuleProfile => ({ ...base, ...patch, id: `${base.id}+${label}` });
 
 export const RULES_LAB_CORE = (runnerId: string): RuleProfile => ({
   ...RULES_FOOTBALL(runnerId, { progress: false, sideline: false }),
