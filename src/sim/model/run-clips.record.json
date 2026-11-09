@@ -79,65 +79,6 @@
    "nominalSpeedSpreadMps": 0.088931,
    "nominalSpeedPairs": 6,
    "strideM": 3.110936
-  },
-  {
-   "id": "sprint",
-   "name": "sprint",
-   "source": "models/animations/source/sprint.fbx",
-   "sourceSha256": "6de0bb9717cff4e9926fe514422ecb9216793f7523d17453e1c7ffcdf358e073",
-   "data": "models/animations/sprint.json",
-   "dataSha256": "f2aa3627a75d169d94a7464c6e1d8514edb9711943692700ddfe4e61c9d7bcfb",
-   "rootMotion": {
-    "policy": "inPlace",
-    "removedAtBakeM": [
-     0,
-     0,
-     3.4505
-    ]
-   },
-   "phaseZero": "leftTouchdown",
-   "playback": {
-    "minRate": 0.7,
-    "maxRate": 1.3
-   },
-   "restVsCalibrationM": 0.000071,
-   "bakeTravelSpeedMps": 6.469692,
-   "playerLegScale": 0.999984,
-   "fps": 30,
-   "sourceFrames": 17,
-   "cycleFrames": 16,
-   "cycleS": 0.533333,
-   "joints": 29,
-   "rotationTracks": 29,
-   "seamM": 0.0001,
-   "residualTravelM": [
-    0,
-    0,
-    0
-   ],
-   "residualYawDeg": 0,
-   "travelHeadingDeg": 0.897449,
-   "facingVsTravelDeg": -3.853246,
-   "maxLengthChange": 0.000554,
-   "restLegM": 0.879634,
-   "restAnkleY": 0.106,
-   "restToeY": 0.034,
-   "sourcePhaseOfZero": 0.292335,
-   "stance": {
-    "left": [
-     0,
-     0.270868
-    ],
-    "right": [
-     0.492278,
-     0.793073
-    ]
-   },
-   "flightFraction": 0.4285,
-   "nominalSpeedMps": 6.238622,
-   "nominalSpeedSpreadMps": 0.521528,
-   "nominalSpeedPairs": 7,
-   "strideM": 3.327265
   }
  ],
  "walk": {

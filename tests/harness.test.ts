@@ -250,12 +250,14 @@ const EXPORTS: Row[] = [
       await pace();
       const ex = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
       expect(ex.profileIds.runClips).toBe(def.runClips!.id);
-      expect(def.runClips!.id).toBe(`run-clips:${suppliedRunClips().map((c) => c.identity).join('+')}`);
+      expect(def.runClips!.id).toBe(`run-clips:${suppliedRunClips().map((c) => c.identity).join('+')}+jog-v1`);
       const json = JSON.stringify(ex.profiles.runClips);
       for (const c of suppliedRunClips()) expect(json).toContain(c.identity);
       expect(json).not.toContain('"frames"');
+      // plan 13d: the jog block, by value; the trace carries the stride share
+      expect((ex.profiles.runClips as { run?: unknown }).run).toEqual({ minStride: 0.45, liftScale: 1, shareRadPerS: 12 });
       const row = sim.trace.at(-1)!.players;
-      for (const id of ['R', 'D']) expect(Object.keys(row[id].run!).sort()).toEqual(['b', 'clip', 'r', 'res', 'u', 'v', 'w', 'wt']);
+      for (const id of ['R', 'D']) expect(Object.keys(row[id].run!).sort()).toEqual(['b', 'clip', 'r', 'res', 's', 'u', 'v', 'w', 'wt']);
       // fixtures without a clip profile export and trace nothing new
       const g = await Simulation.create(FIX('G4-F3-twoArm-M'));
       g.stepTick();

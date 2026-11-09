@@ -224,3 +224,166 @@ Faults put into `src/lab/review-set.ts`, then the file restored (`cmp`-identical
 ### Evidence
 
 - `.scratch/p13c/final.json` (the closing run, 228 tests), `.scratch/p13c/fixtures.log` (the export).
+
+## 13d — Fast Run as the base run clip
+
+Plan: [13d](../open/13d_Fast_Run_Base_Clip.md). Implemented 2026-11-09 after `63323e1` (13c). User rulings during the work: thresholds may change in 13d "since we have a new animation"; no stumble yet; four known limits (below).
+
+**Result:**
+- **No Sprint.** `sprint.json`, `source/sprint.fbx`, the manifest entry, the intake record entry, the `SPRINT` import and `stanceWidthAddM.sprint` are gone. `git grep -i sprint` (outside `docs/` and `evidence/`) finds only speed names: the fixture ids L1-F1-sprint, RH-F3-sprint, L2-F11-sprint and L3-F16-sprint, the `l1f1` / `rhf3` kind and `MOTOR_L1_SPRINT` behind them, the template name "Idle To Sprint" in the clip README and a fixture comment, and old test names in `tests/test-map.json` (13b's rename map).
+- **One run clip.** `runClipsBew` plays Fast Run at every run speed: id `run-clips:<fast-run identity>+jog-v1`, fade [1.6, 2.2] m/s, `run: { minStride: 0.45, liftScale: 1, shareRadPerS: 12 }`. `runClipsL3` is walk + Fast Run, `stanceWidthAddM { walk: 0, 'fast-run': 0.065 }`. 6.6 m/s plays at 1.13× Fast Run's cadence.
+- **The jog.** Below Fast Run's slowest cadence (4.08 m/s scaled) the stride share is `clamp(v / (minRate × nominal × legScale), minStride, 1)`, followed critically damped at `shareRadPerS`. The swing foot's lift and the run bob scale by `share ^ liftScale`; the stance foot keeps the floor. On the walk profiles stride and lift blend in with the clip position.
+- **Look review.** The user kept 0.45 / 1 (lab sliders on L3-F17-runStartFree, L3-F16-runStopFree, L3-F16-sprint).
+- **Fast Run everywhere it runs** (`scripts/probe/p13d-clip-weight.ts`, exit 0): 130 fixtures with run clips, 11,656 settled rows at 2.2–6.6 m/s, all at clip weight 1 on Fast Run. 44 of them, in L3-F14-walkRunStop(+Carrier) and L3-F17-runStart(Free), are still blending in from the walk at `blendRatePerS` 2 (reported). Rows whose weight target is below 1 (heading fades, contact) are reported by fixture.
+- **Jog** (`scripts/probe/p13d-jog.ts`, PASS): L3-F17-runStartFree at 2.3–2.7 m/s (1.117–1.183 s): cadence 0.701× Fast Run's on the mean (0.649–0.752 per tick); the right plant down through it (1.050–1.300 s) drifts at most 3.2 mm (plant tolerance 10 mm).
+- **Transitions.** The transition audit finds no L3 boundary over 1 cm (the suite's audit row).
+- **Physics.** The plan 09 power audit rows pass. Conversion rejections against `63323e1`: L4-F10-wrap-off D now **converts** (plan 12's known limit, 1.88 cm, no longer occurs); L3-F9-defenderFalling D and L3-F1-falling D (the same run) are **newly rejected**, 2.39 cm, and HC-F3-lowRunner reversed R (a test-only order) is newly rejected, 1.59 cm: known limits to 13f. The deliberate invalid conversions are unchanged.
+- **Evidence.** All 410 exported. G1–G4 byte-identical (135); 98 summaries changed (by milestone below). One result change, 32 end-time changes, 39 ball-spot changes; every rule ending keeps its kind.
+- **Tests.** 230 in 13 files (228 before, +2: the constant-run full stride, the L3-F9 defender pins), all pass, exit 0, no unhandled errors; 104.7 s wall time. Typecheck and build pass.
+
+### What changed
+
+- `src/sim/run-clip.ts`: `RunClipProfile.run` (validated: `0 < minStride <= 1`, `liftScale >= 0`, `shareRadPerS > 0`; exported); the share and lift in `advanceRunPlayback` (`RunPlayback.share`, `shareV`, `lift`, `stride`); `RetargetOptions.lift` scales the swing ankle's clip height (blended out by the stance contact weight); `playbackLabel` names the last clip at blend 1.
+- `src/sim/model/run-clips.ts`: one run clip, `RUN_JOG`, the `+jog-v1` id, the fade band. `run-clips.record.json` regenerated (`npm run intake-clips`; the idle record unchanged).
+- `src/sim/pose-runtime.ts` passes the lift; `src/sim/support.ts` `runHeight` scales the bob by it; `sim-evidence.ts` traces the share (`run.s`); `profiles.ts` restates the attenuated-bob comment with Fast Run's figures.
+- Fixture notes and the L3-F16-sprint title (`locomotion.ts`, `transitions.ts`); `models/animations/` (manifest, README); `scripts/probe/p07-validate.ts` (the width key).
+- Lab: a jog panel beside stance width (`index.html`, `src/lab/main.ts`): `minStride` 0.2–1, `liftScale` 0–3; a change reloads the fixture as `…+jog(minStride X, liftScale Y)`; Copy gives the `run: { … }` block.
+- Probes (committed): `p13d-clip-weight.ts`, `p13d-jog.ts`, `p13d-summary-diff.ts`.
+
+### Faults found in 13d's own change, fixed, each with a check
+
+1. **Share step.** Following the raw speed, the share stepped with the first substep and with contact speed changes, and the clip foot request jumped 14–40 cm (the 10b continuity rows failed). The share is now followed critically damped. Unit row: no jump in a substep, no overshoot, settled within 1 s.
+2. **First substep.** The first substep after setup measures no travel (0 m/s), which pulled the share to 0.99 for about 0.5 s at the start of every run, even at 6.6 m/s. A substep with no travel now holds the share. Checks: a unit row (fails without: 0.9986) and the L3 row "a constant 6.6 m/s run keeps the full stride" (fails without: 0.9898 at 0.083 s). This alone returned the L3-F9-lift-free audit boundary to 1.00 cm (1.04 before the fix), the 10b crossing-heading negative control to its recorded boundary, two continuity rows, and L3-F7's off-ground time to under its limit.
+3. **Label.** On L3 a full run read "walk+fast-run" in traces and the lab panel (the last pair at blend 1). Unit row (fails without).
+
+### Tests re-pointed or changed
+
+Each control moved to a run that still shows its case, with the same limit, unless the limit column changes.
+
+| Check | Was | Now | Why |
+| --- | --- | --- | --- |
+| L2-F11 stance width (footwork) | unsigned separation | separation signed toward each foot's side | Fast Run at 6.6 m/s lands the feet 3.7 cm crossed |
+| Self-clearance negative control (body-limits) | L3-F16-sprint twin | L3-F14-forward twin (walk swing 3.6 cm) | Fast Run's twin swing stays 0.7 cm off the trunk |
+| Shoulder cone twin control | L3-F16-sprint | L3-F8-recontact (L3-F16-sprint kept for the on-side) | Fast Run's twin is 7° inside the cone |
+| Ragdoll shoulders | HC-F3-phase0, L3-F1-phase0 | HC-F3-falling, HC-F3-mirror | margin 14.6°, twin 25.8° behind; the new ones 32.9° and 32.0° |
+| Ankle range, heel lift | L3-F16-sprint | L3-F16-runStop | the twin's shin 34° at constant 6.6 m/s; 45° in the stop |
+| E1 settle window (gate4) | L3-F1-phase0 | L3-F1-mirror0 | phase0's historical rise 0.041 m, needs 0.052 |
+| Stop handover plant (L3) | first plant after 3.2 s before 3.33 s | first plant after the crossing within 0.1467 s of it | the crossing moved 3.183 → 3.517 s; now 0.071 s |
+| Step compared as it is | L3-F1-phase5 | L3-F1-phase6 | phase5's supported-to-airborne boundary is gone |
+| Raw kept, set aside | L3-F1-mirror0, raw > 1 cm and after ≤ 1 cm | L3-F1-mirror4, raw − after > 5 mm | no L3 boundary is over 1 cm raw now; mirror4 0.99 → 0.22 cm |
+| Out-of-time reproductions | L3-F1-phase0 | L3-F1-phase1 | phase0 has none; phase1 D left 0.721 s, 11.0 → 10.5 m/s |
+| Carried handover | L3-F1-low | L3-F1-phase6 | L3-F1-low carries none |
+| Defender converts on its bob | L3-F9-defender* | L3-F10-rising, L3-F10-falling | the one-arm defender stays in contact with level vertical speed |
+| Obstructed brace misses (falls) | at least 3, natural | at least 1, with L4-F4-obstructed's no-range twin | the 3 natural ones are gone; the twin still misses obstructed (R left 0.442 s) |
+| Braking crossing height (footwork) | < 0.81 m | < 0.85 m, and 4 cm under the high-stance twin | the crossing is at about 1.0 m/s, not 2.9: 0.840 m, 5 cm under the high stance |
+| Limb landmark jump (footwork) | ≤ 0.3 m | ≤ 0.33 m | RH-F6-failed D left elbow 0.318 m at 1.500 s, a clamp that begins and loses contact in two substeps |
+| Run start last step (L3-F17) | > 1.4 m | > 1.39 m | the short half of Fast Run's own stride, 1.396 + 1.713 m |
+| Full stop settles (L3-F16-stop2.9 only) | last plant > 0.5 s before the end | > 0.4 s | the squaring step comes 0.41 s before the end |
+
+### Known limits (user rulings)
+
+- **L3-F9-defenderFalling and L3-F1-falling D, HC-F3-lowRunner reversed R:** conversions rejected for external penetration, the players left as falling proxies. Pinned (`DEFENDER_13F` in `tests/l3-pass.ts`, `KNOWN_13F` in `tests/handoff-contact.test.ts`) and listed in [13f](../open/13f_Conversion_Overlap_Margin.md#rejections-13d-adds-user-ruling-2026-11-09). L3-F9-defenderRising converts on loss of support at 1.54 s instead of on its bob.
+- **L3-F16-stop1.9:** one sliding plant at the crossing (right foot, 0.33 m/s, fails by 1.5 cm). Allowed on that fixture in `BRAKE` and `SETTLES`; the fix goes to [13e](../open/13e_Idle_and_Walk_Coverage.md).
+- **L4-F9-low R right shoulder:** 5–8° past the tolerance from 1.93 s to the fixture's end, 0.47 s (persistence limit 0.25 s), the runner alone on the ground. Bounded at 0.5 s beside plan 12's entry.
+- From the plan: the jog is a shortened Fast Run with Fast Run's timing; below 1.6 m/s a run request shows the procedural gait.
+- At 2.5 m/s in L3-F17-runStartFree the clip is still two-thirds walk (the blend reaches Fast Run at 4.5 m/s). The share lags a hard start: 0.48 against 0.61 at 2.5 m/s.
+- Every braking stop now crosses to the procedural gait at about 1.0 m/s (the fade starts near 2.2 m/s and takes 0.2 s), where the speed-scaled braking stance is about half depth.
+- The post-contact rejoin that skipped a stance on L3-F7 before the share fix (a following foot whose stance window opens in the air keeps following) is unchanged code; it no longer fires on these fixtures. No stumble (user: later).
+- Plan 12's known limit "L4-F10-wrap-off rejected" no longer occurs at this tip; the plan 12 handoff is left as written, and 13f re-measures it.
+
+### Changed summaries (98; G1–G4 byte-identical)
+
+- **HC** (8 changed, 14 identical): HC-F3-mirror, HC-F3-phase0, HC-F3-phase50, HC-F3-phase75, HC-F3-rising, HC-F3-falling, HC-F3-lowRunner, HC-F5-strictTransfer
+- **L1** (4 changed, 4 identical): L1-F3-collision, L1-F5-twoArm, L1-F6-oneArm, L1-F7-failed
+- **L2** (8 changed, 29 identical): L2-F3-runStop, L2-F3-runStopHard, L2-F3-runStopReaccel, L2-F3-runStopHandoff, L2-F3-runStopKick, L2-F11-sprint, L2-F14-oneArm, L2-F14-oneArmFeet
+- **L3** (58 changed, 39 identical): L3-F1-phase0, L3-F1-phase1, L3-F1-phase2, L3-F1-phase3, L3-F1-phase4, L3-F1-phase5, L3-F1-phase6, L3-F1-phase7, L3-F1-mirror0, L3-F1-mirror4, L3-F1-rising, L3-F1-falling, L3-F1-low, L3-F2-miss, L3-F2-missMirror, L3-F3-collision, L3-F4-twoArm, L3-F4-oneArm, L3-F5-drag, L3-F5-dragMirror, L3-F7-phase0, L3-F7-phase25, L3-F7-phase50, L3-F7-mirror0, L3-F7-mirror50, L3-F8-recontact, L3-F9-lift-exit, L3-F9-convert-contact, L3-F9-convert-exit, L3-F9-noProbe-prep, L3-F9-noProbe-exit, L3-F9-low, L3-F9-defenderRising, L3-F9-defenderFalling, L3-F10-defender, L3-F14-walkRunStop, L3-F14-walkRunStopCarrier, L3-F14-handoff, L3-F16-runStop, L3-F16-runStopFree, L3-F16-runStopReady, L3-F16-runStopHard, L3-F16-stop2.55, L3-F16-stop1.7, L3-F16-stop1.9, L3-F16-stop2.1, L3-F16-stop2.3, L3-F16-stop2.45, L3-F16-stop2.75, L3-F16-stop2.9, L3-F16-stop3.05, L3-F16-reaccel, L3-F16-handoff, L3-F16-kick, L3-F16-sprint, L3-F16-contactStop, L3-F17-runStart, L3-F17-runStartFree
+- **L4** (10 changed, 65 identical): L4-F3-run-off, L4-F5-oneClamp-on, L4-F5-oneClamp-off, L4-F9-contact, L4-F9-exit, L4-F9-low, L4-F9-defenderRising, L4-F9-defenderFalling, L4-F10-wrap-on, L4-F10-wrap-off
+- **RH** (10 changed, 26 identical): RH-F3-sprint, RH-F3-accelBrake, RH-F6-collision, RH-F6-twoArm, RH-F6-oneArm, RH-F6-failed, RH-F6-defenderRun-0, RH-F6-defenderRun-25, RH-F6-defenderRun-50, RH-F6-defenderRun-75
+
+**Result change (1):** RH-F6-failed `practiceOutOfBounds` → `groundDown`.
+
+**End times (32):**
+
+| Fixture | End (s) | Change |
+| --- | --- | --- |
+| L1-F7-failed | 1.6333 → 1.6 | -33 ms |
+| RH-F6-twoArm | 1.65 → 1.7833 | +133 ms |
+| RH-F6-failed | 2.6667 → 2.35 | -317 ms |
+| HC-F3-mirror | 1.6167 → 1.7333 | +117 ms |
+| HC-F3-phase0 | 1.65 → 1.6333 | -17 ms |
+| HC-F3-phase75 | 1.7 → 1.6667 | -33 ms |
+| HC-F3-rising | 1.6333 → 1.6667 | +33 ms |
+| HC-F3-falling | 1.7 → 1.6667 | -33 ms |
+| HC-F3-lowRunner | 2.0833 → 1.8333 | -250 ms |
+| L3-F1-phase0 | 1.7167 → 1.55 | -167 ms |
+| L3-F1-phase1 | 1.75 → 1.6833 | -67 ms |
+| L3-F1-phase2 | 1.5833 → 1.65 | +67 ms |
+| L3-F1-phase3 | 1.7167 → 1.5833 | -133 ms |
+| L3-F1-phase5 | 1.7333 → 1.75 | +17 ms |
+| L3-F1-phase6 | 1.5833 → 1.6833 | +100 ms |
+| L3-F1-phase7 | 1.5667 → 1.55 | -17 ms |
+| L3-F1-mirror0 | 1.7167 → 1.7 | -17 ms |
+| L3-F1-mirror4 | 1.7667 → 1.5833 | -183 ms |
+| L3-F1-rising | 1.5833 → 1.65 | +67 ms |
+| L3-F1-falling | 1.5833 → 1.65 | +67 ms |
+| L3-F1-low | 1.85 → 1.9 | +50 ms |
+| L3-F4-twoArm | 1.7333 → 1.75 | +17 ms |
+| L3-F4-oneArm | 1.5833 → 1.65 | +67 ms |
+| L3-F5-dragMirror | 2.6333 → 2.65 | +17 ms |
+| L3-F9-defenderRising | 1.5833 → 1.65 | +67 ms |
+| L3-F9-defenderFalling | 1.5833 → 1.65 | +67 ms |
+| L3-F10-defender | 1.5833 → 1.65 | +67 ms |
+| L4-F5-oneClamp-on | 1.6 → 1.65 | +50 ms |
+| L4-F5-oneClamp-off | 1.5833 → 1.65 | +67 ms |
+| L4-F9-defenderRising | 1.6 → 1.65 | +50 ms |
+| L4-F9-defenderFalling | 1.6167 → 1.65 | +33 ms |
+| L4-F10-wrap-off | 1.7333 → 1.75 | +17 ms |
+
+**Rule endings (39):** every kind stays `groundDown`; RH-F6-failed had none and now ends `groundDown`. Ball spots:
+
+| Fixture | Ball spot before (x, y, z m) | After |
+| --- | --- | --- |
+| L1-F5-twoArm | 1.78, 0.58, 1.18 | 1.72, 0.58, 1.26 |
+| L1-F6-oneArm | 1.65, 0.62, 1.32 | 1.64, 0.62, 1.33 |
+| L1-F7-failed | 1.96, 0.23, 1.08 | 1.78, 0.20, 1.05 |
+| RH-F6-twoArm | 2.15, 0.24, 1.60 | 2.11, 0.03, 1.65 |
+| RH-F6-oneArm | 2.07, 0.11, 1.38 | 2.07, 0.07, 1.54 |
+| RH-F6-failed | none | 4.54, 0.01, 1.27 |
+| L2-F14-oneArm | 2.07, 0.11, 1.38 | 2.07, 0.07, 1.54 |
+| L2-F14-oneArmFeet | 2.06, 0.15, 1.37 | 2.05, 0.08, 1.55 |
+| HC-F3-mirror | 2.87, 1.02, -0.94 | 3.25, 0.98, -1.04 |
+| HC-F3-phase0 | 1.92, 0.03, 1.42 | 2.21, 0.05, 1.87 |
+| HC-F3-phase50 | 2.05, 0.12, 1.40 | 1.99, 0.02, 1.64 |
+| HC-F3-phase75 | 1.78, 0.10, 1.63 | 2.05, 0.10, 1.53 |
+| HC-F3-rising | 1.59, 0.23, 1.43 | 1.73, 0.10, 1.60 |
+| HC-F3-falling | 1.68, 0.13, 1.48 | 1.69, 0.13, 1.52 |
+| HC-F3-lowRunner | 4.01, 0.03, 1.64 | 2.47, 0.06, 1.74 |
+| L3-F1-phase0 | 3.02, 0.18, 1.48 | 2.38, 0.51, 1.29 |
+| L3-F1-phase1 | 3.15, 0.19, 1.49 | 2.91, 0.26, 1.42 |
+| L3-F1-phase2 | 2.47, 0.47, 1.35 | 2.82, 0.30, 1.37 |
+| L3-F1-phase3 | 2.96, 0.25, 1.56 | 2.47, 0.49, 1.30 |
+| L3-F1-phase4 | 2.98, 0.22, 1.44 | 2.97, 0.24, 1.46 |
+| L3-F1-phase5 | 3.12, 0.21, 1.45 | 3.13, 0.23, 1.49 |
+| L3-F1-phase6 | 2.48, 0.44, 1.34 | 2.91, 0.23, 1.43 |
+| L3-F1-phase7 | 2.30, 0.46, 1.39 | 2.32, 0.48, 1.32 |
+| L3-F1-mirror0 | 3.00, 0.74, -1.38 | 2.94, 0.75, -1.41 |
+| L3-F1-mirror4 | 3.33, 0.42, -1.44 | 2.39, 0.92, -1.18 |
+| L3-F1-rising | 2.45, 0.48, 1.35 | 2.82, 0.30, 1.37 |
+| L3-F1-falling | 2.45, 0.48, 1.35 | 2.82, 0.30, 1.37 |
+| L3-F1-low | 3.36, 0.28, 1.78 | 3.57, 0.19, 1.86 |
+| L3-F4-twoArm | 2.72, 0.20, 1.54 | 2.86, 0.21, 1.46 |
+| L3-F4-oneArm | 2.47, 0.47, 1.35 | 2.82, 0.30, 1.37 |
+| L3-F9-defenderRising | 2.45, 0.48, 1.35 | 2.82, 0.30, 1.37 |
+| L3-F9-defenderFalling | 2.45, 0.48, 1.35 | 2.82, 0.30, 1.37 |
+| L3-F10-defender | 2.45, 0.48, 1.35 | 2.82, 0.30, 1.37 |
+| L4-F5-oneClamp-on | 2.56, 0.47, 1.37 | 2.84, 0.30, 1.39 |
+| L4-F5-oneClamp-off | 2.45, 0.48, 1.35 | 2.82, 0.30, 1.37 |
+| L4-F9-defenderRising | 2.56, 0.47, 1.37 | 2.84, 0.30, 1.39 |
+| L4-F9-defenderFalling | 2.62, 0.40, 1.40 | 2.84, 0.30, 1.39 |
+| L4-F10-wrap-on | 2.90, 0.12, 1.45 | 2.96, 0.17, 1.47 |
+| L4-F10-wrap-off | 2.73, 0.20, 1.54 | 2.86, 0.21, 1.46 |
+
+### Evidence
+
+- `.scratch/p13d/final.json` (the closing run), `.scratch/p13d/fixtures2.log` (the export), `.scratch/p13d/diff.txt`, `clipw.txt` (the probes' output), the baseline export at `63323e1` in `.scratch/p13d/base/`.
+- Investigation probes for the re-points in `.scratch/p13d/A/`, `.scratch/p13d/B/` (untracked).

@@ -223,12 +223,14 @@ describe('arm self-clearance: profile and geometry', () => {
 });
 
 describe('arm self-clearance: supported and arm-task arms stay out of the own trunk', () => {
-  // free running, stopping, sprinting and the carry: no other body near the arms
-  const POSE = ['L3-F16-sprint', 'L3-F16-runStop', 'L3-F17-runStart', 'L3-F13-carrier', 'L3-F13-free'];
+  // free running (6.6 m/s), stopping, starting, walking and the carry: no other body near the arms
+  const POSE = ['L3-F16-sprint', 'L3-F16-runStop', 'L3-F17-runStart', 'L3-F14-forward', 'L3-F13-carrier', 'L3-F13-free'];
   // tackles: the tackler's arm-task arms (reach, close, hold) never through its own torso
   const ARM_TASK = ['L3-F1-low', 'HC-F3-mirror', 'L3-F5-dragMirror'];
   measureDepth([...POSE, ...ARM_TASK].map(FIX));
-  measureDepth([without(FIX('L3-F16-sprint'))]);
+  // plan 13d: the negative control is the walk swing. Fast Run's swing at 6.6 m/s stays off the trunk without the profile
+  // (0.7 cm); the walk's swing still crosses it (3.6 cm, R.left at 1.45 s)
+  measureDepth([without(FIX('L3-F14-forward'))]);
 
   it('pose arms and arm-task arms stay within the skin tolerance of the own trunk, on every free-running and tackle fixture listed', async () => {
     await checks([
@@ -253,8 +255,8 @@ describe('arm self-clearance: supported and arm-task arms stay out of the own tr
     ]);
   }, 240000);
 
-  it('without the profile the same sprint swing crosses the trunk (the historical path is unchanged)', async () => {
-    const w = await worstBySource(without(FIX('L3-F16-sprint')));
+  it('without the profile the same walk swing crosses the trunk (the historical path is unchanged)', async () => {
+    const w = await worstBySource(without(FIX('L3-F14-forward')));
     expect(w.pose.d).toBeGreaterThan(0.025);
   });
 });
@@ -341,10 +343,14 @@ describe('plan 12 joint range: profile and cone', () => {
 
 describe('plan 12 joint range: shoulders', () => {
   it('supported pose arms are within 0.5 deg of the cone; without the profile they are far past it', async () => {
-    for (const id of ['L3-F9-convert-prep', 'L3-F16-sprint']) {
+    // plan 13d: Fast Run's swing at 6.6 m/s is inside the cone with or without the profile (the twin 7 deg inside), so it
+    // is checked with the profile only and the second twin control is a contact case, the re-bump
+    for (const id of ['L3-F9-convert-prep', 'L3-F16-sprint', 'L3-F8-recontact']) {
       const on = await probe(FIX(id));
-      const off = await probe(twin(FIX(id)));
       expect(on.worst.pose.ex, `${id} ${on.worst.pose.at}`).toBeLessThanOrEqual(0.5);
+    }
+    for (const id of ['L3-F9-convert-prep', 'L3-F8-recontact']) {
+      const off = await probe(twin(FIX(id)));
       expect(off.worst.pose.ex, id).toBeGreaterThan(4);
     }
   }, 120000);
@@ -358,7 +364,9 @@ describe('plan 12 joint range: shoulders', () => {
   }, 120000);
 
   it('ragdoll shoulders: the runner cases stay within the 5 deg tolerance past the cone, but for brief loads; the twins go far behind', async () => {
-    for (const id of ['HC-F3-phase0', 'HC-F3-lowRunner', 'L3-F1-phase0', 'L3-F1-low']) {
+    // plan 13d: HC-F3-phase0 (margin 14.6 deg) and L3-F1-phase0 (twin 25.8 behind) no longer load the runner's arm behind
+    // with Fast Run's contact timing; HC-F3-falling and HC-F3-mirror do (margins 32.9 and 32.0 deg)
+    for (const id of ['HC-F3-falling', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
       const on = await probe(FIX(id));
       const off = await probe(twin(FIX(id)));
       expect(off.worst.ragdoll.behind, id).toBeGreaterThan(45);
@@ -377,7 +385,8 @@ describe('plan 12 joint range: shoulders', () => {
 
 describe('plan 12 joint range: ankles', () => {
   it('supported ankles never dorsiflex past 25 deg; the twins reach 36-45 deg', async () => {
-    for (const id of ['HC-F1-low', 'L3-F1-low', 'L3-F16-sprint']) {
+    // plan 13d: the run case is the 6 m/s stop (twin 45 deg); Fast Run at a constant 6.6 m/s leans the twin's shin 34 deg
+    for (const id of ['HC-F1-low', 'L3-F1-low', 'L3-F16-runStop']) {
       const on = await probe(FIX(id));
       const off = await probe(twin(FIX(id)));
       expect(on.ankleMin, id).toBeGreaterThanOrEqual(-J.ankle.dorsiDeg);
@@ -386,7 +395,7 @@ describe('plan 12 joint range: ankles', () => {
   }, 120000);
 
   it('heel lift: a planted foot past the range stands on its ball, the contact held within the plant tolerance', async () => {
-    for (const id of ['L3-F1-low', 'L3-F16-sprint']) {
+    for (const id of ['L3-F1-low', 'L3-F16-runStop']) {
       const on = await probe(FIX(id));
       const off = await probe(twin(FIX(id)));
       // the twin plants with the shin leaning past the range; with the profile the heel lifts instead, no foot lost

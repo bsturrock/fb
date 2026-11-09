@@ -107,6 +107,7 @@ export function recordTrace(host: EvidenceHost): void {
         r: round(st.rate, 4),
         b: round(st.blend, 4),
         v: round(st.speed, 4),
+        ...(st.stride !== undefined ? { s: round(st.stride, 4) } : {}),
         res: Object.fromEntries(Object.entries(pl.pose?.targetResidualM ?? {}).map(([kk, vv]) => [kk, round(vv, 4)])),
       };
     }

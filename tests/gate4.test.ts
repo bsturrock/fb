@@ -1066,9 +1066,10 @@ describe('plan 10e: rules revision 2', () => {
   });
 
   it('E1: after the ending players keep their stance request and yaw effort through the settle window', async () => {
-    // L3-F1-phase0 with the defender wrapping in a lowered stance: both profiles end at the same substep and the defender
-    // is still a supported proxy for a while after it (the runner, a ragdoll by then, asks for full yaw effort)
-    const base = allFixtures().find((d) => d.id === 'L3-F1-phase0')!;
+    // L3-F1-mirror0 with the defender wrapping in a lowered stance: both profiles end at the same substep and the defender
+    // is still a supported proxy for a while after it (the runner, a ragdoll by then, asks for full yaw effort). Plan 13d:
+    // was L3-F1-phase0, whose defender after Fast Run's contact timing has settled before the ending (no rise to compare)
+    const base = allFixtures().find((d) => d.id === 'L3-F1-mirror0')!;
     const variant = (rules: RuleProfile): FixtureDef => ({
       ...base,
       id: `test-E1-${rules.revision ?? 1}`,

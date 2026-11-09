@@ -18,6 +18,14 @@ A rejected player falls as a rigid proxy instead of a ragdoll, so the trial lose
 - On the substep before, the pose had it at 1.17 cm, inside the guard.
 - In the twin without the profile, the legs sat 1.0–1.5 cm deep for 0.2 s, and D converted at 1.17 cm.
 
+## Rejections 13d adds (user ruling 2026-11-09)
+
+At the 13d tip L4-F10-wrap-off D **converts** (Fast Run's contact timing moved it); three conversions are rejected for external penetration instead. The user ruled them known limits for 13f. The tests pin each, so they fail when the guard lets it convert:
+- **L3-F9-defenderFalling D** at 1.267 s: its left thigh 2.39 cm in R's pelvis (L3-F1-falling is the same run, the same rejection). It falls as a rigid proxy. Pinned in `tests/l3-pass.ts` (`DEFENDER_13F`).
+- **HC-F3-lowRunner, players reversed, R**: its left forearm 1.59 cm in D's torso (tolerance 1.5 cm). Pinned in `tests/handoff-contact.test.ts` (`KNOWN_13F`).
+
+The thigh case is deeper than one substep of relative motion explains (2.39 cm against the guard's 1.2 cm), so the re-measure should first find whether the pose measured that leg against R's core at all.
+
 ## Accepted conversions near the limit
 
 These are the L3, L4 and HC conversions accepted with more than 1.2 cm of new depth at `4f38d34`. There are 13. 13d and 13e change the legs and the poses, so the first task re-measures this table at the 13e tip.
@@ -66,7 +74,8 @@ The forearm cases are a separate mechanism: arm-task clamp depth on a diagnostic
 
 ## Acceptance
 
-- **Wrap-off.** L4-F10-wrap-off D converts.
+- **Wrap-off.** L4-F10-wrap-off D converts (it does at the 13d tip; keep it converting).
+- **13d's rejections.** L3-F9-defenderFalling D, L3-F1-falling D and HC-F3-lowRunner reversed R convert; their pins in the tests are removed.
 - **Near-limit cases.** No conversion in the re-measured table is rejected.
 - **Real overlaps.** A deliberately invalid conversion is still rejected: HC-F5-invalidOne, L3-F11-invalid, L4-F9-rejected and the G4 penetration cases.
 - **Legs stay where they were** when nothing moves near them: every one-player L3, L4 and HC fixture has a summary byte-identical to the 13e tip (only static bodies are external there, and they are not moved). Their exports change only by the recorded profile.

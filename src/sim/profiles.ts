@@ -346,9 +346,9 @@ export interface SuspensionSupport {
    * (player leg units), converted to root height with the body's hip landmark offset. The bob keeps its first
    * `bobHarmonics` cycle harmonics (stride and step), and its amplitude is scaled down when the current playback rate
    * would need a downward acceleration above maxDownAccelG g (a support that cannot pull cannot follow it; more force
-   * capacity would not help). Provisional (user decision 2026-11-05): the target is an attenuated bob (Sprint at its
-   * nominal rate keeps 0.342 of its truncated amplitude), so tracking error measures agreement with this modified target,
-   * not preservation of the clip's original motion.
+   * capacity would not help). Provisional (user decision 2026-11-05): the target is an attenuated bob, so tracking error
+   * measures agreement with this modified target, not preservation of the clip's original motion. Fast Run (plan 13d, the
+   * one run clip) keeps its full truncated amplitude up to 1.19x its cadence (6.9 m/s); at its 1.3x limit it keeps 0.835.
    */
   run: { bobHarmonics: number; maxDownAccelG: number };
   /**

@@ -505,6 +505,14 @@ export interface RunClipProfile {
     /** Braking blend above which the walk is not played (a ramped stop stays under it, a hard stop does not). */
     brakeB: number;
   };
+  /**
+   * Plan 13d (optional): the jog. Below the run clip's slowest cadence (playback.minRate x its nominal speed, scaled) the
+   * stride shortens instead, down to minStride of the clip's; the cadence stays at its slowest. The swing foot's lift
+   * above the stance line and the run bob scale by share ^ liftScale. The share follows the speed critically damped at
+   * shareRadPerS (rad/s): the speed is solved travel per substep and steps at a contact or at the first substep, and the
+   * share moves the feet directly. Absent: the stride is the clip's (bit-identical).
+   */
+  run?: { minStride: number; liftScale: number; shareRadPerS: number };
 }
 
 /** Profile export without sample data (identity, nominal speeds, bounds and policy). */
@@ -530,6 +538,7 @@ export function runClipProfileExport(p: RunClipProfile): Record<string, unknown>
     weightRatePerS: p.weightRatePerS,
     blendRatePerS: p.blendRatePerS,
     ...(p.walk ? { walk: p.walk } : {}),
+    ...(p.run ? { run: { ...p.run } } : {}),
     armSwing: p.armSwing,
     carrySwing: p.carrySwing,
     ...(p.stanceWidthAddM ? { stanceWidthAddM: { ...p.stanceWidthAddM } } : {}),
@@ -543,6 +552,7 @@ export function validateRunClipProfile(p: RunClipProfile, R: RagdollProfile): vo
     if (!(p.clips[i].record.nominalSpeedMps > p.clips[i - 1].record.nominalSpeedMps)) throw new RunClipError(p.id, 'profile clips must be in ascending nominal speed');
   if (!(p.fadeMps[0] >= 0 && p.fadeMps[1] > p.fadeMps[0])) throw new RunClipError(p.id, 'invalid fade band');
   if (p.walk && !(p.clips.length > 1 && p.walk.fadeMps[1] > p.walk.fadeMps[0] && p.walk.requestMps[1] > p.walk.requestMps[0] && p.walk.minStride > 0 && p.walk.minStride <= 1 && p.walk.rampMps2 > 0 && (p.walk.startMps2 ?? 1) > 0)) throw new RunClipError(p.id, 'invalid walk band');
+  if (p.run && !(p.run.minStride > 0 && p.run.minStride <= 1 && p.run.liftScale >= 0 && p.run.shareRadPerS > 0)) throw new RunClipError(p.id, 'invalid run stride (0 < minStride <= 1, liftScale >= 0, shareRadPerS > 0)');
   if (!(p.weightRatePerS > 0)) throw new RunClipError(p.id, 'invalid weight rate');
   if (!(p.blendRatePerS > 0)) throw new RunClipError(p.id, 'invalid blend rate');
   if (!(p.carrySwing >= 0 && p.carrySwing <= 1)) throw new RunClipError(p.id, 'carrySwing must be within 0..1');
@@ -578,9 +588,17 @@ export interface RunPlayback {
   k: number;
   /** Blend position k + blend (rate-limited toward the speed-selected position). */
   pos: number;
-  /** Plan 08: on the profile's walk (a walking request, or a walk speeding up into the run), and its stride scale. */
+  /**
+   * Plan 08: on the profile's walk (a walking request, or a walk speeding up into the run), and its stride scale. Plan 13d:
+   * with the profile's `run` block the stride scale is also set off the walk (the jog's stride share).
+   */
   walking?: boolean;
   stride?: number;
+  /** Plan 13d (profile `run`): scale of the swing foot's lift and of the run bob (the run share's, 1 on the walk). */
+  lift?: number;
+  /** Plan 13d (profile `run`): the run's stride share (followed, critically damped) and its rate (1/s). */
+  share?: number;
+  shareV?: number;
   /** Actual horizontal speed from solved travel (m/s). */
   speed: number;
   /** World travel heading used for the clip frame (rad, as headingOf). */
@@ -693,11 +711,32 @@ export function advanceRunPlayback(st: RunPlayback, p: RunClipProfile, inp: RunP
   const sel = selectClips(p, st.pos);
   st.k = sel.k;
   st.blend = sel.blend;
-  if (W) {
-    // the walk's stride follows the speed at the clip's cadence; the scale crosses to 1 with the blend to the run
-    const short = clamp(speed / (p.clips[0].record.nominalSpeedMps * scaleLeg), W.minStride, 1);
-    st.stride = short + (1 - short) * clamp(st.pos, 0, 1);
+  // plan 13d: the run's stride share at its slowest cadence (1 without the profile's run block)
+  let runShare = 1;
+  const RJ = p.run;
+  if (RJ) {
+    const r = W ? selectClips(p, Math.max(1, st.pos)) : sel;
+    const want = clamp(speed / (r.minRate * (r.strideM / r.cycleS) * scaleLeg), RJ.minStride, 1);
+    if (init || st.share === undefined) {
+      st.share = want;
+      st.shareV = 0;
+    } else if (len(travel) === 0) {
+      // no travel measured (the first substep reads the core where setup left it): no evidence of a speed change, so
+      // the share holds rather than following a reading of 0 m/s toward minStride
+    } else {
+      const w = Math.min(RJ.shareRadPerS, 0.5 / inp.dt);
+      st.shareV = (st.shareV ?? 0) + (w * w * (want - st.share) - 2 * w * (st.shareV ?? 0)) * inp.dt;
+      st.share = clamp(st.share + st.shareV * inp.dt, RJ.minStride, 1);
+    }
+    runShare = st.share;
+    const runLift = runShare ** RJ.liftScale;
+    st.lift = W ? 1 + (runLift - 1) * clamp(st.pos, 0, 1) : runLift;
   }
+  if (W) {
+    // the walk's stride follows the speed at the clip's cadence; the scale crosses to the run's with the blend to the run
+    const short = clamp(speed / (p.clips[0].record.nominalSpeedMps * scaleLeg), W.minStride, 1);
+    st.stride = short + (runShare - short) * clamp(st.pos, 0, 1);
+  } else if (RJ) st.stride = runShare;
   const nominalScaled = (sel.strideM * scaleLeg * (st.stride ?? 1)) / sel.cycleS;
   st.rate = clamp(speed / nominalScaled, sel.minRate, sel.maxRate);
   if (init) {
@@ -819,7 +858,9 @@ export function joinPhase(st: RunPlayback, p: RunClipProfile, side: ArmSide, off
 /** Clip label for traces: the clip id, or "lower+upper" while blending. */
 export function playbackLabel(st: RunPlayback, p: RunClipProfile): string {
   const b = p.clips[st.k + 1];
-  return b && st.blend > 0 ? `${p.clips[st.k].id}+${b.id}` : p.clips[st.k].id;
+  if (!b || st.blend <= 0) return p.clips[st.k].id;
+  // plan 13d: at the end of the list selectClips holds the last pair at blend 1 (L3's walk, fast-run): that is the last clip
+  return st.blend >= 1 ? b.id : `${p.clips[st.k].id}+${b.id}`;
 }
 
 // ------------------------------------------------------------------------------------------- retargeting
@@ -874,6 +915,8 @@ export interface RetargetOptions {
   widthAddM?: number;
   /** Plan 08: fore-aft scale of the feet (a walk's shorter stride). */
   strideScale?: number;
+  /** Plan 13d: scale of the swing foot's lift above its flat-shoe height (the jog); the planted foot keeps the floor. */
+  lift?: number;
   /** Plan 08: share of carrySwing at this blend (a ball stays tucked on a walk's long arm swing). */
   carryShare?: number;
   /** Plan 08a: publish the clip's arm swing for the carry profile. */
@@ -924,11 +967,13 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
     const wx = o.widthAddM ? o.widthAddM * sideSignX(body, s) : 0;
     const sz = o.strideScale ?? 1;
     const off = qRot(yawQ, v3(wx ? a.x * leg + wx : a.x * leg, 0, a.z * leg * sz));
-    const ankleW = v3(g.x + off.x, sole + c.ankle.y * leg, g.z + off.z);
     // stance contact: the clip's lower of heel and toe (blended over 3 cm of height difference) is the planted point
     const heelM = c.heelH * leg;
     const toeM = c.toeH * leg;
     const cw = 1 - smooth((Math.min(heelM, toeM) - CONTACT.fullM) / (CONTACT.offM - CONTACT.fullM));
+    // plan 13d: the lift scales the swing (out of contact) only; absent or 1, the unchanged expression
+    const lift = o.lift === undefined || o.lift === 1 ? 1 : cw + (1 - cw) * o.lift;
+    const ankleW = v3(g.x + off.x, sole + (lift === 1 ? c.ankle.y * leg : c.ankle.y * leg * lift), g.z + off.z);
     let contact: SampledContact | null = null;
     if (cw > 0) {
       const f = smooth((heelM - toeM) / CONTACT.rollM + 0.5);

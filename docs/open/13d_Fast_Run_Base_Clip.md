@@ -1,6 +1,6 @@
 # 13d — Fast Run as the base run clip
 
-Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13c.
+Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13c. **Implemented** 2026-11-09 ([handoff](../handoff/plan13.md#13d--fast-run-as-the-base-run-clip)): Sprint removed, Fast Run at every run speed with the jog stride (user kept 0.45 / 1). 98 summaries changed, G1–G4 byte-identical; four known limits by the user's ruling, two handed to 13e and 13f.
 
 **Goal:** Fast Run is the one run animation for every running speed, from a jog to top speed, with the adaptations it already has (stance width, calibrated legs, carry swing). Sprint is gone from the repository.
 
@@ -42,14 +42,14 @@ The user's ruling (2026-11-09): remove Sprint; Fast Run is the base animation fo
 
 ## Tasks
 
-- [ ] **Tests first.** Update the profile tests to the new contract and see them fail: one clip `fast-run`; the profile id; the fade band [1.6, 2.2]; stride share 1 above 4.08 m/s (scaled) and `minStride` at 1.84 m/s; the lift scale applied to swing height and bob; a 6.6 m/s run plays at 1.13× ± 0.01.
-- [ ] **Stride and lift.** Add `run?: { minStride; liftScale }` to `RunClipProfile`, its validation (`0 < minStride <= 1`, `liftScale >= 0`) and its export (`runClipProfileExport`). Apply it in `advanceRunPlayback` (stride share) and in the sample (swing lift, `stride`), and pass the share to the suspension's run-bob target.
-- [ ] **One clip.** Change `runClipsBew` and `runClipsL3`; delete the Sprint asset, manifest entry and imports; regenerate the intake record; update the README.
-- [ ] **Lab sliders.** The tune panel shows `minStride` and `liftScale` beside stance width; changing one reloads the fixture with a `+jog(…)` id suffix, as the width does.
-- [ ] **User look review.** In the lab, the user sets the two sliders by eye on `L3-F17-runStartFree` (the jog through the start), `L3-F16-runStopFree` and `L3-F16-sprint`. Record the chosen values.
-- [ ] **Evidence.** Full suite, typecheck, build, all fixtures. List every changed summary by milestone, with any result, ending or ball-spot change.
-- [ ] **Audits.** Transition audit on all L3 boundaries (unchanged 1 cm limit); plant feasibility on L2-F11 and L3-F16; self-clearance and joint-range acceptance from plans 11 and 12 on the opted fixtures.
-- [ ] **Close.** Handoff section.
+- [x] **Tests first.** Update the profile tests to the new contract and see them fail: one clip `fast-run`; the profile id; the fade band [1.6, 2.2]; stride share 1 above 4.08 m/s (scaled) and `minStride` at 1.84 m/s; the lift scale applied to swing height and bob; a 6.6 m/s run plays at 1.13× ± 0.01.
+- [x] **Stride and lift.** Add `run?: { minStride; liftScale }` to `RunClipProfile`, its validation (`0 < minStride <= 1`, `liftScale >= 0`) and its export (`runClipProfileExport`). Apply it in `advanceRunPlayback` (stride share) and in the sample (swing lift, `stride`), and pass the share to the suspension's run-bob target.
+- [x] **One clip.** Change `runClipsBew` and `runClipsL3`; delete the Sprint asset, manifest entry and imports; regenerate the intake record; update the README.
+- [x] **Lab sliders.** The tune panel shows `minStride` and `liftScale` beside stance width; changing one reloads the fixture with a `+jog(…)` id suffix, as the width does.
+- [x] **User look review.** In the lab, the user sets the two sliders by eye on `L3-F17-runStartFree` (the jog through the start), `L3-F16-runStopFree` and `L3-F16-sprint`. Record the chosen values.
+- [x] **Evidence.** Full suite, typecheck, build, all fixtures. List every changed summary by milestone, with any result, ending or ball-spot change.
+- [x] **Audits.** Transition audit on all L3 boundaries (unchanged 1 cm limit); plant feasibility on L2-F11 and L3-F16; self-clearance and joint-range acceptance from plans 11 and 12 on the opted fixtures.
+- [x] **Close.** Handoff section.
 
 ## Acceptance
 

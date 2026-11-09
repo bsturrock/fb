@@ -303,6 +303,7 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
   });
 
   it('every HC natural-contact variant, in both player orders: each fall that happens is an audited ragdoll; nobody ends as a rigid falling proxy', async () => {
+    const KNOWN_13F = new Set(['HC-F3-lowRunner reversed R']);
     // plan 10c (C6, U7): the guarantee holds for either body order (reversed HC-F2-bothFallL2 rejected A as
     // externalPenetration before the convertible-pose guard: its shown thigh stood 8 cm in B's ragdoll forearm)
     const lines: string[] = [];
@@ -317,6 +318,14 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
         const tag = `${def.id}${reverseOrder ? ' reversed' : ''}`;
         lines.push(`${tag.padEnd(29)} ${handoffs(sim)}`);
         for (const pl of sim.players) {
+          // plan 13d known limit (user ruling, to plan 13f): with Fast Run's contact timing the reversed low runner's
+          // conversion is rejected for external penetration (its left forearm 1.59 cm in D's torso, tolerance 1.5 cm) and
+          // it stays a falling proxy. Pinned here, so the row fails when 13f's leg guard lets it convert
+          if (KNOWN_13F.has(`${tag} ${pl.id}`)) {
+            expect(pl.handoff?.outcome, `${tag} ${pl.id}`).toBe('rejected');
+            expect(pl.handoff!.report.reasons.join(','), `${tag} ${pl.id}`).toContain('externalPenetration');
+            continue;
+          }
           if (pl.handoff) expectAudited(pl, tag);
           expect(pl.controlMode === 'falling' && !pl.rag, `${tag} ${pl.id} rigid falling proxy`).toBe(false);
         }

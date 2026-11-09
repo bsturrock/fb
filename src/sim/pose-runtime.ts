@@ -142,7 +142,8 @@ export function sampledLimbsOf(host: PoseHost, pl: PlayerRuntime, st: RunPlaybac
     restToe: P.clips[st.k].restToe,
     armMean: playbackArmMean(st, P),
     ...(P.stanceWidthAddM ? { widthAddM: playbackWidthAddM(st, P) } : {}),
-    ...(st.stride !== undefined ? { strideScale: st.stride, carryShare: clamp(st.pos, 0, 1) } : {}),
+    ...(st.stride !== undefined ? { strideScale: st.stride, ...(P.walk ? { carryShare: clamp(st.pos, 0, 1) } : {}) } : {}),
+    ...(st.lift !== undefined ? { lift: st.lift } : {}),
     ...(host.def.carry ? { carryRaw: true } : {}),
   });
 }

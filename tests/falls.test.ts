@@ -330,7 +330,9 @@ describe('the limit torque follows a potential', () => {
         async () => {
           // plan 12 known limit (docs/handoff/plan12.md): the narrower shoulder holds the runner's right arm, pinned under its body
           // in the oblique fall with the response off, past the tolerance for 0.32 s (the soft limit is capped at 500 N m)
-          const known: Record<string, number> = { 'L4-F3-model-oblique-off R rightShoulder': 0.33 };
+          // plan 13d known limit (user ruling): L4-F9-low's runner lies alone with its right shoulder 5-8 deg past the
+          // tolerance from 1.93 s to the fixture's end (0.47 s)
+          const known: Record<string, number> = { 'L4-F3-model-oblique-off R rightShoulder': 0.33, 'L4-F9-low R rightShoulder': 0.5 };
           for (const d of ALL.filter((x) => !x.id.startsWith('L4-F1-'))) {
             const s = await sim(d.id);
             for (const p of s.players) for (const e of p.rag?.envelope ?? []) expect(e.maxOverRunS, `${d.id} ${p.id} ${e.jointId}`).toBeLessThan(known[`${d.id} ${p.id} ${e.jointId}`] ?? ENVELOPE_L4.persistS);
@@ -838,29 +840,28 @@ describe('L4-F4 braces that fail stay failures', () => {
 
   // every substep of every fall with arms: per player and arm, the last time a seeking brace (not a hold, not on a hold)
   // pressed on another body or an obstacle
-  const seekOf = watch(
-    (id) => withMisses().some((d) => d.id === id),
-    () => {
-      const seek = new Map<string, number>();
-      return {
-        data: seek,
-        substep: (x: Simulation) => {
-          for (const p of x.players) {
-            if (!p.fall) continue;
-            for (const c of x.contacts) {
-              if (c.impulse <= 0) continue;
-              for (const [own, o] of [[c.a, c.b], [c.b, c.a]] as const) {
-                if (own.playerId !== p.id || !own.side || (own.region !== 'palm' && own.region !== 'forearm') || isGround(o) || o.playerId === p.id) continue;
-                const a = p.fall.arms[own.side];
-                const held = !!o.playerId && !!o.side && (o.region === 'palm' || o.region === 'forearm') && !!x.arms?.retained(o.playerId, o.side);
-                if (a.task === 'brace' && a.brace === 'seek' && !held && !x.arms?.retained(p.id, own.side)) seek.set(`${p.id}:${own.side}`, x.t);
-              }
+  /** When each arm's seeking brace last touched a body other than the ground (not a hold): the obstruction a miss reads. */
+  const seekObserver = (): Observer & { data: Map<string, number>; substep: (x: Simulation) => void } => {
+    const seek = new Map<string, number>();
+    return {
+      data: seek,
+      substep: (x: Simulation) => {
+        for (const p of x.players) {
+          if (!p.fall) continue;
+          for (const c of x.contacts) {
+            if (c.impulse <= 0) continue;
+            for (const [own, o] of [[c.a, c.b], [c.b, c.a]] as const) {
+              if (own.playerId !== p.id || !own.side || (own.region !== 'palm' && own.region !== 'forearm') || isGround(o) || o.playerId === p.id) continue;
+              const a = p.fall.arms[own.side];
+              const held = !!o.playerId && !!o.side && (o.region === 'palm' || o.region === 'forearm') && !!x.arms?.retained(o.playerId, o.side);
+              if (a.task === 'brace' && a.brace === 'seek' && !held && !x.arms?.retained(p.id, own.side)) seek.set(`${p.id}:${own.side}`, x.t);
             }
           }
-        },
-      };
-    },
-  );
+        }
+      },
+    };
+  };
+  const seekOf = watch((id) => withMisses().some((d) => d.id === id), seekObserver);
 
   // plan 10c C4: `obstructed` was set by any arm contact with the opponent or an obstacle at any time, the arm's own hold
   // included, and never cleared: L4-F6-break's left arm missed as `obstructed` 0.52 s after its hold broke
@@ -868,9 +869,17 @@ describe('L4-F4 braces that fail stay failures', () => {
     const W = FALL_L4.brace.horizonS[0];
     let obstructed = 0;
     let other = 0;
-    for (const d of withMisses()) {
-      const s = await sim(d.id);
-      const seek = await seekOf(d.id);
+    const runs: [string, Simulation, Map<string, number>][] = [];
+    for (const d of withMisses()) runs.push([d.id, await sim(d.id), await seekOf(d.id)]);
+    // plan 13d: the natural obstructed misses (3 before: L4-F5-oneClamp-on, L4-F9-defenderRising, L4-F10-wrap-on) are gone
+    // with Fast Run's contact timing; L4-F4-obstructed without the joint range, the case the fixture was built for, still
+    // misses obstructed (R left at 0.442 s, as before)
+    const o = seekObserver();
+    const tw = await create({ ...FIX('L4-F4-obstructed'), id: 'L4-F4-obstructed-noRange', jointRange: undefined }, { onSubstep: (x: Simulation) => o.substep(x) });
+    await runSim(tw, Infinity);
+    runs.push([tw.def.id, tw, o.data]);
+    for (const [id, s, seek] of runs) {
+      const d = { id };
       for (const e of evs(s, 'braceMiss')) {
         const at = seek.get(`${e.playerId}:${e.data.arm}`);
         const near = at !== undefined && e.t - at <= W + 1e-9;
@@ -879,8 +888,9 @@ describe('L4-F4 braces that fail stay failures', () => {
         else other++;
       }
     }
-    // (plan 12: 3, L4-F4-obstructed lands instead)
-    expect(obstructed).toBeGreaterThanOrEqual(3);
+    // (plan 12: 3, L4-F4-obstructed lands instead; plan 13d: 1, the twin's)
+    expect(obstructed).toBeGreaterThanOrEqual(1);
+    tw.dispose();
     expect(other).toBeGreaterThan(10);
     // the review's case: the broken hold braces and misses, and its own hold's contact does not make that an obstruction
     const m = evs(await sim('L4-F6-break'), 'braceMiss').filter((e) => e.playerId === 'D' && e.data.arm === 'left');

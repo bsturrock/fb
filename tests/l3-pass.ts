@@ -163,11 +163,11 @@ export const RESEED = check({
 
 export const STEP_AS_IS = check({
   name: 'a step compared with its old path as it is',
-  fixtures: ['L3-F1-phase5'],
+  fixtures: ['L3-F1-phase6'],
   // A step that loses support (first L3-F1-low: D's step out of time). Before 10b the reference carried a timed-out step's
   // stored motion on (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is
-  // nothing to carry on. L3-F1-phase5: the run's only supported-to-airborne boundary of D, 1.55 s (plan 12: L3-F1-low's
-  // D no longer loses support on a step, its boundary at 1.65 s is gone)
+  // nothing to carry on. L3-F1-phase6: the run's only supported-to-airborne boundary of D, 1.26 s (plan 12: L3-F1-low's
+  // D no longer loses support on a step, its boundary at 1.65 s is gone; plan 13d: nor does L3-F1-phase5's at 1.55 s)
   watch: onDeltas((ds) => {
     const x = ds.find((b) => b.playerId === 'D' && b.to.includes('airborne') && !b.from.includes('airborne'));
     expect(x).toBeTruthy();
@@ -179,7 +179,7 @@ export const STEP_AS_IS = check({
 
 export const RAW_KEPT = check({
   name: 'the raw difference and what was set aside',
-  fixtures: ['L3-F7-phase0', 'L3-F1-mirror0'],
+  fixtures: ['L3-F7-phase0', 'L3-F1-mirror4'],
   watch: (d) => ({
     finish(sim) {
       const ds = sim.transitionDeltas;
@@ -191,8 +191,10 @@ export const RAW_KEPT = check({
         for (const x of f7) expect(x.rawM, `L3-F7-phase0 ${x.t}`).toBeLessThanOrEqual(0.01);
       } else {
         // what still jumps is the body-frame request when contact entry turns the body (the angular impulse; the clip itself
-        // is the same in both compositions): L3-F1-mirror0 D 0.479 s
-        const jolted = nonEmpty(ds.filter((x) => x.rawM > 0.01 && x.deltaM <= 0.01), 'jolted boundaries');
+        // is the same in both compositions). Plan 13d: no L3 boundary is over 1 cm raw any more (L3-F1-mirror0 D 0.479 s was
+        // 1.76 cm), so the record is a boundary the correction set at least 5 mm aside: L3-F1-mirror4 D 0.479 s, raw 0.99 cm,
+        // 0.22 cm after it
+        const jolted = nonEmpty(ds.filter((x) => x.rawM - x.deltaM > 0.005), 'jolted boundaries');
         for (const x of jolted) expect(Math.max(...Object.values(x.requestJumpM))).toBeGreaterThan(0);
       }
       // the two measures differ only where a demonstrated artifact was corrected; every boundary keeps all three numbers
@@ -675,8 +677,10 @@ export const BRAKE = check({
       expect(count(sim, 'handoffRejected'), d.id).toBe(0);
       // the kick leaves the ground: a landing proposal may fail honestly there
       // the stopping player's own plants: L3-F16-contactStop's defender fails one honestly in contact, by 1.8 cm of reach
+      // plan 13d known limit (user ruling, fixed in 13e): L3-F16-stop1.9's right foot is planted at the crossing while it
+      // still slides at 0.33 m/s and the plant fails (slide, 1.5 cm)
       const failed = sim.events.filter((e) => e.type === 'footPlantFailed' && e.playerId === sim.players[0].id).length;
-      expect(failed, d.id).toBeLessThanOrEqual(d.id === 'L3-F16-kick' ? 2 : 0);
+      expect(failed, d.id).toBeLessThanOrEqual(d.id === 'L3-F16-kick' ? 2 : d.id === 'L3-F16-stop1.9' ? 1 : 0);
     },
   }),
 });
@@ -695,8 +699,11 @@ export const SETTLES = check({
         expect(R.feet!.feet[s].tentative, d.id).toBe(false);
       }
       const last = sim.events.filter((e) => e.type === 'footPlant' && e.playerId === R.id).at(-1)!;
-      expect(sim.t - last.t, d.id).toBeGreaterThan(0.5);
-      expect(count(sim, 'footPlantFailed'), d.id).toBe(0);
+      // plan 13d: L3-F16-stop2.9's squaring step (8.5 cm, left foot) comes 0.41 s before the end: the final heel sits 2.5 cm
+      // further from the root, so the slow creep crosses the settle trigger later (0.56 s before, old margin 0.16 s)
+      expect(sim.t - last.t, d.id).toBeGreaterThan(d.id === 'L3-F16-stop2.9' ? 0.4 : 0.5);
+      // (plan 13d known limit: L3-F16-stop1.9's sliding plant at the crossing, see BRAKE)
+      expect(count(sim, 'footPlantFailed'), d.id).toBe(d.id === 'L3-F16-stop1.9' ? 1 : 0);
     },
   }),
 });
@@ -719,6 +726,29 @@ export const ONE_FOOT = check({
   }),
 });
 
+/** Plan 13d: the stride share of a constant run above Fast Run's slowest cadence stays 1 on every tick (a substep that
+ * measured no travel, the first after setup, used to pull it toward minStride for half a second). */
+export const FULL_STRIDE = check({
+  name: 'a constant run keeps the full stride',
+  fixtures: ['L3-F16-sprint'],
+  watch() {
+    let worst = 1;
+    let at = NaN;
+    return {
+      tick(sim) {
+        const s = sim.players[0].run?.share;
+        if (s !== undefined && s < worst) {
+          worst = s;
+          at = sim.t;
+        }
+      },
+      finish() {
+        expect(worst, `at ${at}`).toBe(1);
+      },
+    };
+  },
+});
+
 export const RUN_START = check({
   name: 'a run start goes foot by foot',
   fixtures: /^L3-F17-/,
@@ -735,7 +765,9 @@ export const RUN_START = check({
         if (i < 3) expect(step, `plant at ${e.t}`).toBeGreaterThan(last); // full stride by the third step
         last = step;
       });
-      expect(last).toBeGreaterThan(1.4);
+      // plan 13d: 1.39 (was 1.4): the last step is the short half of Fast Run's uneven stride (1.396 + 1.713 m, its
+      // recorded 3.111 m); before 13d the top of the start blended toward a longer stride (1.406 + 1.758 m)
+      expect(last).toBeGreaterThan(1.39);
     },
   }),
 });
@@ -767,6 +799,7 @@ export const STOP_MOTOR = check({
   fixtures: ['L3-F16-runStop'],
   watch(def) {
     let low = Infinity;
+    let cross = NaN;
     const both: number[] = [];
     return {
       tick(sim) {
@@ -775,6 +808,7 @@ export const STOP_MOTOR = check({
           low = Math.min(low, R.proxy.body.translation().y);
           if (R.feet!.feet.left.mode === 'swing' && R.feet!.feet.right.mode === 'swing') both.push(sim.t);
         }
+        if (sim.t > 2.6 && Number.isNaN(cross) && (R.run?.w ?? 0) === 0) cross = sim.t;
       },
       finish(sim) {
         const src = FIX('L2-F3-runStop');
@@ -783,9 +817,12 @@ export const STOP_MOTOR = check({
         expect(low).toBeLessThan(0.84);
         // the run's own flight ends with the clip: from the first plant of the handover on one foot is always down (the
         // planner takes the legs only when the foot in the air can land in time: that plant is at 3.28 s; plan 12: 3.325 s,
-        // the stance foot rises onto its toes and stays within reach 46 ms longer, and the step keeps the time its path needs)
-        const down = sim.events.find((e) => e.type === 'footPlant' && e.t > 3.2)!;
-        expect(down.t).toBeLessThan(3.33);
+        // the stance foot rises onto its toes and stays within reach 46 ms longer, and the step keeps the time its path needs).
+        // Plan 13d: measured from the crossing (the first tick at clip weight 0), which moved from 3.183 s to 3.517 s with
+        // the fade band; the handover plant within 0.1467 s of it (3.33 s - 3.183 s before), now at 3.5875 s
+        expect(cross).toBeGreaterThan(2.6);
+        const down = sim.events.find((e) => e.type === 'footPlant' && e.t > cross)!;
+        expect(down.t - cross).toBeLessThan(0.1467);
         expect(both.filter((t) => t > down.t)).toEqual([]);
       },
     };
@@ -1080,9 +1117,12 @@ export const AUDITED_FALL = check({
 
 export const DEFENDER_BOB = check({
   name: 'the defender converts on the sign of its bob',
-  fixtures: /^L3-F9-defender/,
+  // plan 13d: was /^L3-F9-defender/. With Fast Run at 6.2-6.9 m/s the one-arm defender stays in contact
+  // with level vertical speed through its diagnostic window: Rising converts on loss of support at 1.54 s, Falling's
+  // conversion is rejected (plan 13f). The standing holds of L3-F10 convert on the measured sign of their bob
+  fixtures: /^L3-F10-(rising|falling)$/,
   watch(d) {
-    const rising = d.id.endsWith('Rising');
+    const rising = d.id.endsWith('rising');
     let vy = 0;
     let at: number | null = null;
     return {
@@ -1103,6 +1143,28 @@ export const DEFENDER_BOB = check({
       },
     };
   },
+});
+
+/** Plan 13d known limits (user ruling, to plan 13f): the one-arm defenders of L3-F9 (and L3-F1-falling, the same run) no
+ * longer convert on their bob. */
+export const DEFENDER_13F = check({
+  name: 'the L3-F9 defenders as 13d leaves them',
+  fixtures: ['L3-F9-defenderRising', 'L3-F9-defenderFalling', 'L3-F1-falling'],
+  watch: (d) => ({
+    finish(sim) {
+      const D = sim.byId.get('D')!;
+      if (d.id.endsWith('Rising')) {
+        // in contact with level vertical speed through the diagnostic window: it converts on losing support instead
+        expect(D.handoff?.outcome, d.id).toBe('accepted');
+        expect(D.handoff!.reason, d.id).toBe('lossOfSupport');
+      } else {
+        // its conversion at 1.267 s is rejected for external penetration (its left thigh 2.39 cm in R's pelvis) and it
+        // stays a falling proxy: pinned, so this fails when 13f's leg guard lets it convert
+        expect(D.handoff?.outcome, d.id).toBe('rejected');
+        expect(D.handoff!.report.reasons.join(','), d.id).toContain('externalPenetration');
+      }
+    },
+  }),
 });
 
 export const PREP_UNWINDS = check({

@@ -91,6 +91,7 @@
         margin-right: 4px;
       }
       #tune,
+      #jog,
       #brake {
         flex-direction: column;
         align-items: stretch;
@@ -98,15 +99,18 @@
         margin-top: 6px;
       }
       #tune[hidden],
+      #jog[hidden],
       #brake[hidden] {
         display: none;
       }
       #tuneRows input[type='range'],
+      #jogRows input[type='range'],
       #brakeRows input[type='range'] {
         width: 180px;
         vertical-align: middle;
       }
       #tuneOut,
+      #jogOut,
       #brakeOut {
         font-size: 11px;
         user-select: all;
@@ -205,6 +209,15 @@
           <code id="tuneOut"></code>
           <button id="tuneCopy">copy</button>
           <button id="tuneZero">reset to clip</button>
+        </div>
+      </div>
+      <div id="jog" class="row" hidden>
+        <label>jog (Fast Run below its slowest cadence: stride share, lift = share ^ liftScale)</label>
+        <div id="jogRows"></div>
+        <div class="row">
+          <code id="jogOut"></code>
+          <button id="jogCopy">copy</button>
+          <button id="jogReset">reset</button>
         </div>
       </div>
       <div id="brake" class="row" hidden>

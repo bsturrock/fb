@@ -11,10 +11,10 @@ try {
 }
 const sprint = allFixtures().find((d) => d.id === 'L2-F11-sprint')!;
 try {
-  await Simulation.create({ ...sprint, runClips: { ...sprint.runClips!, stanceWidthAddM: { sprint: Infinity } } });
-  console.log('stanceWidthAddM sprint Infinity: accepted');
+  await Simulation.create({ ...sprint, runClips: { ...sprint.runClips!, stanceWidthAddM: { 'fast-run': Infinity } } });
+  console.log('stanceWidthAddM fast-run Infinity: accepted');
 } catch (e) {
-  console.log(`stanceWidthAddM sprint Infinity: ${(e as Error).message}`);
+  console.log(`stanceWidthAddM fast-run Infinity: ${(e as Error).message}`);
 }
 const stop = allFixtures().find((d) => d.id === 'L2-F3-runStop')!;
 try {

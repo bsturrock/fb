@@ -114,7 +114,7 @@ export const l3f16 = (): FixtureDef[] => [
   asL3(l2('L2-F3-runStopReaccel'), 'L3-F16-reaccel'),
   asL3(l2('L2-F3-runStopHandoff'), 'L3-F16-handoff'),
   asL3(l2('L2-F3-runStopKick'), 'L3-F16-kick'),
-  asL3(pick(l2f11(), 'L2-F11-sprint'), 'L3-F16-sprint', 'Constant speed 6.6 m/s sprint +X from t = 0 through the composed path (plan 06 sprint self-overlap)'),
+  asL3(pick(l2f11(), 'L2-F11-sprint'), 'L3-F16-sprint', 'Constant speed 6.6 m/s run +X from t = 0 through the composed path (the plan 06 top-speed self-overlap case)'),
   asL3(script(glance(0), (segs) => segs.map((g) => g).concat([{ fromS: 0.42, velocity: v3(), facing: v3(1, 0, 0), effort: 1 }])), 'L3-F16-contactStop', 'Braking interrupted by contact: the runner brakes from 0.42 s into the shoulder bump'),
 ];
 

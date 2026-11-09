@@ -1,4 +1,4 @@
-// L1 (plan 06): the supplied run clips (models/animations/, Fast Run and Sprint) sampled into the calibrated player's
+// L1 (plan 06): the supplied run clip (models/animations/, Fast Run; plan 13d) sampled into the calibrated player's
 // physical pose. Every fixture uses the bew-v6 model geometry (src/sim/model/profiles.ts) and the run-clip profile
 // (src/sim/model/run-clips.ts); requests and starting conditions only. The prefix L1- is historical (plan 06's
 // fixtures), not a document number. The procedural gait remains the fallback below the clip speed band, while airborne
@@ -21,7 +21,7 @@ export function withRunClips(def: FixtureDef, id: string, title: string, notes?:
     id,
     milestone: 'L1',
     title: `${title} [bew-v6 + supplied run clips]`,
-    notes: [notes, 'Run clips: Fast Run + Sprint sampled into the pose (legs, free-arm swing, moving carry arm; the ball stays in the carry hand); procedural gait below the clip speed band.'].filter(Boolean).join(' '),
+    notes: [notes, 'Run clip: Fast Run sampled into the pose at every run speed, its stride shortened below its slowest cadence (legs, free-arm swing, moving carry arm; the ball stays in the carry hand); procedural gait below the clip speed band.'].filter(Boolean).join(' '),
     runClips: runClipsBew(),
     rules: def.rules ? ruleVariant(def.rules, 'ballSource=carryPalm', { ballSource: 'carryPalm' }) : undefined,
   };
@@ -37,7 +37,7 @@ const run = (id: 'R' | 'D', initial: PlayerSetup['initial'], segments: ScriptSeg
 
 const model = (def: FixtureDef): FixtureDef => asModel(def);
 
-/** L1-F1: constant speed from t = 0 (initial velocity = request): Fast Run near its nominal speed, Sprint above it. */
+/** L1-F1: constant speed from t = 0 (initial velocity = request): 5.8 m/s near Fast Run's nominal speed, 6.6 m/s above it. */
 export function l1f1(kind: 'fastRun' | 'sprint'): FixtureDef {
   const v = kind === 'fastRun' ? 5.8 : 6.6;
   return withRunClips(

@@ -22,6 +22,7 @@ import { Playback } from './playback';
 import { f2, FrameCapture, type ArmFrame, type LabFrame, type Tagged } from './snapshot';
 import { SUSPENSION_L2_BRAKE, type SuspensionSupport } from '../sim/profiles';
 import { filterList, firstReviewId, fixtureList, inReviewSet } from './fixture-list';
+import { RUN_JOG } from '../sim/model/run-clips';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -173,6 +174,7 @@ async function load(id: string): Promise<void> {
   }
   $('title').textContent = `${def.id} [${def.milestone}] ${def.title}${def.notes ? ` — ${def.notes}` : ''}`;
   buildTune(def);
+  buildJogTune(def);
   buildBrakeTune(def);
   setCamera(camPreset, true);
   const u = new URL(location.href);
@@ -210,7 +212,7 @@ function buildTune(def: FixtureDef): void {
     inp.oninput = () => (val.textContent = ` ${Number(inp.value).toFixed(3)}`);
     inp.onchange = () => {
       const w = { ...(P.stanceWidthAddM ?? {}), [c.id]: Number(inp.value) };
-      const base = P.id.replace(/\+width\(.*\)$/, '');
+      const base = P.id.replace(/\+width\([^)]*\)/, '');
       const np = { ...P, id: `${base}+width(${P.clips.map((k) => `${k.id} ${(w[k.id] ?? 0).toFixed(3)}`).join(', ')})`, stanceWidthAddM: w };
       const i = fixtures.findIndex((f) => f.id === def.id);
       fixtures[i] = { ...def, runClips: np };
@@ -224,9 +226,57 @@ function buildTune(def: FixtureDef): void {
   $('tuneZero').onclick = () => {
     const i = fixtures.findIndex((f) => f.id === def.id);
     const { stanceWidthAddM: _drop, ...rest } = P;
-    fixtures[i] = { ...def, runClips: { ...rest, id: P.id.replace(/\+width\(.*\)$/, '') } };
+    fixtures[i] = { ...def, runClips: { ...rest, id: P.id.replace(/\+width\([^)]*\)/, '') } };
     void load(def.id);
   };
+}
+
+// ---------------------------------------------------------------- look tuning: the jog (plan 13d)
+/**
+ * Live slider editor for the run-clip profile's jog (`run`: minStride, the shortest stride share below Fast Run's slowest
+ * cadence; liftScale, the exponent of the share that scales the swing lift and the run bob). Moving a slider rebuilds the
+ * current fixture with the edited profile (reset to t = 0, id suffix +jog(…)); the copy line is the value to hand back,
+ * verbatim. Shown for fixtures whose run-clip profile has the block.
+ */
+function buildJogTune(def: FixtureDef): void {
+  const P = def.runClips;
+  const J = P?.run;
+  $('jog').hidden = !J;
+  if (!P || !J) return;
+  const rows = $('jogRows');
+  rows.textContent = '';
+  const out = (): string => `run: { minStride: ${J.minStride.toFixed(2)}, liftScale: ${J.liftScale.toFixed(2)}, shareRadPerS: ${J.shareRadPerS} }`;
+  const base = P.id.replace(/\+jog\([^)]*\)/, '');
+  const apply = (nj: NonNullable<typeof J>, id: string): void => {
+    const i = fixtures.findIndex((f) => f.id === def.id);
+    fixtures[i] = { ...def, runClips: { ...P, id, run: nj } };
+    void load(def.id);
+  };
+  const slider = (key: 'minStride' | 'liftScale', min: number, max: number, step: number): void => {
+    const row = document.createElement('div');
+    const lab = document.createElement('label');
+    const val = document.createElement('span');
+    const inp = document.createElement('input');
+    inp.type = 'range';
+    inp.min = String(min);
+    inp.max = String(max);
+    inp.step = String(step);
+    inp.value = String(J[key]);
+    lab.textContent = `${key} `;
+    val.textContent = ` ${J[key].toFixed(2)}`;
+    inp.oninput = () => (val.textContent = ` ${Number(inp.value).toFixed(2)}`);
+    inp.onchange = () => {
+      const nj = { ...J, [key]: Number(inp.value) };
+      apply(nj, `${base}+jog(minStride ${nj.minStride.toFixed(2)}, liftScale ${nj.liftScale.toFixed(2)})`);
+    };
+    row.append(lab, inp, val);
+    rows.append(row);
+  };
+  slider('minStride', 0.2, 1, 0.01);
+  slider('liftScale', 0, 3, 0.05);
+  $('jogOut').textContent = out();
+  $('jogCopy').onclick = () => void navigator.clipboard?.writeText(out());
+  $('jogReset').onclick = () => apply({ ...RUN_JOG }, base);
 }
 
 // ---------------------------------------------------------------- look tuning: braking stance (plan 07 item 4)

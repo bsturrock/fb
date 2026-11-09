@@ -29,7 +29,7 @@ describe('plan 08 opt-in', () => {
     const d = asL3(src, 'L3-x');
     expect({ ...d, id: src.id, milestone: src.milestone, footwork: src.footwork, locomotion: undefined, carry: undefined, selfClearance: undefined, jointRange: undefined, rules: src.rules, notes: src.notes, runClips: src.runClips }).toEqual({ ...src, locomotion: undefined, carry: undefined });
     // the user's stance widths, chosen by eye: the base profile keeps none, so the committed fixtures do not move
-    expect(d.runClips!.stanceWidthAddM).toEqual({ walk: 0, 'fast-run': 0.065, sprint: 0.025 });
+    expect(d.runClips!.stanceWidthAddM).toEqual({ walk: 0, 'fast-run': 0.065 });
     expect(src.runClips!.stanceWidthAddM).toBeUndefined();
   });
 });

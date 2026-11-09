@@ -275,9 +275,9 @@ describe('plan 08a donor arithmetic', () => {
 });
 
 describe('plan 08a donor fit through the simulation', () => {
-  // a settled run on each supplied run clip: Fast Run (the stop's run-up) and Sprint
+  // a settled run at 6 m/s (the stop's run-up) and at 6.6 m/s, both on Fast Run (plan 13d: the one run clip)
   const RUNS = [['L3-F16-runStop', 1.6, 2.5], ['L3-F16-sprint', 1.6, 2.5]] as const;
-  it('the arm reaches both keys, swings opposite the free arm, keeps its lengths; the ball stays along the forearm, on every supplied run clip', async () => {
+  it('the arm reaches both keys, swings opposite the free arm, keeps its lengths; the ball stays along the forearm, at 6 and 6.6 m/s', async () => {
     await rows(RUNS, ([id]) => id, async ([id, from, to]) => {
       const def = FIX(id);
       const { sim, rows } = await followed(id);
@@ -982,7 +982,7 @@ const CONTROLS: [string, Control, string[]][] = [
 describe('plan 08a mesh seating', () => {
   const measure = probe();
   const windows: [string, () => Promise<PhysicalPose[]>][] = [
-    ['sprint', poses('L3-F16-sprint', 1.6, 2.4, 6)],
+    ['run at 6.6 m/s', poses('L3-F16-sprint', 1.6, 2.4, 6)],
     ['fast run', poses('L3-F16-runStop', 1.6, 2.4, 6)],
     ['stand', poses('L3-F13-carrier', 1, 2, 60)],
     ['walk', poses('L3-F14-carrier', 1.4, 2.5, 18)],

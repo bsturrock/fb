@@ -225,7 +225,7 @@ export interface PlayerTraceRow {
    * Plan 06 run-clip playback: clip (or blend) label, phase u (0 = left touchdown), applied weight w and its target wt,
    * playback rate r, clip blend b, solved travel speed v (m/s), sampled-request residuals (m) of the pose.
    */
-  run?: { clip: string; u: number; w: number; wt: number; r: number; b: number; v: number; res: Record<string, number> };
+  run?: { clip: string; u: number; w: number; wt: number; r: number; b: number; v: number; s?: number; res: Record<string, number> };
   /** Plan 08 locomotion mode m, why it changed, preparation and contact weights p c, arm swing s, height drop d (m). */
   loco?: { m: string; why: string; p: number; c: number; s: number; d: number };
   /**

@@ -1,9 +1,9 @@
 // Supplied run clips for the calibrated player (models/animations/, plan 06): the committed intake record and the
 // baked derivatives, decoded once into shared immutable clips, and the run-clip locomotion profile the L1 fixtures pass
-// into simulation initialization. Headless: plain JSON imports, no loader, no DOM.
+// into simulation initialization. Headless: plain JSON imports, no loader, no DOM. Plan 13d: Fast Run is the one run
+// clip, for every run speed.
 import RECORD from './run-clips.record.json';
 import FAST_RUN from '../../../models/animations/fast-run.json';
-import SPRINT from '../../../models/animations/sprint.json';
 import WALK from '../../../models/animations/walk.json';
 import { decodeRunClip, RunClipError, type RunClip, type RunClipProfile, type RunClipRecord } from '../run-clip';
 
@@ -13,7 +13,6 @@ export const RUN_CLIPS_RECORD = RECORD as unknown as { policy: unknown; calibrat
 /** Baked derivative data by record `data` path. */
 const SOURCES: Record<string, unknown> = {
   'models/animations/fast-run.json': FAST_RUN,
-  'models/animations/sprint.json': SPRINT,
   'models/animations/walk.json': WALK,
 };
 
@@ -33,18 +32,23 @@ export function suppliedRunClips(): readonly RunClip[] {
 }
 
 /**
- * Run-clip profile for the calibrated player: Fast Run and Sprint (ascending nominal speed). The clip weight ramps in
- * over [0.55, 0.70] x the slowest nominal speed (0.70 = its minimum playback rate); below it, and while airborne or
- * falling, the procedural gait is the explicit fallback. The weight changes at most 1 per 0.2 s.
+ * Plan 13d: the jog. minStride and liftScale are look settings, set by the user by eye in the lab's tune panel; the share
+ * follows the speed at 12 rad/s (critically damped: 0.2 s to settle within 10% of a step).
+ */
+export const RUN_JOG = { minStride: 0.45, liftScale: 1, shareRadPerS: 12 };
+
+/**
+ * Run-clip profile for the calibrated player (plan 13d): Fast Run for every run speed, from a jog to top speed. Below its
+ * slowest cadence the stride shortens (RUN_JOG); the clip weight ramps in over [1.6, 2.2] m/s, and below it, and while
+ * airborne or falling, the procedural gait is the explicit fallback. The weight changes at most 1 per 0.2 s.
  */
 export function runClipsBew(over: Partial<RunClipProfile> = {}): RunClipProfile {
   const clips = suppliedRunClips();
-  const v0 = clips[0].record.nominalSpeedMps;
-  const minRate = clips[0].record.playback.minRate;
   return {
-    id: `run-clips:${clips.map((c) => c.identity).join('+')}`,
+    id: `run-clips:${clips.map((c) => c.identity).join('+')}+jog-v1`,
     clips,
-    fadeMps: [Math.round(0.55 * v0 * 1000) / 1000, Math.round(minRate * v0 * 1000) / 1000],
+    fadeMps: [1.6, 2.2],
+    run: { ...RUN_JOG },
     headingMaxDeg: 30,
     headingFadeDeg: 30,
     weightRatePerS: 5,
@@ -63,8 +67,8 @@ export function suppliedWalkClip(): RunClip {
 }
 
 /**
- * Plan 08: an L3 run-clip profile: the supplied walk first (the slowest clip), the run clips and their fade band as they
- * were, and the stance widths the user chose by eye (Fast Run lands both feet on one line under the hips). The walk plays
+ * Plan 08: an L3 run-clip profile: the supplied walk first (the slowest clip), the run clip and its fade band as they
+ * are, and the stance widths the user chose by eye (Fast Run lands both feet on one line under the hips). The walk plays
  * for a walking request only, so a run start and a stop from a run never pass through it; walking requests ramp at the
  * supplied Start Walking's speed curve (about 1.2 m/s^2), so a walk starts and stops over steps.
  */
@@ -79,6 +83,6 @@ export function runClipsL3(base: RunClipProfile = runClipsBew()): RunClipProfile
     clips: [walk, ...base.clips],
     headingRadPerS: L3_HEADING_RAD_PER_S,
     walk: { requestMps: [0.05, 2.1], fadeMps: [0.15, 0.5], minStride: 0.5, dropM: 0.025, rampMps2: 1.2, brakeB: 0.3 },
-    stanceWidthAddM: { walk: 0, 'fast-run': 0.065, sprint: 0.025 },
+    stanceWidthAddM: { walk: 0, 'fast-run': 0.065 },
   };
 }

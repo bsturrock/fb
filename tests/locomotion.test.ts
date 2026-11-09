@@ -2,6 +2,8 @@
 // errors, root-motion removal, loop seams, playback from solved travel (speed scaling, bounded fallback), independent
 // phases, held/carry-arm precedence, render-rate and reset reproducibility, limb contract, unchanged physics before the
 // first handoff, candidate/transfer audits and the exported identity.
+// Plan 13d: one run clip, Fast Run, for every run speed: below its slowest cadence the stride shortens (the jog), and the
+// swing lift and the run bob scale with the stride share.
 import { afterAll, describe, expect, it } from 'vitest';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,7 +12,9 @@ import { clipIntake } from '../scripts/model/clip-intake';
 import { idleIntake } from '../scripts/model/idle-intake';
 import { IDLE_POSE_RECORD } from '../src/sim/locomotion';
 import FAST from '../models/animations/fast-run.json';
-import { RUN_CLIPS_RECORD, decodeRunClips, runClipsBew, suppliedRunClips } from '../src/sim/model/run-clips';
+import { RUN_CLIPS_RECORD, decodeRunClips, runClipsBew, runClipsL3, suppliedRunClips, suppliedWalkClip } from '../src/sim/model/run-clips';
+import { clipHeightModel, runHeight } from '../src/sim/support';
+import { SUSPENSION_RH } from '../src/sim/profiles';
 import {
   RunClipError,
   advanceRunPlayback,
@@ -18,6 +22,7 @@ import {
   decodeRunClip,
   newRunPlayback,
   playbackArmMean,
+  playbackLabel,
   playbackSample,
   retargetSample,
   sampleRunClip,
@@ -205,7 +210,10 @@ describe('L1 asset and intake record', () => {
           // the clip rest pose is the calibrated model's rest pose (same skeleton)
           expect(r.restVsCalibrationM).toBeLessThan(0.001);
         }
-        expect(suppliedRunClips().map((c) => c.id)).toEqual(['fast-run', 'sprint']);
+        expect(suppliedRunClips().map((c) => c.id)).toEqual(['fast-run']);
+        // plan 13d: the manifest lists one run clip
+        const manifest = JSON.parse(readFileSync('models/animations/manifest.json', 'utf8')) as { id: string }[];
+        expect(manifest.map((m) => m.id)).toEqual(['walk', 'fast-run', 'idle']);
       },
     ],
   ];
@@ -326,8 +334,8 @@ describe('L1 playback from solved travel (unit)', () => {
         expect(st.w).toBe(1);
         expect(st.rate).toBeCloseTo(5 / (fr.strideM / fr.cycleS), 9);
         for (let i = 1; i < out.length; i++) expect(du(out[i - 1].u, out[i].u)).toBeCloseTo((st.rate * dt) / fr.cycleS, 9);
-        expect(drive(12, 10, dt).st.rate).toBe(P.clips[1].record.playback.maxRate);
-        expect(drive(0.6 * (fr.strideM / fr.cycleS), 10, dt).st.rate).toBe(fr.playback.minRate);
+        expect(drive(12, 10, dt).st.rate).toBe(fr.playback.maxRate);
+        expect(drive(0.6 * (fr.strideM / fr.cycleS), 10, dt).st.rate).toBeCloseTo(fr.playback.minRate, 9);
       },
     ],
     [
@@ -345,27 +353,135 @@ describe('L1 playback from solved travel (unit)', () => {
       },
     ],
     [
-      'a hard speed change crosses the clip blend at the bounded blend rate, not in one step',
+      'a walk speeding up crosses the clip blend (walk to Fast Run) at the bounded blend rate, not in one step',
       () => {
+        const L3 = runClipsL3();
         const dt = 1 / 240;
         const st = newRunPlayback(0);
         let x = 0;
-        const step = (v: number) => {
+        const step = (v: number, req: number) => {
           x += v * dt;
-          advanceRunPlayback(st, P, { coreP: v3(x, 0, 0), forward: v3(1, 0, 0), supported: true, dt, legM });
+          advanceRunPlayback(st, L3, { coreP: v3(x, 0, 0), forward: v3(1, 0, 0), supported: true, dt, legM, requestMps: req, braking: false });
         };
-        advanceRunPlayback(st, P, { coreP: v3(), forward: v3(1, 0, 0), supported: true, dt: 0, initSpeed: 6.8, initDir: v3(1, 0, 0), legM });
-        for (let i = 0; i < 20; i++) step(6.8);
-        expect(st.pos).toBe(1);
+        advanceRunPlayback(st, L3, { coreP: v3(), forward: v3(1, 0, 0), supported: true, dt: 0, initSpeed: 1.5, initDir: v3(1, 0, 0), legM, requestMps: 1.5, braking: false });
+        for (let i = 0; i < 20; i++) step(1.5, 1.5);
+        expect(st.pos).toBe(0);
+        expect(st.walking).toBe(true);
         const pos = [st.pos];
         for (let i = 0; i < 240; i++) {
-          step(5);
+          step(3.5, 3.5);
           pos.push(st.pos);
           expect(st.k + st.blend).toBeCloseTo(st.pos, 12);
         }
-        for (let i = 1; i < pos.length; i++) expect(Math.abs(pos[i] - pos[i - 1])).toBeLessThanOrEqual(P.blendRatePerS * dt + 1e-12);
-        expect(pos[1]).toBeGreaterThan(0.9);
-        expect(pos.at(-1)).toBe(0);
+        for (let i = 1; i < pos.length; i++) expect(Math.abs(pos[i] - pos[i - 1])).toBeLessThanOrEqual(L3.blendRatePerS * dt + 1e-12);
+        expect(pos[1]).toBeLessThan(0.1);
+        expect(pos.at(-1)).toBe(1);
+        // plan 13d: the label names the clip that plays (Fast Run alone at blend 1, not the walk+fast-run pair)
+        expect(playbackLabel(st, L3)).toBe('fast-run');
+        // on the run clip the stride is the jog's share at its slowest cadence (followed: settled after 1 s)
+        const fr = L3.clips[1].record;
+        expect(st.stride).toBeCloseTo(3.5 / (fr.playback.minRate * (fr.strideM / fr.cycleS)), 3);
+      },
+    ],
+    [
+      'plan 13d: one run clip, Fast Run, for every run speed; the jog shortens the stride at the slowest cadence; 6.6 m/s plays at 1.13x',
+      () => {
+        const fr = P.clips[0].record;
+        expect(P.clips.map((c) => c.id)).toEqual(['fast-run']);
+        expect(P.id).toBe(`run-clips:${P.clips[0].identity}+jog-v1`);
+        expect(P.fadeMps).toEqual([1.6, 2.2]);
+        expect(P.run).toEqual({ minStride: 0.45, liftScale: 1, shareRadPerS: 12 });
+        expect(runClipsL3().clips.map((c) => c.id)).toEqual(['walk', 'fast-run']);
+        expect(runClipsL3().stanceWidthAddM).toEqual({ walk: 0, 'fast-run': 0.065 });
+        const nominal = fr.strideM / fr.cycleS;
+        const vMin = fr.playback.minRate * nominal;
+        expect(vMin).toBeCloseTo(4.08, 2);
+        const dt = 1 / 240;
+        // at and above the slowest cadence: the full stride, the cadence follows the speed
+        const above = drive(vMin + 0.05, 60, dt).st;
+        expect(above.stride).toBe(1);
+        expect(above.lift).toBe(1);
+        expect(above.rate).toBeCloseTo((vMin + 0.05) / nominal, 9);
+        // a jog: the stride shortens, the cadence stays at its slowest, the clip plays
+        for (const v of [2.5, 3.5]) {
+          const st = drive(v, 60, dt).st;
+          expect(st.w).toBe(1);
+          expect(st.stride).toBeCloseTo(v / vMin, 9);
+          expect(st.lift).toBeCloseTo((v / vMin) ** P.run!.liftScale, 9);
+          expect(st.rate).toBeCloseTo(fr.playback.minRate, 9);
+        }
+        // the shortest stride, at 1.84 m/s; slower keeps it (the slowest cadence then holds and the feet slip)
+        const vShort = P.run!.minStride * vMin;
+        expect(vShort).toBeCloseTo(1.84, 2);
+        expect(drive(vShort, 60, dt).st.stride).toBeCloseTo(P.run!.minStride, 9);
+        expect(drive(vShort - 0.1, 60, dt).st.stride).toBe(P.run!.minStride);
+        // top speed: 6.6 m/s inside the 1.3x limit
+        expect(Math.abs(drive(6.6, 60, dt).st.rate - 1.13)).toBeLessThanOrEqual(0.01);
+        // the lift scale is the exponent of the share
+        const sq = runClipsBew({ run: { minStride: 0.45, liftScale: 2, shareRadPerS: 12 } });
+        const st = newRunPlayback(0);
+        advanceRunPlayback(st, sq, { coreP: v3(), forward: v3(1, 0, 0), supported: true, dt: 0, initSpeed: 3, initDir: v3(1, 0, 0), legM });
+        expect(st.lift).toBeCloseTo((3 / vMin) ** 2, 9);
+        // the share follows a speed step critically damped: no jump in a substep, no overshoot, settled within 1 s
+        const f = newRunPlayback(0);
+        let fx = 0;
+        advanceRunPlayback(f, P, { coreP: v3(), forward: v3(1, 0, 0), supported: true, dt: 0, initSpeed: 5, initDir: v3(1, 0, 0), legM });
+        const shares = [f.share!];
+        for (let i = 0; i < 240; i++) {
+          fx += 2.5 * dt;
+          advanceRunPlayback(f, P, { coreP: v3(fx, 0, 0), forward: v3(1, 0, 0), supported: true, dt, legM });
+          shares.push(f.share!);
+        }
+        expect(shares[0]).toBe(1);
+        expect(1 - shares[1]).toBeLessThan(0.01);
+        for (let i = 1; i < shares.length; i++) expect(shares[i]).toBeLessThanOrEqual(shares[i - 1]);
+        expect(shares.at(-1)!).toBeCloseTo(2.5 / vMin, 2);
+        expect(shares.at(-1)!).toBeGreaterThanOrEqual(2.5 / vMin - 1e-12);
+        // a substep with no travel measured (the first after setup) holds the share: it does not follow 0 m/s down
+        const h = newRunPlayback(0);
+        advanceRunPlayback(h, P, { coreP: v3(), forward: v3(1, 0, 0), supported: true, dt: 0, initSpeed: 6, initDir: v3(1, 0, 0), legM });
+        advanceRunPlayback(h, P, { coreP: v3(), forward: v3(1, 0, 0), supported: true, dt, legM });
+        expect(h.share).toBe(1);
+        expect(h.shareV).toBe(0);
+        // without the block: no share, no lift (the historical path)
+        const none = newRunPlayback(0);
+        advanceRunPlayback(none, { ...P, run: undefined }, { coreP: v3(), forward: v3(1, 0, 0), supported: true, dt: 0, initSpeed: 3, initDir: v3(1, 0, 0), legM });
+        expect(none.stride).toBeUndefined();
+        expect(none.lift).toBeUndefined();
+      },
+    ],
+    [
+      'plan 13d: the lift scales the swing foot and the run bob; the stance foot keeps the floor',
+      () => {
+        const def = L1.l1f1('fastRun');
+        const body = def.players[0].body;
+        const R = def.ragdoll!;
+        const clip = P.clips[0];
+        const core = { p: v3(0, 0.9, 0), q: { x: 0, y: 0, z: 0, w: 1 } };
+        const opts = { armSwing: false, carrySwing: 0, restToe: clip.restToe, armMean: clip.meanArm };
+        const st = clip.record.stance.left;
+        const sole = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
+        const ankleY = (u: number, lift?: number): number => {
+          const l = retargetSample(sampleRunClip(clip, u), 1, body, R, core, 0, lift === undefined ? opts : { ...opts, lift }).legs.left.ankleLocal;
+          return l.y + core.p.y - sole;
+        };
+        // mid-swing: half the lift is half the height above the flat-shoe ankle
+        const swingU = (st[1] + 1) / 2;
+        expect(ankleY(swingU)).toBeGreaterThan(0.05);
+        expect(ankleY(swingU, 0.5)).toBeCloseTo(0.5 * ankleY(swingU), 9);
+        expect(ankleY(swingU, 1)).toBe(ankleY(swingU));
+        // mid-stance: unchanged
+        const stanceU = (st[0] + st[1]) / 2;
+        expect(ankleY(stanceU, 0.5)).toBeCloseTo(ankleY(stanceU), 12);
+        // the bob: the lift multiplies its scale
+        const S = SUSPENSION_RH;
+        const models = P.clips.map((c) => clipHeightModel(c, S.run.bobHarmonics));
+        const cal = { legM: R.lengths.thigh + R.lengths.shin, soleM: sole, hipLocalY: -0.1 };
+        const pb = drive(3, 60, 1 / 240).st;
+        const full = runHeight(S, P, models, { ...pb, lift: 1 }, cal, -9.81);
+        const half = runHeight(S, P, models, { ...pb, lift: 0.5 }, cal, -9.81);
+        expect(half.bobScale).toBeCloseTo(0.5 * full.bobScale, 12);
+        expect(full.bobScale).toBeGreaterThan(0);
       },
     ],
     [
@@ -373,7 +489,11 @@ describe('L1 playback from solved travel (unit)', () => {
       async () => {
         const def = L1.l1f1('fastRun');
         await expect(Simulation.create({ ...def, runClips: runClipsBew({ clips: [] }) })).rejects.toThrow(/no clips/);
-        await expect(Simulation.create({ ...def, runClips: runClipsBew({ clips: [...suppliedRunClips()].reverse() }) })).rejects.toThrow(/ascending nominal speed/);
+        await expect(Simulation.create({ ...def, runClips: runClipsBew({ clips: [...suppliedRunClips(), suppliedWalkClip()] }) })).rejects.toThrow(/ascending nominal speed/);
+        await expect(Simulation.create({ ...def, runClips: runClipsBew({ run: { minStride: 0, liftScale: 1, shareRadPerS: 12 } }) })).rejects.toThrow(/invalid run stride/);
+        await expect(Simulation.create({ ...def, runClips: runClipsBew({ run: { minStride: 1.2, liftScale: 1, shareRadPerS: 12 } }) })).rejects.toThrow(/invalid run stride/);
+        await expect(Simulation.create({ ...def, runClips: runClipsBew({ run: { minStride: 0.5, liftScale: 1, shareRadPerS: 0 } }) })).rejects.toThrow(/invalid run stride/);
+        await expect(Simulation.create({ ...def, runClips: runClipsBew({ run: { minStride: 0.5, liftScale: -1, shareRadPerS: 12 } }) })).rejects.toThrow(/invalid run stride/);
         await expect(Simulation.create({ ...def, runClips: runClipsBew({ fadeMps: [3, 2] }) })).rejects.toThrow(/fade band/);
         await expect(Simulation.create({ ...def, runClips: runClipsBew({ blendRatePerS: 0 }) })).rejects.toThrow(/blend rate/);
         const R = def.ragdoll!;
@@ -396,7 +516,7 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
       async () => {
         for (const [kind, clipLabel] of [
           ['fastRun', 'fast-run'],
-          ['sprint', 'fast-run+sprint'],
+          ['sprint', 'fast-run'],
         ] as const) {
           const def = L1.l1f1(kind);
           const sim = await shared(def);
@@ -407,14 +527,18 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
             const b = rows[i].r.run!;
             expect(b.w).toBe(1);
             expect(b.clip).toBe(clipLabel);
-            const cyc = P_cycle(b.b);
+            expect(b.b).toBe(0);
+            // plan 13d: both speeds are above the slowest cadence: the full stride from the first tick
+            expect(b.s, `${kind} ${rows[i].t}`).toBe(1);
+            const cyc = REC('fast-run').cycleS;
             expect(Math.abs(du(a.u, b.u) - (b.r * tick) / cyc)).toBeLessThan(2e-4);
           }
           const last = rows.at(-1)!.r.run!;
-          if (kind === 'sprint') expect(last.b).toBe(1);
-          const rec = REC(kind === 'fastRun' ? 'fast-run' : 'sprint');
+          const rec = REC('fast-run');
           const nominal = (rec.strideM * legScale(def, rec)) / rec.cycleS;
           expect(last.r).toBeCloseTo(Math.min(rec.playback.maxRate, Math.max(rec.playback.minRate, last.v / nominal)), 3);
+          // plan 13d: the 6.6 m/s request plays Fast Run at about 1.13x its cadence
+          if (kind === 'sprint') expect(Math.abs(last.r - 1.13)).toBeLessThanOrEqual(0.01);
           console.log(`[L1-F1-${kind}] v ${last.v} m/s rate ${last.r} clip ${last.clip} max residuals ${JSON.stringify(maxRes(rows))}`);
         }
       },
@@ -442,7 +566,9 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
         const rows = playerRows(sim, 'R').filter((x) => x.r.run && x.r.run.w > 0 && x.r.run.b === 0);
         const slow = rows.filter((x) => x.r.run!.v < 0.8 * 5.8);
         expect(slow.length).toBeGreaterThan(0);
-        for (const x of rows) expect(x.r.run!.r).toBeCloseTo(Math.min(rec.playback.maxRate, Math.max(rec.playback.minRate, x.r.run!.v / nominal)), 3);
+        // plan 13d: over the jog's stride share (traced as s), which follows the speed critically damped
+        for (const x of rows) expect(x.r.run!.r).toBeCloseTo(Math.min(rec.playback.maxRate, Math.max(rec.playback.minRate, x.r.run!.v / (nominal * x.r.run!.s!))), 3);
+        expect(slow.some((x) => x.r.run!.s! < 1)).toBe(true);
       },
     ],
     [
@@ -696,12 +822,6 @@ describe('L1 fixtures: supplied clips in the simulation', () => {
     }
   });
 });
-
-/** Blended cycle length of the supplied pair at blend b. */
-function P_cycle(b: number): number {
-  const [a, c] = suppliedRunClips().map((x) => x.record.cycleS);
-  return a + (c - a) * b;
-}
 
 function maxRes(rows: { r: PlayerTraceRow }[]): Record<string, number> {
   const m: Record<string, number> = {};

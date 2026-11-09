@@ -380,7 +380,9 @@ export function runHeight(
   // plan 08: a walk's shorter stride bobs less and it walks lower, so the stance leg reaches the ground
   const walkW = P.walk ? Math.max(0, 1 - st.pos) : 0;
   const s0 = peak > 0 ? Math.min(1, (S.run.maxDownAccelG * Math.abs(g)) / peak) : 1;
-  const s = walkW > 0 ? s0 * (1 - walkW * (1 - (st.stride ?? 1))) : s0;
+  const sw = walkW > 0 ? s0 * (1 - walkW * (1 - (st.stride ?? 1))) : s0;
+  // plan 13d: the jog bobs less (its lift scale; absent, unchanged)
+  const s = st.lift === undefined ? sw : sw * st.lift;
   const hA = clipRootHeight(A, cal, st.u, s);
   const h = (B && t > 0 ? hA + (clipRootHeight(B, cal, st.u, s) - hA) * t : hA) - (walkW > 0 ? walkW * P.walk!.dropM : 0);
   // exact time derivatives of the scaled bob at a constant phase rate (rate and blend changes are not fed forward)

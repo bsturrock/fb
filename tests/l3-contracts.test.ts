@@ -45,6 +45,7 @@ import {
   COPIES,
   COPY_IDS,
   covers,
+  DEFENDER_13F,
   DEFENDER_BOB,
   FEET,
   FIRST,
@@ -82,6 +83,7 @@ import {
   RULE_FIXTURES,
   RULE_REF,
   RULE_REF_SPOT,
+  FULL_STRIDE,
   RUN_START,
   runWatched,
   SEAM,
@@ -316,7 +318,8 @@ describe('plan 10b foot target continuity', () => {
           // before 10b: L3-F3-side D left 0.0583 s went from 20.51 m/s to 0 in one substep (8.55 cm second difference), and the
           // same at R 0.2708 s, D left 0.3333 s and L3-F1-phase0 0.6708 s. Those runs have changed with the fix; each fixture
           // still has steps running out of time at speed
-          for (const id of ['L3-F3-side', 'L3-F1-phase0']) {
+          // plan 13d: L3-F1-phase0 has none now; L3-F1-phase1 D left 0.721 s slows from 11.0 to 10.5 m/s within its limit
+          for (const id of ['L3-F3-side', 'L3-F1-phase1']) {
             const { outOfTime } = await of(id);
             const moving = outOfTime.filter((x) => x.speed > 1);
             expect(moving.length, id).toBeGreaterThan(0);
@@ -385,7 +388,8 @@ describe('plan 08 foot limits at every actual substep', () => {
           'a carried handover is under the bound from its first update, and the planner records that update',
           () => {
             // the follow path these legs came off was going down at 3.25 m/s (phase3) and 2.85 m/s (phase0) when a step took them over
-            for (const id of ['L3-F1-phase3', 'L3-F1-phase0', 'L3-F1-low']) {
+            // (plan 13d: L3-F1-low's D carries none now; L3-F1-phase6's D left does, at 0.479 s)
+            for (const id of ['L3-F1-phase3', 'L3-F1-phase0', 'L3-F1-phase6']) {
               const { seen } = FEET.get(id)!;
               expect(seen.nCarried, id).toBeGreaterThan(0);
               expect(seen.lift, id).toBeGreaterThan(0.9 * LIFT);
@@ -431,6 +435,7 @@ describe('plan 08 pass 1: start, brake, settle', () => {
 describe('plan 08 pass 2: idle and walking', () => {
   passTest('L3-F13 and L3-F15: standing still has no stepping, root offset or arm chatter; stops settle on existing plants and stay; the fitted posture keeps the supplied stance and converts valid', [STANDS_STILL, SETTLE_PLANTS, FITTED]);
   passTest('L3-F14: a free arm swings visibly at a walk, carry and ready keep their assignment; a walk starts and stops over steps; walk, run and stop stay valid', [ARM_SWING, WALK_STEPS, WALK_VALID]);
+  passTest('plan 13d: a constant 6.6 m/s run keeps the full stride from the first substep: L3-F16-sprint', [FULL_STRIDE]);
   passTest('L3-F17: a run start goes foot by foot, the strides growing, through the walk into the run: every L3-F17 fixture', [RUN_START]);
 });
 
@@ -438,7 +443,8 @@ describe('plan 08 pass 3: contact integration', () => {
   passTest('no shared stance reset: anchors held at entry stay, every target finite, whatever the phase: every L3-F1 fixture', [ANCHORS]);
   passTest('temporary airborne recovery: probe support lost in the named mode and regained, feet airborne, no support force in the air, no conversion: every L3-F9-lift fixture', [LIFT_RECOVERY]);
   passTest('a labelled conversion or a loss of probe support in the named mode is an audited, irreversible fall: every L3-F9-convert and L3-F9-noProbe fixture, and the low runner in contact', [AUDITED_FALL]);
-  passTest('the defender converts on the measured sign of its bob: every L3-F9-defender fixture', [DEFENDER_BOB]);
+  passTest('the defender converts on the measured sign of its bob: the L3-F10 rising and falling holds', [DEFENDER_BOB]);
+  passTest('plan 13d known limits: the L3-F9 one-arm defenders convert on support loss (rising) or are rejected (falling and L3-F1-falling, to plan 13f)', [DEFENDER_13F]);
   passTest(
     'contact entry: preparation unwinds with no contact (L3-F2); the mode follows the first observed contact within a tick (L3-F3); legs keep stepping in contact and tackles end as their copies do (L3-F4/F5)',
     [PREP_UNWINDS, FOLLOWS_CONTACT, KEEP_STEPPING],
