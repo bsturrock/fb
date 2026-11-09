@@ -1,108 +1,369 @@
 // Plan 10a: the test gate and evidence integrity. The fixture runner cannot damage committed evidence, exports identify
 // their profiles by id and by value, reset leaves nothing behind, events are stamped with their trace row, stops keep
 // their cause, numerical failures stop at once, and the engine lifecycle is safe to repeat.
+// Plan 10f (F2): debug switches belong to one simulation. Two simulations stepped side by side in one process, one with a
+// switch on, each reproduce their own solo run; the export records every switch that is on and nothing otherwise; the
+// read-only pose diagnostics change nothing and are not exported.
+// Plan 13b: every plan's opt-in check (its profile on for exactly its fixtures) and export check (the export names its
+// profiles by id and by value), one table each.
+// Lab render contract (plan 06 pass 3; plan 13a look-ahead playback). The lab draws per-tick snapshots, interpolated
+// between the two frames around the shown time; the follow camera tracks what is drawn. The simulation runs ahead of
+// the shown time within a wall-time budget per display frame, so a slow tick costs buffer lead, not frames.
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { FixedStepDriver } from '../src/sim/driver';
 import { cullGeom, geomNear, initPhysics, PhysicsWorld, RAPIER, shapeRadius } from '../src/sim/physics';
 import { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
+import { poseProbe, type SimDebug } from '../src/sim/debug';
+import { followCenter } from '../src/lab/follow';
+import { Playback, type PlaybackSource } from '../src/lab/playback';
+import { FrameCapture, type LabFrame } from '../src/lab/snapshot';
+import * as L1 from '../src/sim/fixtures/locomotion';
+import { len, v3, type Vec3 } from '../src/sim/vec';
 import { assertUniqueIds, runFixtures } from '../scripts/fixture-runner';
-import { breathe, create, FIX, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
+import { g1f4, g1f8Cases, g1f9Fit } from '../src/sim/fixtures/gate1';
+import { asL3 } from '../src/sim/fixtures/transitions';
+import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
+import { LOCOMOTION_L3 } from '../src/sim/locomotion';
+import { suppliedRunClips } from '../src/sim/model/run-clips';
+import { FALL_L4, JOINT_RANGE_V1, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
+import { ruleProfileExport } from '../src/sim/rules';
+import { breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
 /** Key-order independent serialization (deep equality of plain profile data). */
 const stable = (v: unknown): string =>
   JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) && !ArrayBuffer.isView(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
 
-describe('10a A2: the fixture runner', () => {
-  it('a filtered run writes summary.filtered.json and leaves summary.json byte-identical', async () => {
-    const committed = sha('evidence/summary.json');
-    const dir = mkdtempSync(join(tmpdir(), 'fixtures-'));
+/**
+ * L4-F10-wrap-on stepped directly, once for the file: the core position after every tick (the lab's real-fixture frames
+ * are compared with it) and the most Rapier shape queries in one tick (plan 13a). Counting never changes a result.
+ */
+let wrapOnRun: Promise<{ ref: { t: number; core: Vec3 }[]; worst: { n: number; t: number } }> | null = null;
+function wrapOnDirect(): NonNullable<typeof wrapOnRun> {
+  return (wrapOnRun ??= (async () => {
+    await initPhysics();
+    const q = shapeQueryCounter();
     try {
-      const sentinel = join(dir, 'summary.json');
-      writeFileSync(sentinel, '[{"sentinel":true}]');
-      const before = sha(sentinel);
-      const r = await runFixtures({ filter: /^G1-F1$/, evidenceDir: dir, log: () => {} });
-      expect(r.failed).toEqual([]);
-      expect(r.summaries.map((s) => s.fixtureId)).toEqual(['G1-F1']);
-      expect(r.summaryPath).toBe(join(dir, 'summary.filtered.json'));
-      expect(JSON.parse(readFileSync(r.summaryPath!, 'utf8'))).toHaveLength(1);
-      expect(sha(sentinel)).toBe(before);
+      const direct = await create(FIX('L4-F10-wrap-on'));
+      q.take();
+      let worst = { n: 0, t: 0 };
+      const ref: { t: number; core: Vec3 }[] = [];
+      const corePos = (s: Simulation): Vec3 => ({ ...s.poseOf(s.players[0]).p });
+      ref.push({ t: direct.t, core: corePos(direct) });
+      while (!direct.done) {
+        direct.stepTick();
+        const n = q.take();
+        if (n > worst.n) worst = { n, t: direct.t };
+        ref.push({ t: direct.t, core: corePos(direct) });
+        await pace();
+      }
+      direct.dispose();
+      return { ref, worst };
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      q.restore();
     }
-    expect(sha('evidence/summary.json')).toBe(committed);
-  });
+  })());
+}
 
-  it('duplicate ids are refused; a fixture that throws fails the run, writes no summary and still disposes', async () => {
-    const g = FIX('G1-F1');
-    expect(() => assertUniqueIds([g, { ...g }])).toThrow(/duplicate fixture id G1-F1/);
-    const bad: FixtureDef = { ...g, id: 'G1-F1-badMotor', motor: { ...g.motor, braking: { maxDecelMps2: -1 } } };
-    const dir = mkdtempSync(join(tmpdir(), 'fixtures-'));
-    try {
-      const r = await runFixtures({ defs: [g, bad], evidenceDir: dir, log: () => {} });
-      expect(r.failed.map((f) => f.id)).toEqual(['G1-F1-badMotor']);
-      expect(r.summaryPath).toBeNull();
-      expect(() => readFileSync(join(dir, 'summary.json'))).toThrow();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+describe('10a A2: the fixture runner', () => {
+  const CHECKS: [string, () => Promise<void>][] = [
+    [
+      'a filtered run writes summary.filtered.json and leaves summary.json byte-identical',
+      async () => {
+        const committed = sha('evidence/summary.json');
+        const dir = mkdtempSync(join(tmpdir(), 'fixtures-'));
+        try {
+          const sentinel = join(dir, 'summary.json');
+          writeFileSync(sentinel, '[{"sentinel":true}]');
+          const before = sha(sentinel);
+          const r = await runFixtures({ filter: /^G1-F1$/, evidenceDir: dir, log: () => {} });
+          expect(r.failed).toEqual([]);
+          expect(r.summaries.map((s) => s.fixtureId)).toEqual(['G1-F1']);
+          expect(r.summaryPath).toBe(join(dir, 'summary.filtered.json'));
+          expect(JSON.parse(readFileSync(r.summaryPath!, 'utf8'))).toHaveLength(1);
+          expect(sha(sentinel)).toBe(before);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+        expect(sha('evidence/summary.json')).toBe(committed);
+      },
+    ],
+    [
+      'duplicate ids are refused; a fixture that throws fails the run, writes no summary and still disposes',
+      async () => {
+        const g = FIX('G1-F1');
+        expect(() => assertUniqueIds([g, { ...g }])).toThrow(/duplicate fixture id G1-F1/);
+        const bad: FixtureDef = { ...g, id: 'G1-F1-badMotor', motor: { ...g.motor, braking: { maxDecelMps2: -1 } } };
+        const dir = mkdtempSync(join(tmpdir(), 'fixtures-'));
+        try {
+          const r = await runFixtures({ defs: [g, bad], evidenceDir: dir, log: () => {} });
+          expect(r.failed.map((f) => f.id)).toEqual(['G1-F1-badMotor']);
+          expect(r.summaryPath).toBeNull();
+          expect(() => readFileSync(join(dir, 'summary.json'))).toThrow();
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      },
+    ],
+  ];
+
+  it('a filtered run leaves summary.json byte-identical; duplicate ids are refused; a fixture that throws fails the run, writes no summary and still disposes', async () => {
+    await rows(CHECKS, ([n]) => n, ([, f]) => f());
   });
 });
 
-describe('10a A3/A4/A12: exports identify their profiles', () => {
-  it('every non-null profile id in an export has a profiles entry with the same id (all fixtures)', async () => {
-    let carry = 0;
-    for (const def of allFixtures()) {
-      const sim = await Simulation.create(def, { trace: false });
-      const ex = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown>; engine: { version: string } };
-      for (const [k, id] of Object.entries(ex.profileIds)) {
-        if (id === undefined || id === null) continue;
-        const p = ex.profiles[k];
-        expect(p, `${def.id}: profiles.${k}`).toBeDefined();
-        if (k === 'body') {
-          for (const [pid, bid] of Object.entries(id as Record<string, string>)) expect((p as Record<string, { id: string }>)[bid]?.id, `${def.id}: body of ${pid}`).toBe(bid);
-        } else expect((p as { id: string }).id, `${def.id}: profiles.${k}.id`).toBe(id);
+// ---------------------------------------------------------------------------------------------------------------------
+// Plan 13b: the profile opt-in checks and the export checks of every plan, one table each (each row is the plan's own
+// test, its assertions as they were)
+
+type Row = [string, () => void | Promise<void>];
+
+const OPT_IN: Row[] = [
+  [
+    'G4 does not alter prior gate profiles: every G1-G3 fixture keeps SOLVER_G1 and declares no ragdoll or rule profile',
+    () => {
+      for (const d of allFixtures().filter((f) => f.gate < 4)) {
+        expect(d.solver).toEqual(SOLVER_G1);
+        expect(d.ragdoll).toBeUndefined();
+        expect(d.rules).toBeUndefined();
       }
-      if (def.carry) {
-        carry++;
-        expect(stable(ex.profiles.carry)).toBe(stable(def.carry));
+    },
+  ],
+  [
+    'L2 braking limit: L2 locomotion fixtures use the braking motor; RH, tackle copies and support repairs keep theirs',
+    () => {
+      for (const d of allFixtures()) {
+        if (d.id.startsWith('L3-')) continue; // plan 08 copies keep the motor of the fixture each was built from
+        // L2-F3-runStopHard: the same run stopped by the original motor (plan 07 item 3 regression), deliberately unbraked
+        const loco = /^L2-F(1|2|3|4|5|6|7|11|12)-/.test(d.id) && d.id !== 'L2-F3-runStopHard';
+        const ms = [d.motor, ...d.players.map((p) => p.motor).filter((m) => m !== undefined)];
+        for (const m of ms) expect(!!m!.braking, `${d.id} ${m!.id}`).toBe(loco);
       }
-      expect(ex.engine.version).toBe(RAPIER.version());
+    },
+  ],
+  [
+    'plan 08: only L3 fixtures take the composed planner and the locomotion profile; earlier ids keep their paths',
+    () => {
+      expect(FOOTWORK_L2.compose).toBeUndefined();
+      expect(FOOTWORK_L3.id).toBe('footwork-l3-v3');
+      expect(LOCOMOTION_L3.id).toBe('locomotion-l3-v3');
+      for (const d of allFixtures()) {
+        if (d.id.startsWith('L4-')) continue; // later than L3: its falls start from L3 fixtures, with their profiles
+        if (d.id.startsWith('L3-')) {
+          expect(d.footwork, d.id).toBe(FOOTWORK_L3);
+          expect(d.locomotion, d.id).toBe(LOCOMOTION_L3);
+        } else {
+          expect(d.locomotion, d.id).toBeUndefined();
+          expect((d.footwork as typeof FOOTWORK_L3 | undefined)?.compose, d.id).toBeUndefined();
+        }
+      }
+    },
+  ],
+  [
+    'L4: only L4 fixtures carry a response or an envelope',
+    () => {
+      for (const d of allFixtures().filter((x) => x.milestone !== 'L4')) {
+        expect(d.fallResponse, d.id).toBeUndefined();
+        expect(d.ragdoll?.envelope, d.id).toBeUndefined();
+      }
+    },
+  ],
+  [
+    'plan 10b: the coached entry aims with the phase it has just observed in L3 and later; the gate 1 fixtures do not',
+    () => {
+      const l3 = asL3(g1f9Fit(), 'L3-x');
+      expect(l3.players.find((p) => p.id === 'D')!.controller).toMatchObject({ kind: 'coachedEntry', phaseFirst: true });
+      for (const d of [g1f9Fit(), ...g1f8Cases()]) for (const p of d.players) expect((p.controller as { phaseFirst?: boolean }).phaseFirst, d.id).toBeUndefined();
+    },
+  ],
+  [
+    'plan 10e: L3 and L4 referee on revision 2; every historical fixture keeps its profile, with no revision in its export',
+    () => {
+      const REV2 = rulesRevision2(RULES_FOOTBALL('R', { sideline: false }));
+      const all = allFixtures().filter((d) => d.rules);
+      const recent = all.filter((d) => /^L[34]$/.test(d.milestone));
+      const hist = all.filter((d) => !/^L[34]$/.test(d.milestone));
+      expect(recent.length).toBeGreaterThan(30);
+      expect(hist.length).toBeGreaterThan(20);
+      for (const d of recent) {
+        expect(d.rules!.revision, d.id).toBe(2);
+        expect(d.rules!.id, d.id).toMatch(/\+revision=2$/);
+      }
+      for (const d of hist) {
+        expect(d.rules!.revision, d.id).toBeUndefined();
+        expect(d.rules!.id, d.id).not.toContain('revision');
+        expect(Object.keys(ruleProfileExport(d.rules!)), d.id).not.toContain('revision');
+      }
+      // idempotent: an L3 fixture's rules are not wrapped again by L4
+      expect(rulesRevision2(REV2)).toBe(REV2);
+    },
+  ],
+  [
+    'plan 12: joint range is on for exactly the L3, L4 and HC fixtures, and the export records it',
+    async () => {
+      const J = JOINT_RANGE_V1;
+      for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? J : undefined);
+      for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
+        const sim = await Simulation.create(d);
+        const e = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
+        expect(e.profileIds.jointRange, d.id).toBe(d.jointRange?.id);
+        expect(e.profiles.jointRange, d.id).toEqual(d.jointRange);
+        sim.dispose();
+      }
+    },
+  ],
+];
+
+const EXPORTS: Row[] = [
+  [
+    'G1-C: exported fixture JSON carries schema, profiles, solver settings, tick-indexed inputs and measured mass',
+    async () => {
+      const sim = await run(g1f4({ kind: 'compound' }));
+      const ex = sim.exportFixture() as any;
+      expect(ex.schemaVersion).toBe('tackling-v1.1');
+      expect(ex.profileIds.solver).toBe('solver-g1-1x60');
+      expect(ex.profileIds.stance).toBe('stance-g1-pitchRollLocked');
+      expect(ex.players[0].controller.segments[0].fromTick).toBe(0);
+      expect(ex.players[0].measuredMass.massKg).toBeCloseTo(100, 3);
+      expect(ex.profiles.solver.passiveFriction).toBe(0.7);
+      expect(ex.randomSeed).toBeNull();
+      expect(JSON.parse(JSON.stringify(ex))).toEqual(ex);
+    },
+  ],
+  [
+    'L1: export and trace carry the clip profile identity and per-player playback',
+    async () => {
+      const def = L1.l1f4();
+      const sim = await Simulation.create(def);
+      sim.stepTick();
+      await pace();
+      const ex = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
+      expect(ex.profileIds.runClips).toBe(def.runClips!.id);
+      expect(def.runClips!.id).toBe(`run-clips:${suppliedRunClips().map((c) => c.identity).join('+')}`);
+      const json = JSON.stringify(ex.profiles.runClips);
+      for (const c of suppliedRunClips()) expect(json).toContain(c.identity);
+      expect(json).not.toContain('"frames"');
+      const row = sim.trace.at(-1)!.players;
+      for (const id of ['R', 'D']) expect(Object.keys(row[id].run!).sort()).toEqual(['b', 'clip', 'r', 'res', 'u', 'v', 'w', 'wt']);
+      // fixtures without a clip profile export and trace nothing new
+      const g = await Simulation.create(FIX('G4-F3-twoArm-M'));
+      g.stepTick();
+      await pace();
+      expect((g.exportFixture() as { profileIds: Record<string, unknown> }).profileIds.runClips).toBeUndefined();
+      expect(g.trace.at(-1)!.players.R.run).toBeUndefined();
+      for (const s of [sim, g]) s.dispose();
+    },
+  ],
+  [
+    'plan 08: the export names the locomotion and footwork profiles and the per-player mode',
+    async () => {
+      const sim = await run(FIX('L3-F7-phase0'));
+      const x = sim.exportFixture() as { profiles: Record<string, unknown> };
+      expect(JSON.stringify(x.profiles)).toContain('locomotion-l3-v3');
+      expect(JSON.stringify(x.profiles)).toContain('footwork-l3-v3');
+      expect(sim.trace.at(-1)!.players.R.loco).toBeDefined();
       sim.dispose();
-      await breathe();
-    }
-    expect(carry).toBeGreaterThan(100);
-    expect(RAPIER.version()).toBe('0.21.0');
+    },
+  ],
+  [
+    'L4: exports report solver, profiles, effort and limit error',
+    async () => {
+      const s = await run(FIX('L4-F3-forward-on'));
+      const e = s.exportFixture() as any;
+      expect(e.profiles.fallResponse.id).toBe(FALL_L4.id);
+      expect(e.profileIds.fallResponse).toBe(FALL_L4.id);
+      expect(e.solver?.id ?? e.profileIds.solver).toBeDefined();
+      expect(e.jointLimits.R.envelope.mode).toBe('soft');
+      const row = s.trace.find((r) => r.players.R.fall)!;
+      expect(row).toBeDefined();
+      s.dispose();
+    },
+  ],
+  [
+    '10a A3/A4/A12: every non-null profile id in an export has a profiles entry with the same id (all fixtures)',
+    async () => {
+      let carry = 0;
+      for (const def of allFixtures()) {
+        const sim = await Simulation.create(def, { trace: false });
+        const ex = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown>; engine: { version: string } };
+        for (const [k, id] of Object.entries(ex.profileIds)) {
+          if (id === undefined || id === null) continue;
+          const p = ex.profiles[k];
+          expect(p, `${def.id}: profiles.${k}`).toBeDefined();
+          if (k === 'body') {
+            for (const [pid, bid] of Object.entries(id as Record<string, string>)) expect((p as Record<string, { id: string }>)[bid]?.id, `${def.id}: body of ${pid}`).toBe(bid);
+          } else expect((p as { id: string }).id, `${def.id}: profiles.${k}.id`).toBe(id);
+        }
+        if (def.carry) {
+          carry++;
+          expect(stable(ex.profiles.carry)).toBe(stable(def.carry));
+        }
+        expect(ex.engine.version).toBe(RAPIER.version());
+        sim.dispose();
+        await breathe();
+      }
+      expect(carry).toBeGreaterThan(100);
+      expect(RAPIER.version()).toBe('0.21.0');
+    },
+  ],
+  [
+    '10a A3/A4/A12: one id stands for one set of values, for every profile kind over the registry',
+    () => {
+      const kinds = ['motor', 'solver', 'stance', 'armProfile', 'balance', 'ragdoll', 'rules', 'runClips', 'support', 'footwork', 'locomotion', 'carry', 'fallResponse'] as const;
+      const seen = new Map<string, { value: string; fixture: string }>();
+      const clash: string[] = [];
+      const note = (kind: string, p: { id: string } | undefined, fixture: string): void => {
+        if (!p) return;
+        const k = `${kind}:${p.id}`;
+        const value = stable(p);
+        const prev = seen.get(k);
+        if (!prev) seen.set(k, { value, fixture });
+        else if (prev.value !== value) clash.push(`${k} (${prev.fixture} vs ${fixture})`);
+      };
+      for (const d of allFixtures()) {
+        for (const k of kinds) note(k, d[k] as { id: string } | undefined, d.id);
+        for (const p of d.players) {
+          note('body', p.body, d.id);
+          note('motor', p.motor, d.id);
+        }
+      }
+      expect([...new Set(clash)]).toEqual([]);
+      expect(seen.size).toBeGreaterThan(40);
+    },
+  ],
+  [
+    'plan 11: an opted export records the self-clearance profile and the trunk; every other export is as before (no trunk, no profile)',
+    async () => {
+      const on = await Simulation.create(FIX('L3-F16-sprint'));
+      const e = on.exportFixture() as { profileIds: Record<string, unknown>; profiles: { body: Record<string, { measured?: { trunkHull?: unknown[] } }>; selfClearance?: unknown } };
+      expect(e.profileIds.selfClearance).toBe(SELF_CLEARANCE_V1.id);
+      expect(e.profiles.selfClearance).toEqual(SELF_CLEARANCE_V1);
+      for (const b of Object.values(e.profiles.body)) expect(b.measured?.trunkHull).toHaveLength(7);
+      on.dispose();
+      // L2-F3-runStop uses the model body: its export keeps the measured block without the trunk or hand tip
+      const off = await Simulation.create(FIX('L2-F3-runStop'));
+      const x = JSON.stringify(off.exportFixture());
+      expect(x).toContain('"calibrationId"');
+      for (const k of ['trunkHull', 'handTipM', 'selfClearance']) expect(x).not.toContain(k);
+      off.dispose();
+    },
+  ],
+];
+
+describe('plan 13b: every plan opts its fixtures in and names its profiles in the export', () => {
+  it('each profile is on for exactly the fixtures that opt in, and every other fixture keeps its path: every opt-in row', async () => {
+    await rows(OPT_IN, ([n]) => n, ([, f]) => f());
   });
 
-  it('one id stands for one set of values, for every profile kind over the registry', () => {
-    const kinds = ['motor', 'solver', 'stance', 'armProfile', 'balance', 'ragdoll', 'rules', 'runClips', 'support', 'footwork', 'locomotion', 'carry', 'fallResponse'] as const;
-    const seen = new Map<string, { value: string; fixture: string }>();
-    const clash: string[] = [];
-    const note = (kind: string, p: { id: string } | undefined, fixture: string): void => {
-      if (!p) return;
-      const k = `${kind}:${p.id}`;
-      const value = stable(p);
-      const prev = seen.get(k);
-      if (!prev) seen.set(k, { value, fixture });
-      else if (prev.value !== value) clash.push(`${k} (${prev.fixture} vs ${fixture})`);
-    };
-    for (const d of allFixtures()) {
-      for (const k of kinds) note(k, d[k] as { id: string } | undefined, d.id);
-      for (const p of d.players) {
-        note('body', p.body, d.id);
-        note('motor', p.motor, d.id);
-      }
-    }
-    expect([...new Set(clash)]).toEqual([]);
-    expect(seen.size).toBeGreaterThan(40);
-  });
+  it('exports identify their profiles by id and by value, and an opted profile is in the export: every export row', async () => {
+    await rows(EXPORTS, ([n]) => n, ([, f]) => f());
+  }, 120000);
 });
 
 describe('10a A5: reset leaves no per-tick scratch', () => {
@@ -210,31 +471,42 @@ describe('10a A8: stops keep their cause', () => {
 });
 
 describe('10a A9: lifecycle', () => {
-  it('dispose is idempotent for the physics world and the simulation', async () => {
-    await initPhysics();
-    const w = new PhysicsWorld(FIX('G1-F1').solver);
-    w.dispose();
-    expect(() => w.dispose()).not.toThrow();
-    const sim = await Simulation.create(FIX('G1-F1'));
-    sim.dispose();
-    expect(() => sim.dispose()).not.toThrow();
-  });
+  const CHECKS: [string, () => Promise<void> | void][] = [
+    [
+      'dispose is idempotent for the physics world and the simulation',
+      async () => {
+        await initPhysics();
+        const w = new PhysicsWorld(FIX('G1-F1').solver);
+        w.dispose();
+        expect(() => w.dispose()).not.toThrow();
+        const sim = await Simulation.create(FIX('G1-F1'));
+        sim.dispose();
+        expect(() => sim.dispose()).not.toThrow();
+      },
+    ],
+    [
+      'the fixed-step driver keeps the sub-tick remainder when a frame overflows, and validates its inputs',
+      () => {
+        const d = new FixedStepDriver(1 / 60, 4);
+        expect(d.frame(1 + 0.5 / 60)).toBe(4);
+        expect(d.alpha()).toBeCloseTo(0.5, 6);
+        expect(d.discardedWallS).toBeCloseTo(56 / 60, 9);
+        expect(d.frame(0.5 / 60)).toBe(1);
+        expect(d.frame(Number.NaN)).toBe(0);
+        expect(d.frame(-1)).toBe(0);
+        expect(d.frame(Number.POSITIVE_INFINITY)).toBe(0);
+        expect(() => d.setSpeed(Number.NaN)).toThrow(RangeError);
+        expect(() => d.setSpeed(-1)).toThrow(RangeError);
+        d.setSpeed(0);
+        expect(d.frame(1)).toBe(0);
+        expect(() => new FixedStepDriver(0, 4)).toThrow(RangeError);
+        expect(() => new FixedStepDriver(1 / 60, 0)).toThrow(RangeError);
+      },
+    ],
+  ];
 
-  it('the fixed-step driver keeps the sub-tick remainder when a frame overflows, and validates its inputs', () => {
-    const d = new FixedStepDriver(1 / 60, 4);
-    expect(d.frame(1 + 0.5 / 60)).toBe(4);
-    expect(d.alpha()).toBeCloseTo(0.5, 6);
-    expect(d.discardedWallS).toBeCloseTo(56 / 60, 9);
-    expect(d.frame(0.5 / 60)).toBe(1);
-    expect(d.frame(Number.NaN)).toBe(0);
-    expect(d.frame(-1)).toBe(0);
-    expect(d.frame(Number.POSITIVE_INFINITY)).toBe(0);
-    expect(() => d.setSpeed(Number.NaN)).toThrow(RangeError);
-    expect(() => d.setSpeed(-1)).toThrow(RangeError);
-    d.setSpeed(0);
-    expect(d.frame(1)).toBe(0);
-    expect(() => new FixedStepDriver(0, 4)).toThrow(RangeError);
-    expect(() => new FixedStepDriver(1 / 60, 0)).toThrow(RangeError);
+  it('dispose is idempotent for the physics world and the simulation; the fixed-step driver keeps the sub-tick remainder when a frame overflows, and validates its inputs', async () => {
+    await rows(CHECKS, ([n]) => n, ([, f]) => f());
   });
 });
 
@@ -314,17 +586,23 @@ describe('plan 13a: contact-time shape queries', () => {
 
   it('far pairs are culled: under 4,000 shape queries in every tick of the two worst contact fixtures', async () => {
     await initPhysics();
+    // L4-F10-wrap-on is counted on the file's one direct run of it (the lab's real-fixture frames read the same run)
+    const counted = new Map<string, { n: number; t: number }>([['L4-F10-wrap-on', (await wrapOnDirect()).worst]]);
     const q = shapeQueryCounter();
     try {
       for (const id of ['L4-F10-wrap-on', 'L3-F8-recontact']) {
-        const sim = await create(FIX(id));
-        q.take();
-        let worst = { n: 0, t: 0 };
-        await runSim(sim, Infinity, (s) => {
-          const n = q.take();
-          if (n > worst.n) worst = { n, t: s.t };
-        });
-        sim.dispose();
+        let worst = counted.get(id);
+        if (!worst) {
+          const sim = await create(FIX(id));
+          q.take();
+          let w = { n: 0, t: 0 };
+          await runSim(sim, Infinity, (s) => {
+            const n = q.take();
+            if (n > w.n) w = { n, t: s.t };
+          });
+          sim.dispose();
+          worst = w;
+        }
         expect(worst.n, `${id}: ${worst.n} queries in the tick ending ${worst.t.toFixed(3)} s`).toBeLessThan(4000);
         await breathe();
       }
@@ -332,4 +610,222 @@ describe('plan 13a: contact-time shape queries', () => {
       q.restore();
     }
   }, 120000);
+});
+
+// ------------------------------------------------------------------------------------------- plan 10f debug switches
+async function solo(id: string, debug?: SimDebug): Promise<Simulation> {
+  const sim = await Simulation.create(FIX(id), debug ? { debug } : {});
+  sim.runToEnd();
+  return sim;
+}
+
+describe('plan 10f: per-simulation debug switches', () => {
+  /** The default (no switch) solo run of a fixture, once for the file; read only. */
+  const plain = new Map<string, Promise<Simulation>>();
+  const soloDefault = (id: string): Promise<Simulation> => {
+    let p = plain.get(id);
+    if (!p) plain.set(id, (p = solo(id)));
+    return p;
+  };
+  afterAll(async () => {
+    for (const p of plain.values()) (await p).dispose();
+  });
+
+  const SWITCHES = [
+    ['L2-F3-runStop', { foot: { legacyEntry: true, noQuick: true } }],
+    ['RH-F5-playerBelow', { pose: { noContinuity: true } }],
+  ] as const;
+
+  it('a switched and a default simulation stepped together each match their solo run, on every switch row', async () => {
+    await rows(SWITCHES, ([id]) => id, async ([id, debug]) => {
+      const ref = await soloDefault(id);
+      const refOn = await solo(id, debug);
+      // the switch has an effect, so a leak either way shows
+      expect(traceRowsDiff(ref.trace, refOn.trace)).not.toBeNull();
+      const on = await Simulation.create(FIX(id), { debug });
+      const off = await Simulation.create(FIX(id));
+      while (!on.done || !off.done) {
+        on.stepTick();
+        off.stepTick();
+        await pace();
+      }
+      expect(traceRowsDiff(off.trace, ref.trace)).toBeNull();
+      expect(traceRowsDiff(on.trace, refOn.trace)).toBeNull();
+      expect(on.exportFixture().debug).toEqual(debug);
+      expect('debug' in off.exportFixture()).toBe(false);
+      for (const s of [refOn, on, off]) s.dispose();
+    });
+  }, 60000);
+
+  it('the pose diagnostics are read-only and not exported; a switch set false is not exported', async () => {
+    const ref = await soloDefault('RH-F5-playerBelow');
+    let calls = 0;
+    const probe = poseProbe({ on: true, trace: () => calls++ });
+    const seen = await solo('RH-F5-playerBelow', { poseProbe: probe, pose: { noContinuity: false }, foot: { noQuick: false } });
+    expect(calls).toBeGreaterThan(0);
+    expect(Object.keys(probe.last).length).toBeGreaterThan(0);
+    expect(traceRowsDiff(seen.trace, ref.trace)).toBeNull();
+    expect(JSON.stringify(seen.exportFixture())).toBe(JSON.stringify(ref.exportFixture()));
+    seen.dispose();
+  }, 30000);
+});
+
+// ------------------------------------------------------------------------------------------- lab render
+/** A fake simulation: tick k costs `cost(k)` ms on the fake clock; its frames are the tick numbers. */
+function fakeSource(ticks: number, cost: (k: number) => number, clock: { ms: number }): PlaybackSource<number> & { k: number } {
+  return {
+    k: 0,
+    capture() {
+      return this.k;
+    },
+    step() {
+      clock.ms += cost(this.k);
+      this.k++;
+    },
+    done() {
+      return this.k >= ticks;
+    },
+  };
+}
+
+describe('lab render: look-ahead playback', () => {
+  const FAKE_CLOCK: [string, () => void][] = [
+    [
+      'a slow stretch costs buffer lead, not frames: no frame computes past its budget, shown time follows wall time',
+      () => {
+        const clock = { ms: 0 };
+        // 0.5 ms ticks, 40 ticks of 12 ms from tick 120 (a contact): over budget for real time, covered by the lead
+        const src = fakeSource(400, (k) => (k >= 120 && k < 160 ? 12 : 0.5), clock);
+        const pb = new Playback(src, 1 / 60, () => clock.ms, 8);
+        pb.paused = false;
+        const wallS = 1 / 60;
+        let worstFillMs = 0;
+        let shownPrev = 0;
+        let held = 0;
+        for (let f = 0; f < 600 && !pb.ended; f++) {
+          const t0 = clock.ms;
+          pb.frame(wallS);
+          // a tick starts only while its estimated cost fits; one tick of misestimate at most (0.5 ms estimate, 12 ms tick)
+          worstFillMs = Math.max(worstFillMs, clock.ms - t0);
+          const shown = pb.shown;
+          if (pb.computing) held++;
+          else if (!pb.ended) expect(shown - shownPrev).toBeCloseTo(1, 6); // one tick per 60 Hz frame at 1x
+          shownPrev = shown;
+          clock.ms += 16.7 - (clock.ms - t0); // the rest of the display frame
+        }
+        expect(pb.ended).toBe(true);
+        expect(pb.newest).toBe(400);
+        expect(worstFillMs).toBeLessThanOrEqual(8 + 12);
+        // the 40 slow ticks need 480 ms of compute; the lead built over the first 2 s covers them, so playback never waits
+        expect(held).toBe(0);
+      },
+    ],
+    [
+      'when playback catches the buffer it holds the newest frame (computing) and resumes without skipping a tick',
+      () => {
+        const clock = { ms: 0 };
+        const src = fakeSource(100, () => 20, clock); // every tick over the budget, played at 2x: playback outruns the simulation
+        const pb = new Playback(src, 1 / 60, () => clock.ms, 8);
+        pb.paused = false;
+        pb.speed = 2;
+        const seen: number[] = [];
+        for (let f = 0; f < 400 && !pb.ended; f++) {
+          pb.frame(1 / 60);
+          seen.push(pb.view().tick);
+          if (f > 2 && !pb.ended) expect(pb.computing).toBe(true);
+        }
+        expect(pb.ended).toBe(true);
+        for (let i = 1; i < seen.length; i++) expect(seen[i] - seen[i - 1]).toBeLessThanOrEqual(1);
+        expect(seen[seen.length - 1]).toBe(100);
+      },
+    ],
+    [
+      'paused, the buffer fills in the background; step, seek, finish and restart address ticks exactly',
+      () => {
+        const clock = { ms: 0 };
+        const src = fakeSource(50, () => 1, clock);
+        const pb = new Playback(src, 1 / 60, () => clock.ms, 8);
+        pb.frame(1 / 60);
+        expect(pb.paused).toBe(true);
+        expect(pb.shown).toBe(0);
+        expect(pb.newest).toBeGreaterThanOrEqual(7);
+        pb.step();
+        expect(pb.view()).toMatchObject({ tick: 1, a: 1, alpha: 0 });
+        pb.seek(30);
+        expect(pb.view()).toMatchObject({ tick: 30, a: 30 });
+        pb.seek(99);
+        expect(pb.view().tick).toBe(50);
+        expect(pb.ended).toBe(true);
+        src.k = 0;
+        pb.restart();
+        expect(pb.newest).toBe(0);
+        pb.finish();
+        expect(pb.newest).toBe(50);
+        expect(pb.shown).toBe(0);
+      },
+    ],
+  ];
+
+  it('on a fake clock: a slow stretch costs buffer lead, not frames; caught up, playback holds the newest frame and resumes without skipping a tick; paused, the buffer fills and step, seek, finish and restart address ticks exactly', async () => {
+    await rows(FAKE_CLOCK, ([n]) => n, ([, f]) => f());
+  });
+
+  it('frames of a real fixture: one per tick, in order, identical to stepping the simulation directly', async () => {
+    // the direct run: L4-F10-wrap-on stepped once for the file (its core position after every tick)
+    const { ref } = await wrapOnDirect();
+    const sim = await create(FIX('L4-F10-wrap-on'));
+    const cap = new FrameCapture(sim);
+    const clock = { ms: 0 };
+    const pb = new Playback<LabFrame>({ capture: () => cap.capture(), step: () => sim.stepTick(), done: () => sim.done }, sim.def.solver.outerTickS, () => clock.ms++, 8);
+    while (!pb.complete) {
+      pb.frame(0);
+      await pace();
+    }
+    expect(pb.frames.length).toBe(ref.length);
+    pb.frames.forEach((f, k) => {
+      expect(f.tick).toBe(k);
+      expect(f.t).toBe(ref[k].t);
+      expect(f.players[0].core.p).toEqual(ref[k].core);
+    });
+    // the wireframe set is shared while unchanged and replaced at the representation change
+    const sets = new Set(pb.frames.map((f) => f.players[0].colliderSet));
+    const reps = new Set(pb.frames.map((f) => f.players[0].rep));
+    expect(sets.size).toBe(reps.size);
+    sim.dispose();
+  });
+});
+
+describe('lab render: follow camera', () => {
+  it('the drawn runner holds still against the follow camera at 60, 120 and 144 Hz display rates (no per-tick stepping)', async () => {
+    for (const hz of [60, 120, 144]) {
+      const def = L1.l1f1('fastRun');
+      const sim = await Simulation.create(def);
+      const cap = new FrameCapture(sim);
+      let clockMs = 0;
+      const pb = new Playback<LabFrame>({ capture: () => cap.capture(), step: () => sim.stepTick(), done: () => sim.done }, def.solver.outerTickS, () => clockMs, 8);
+      pb.paused = false;
+      const rel: Vec3[] = [];
+      let seed = 7;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      while (!pb.ended && pb.view().a.t < 1.5) {
+        pb.frame(1 / hz + (rnd() - 0.5) * 0.0004);
+        clockMs += 1000 / hz;
+        await pace();
+        const { a, b, alpha } = pb.view();
+        const pa = a.players.find((p) => p.id === 'R')!;
+        const pbf = b.players.find((p) => p.id === 'R')!;
+        if (a.tick === 0) continue;
+        const ca = pa.pose!.segments.core.originWorld;
+        const cb = pbf.pose!.segments.core.originWorld;
+        const drawn = v3(ca.x + (cb.x - ca.x) * alpha, 0, ca.z + (cb.z - ca.z) * alpha);
+        const cam = followCenter([{ prev: pa.com, cur: pbf.com }], alpha);
+        rel.push(v3(drawn.x - cam.x, 0, drawn.z - cam.z));
+      }
+      let worst = 0;
+      for (let i = 1; i < rel.length - 1; i++) worst = Math.max(worst, len(v3(rel[i + 1].x - 2 * rel[i].x + rel[i - 1].x, 0, rel[i + 1].z - 2 * rel[i].z + rel[i - 1].z)));
+      expect(rel.length).toBeGreaterThan(50);
+      expect(worst).toBeLessThan(1e-3);
+      sim.dispose();
+    }
+  });
 });

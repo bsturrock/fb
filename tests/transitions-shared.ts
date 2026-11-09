@@ -7,15 +7,10 @@ import { type LocoMode } from '../src/sim/locomotion';
 import { add, dist, len, qConj, qRot, scale, sub, type Vec3 } from '../src/sim/vec';
 import { ARM_G2, RAGDOLL_G4, type ArmProfile } from '../src/sim/profiles';
 import type { ArmObs } from '../src/sim/arms';
-import { it } from 'vitest';
 
 export const SIDES: ArmSide[] = ['left', 'right'];
-export { FIX } from './helpers';
+export { FIX } from './runs';
 export const L3 = (re: RegExp): FixtureDef[] => transitionFixtures().filter((d) => re.test(d.id));
-/** One test per fixture of a group (a long synchronous loop would starve the test runner). */
-export const each = (re: RegExp, name: string, f: (d: FixtureDef) => Promise<void>): void => {
-  for (const d of L3(re)) it(`${name}: ${d.id}`, () => f(d), 30000);
-};
 export const modes = (sim: Simulation, id: string): { t: number; to: LocoMode; reason: string }[] =>
   sim.events.filter((e) => e.type === 'locoMode' && e.playerId === id).map((e) => ({ t: e.t, to: e.data!.to as LocoMode, reason: e.data!.reason as string }));
 export const armProfile = (d: FixtureDef): ArmProfile => d.armProfile ?? ARM_G2;

@@ -3,7 +3,12 @@
 // variants (mirrored, conversion phase, bob phase, drop height, low stance, both falling, clear space) hold the same;
 // deliberately invalid candidates and strict transfer audits still fail safely; batch decisions are independent of
 // player order and reproducible over reset, pause and render rates; the published poses stay continuous in contact.
-import { describe, expect, it } from 'vitest';
+//
+// Plan 13b: each (fixture, player order) is simulated once for the whole file (`hcRun`) with every observer that reads
+// it attached (the first solved steps after each accepted switch, the worst limb snap, RH-F5's support counters, the
+// engine counts before the first tick); the checks read the finished runs. A table checks every row and lists each
+// failing row. The reproducibility test and the pose-probe tests keep their own runs.
+import { afterAll, describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { mirrorZ } from '../src/sim/fixtures/handoff-contact';
 import { rhf6 } from '../src/sim/fixtures/ride-height';
@@ -15,7 +20,7 @@ import { stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { POSE_GUARD_C6 } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { breathe, FIX, pace, run, runSim, stepWhile, traceDiff } from './helpers';
+import { breathe, create, FIX, pace, rows, run, runSim, stepWhile, traceDiff } from './helpers';
 
 const HC = (): FixtureDef[] => allFixtures().filter((d) => d.id.startsWith('HC-'));
 /** Unchanged boundary tolerances (RagdollProfile validation): landmark 0.01 m, new external penetration 0.015 m. */
@@ -56,12 +61,14 @@ const handoffs = (sim: Simulation): string =>
     .sort()
     .join(' ');
 
+type PostSwitch = Record<string, { pen: number; anchor: number; extBW: number }>;
+
 /**
  * Per substep after each accepted switch (first n substeps): player penetration, joint anchor separation, and the
  * external impulse on the assembly (dP - m g dt, body weights). Validating only the disabled candidate is not enough.
+ * Attached to `sim` before its first tick; the result is read once the run has finished.
  */
-async function postSwitch(def: FixtureDef, n = 24): Promise<Record<string, { pen: number; anchor: number; extBW: number }>> {
-  const sim = await Simulation.create(def);
+function postSwitch(sim: Simulation, def: FixtureDef, n = 24): () => PostSwitch {
   const S = sim as unknown as { stepSubstep: (i: number) => void; physics: { dt: number } };
   const g = Math.abs(def.solver.gravityY);
   const out: Record<string, { pen: number; anchor: number; extBW: number; step0: number; prevP: Vec3 }> = {};
@@ -87,21 +94,16 @@ async function postSwitch(def: FixtureDef, n = 24): Promise<Record<string, { pen
       r.prevP = b.P;
     }
   };
-  await runSim(sim);
-  sim.dispose();
-  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { pen: v.pen, anchor: v.anchor, extBW: v.extBW }]));
+  return () => Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { pen: v.pen, anchor: v.anchor, extBW: v.extBW }]));
 }
 
 /** Worst body-local one-tick second difference of the shown knee/ankle/elbow/wrist while each player is a proxy. */
-async function worstSnap(def: FixtureDef): Promise<{ worst: number; at: string }> {
+function worstSnap(): { tick: (sim: Simulation) => void; result: () => { worst: number; at: string } } {
   const J = ['leftKnee', 'leftAnkle', 'rightKnee', 'rightAnkle', 'leftElbow', 'leftWrist', 'rightElbow', 'rightWrist'];
-  const sim = await Simulation.create(def);
   const hist: Record<string, Record<string, Vec3>[]> = {};
   let worst = 0;
   let at = '';
-  while (!sim.done) {
-    sim.stepTick();
-    await pace();
+  const tick = (sim: Simulation): void => {
     for (const pl of sim.players) {
       if (pl.rag || !pl.pose) {
         delete hist[pl.id];
@@ -121,84 +123,149 @@ async function worstSnap(def: FixtureDef): Promise<{ worst: number; at: string }
         if (d2 > worst) [worst, at] = [d2, `${pl.id} ${n} ${sim.t.toFixed(3)}`];
       }
     }
-  }
-  sim.dispose();
-  return { worst, at };
+  };
+  return { tick, result: () => ({ worst, at }) };
 }
 
-// --------------------------------------------------------------------------------------------- required cases
-describe('HC required natural-contact cases: audited articulated falls', () => {
-  it('RH-F6-simultaneous: both players convert in one batch with every audit passing; no order dependence', async () => {
-    const def = FIX('RH-F6-simultaneous');
-    const a = await run(def);
-    for (const pl of a.players) expectAudited(pl, def.id);
-    const [r, d] = ['R', 'D'].map((id) => a.players.find((p) => p.id === id)!);
-    expect(r.handoff!.step).toBe(d.handoff!.step);
-    expect(a.players.every((p) => p.representation === 'ragdoll')).toBe(true);
-    const b = await run(def, { reverseOrder: true });
-    expect(handoffs(b)).toBe(handoffs(a));
-    for (const pl of b.players) expectAudited(pl, `${def.id} reversed`);
-    for (const s of [a, b]) s.dispose();
-  });
+/** RH-F5-playerBelow, per tick: A's support from a player probe, and support while a player falls as a proxy. */
+function supportCounters(sim: Simulation): { tick: () => void; result: () => { falseSupport: number; fallingSupported: number } } {
+  const A = sim.players.find((p) => p.id === 'A')!;
+  const B = sim.players.find((p) => p.id === 'B')!;
+  let falseSupport = 0;
+  let fallingSupported = 0;
+  const tick = (): void => {
+    // players are never ground: A's probe on B never gives A support
+    if (!A.rag && A.sus && A.sus.probe.surface && A.sus.probe.surface !== 'turf' && A.sus.appliedN > 0) falseSupport++;
+    for (const p of [A, B]) if (!p.rag && p.controlMode === 'falling' && p.sus && (p.sus.active || p.sus.appliedN !== 0)) fallingSupported++;
+  };
+  return { tick, result: () => ({ falseSupport, fallingSupported }) };
+}
 
-  it('RH-F5-playerBelow: the upper falling player articulates without support on B; B carries within capacity', async () => {
-    const def = FIX('RH-F5-playerBelow');
-    const sim = await Simulation.create(def);
-    const A = sim.players.find((p) => p.id === 'A')!;
-    const B = sim.players.find((p) => p.id === 'B')!;
-    let falseSupport = 0;
-    let fallingSupported = 0;
+/** The required cases checked over the first solved steps after acceptance (24 substeps). */
+const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror', 'L3-F4-twoArm', 'L3-F9-convert-contact', 'L3-F9-noProbe-contact', 'L3-F9-defenderRising', 'L3-F10-both', 'L3-F10-defender'];
+/** Substeps observed after acceptance, per fixture: 24, or only the very first solve for HC-F4-clear-falling. */
+const POST_N: Record<string, number> = { ...Object.fromEntries(POST_SWITCH.map((id) => [id, 24])), 'HC-F4-clear-falling': 1 };
+/** Limb-snap bounds of the required cases (the HC variants: 0.3 m, or a known case's bound). */
+const SNAP_REQUIRED: [string, number][] = [
+  ['RH-F5-playerBelow', 0.15],
+  ['RH-F6-simultaneous', 0.15],
+  // the repaired-support stack: A's ankle pushed by B's head while A lands (contact motion, 0.150 m)
+  ['L2-F15-playerBelow', 0.2],
+];
+
+interface HcRun {
+  sim: Simulation;
+  /** Engine counts before the first tick. */
+  base: ReturnType<Simulation['counts']>;
+  post: PostSwitch | null;
+  snap: { worst: number; at: string } | null;
+  support: { falseSupport: number; fallingSupported: number } | null;
+}
+const RUNS = new Map<string, { json: string; run: Promise<HcRun> }>();
+/** The finished run of `def` in the given player order, simulated once per file; every observer only reads. */
+function hcRun(def: FixtureDef, reverseOrder = false): Promise<HcRun> {
+  const key = `${def.id}|${reverseOrder}`;
+  const json = JSON.stringify(def);
+  const hit = RUNS.get(key);
+  if (hit) {
+    if (hit.json !== json) throw new Error(`hcRun: ${def.id} requested with another definition`);
+    return hit.run;
+  }
+  const p = (async (): Promise<HcRun> => {
+    const sim = await create(def, reverseOrder ? { reverseOrder } : {});
+    const base = sim.counts();
+    const n = reverseOrder ? undefined : POST_N[def.id];
+    const post = n === undefined ? null : postSwitch(sim, def, n);
+    const snap = !reverseOrder && (def.id.startsWith('HC-') || SNAP_REQUIRED.some(([id]) => id === def.id)) ? worstSnap() : null;
+    const support = !reverseOrder && def.id === 'RH-F5-playerBelow' ? supportCounters(sim) : null;
     while (!sim.done) {
       sim.stepTick();
       await pace();
-      // players are never ground: A's probe on B never gives A support
-      if (!A.rag && A.sus && A.sus.probe.surface && A.sus.probe.surface !== 'turf' && A.sus.appliedN > 0) falseSupport++;
-      for (const p of [A, B]) if (!p.rag && p.controlMode === 'falling' && p.sus && (p.sus.active || p.sus.appliedN !== 0)) fallingSupported++;
+      snap?.tick(sim);
+      support?.tick();
     }
-    expect(falseSupport).toBe(0);
-    expect(fallingSupported).toBe(0);
-    expectAudited(A, def.id);
-    expect(B.handoff).toBeNull();
-    expect(B.controlMode).toBe('supported');
-    sim.dispose();
+    return { sim, base, post: post?.() ?? null, snap: snap?.result() ?? null, support: support?.result() ?? null };
+  })();
+  RUNS.set(key, { json, run: p });
+  return p;
+}
+afterAll(async () => {
+  for (const { run: p } of RUNS.values()) (await p).sim.dispose();
+  RUNS.clear();
+});
+
+// --------------------------------------------------------------------------------------------- required cases
+describe('HC required natural-contact cases: audited articulated falls', () => {
+  it('RH-F6-simultaneous, RH-F5-playerBelow, L2-F14-oneArmFeet and the both-falling stacks: audited articulated falls, every row', async () => {
+    const CHECKS: [string, () => Promise<void>][] = [
+      [
+        'RH-F6-simultaneous: both players convert in one batch with every audit passing; no order dependence',
+        async () => {
+          const def = FIX('RH-F6-simultaneous');
+          const a = (await hcRun(def)).sim;
+          for (const pl of a.players) expectAudited(pl, def.id);
+          const [r, d] = ['R', 'D'].map((id) => a.players.find((p) => p.id === id)!);
+          expect(r.handoff!.step).toBe(d.handoff!.step);
+          expect(a.players.every((p) => p.representation === 'ragdoll')).toBe(true);
+          const b = (await hcRun(def, true)).sim;
+          expect(handoffs(b)).toBe(handoffs(a));
+          for (const pl of b.players) expectAudited(pl, `${def.id} reversed`);
+        },
+      ],
+      [
+        'RH-F5-playerBelow: the upper falling player articulates without support on B; B carries within capacity',
+        async () => {
+          const def = FIX('RH-F5-playerBelow');
+          const o = await hcRun(def);
+          const sim = o.sim;
+          const A = sim.players.find((p) => p.id === 'A')!;
+          const B = sim.players.find((p) => p.id === 'B')!;
+          const { falseSupport, fallingSupported } = o.support!;
+          expect(falseSupport).toBe(0);
+          expect(fallingSupported).toBe(0);
+          expectAudited(A, def.id);
+          expect(B.handoff).toBeNull();
+          expect(B.controlMode).toBe('supported');
+        },
+      ],
+      [
+        'L2-F14-oneArmFeet: the defender articulates at its support loss; the runner is already a ragdoll in its clearance',
+        async () => {
+          const def = FIX('L2-F14-oneArmFeet');
+          const sim = (await hcRun(def)).sim;
+          const R = sim.players.find((p) => p.id === 'R')!;
+          const D = sim.players.find((p) => p.id === 'D')!;
+          expectAudited(R, def.id);
+          expectAudited(D, def.id);
+          expect(D.handoff!.reason).toBe('lossOfSupport');
+          expect(R.handoff!.step).toBeLessThan(D.handoff!.step);
+        },
+      ],
+      ...['HC-F2-bothFall', 'HC-F2-bothFallL2'].map((id): [string, () => Promise<void>] => [
+        `both falling (stack), ${id}: B converted while A presses it down, then A lands on B as a ragdoll; every audit passes`,
+        async () => {
+          const sim = (await hcRun(FIX(id))).sim;
+          for (const pl of sim.players) expectAudited(pl, id);
+        },
+      ]),
+    ];
+    await rows(CHECKS, ([n]) => n, ([, f]) => f());
   });
 
-  it('L2-F14-oneArmFeet: the defender articulates at its support loss; the runner is already a ragdoll in its clearance', async () => {
-    const def = FIX('L2-F14-oneArmFeet');
-    const sim = await run(def);
-    const R = sim.players.find((p) => p.id === 'R')!;
-    const D = sim.players.find((p) => p.id === 'D')!;
-    expectAudited(R, def.id);
-    expectAudited(D, def.id);
-    expect(D.handoff!.reason).toBe('lossOfSupport');
-    expect(R.handoff!.step).toBeLessThan(D.handoff!.step);
-    sim.dispose();
-  });
-
-  it('both falling (stack): B converted while A presses it down, then A lands on B as a ragdoll; every audit passes', async () => {
-    for (const id of ['HC-F2-bothFall', 'HC-F2-bothFallL2']) {
-      await breathe();
-      const sim = await run(FIX(id));
-      for (const pl of sim.players) expectAudited(pl, id);
-      sim.dispose();
-    }
-  });
-
-  it('first solved steps after acceptance: no penetration spike, anchor separation or launch impulse', async () => {
-    for (const id of ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror', 'L3-F4-twoArm', 'L3-F9-convert-contact', 'L3-F9-noProbe-contact', 'L3-F9-defenderRising', 'L3-F10-both', 'L3-F10-defender']) {
-      await breathe();
-      const post = await postSwitch(FIX(id));
+  it('first solved steps after acceptance: no penetration spike, anchor separation or launch impulse, on every required, HC and L3 contact case listed', async () => {
+    await rows(POST_SWITCH, (id) => id, async (id) => {
+      const post = (await hcRun(FIX(id))).post!;
       expect(Object.keys(post).length, id).toBeGreaterThan(0);
       for (const [pid, s] of Object.entries(post)) {
         expect(s.pen, `${id} ${pid} penetration`).toBeLessThanOrEqual(PEN_TOL + 0.005);
         expect(s.anchor, `${id} ${pid} anchor`).toBeLessThanOrEqual(5e-3);
         expect(s.extBW, `${id} ${pid} external impulse`).toBeLessThan(25);
       }
-    }
+    });
   });
 
   it('the post-switch impulse check includes the very first solve', async () => {
-    const post = await postSwitch(FIX('HC-F4-clear-falling'), 1);
+    const post = (await hcRun(FIX('HC-F4-clear-falling'))).post!;
     expect(post.R.extBW).toBeGreaterThan(1);
     expect(post.R.extBW).toBeLessThan(25);
   });
@@ -206,77 +273,93 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
 
 // --------------------------------------------------------------------------------------------- variants
 describe('HC variants: mirrored, phase, height, stance and clear space', () => {
-  it('mirrorZ reflects requests and starting conditions (an involution on a fixture without clip phases)', () => {
-    const s = rhf6().find((d) => d.id === 'RH-F6-simultaneous')!;
-    expect(JSON.stringify(mirrorZ(mirrorZ(s)))).toBe(JSON.stringify(s));
-    const m = mirrorZ(s);
-    for (const [p, q] of s.players.map((p, i) => [p, m.players[i]] as const)) {
-      expect(q.initial.z).toBe(-p.initial.z);
-      expect(q.initial.yawDeg).toBe(180 - p.initial.yawDeg);
-      expect(q.arms?.mode).toEqual(p.arms ? { left: p.arms.mode.right, right: p.arms.mode.left } : undefined);
-    }
+  it('mirrorZ is an involution that reflects requests and starting conditions; only the HC variants carry the convertible-pose guard, every row', async () => {
+    const CHECKS: [string, () => void][] = [
+      [
+        'mirrorZ reflects requests and starting conditions (an involution on a fixture without clip phases)',
+        () => {
+          const s = rhf6().find((d) => d.id === 'RH-F6-simultaneous')!;
+          expect(JSON.stringify(mirrorZ(mirrorZ(s)))).toBe(JSON.stringify(s));
+          const m = mirrorZ(s);
+          for (const [p, q] of s.players.map((p, i) => [p, m.players[i]] as const)) {
+            expect(q.initial.z).toBe(-p.initial.z);
+            expect(q.initial.yawDeg).toBe(180 - p.initial.yawDeg);
+            expect(q.arms?.mode).toEqual(p.arms ? { left: p.arms.mode.right, right: p.arms.mode.left } : undefined);
+          }
+        },
+      ],
+      [
+        'the convertible-pose guard is carried by the HC variants only; the base cases keep their historical profiles',
+        () => {
+          const guarded = allFixtures().filter((d) => d.ragdoll?.poseGuard).map((d) => d.id);
+          expect(guarded.length).toBeGreaterThan(20);
+          expect(guarded.every((id) => id.startsWith('HC-')), guarded.filter((id) => !id.startsWith('HC-')).join(' ')).toBe(true);
+          expect(HC().filter((d) => d.ragdoll && !d.ragdoll.poseGuard).map((d) => d.id)).toEqual([]);
+          for (const d of HC()) if (d.ragdoll) expect(d.ragdoll.id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
+        },
+      ],
+    ];
+    await rows(CHECKS, ([n]) => n, ([, f]) => f());
   });
 
   it('every HC natural-contact variant, in both player orders: each fall that happens is an audited ragdoll; nobody ends as a rigid falling proxy', async () => {
     // plan 10c (C6, U7): the guarantee holds for either body order (reversed HC-F2-bothFallL2 rejected A as
     // externalPenetration before the convertible-pose guard: its shown thigh stood 8 cm in B's ragdoll forearm)
-    const rows: string[] = [];
-    for (const def of HC()) {
-      if (def.id.startsWith('HC-F5')) continue;
-      for (const reverseOrder of [false, true]) {
-        await breathe();
-        const sim = await run(def, { reverseOrder });
+    const lines: string[] = [];
+    const cases = HC()
+      .filter((def) => !def.id.startsWith('HC-F5'))
+      .flatMap((def) => [false, true].map((reverseOrder) => ({ def, reverseOrder })));
+    await rows(
+      cases,
+      ({ def, reverseOrder }) => `${def.id}${reverseOrder ? ' reversed' : ''}`,
+      async ({ def, reverseOrder }) => {
+        const sim = (await hcRun(def, reverseOrder)).sim;
         const tag = `${def.id}${reverseOrder ? ' reversed' : ''}`;
-        rows.push(`${tag.padEnd(29)} ${handoffs(sim)}`);
+        lines.push(`${tag.padEnd(29)} ${handoffs(sim)}`);
         for (const pl of sim.players) {
           if (pl.handoff) expectAudited(pl, tag);
           expect(pl.controlMode === 'falling' && !pl.rag, `${tag} ${pl.id} rigid falling proxy`).toBe(false);
         }
-        sim.dispose();
-      }
-    }
-    console.log(`[HC] handoffs per variant:\n  ${rows.join('\n  ')}`);
+      },
+    );
+    console.log(`[HC] handoffs per variant:\n  ${lines.join('\n  ')}`);
   });
 
-  it('the convertible-pose guard is carried by the HC variants only; the base cases keep their historical profiles', () => {
-    const guarded = allFixtures().filter((d) => d.ragdoll?.poseGuard).map((d) => d.id);
-    expect(guarded.length).toBeGreaterThan(20);
-    expect(guarded.every((id) => id.startsWith('HC-')), guarded.filter((id) => !id.startsWith('HC-')).join(' ')).toBe(true);
-    expect(HC().filter((d) => d.ragdoll && !d.ragdoll.poseGuard).map((d) => d.id)).toEqual([]);
-    for (const d of HC()) if (d.ragdoll) expect(d.ragdoll.id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
-  });
-
-  it('both sides, conversion phases and low stance of the simultaneous wrap: both players convert', async () => {
-    for (const id of ['HC-F1-mirror', 'HC-F1-at0.9', 'HC-F1-at1.6', 'HC-F1-low', 'HC-F1-lowMirror']) {
-      await breathe();
-      const sim = await run(FIX(id));
-      expect(sim.players.map((p) => p.handoff?.outcome), id).toEqual(['accepted', 'accepted']);
-      sim.dispose();
-    }
-  });
-
-  it('one-arm tackle from the other side, at other clip phases and on the rising / falling bob: every defender fall converts', async () => {
-    for (const id of ['HC-F3-mirror', 'HC-F3-phase0', 'HC-F3-phase50', 'HC-F3-phase75', 'HC-F3-rising', 'HC-F3-falling']) {
-      await breathe();
-      const sim = await run(FIX(id));
-      const D = sim.players.find((p) => p.id === 'D')!;
-      if (D.controlMode === 'supported') expect(D.handoff, id).toBeNull();
-      else expectAudited(D, id);
-      expectAudited(sim.players.find((p) => p.id === 'R')!, id);
-      sim.dispose();
-    }
-  });
-
-  it('clear-space conversion on the adopted profile with planted feet stays audited (rising and falling bob)', async () => {
-    for (const id of ['HC-F4-clear-rising', 'HC-F4-clear-falling']) {
-      await breathe();
-      const sim = await run(FIX(id));
-      const R = sim.players[0];
-      expectAudited(R, id);
-      // the proxy's vertical velocity at the boundary is what transfers (non-zero on the bob)
-      expect(Math.abs(R.handoff!.audit!.before.v[1]), id).toBeGreaterThan(0.05);
-      sim.dispose();
-    }
+  it('the simultaneous wrap, the one-arm tackle and clear space convert as each family requires, on every variant of each', async () => {
+    const FAMILIES: [string, string[], (id: string) => Promise<void>][] = [
+      [
+        'both sides, conversion phases and low stance of the simultaneous wrap: both players convert',
+        ['HC-F1-mirror', 'HC-F1-at0.9', 'HC-F1-at1.6', 'HC-F1-low', 'HC-F1-lowMirror'],
+        async (id) => {
+          const sim = (await hcRun(FIX(id))).sim;
+          expect(sim.players.map((p) => p.handoff?.outcome), id).toEqual(['accepted', 'accepted']);
+        },
+      ],
+      [
+        'one-arm tackle from the other side, at other clip phases and on the rising / falling bob: every defender fall converts',
+        ['HC-F3-mirror', 'HC-F3-phase0', 'HC-F3-phase50', 'HC-F3-phase75', 'HC-F3-rising', 'HC-F3-falling'],
+        async (id) => {
+          const sim = (await hcRun(FIX(id))).sim;
+          const D = sim.players.find((p) => p.id === 'D')!;
+          if (D.controlMode === 'supported') expect(D.handoff, id).toBeNull();
+          else expectAudited(D, id);
+          expectAudited(sim.players.find((p) => p.id === 'R')!, id);
+        },
+      ],
+      [
+        'clear-space conversion on the adopted profile with planted feet stays audited (rising and falling bob)',
+        ['HC-F4-clear-rising', 'HC-F4-clear-falling'],
+        async (id) => {
+          const sim = (await hcRun(FIX(id))).sim;
+          const R = sim.players[0];
+          expectAudited(R, id);
+          // the proxy's vertical velocity at the boundary is what transfers (non-zero on the bob)
+          expect(Math.abs(R.handoff!.audit!.before.v[1]), id).toBeGreaterThan(0.05);
+        },
+      ],
+    ];
+    const cases = FAMILIES.flatMap(([name, ids, check]) => ids.map((id) => ({ name, id, check })));
+    await rows(cases, ({ name, id }) => `${id}: ${name}`, ({ id, check }) => check(id));
   });
 });
 
@@ -284,9 +367,9 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
 describe('HC diagnostics: invalid candidates and strict transfer fail safely', () => {
   it('invalid candidate in a simultaneous batch: D rejected (jointAnchor), R revalidated against D\'s proxy and accepted', async () => {
     const def = FIX('HC-F5-invalidOne');
-    const sim = await Simulation.create(def);
-    const base = sim.counts();
-    await runSim(sim);
+    const o = await hcRun(def);
+    const sim = o.sim;
+    const base = o.base;
     const R = sim.players.find((p) => p.id === 'R')!;
     const D = sim.players.find((p) => p.id === 'D')!;
     expect(D.handoff!.outcome).toBe('rejected');
@@ -300,11 +383,10 @@ describe('HC diagnostics: invalid candidates and strict transfer fail safely', (
     const c = sim.counts();
     expect(c.bodies).toBe(base.bodies - 1 + 10);
     expect(c.tags).toBe(c.colliders);
-    sim.dispose();
   });
 
   it('strict transfer audit: transferFailed, invalidTransfer result, never a completion', async () => {
-    const sim = await run(FIX('HC-F5-strictTransfer'));
+    const sim = (await hcRun(FIX('HC-F5-strictTransfer'))).sim;
     const failed = sim.players.filter((p) => p.handoff?.outcome === 'transferFailed');
     expect(failed.length).toBeGreaterThan(0);
     for (const p of failed) {
@@ -313,17 +395,15 @@ describe('HC diagnostics: invalid candidates and strict transfer fail safely', (
     }
     expect(sim.result).toBe('invalidTransfer');
     expect(sim.ending).toBeNull();
-    sim.dispose();
   });
 
   it('intentionally invalid noRescue conversions stay safe rejections', async () => {
     for (const id of ['RH-F5-noRescue', 'L2-F8-noRescue']) {
       await breathe();
-      const sim = await run(FIX(id));
+      const sim = (await hcRun(FIX(id))).sim;
       const h = sim.players.find((p) => p.handoff)!.handoff!;
       expect(h.outcome, id).toBe('rejected');
       expect(h.report.reasons, id).toContain('jointAnchor');
-      sim.dispose();
     }
   });
 });
@@ -378,24 +458,23 @@ describe('HC reproducibility: reset, pause, render rates and batch ordering', ()
       ref.dispose();
     }
   });
+});
 
+describe('HC player order: batch decisions and natural-fall timing', () => {
   it('reversed player order: batch decisions identical; natural-fall timing deviations recorded', async () => {
     // A batch decided at one substep (the diagnostic simultaneous conversions, the invalid one in a batch, clear-space)
     // must not depend on the player order. The solver's contact order follows the body order, so natural falls can move
     // (RH-F5-playerBelow: A at step 156 or 295; identical at the 07 checkpoint, the pose never feeds the solver): those
     // deviations are recorded, as in G4-F8.
     const batch = (id: string) => id.startsWith('HC-F1') || id.startsWith('HC-F4') || id === 'HC-F5-invalidOne' || id === 'RH-F6-simultaneous';
-    const rows: string[] = [];
-    for (const def of [FIX('RH-F6-simultaneous'), ...HC()]) {
-      await breathe();
-      const a = await run(def);
-      const b = await run(def, { reverseOrder: true });
+    const lines: string[] = [];
+    await rows([FIX('RH-F6-simultaneous'), ...HC()], (def) => def.id, async (def) => {
+      const a = (await hcRun(def)).sim;
+      const b = (await hcRun(def, true)).sim;
       if (batch(def.id)) expect(handoffs(b), def.id).toBe(handoffs(a));
-      else if (handoffs(b) !== handoffs(a)) rows.push(`${def.id}: ${handoffs(a)} | reversed ${handoffs(b)}`);
-      a.dispose();
-      b.dispose();
-    }
-    console.log(`[HC] reversed-order deviations of natural falls:\n  ${rows.join('\n  ') || 'none'}`);
+      else if (handoffs(b) !== handoffs(a)) lines.push(`${def.id}: ${handoffs(a)} | reversed ${handoffs(b)}`);
+    });
+    console.log(`[HC] reversed-order deviations of natural falls:\n  ${lines.join('\n  ') || 'none'}`);
   });
 });
 
@@ -452,30 +531,27 @@ describe('HC contact continuity of the published pose', () => {
     expect(worst).toBeLessThanOrEqual(budget);
   });
 
-  it('required cases: no limb jump over 0.15 m in one tick (was 0.66 m ankle / 0.61 m wrist / 0.26 m grip arm)', async () => {
-    for (const [id, bound] of [
-      ['RH-F5-playerBelow', 0.15],
-      ['RH-F6-simultaneous', 0.15],
-      // the repaired-support stack: A's ankle pushed by B's head while A lands (contact motion, 0.150 m)
-      ['L2-F15-playerBelow', 0.2],
-    ] as const) {
-      await breathe();
-      const r = await worstSnap(FIX(id));
-      expect(r.worst, `${id} ${r.at}`).toBeLessThanOrEqual(bound);
-    }
-  });
-
-  it('every HC variant: no limb jump over 0.3 m in one tick', async () => {
-    // plan 12 known case (docs/handoff/plan12.md): D, left a rigid falling proxy by its intentionally invalid conversion,
-    // clamps R with its right forearm. At 2.10 s every arm-task pole but one puts the arm 0.6-13 cm into R, and the one
-    // clear pole has the elbow 0.50 m away (the twin's arm, on another path since the shoulder range, never gets there).
-    // Bounded here, not let go
-    const known: Record<string, number> = { 'HC-F5-invalidOne': 0.5 };
-    for (const def of HC()) {
-      await breathe();
-      const r = await worstSnap(def);
-      expect(r.worst, `${def.id} ${r.at}`).toBeLessThanOrEqual(known[def.id] ?? 0.3);
-    }
+  it('no limb jump in one tick over 0.15 m in the required cases (was 0.66 m ankle / 0.61 m wrist / 0.26 m grip arm) or over 0.3 m in every HC variant, every row', async () => {
+    const CASES: { name: string; id: string; check: (r: { worst: number; at: string }) => void }[] = [
+      ...SNAP_REQUIRED.map(([id, bound]) => ({
+        name: 'required cases: no limb jump over 0.15 m in one tick (was 0.66 m ankle / 0.61 m wrist / 0.26 m grip arm)',
+        id,
+        check: (r: { worst: number; at: string }) => expect(r.worst, `${id} ${r.at}`).toBeLessThanOrEqual(bound),
+      })),
+      // plan 12 known case (docs/handoff/plan12.md): D, left a rigid falling proxy by its intentionally invalid conversion,
+      // clamps R with its right forearm. At 2.10 s every arm-task pole but one puts the arm 0.6-13 cm into R, and the one
+      // clear pole has the elbow 0.50 m away (the twin's arm, on another path since the shoulder range, never gets there).
+      // Bounded here, not let go
+      ...HC().map((def) => {
+        const known: Record<string, number> = { 'HC-F5-invalidOne': 0.5 };
+        return {
+          name: 'every HC variant: no limb jump over 0.3 m in one tick',
+          id: def.id,
+          check: (r: { worst: number; at: string }) => expect(r.worst, `${def.id} ${r.at}`).toBeLessThanOrEqual(known[def.id] ?? 0.3),
+        };
+      }),
+    ];
+    await rows(CASES, ({ name, id }) => `${id}: ${name}`, async ({ id, check }) => check((await hcRun(FIX(id))).snap!));
   });
 
   it('the continuity guard never advances more than 2 cm past the rate-limited step in the required cases', async () => {

@@ -1,6 +1,6 @@
 # 13b — Test consolidation
 
-Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13a. Changes tests only: no source file under `src/` changes, and every export stays byte-identical.
+Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13a. **Implemented** 2026-11-09 ([handoff](../handoff/plan13.md#13b--test-consolidation)): 226 tests in 13 files, every baseline test mapped. Changes tests only: no source file under `src/` changes, and every export stays byte-identical.
 
 **Goal:** the suite checks the same contracts with about a third as many tests, and its count no longer grows with every fixture added.
 
@@ -72,14 +72,14 @@ The user (2026-11-09): approaching 1,000 tests is too many.
 
 ## Tasks
 
-- [ ] **Inventory.** Save the baseline vitest JSON report. Write `scripts/probe/p13-test-map.ts`: it reads a baseline report, a new report and `tests/test-map.json` (baseline title → new title), and fails on an unmapped or unknown title.
-- [ ] **Contract pass.** Write `tests/l3-contracts.test.ts` with the `Contract` runner and move the transition-audit contract first. Show it fails with the `KNOWN_AUDIT` entry removed, listing that boundary. Then move continuity, foot limits, and the modes and contact contracts, one commit-sized step each, deleting the generated tests as each lands.
-- [ ] **Scenario tests.** Move the remaining tests of the five L3 files into `tests/transitions.test.ts` and the contract file; delete the five old files and `each()`.
-- [ ] **Tables.** Convert the small loops in falls, gate4, footwork and handoff-contact.
-- [ ] **Merge files** as in the table; merge the duplicate opt-in, export and reset checks.
-- [ ] **Map.** Fill `tests/test-map.json`; the map script passes.
-- [ ] **Negative check.** Put back three recorded faults through their existing debug switches or profile removals (the 10b crossing heading, plan 11 without self-clearance, plan 12 without joint range): the consolidated suite fails on each, naming the fixtures.
-- [ ] **Close.** Suite exit 0 with no unhandled errors, typecheck, build; all exports byte-identical (no `src/` change). Handoff section with the counts, the wall time and the map.
+- [x] **Inventory.** Save the baseline vitest JSON report. Write `scripts/probe/p13-test-map.ts`: it reads a baseline report, a new report and `tests/test-map.json` (baseline title → new title), and fails on an unmapped or unknown title.
+- [x] **Contract pass.** Write `tests/l3-contracts.test.ts` with the `Contract` runner and move the transition-audit contract first. Show it fails with the `KNOWN_AUDIT` entry removed, listing that boundary. Then move continuity, foot limits, and the modes and contact contracts, one commit-sized step each, deleting the generated tests as each lands.
+- [x] **Scenario tests.** Move the remaining tests of the five L3 files into `tests/transitions.test.ts` and the contract file; delete the five old files and `each()`.
+- [x] **Tables.** Convert the small loops in falls, gate4, footwork and handoff-contact.
+- [x] **Merge files** as in the table; merge the duplicate opt-in, export and reset checks.
+- [x] **Map.** Fill `tests/test-map.json`; the map script passes.
+- [x] **Negative check.** Put back three recorded faults through their existing debug switches or profile removals (the 10b crossing heading, plan 11 without self-clearance, plan 12 without joint range): the consolidated suite fails on each, naming the fixtures.
+- [x] **Close.** Suite exit 0 with no unhandled errors, typecheck, build; all exports byte-identical (no `src/` change). Handoff section with the counts, the wall time and the map.
 
 ## Acceptance
 

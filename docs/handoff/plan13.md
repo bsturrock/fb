@@ -88,3 +88,85 @@ Slowest fixtures after 13a, against the baseline survey at `5c85eb7`:
 
 - Exports: `.scratch/p13/ev-base` (at `5c85eb7`) against `ev-step1`, `ev-step2`, `ev-step3` and `ev-final` (the committed tree): `cmp` on `summary.json`, `diff -rq` on 410 traces, no differences.
 - Tick table: `vite-node scripts/probe/p13-ticktime.ts . 0 quiet`.
+
+## 13b — Test consolidation
+
+Plan: [13b](../open/13b_Test_Consolidation.md). Implemented 2026-11-09 after `6b5dc0c` (13a). Tests, `scripts/probe/` and docs only: no file under `src/` changes, so every export is byte-identical.
+
+**Result:**
+- **Count.** 851 tests in 24 files at the 13a tip, 226 tests in 13 files now (at most 300 in 13 asked).
+- **Time.** The three closing runs took 76.7, 74.5 and 72.3 s of wall time (Apple M2, `npx vitest run`). The 13a tip took 161 s, so the target was at most 80.5 s. User CPU fell from 847 s to 371–394 s.
+- **Map.** `scripts/probe/p13-test-map.ts` maps all 851 baseline tests to the 226, problems 0, and every test now holds at least one baseline assertion. The expanded map is [plan13b-test-map.md](plan13b-test-map.md).
+- **Faults put back.** Each of the three fails the suite and names its fixtures (see [Negative check](#negative-check)).
+- **Stability.** Three runs in a row exit 0 with no unhandled errors. Typecheck and build pass.
+
+| File | Tests | Holds (baseline files) |
+| --- | --- | --- |
+| l3-contracts | 30 | the per-fixture parts of transitions-audit (107), foot-continuity (102), transitions-feet (99), transitions-modes (93) and transitions-contact (41); three ball-carry checks |
+| transitions | 11 | the scenario tests of those five files |
+| falls | 32 | falls (84) |
+| gate4 | 23 | gate4 (49), rules-revision (5) |
+| footwork | 20 | footwork (60) |
+| gates | 18 | gate1 (19), gate2 (12), gate3 (16) |
+| harness | 17 | harness (14), debug-options (3), lab-render (5); the opt-in and export tables |
+| ball-carry | 16 | ball-carry (24), ball-carry-mesh (4), ball-carry-evidence (2) |
+| handoff-contact | 15 | handoff-contact (22) |
+| body-limits | 13 | self-clearance (17), joint-range (8) |
+| locomotion | 11 | locomotion (22) |
+| model | 10 | model (20) |
+| ride-height | 10 | ride-height (23) |
+
+### What changed
+
+**The L3 contract pass** (`tests/l3-pass.ts`, `tests/l3-shard.ts`, `tests/l3-contracts.test.ts`):
+- A check is `{ name, fixtures, watch(def, report) }`. `fixtures` is a pattern or a list of L3 ids; a list must be covered exactly. `watch` returns hooks for every substep, before and after every tick, and the end of the run.
+- Every L3 fixture runs once with the transition audit on and every check that covers it attached: 46 checks over 97 fixtures. They are the nine per-fixture contracts of the plan, and the named cases that read a plain run of a registered L3 fixture. Those cases now read the pass's run instead of a run of their own; the audit reads copies, which "the audit reads copies" proves on its sample.
+- A hook that throws reports its first failed assertion and stops that check for that fixture, as the old test stopped. The other checks go on. A check that collects breaches (the audit, continuity, foot limits) reports each of them.
+- One test per contract, or per closely related group (30 tests). Each fails once with every failure on every fixture, prefixed with its check's name, and the list is in the message, because the JSON reporter prints no diff. Assertions over several fixtures together (the counters that show a check saw what it bounds) are in the same test, after the list.
+- **Shards.** The pass is split over child processes: two by default, a quarter of the cores, at most 4. Each runs `tests/l3-shard.ts` under vite-node and asks for the next fixture as it finishes one, longest first, so the shards end together. They send back each fixture's failures and, at the end, their records: counters are summed, per-fixture maps taken over. Results are put back in the pass's order. A shard that fails or exits early fails the pass with what it printed. The shards run at nice 10, below the test workers: they fill the cores the single-worker files leave idle instead of slowing them.
+- `L3_CONTRACTS=<regex>` narrows the pass to the matching fixtures. Every test name then says so, a test whose checks cover none of them is skipped, and the assertions over several fixtures together are not made. `L3_SHARDS=<n>` sets the shard count; 0 runs the pass in the test process, to debug a check.
+- The copy comparison's unaudited run is made in the shard right after the audited one, so the trace and per-substep state hashes never leave the shard.
+- The shards cannot import `vitest` (it throws outside its runner). The checks use `tests/plain-expect.ts`: chai with `@vitest/expect`'s plugins, which is what vitest's own `expect` is built from, so the matchers and messages are the same. The simulation helpers without vitest moved to `tests/runs.ts`; `tests/helpers.ts` re-exports them and keeps `rows` and `nonEmpty`.
+- The KNOWN_AUDIT entry removed (`L3_CONTRACTS='^L3-F7-(mirror0|phase0)$'`): the audit test fails with the one boundary, `L3-F7-mirror0 0.7875 R leftAnkle … raw 0.0101: expected 0.010089016080803953 to be less than or equal to 0.01`.
+
+**Tables.** `rows()` (tests/helpers.ts) runs every row of a table, yields a macrotask between rows, and fails once with each failing row's label and first failed assertion. Every `for … it(…)` loop is now one table test. Checks under one describe that read the same runs are one test whose rows are the named checks; the map shows each merge. `each()` is deleted.
+
+**Harness tables.** One opt-in table: each plan's profile on for exactly its fixtures, earlier ids on their paths (G4, the L2 braking motor, plan 08, L4, plan 10b, plan 10e, plan 12). One export table: exports name their profiles by id and value (G1-C, L1, plan 08, L4, the two 10a A3/A4/A12 tests, plan 11). Each row is the plan's own test, unchanged.
+
+**Shared runs.** Within a file a fixture with the same options is simulated once, with every observer attached. falls and ball-carry register observers while the file is collected, so the first test to read a fixture runs it with all of them. Their tests assert on what the observers recorded.
+
+**Moved into the pass from ball-carry:** the one-ball evidence (plan 10d D1(a), every L3 rule fixture), the rule-reference check (the first 12) and contact and recontact (six audited runs). They read runs of registered L3 fixtures, which the pass already makes. ball-carry keeps the carry runs that need its own observers and its twins.
+
+**Map.** `tests/test-map.json` holds ordered rules `{ from, to }`; the first `from` (an anchored regex over `<file> > <describe> > … > <title>`) that matches a baseline test gives its new test. `vite-node scripts/probe/p13-test-map.ts <baseline.json> <new.json> tests/test-map.json [out.md]` exits 1 on an unmapped baseline test, an unknown or failed target, or a rule that matches nothing.
+
+### Negative check
+
+Each fault was put into every simulation of a full run: appended to `tests/setup.ts` and `tests/l3-shard.ts` as a wrapper on `Simulation.create`, then removed (both files `cmp`-identical after).
+
+| Fault | Tests failing | Named |
+| --- | --- | --- |
+| 10b crossing heading (`debug.foot.crossingBodyHeading`) | 2 | the transition audit: L3-F9-convert-prep 0.5458 D rightKnee, 1.054 cm (raw 0.73); the harness debug-switch rows (the switch is on in the default run too) |
+| plan 11 without self-clearance (`selfClearance: undefined`) | 10 | body-limits: L3-F16-sprint R right arm 5.4 cm into the trunk, L3-F1-low and HC-F3-mirror arm-task arms, HC-F1-low, L3-F3-recover and L3-F16-handoff ragdoll forearms, the impact guard on L4-F9-contact; the transition audit (L3-F9-noProbe-contact); the export row; three L3 contracts |
+| plan 12 without joint range (`jointRange: undefined`) | 15 | body-limits: shoulder cone (L3-F9-convert-prep D left 38.8°), HC-F3-phase0 ragdoll shoulder, HC-F1-low ankle −45°, L3-F1-low heel lift, the ragdoll feet; falls: the slack cone, brace outcomes on L4-F3 and L4-F4, the obstructed miss, both hold tests, the mirror; the opt-in row; the L3 boundary records (L3-F7-phase75, L3-F1-phase5) and continuity records (L3-F3-side) |
+
+### Departures from the plan
+
+- **The contract shape.** A check's `watch` returns hooks, and a failure is a string that carries the fixture, player, time and value. The plan's form was `{ observe, finish → Failure[] }`. The hooks also serve the named cases that need a tick or a substep.
+- **More checks than the nine contracts.** The named cases on plain runs of L3 fixtures became checks in the pass too, so 46 checks ride one run per fixture.
+- **Shards.** Not in the plan. Run in the test process, the pass alone took 51 s, 78 s with the other files, and set the suite at 91 s. With two shards the pass ends with the rest.
+- **Yielding.** The yield is `pace()` (a macrotask once 50 ms of wall time has passed) and `breathe()` between fixtures and rows, the helpers' way since 10a, not a `setTimeout` per fixture.
+- **No reproducibility table.** The reset, render-rate and pause tests stay in their files: gate4's 35 resets, falls, transitions (L3-F12 and 20 resets), handoff-contact, locomotion, footwork (L2-F10), ball-carry, harness A5 and gates. Each reads its file's runs and helpers, and together they are about 70 s of serial runs: one table in harness would make that one worker the suite's critical path and miss the time target. The opt-in and export tables are made.
+- **One commit.** The plan's commit-sized steps (audit first, then continuity, then the rest) were worked through in order, with a passing run and a map check at each step, and are committed as one milestone commit.
+
+### Known limits
+
+- A contract test fails as one test for many fixtures; the message carries the list. A failure is cut to 600 characters.
+- The shards do not run `tests/setup.ts`. `tests/l3-shard.ts` repeats its one default (`SIM_DEFAULTS.ledgers = true`); a new default in setup.ts must be added there too, and a fault put back must go in both.
+- `chai` and `@vitest/expect` are vitest's own dependencies, imported directly (no package change was allowed). They update with vitest.
+- vitest collects every `*.test.ts` outside `node_modules`, `.scratch` included: keep none there.
+- The time is near its limit on this machine: runs of the closing tree measured 72–77 s, and earlier steps up to 80 s. The suite is CPU-bound. The last files to finish, falls (27 s alone) and handoff-contact, run in one worker each, and the whole machine is busy until the end.
+
+### Evidence
+
+- Reports in `.scratch/p13b/`: `base.json` (the 13a tip, 851 tests), `final1.json` to `final3.json` (the three closing runs), `fault-crossing.json`, `fault-noSelfClearance.json`, `fault-noJointRange.json`, `known-off.txt`.
+- Map: `npx vite-node scripts/probe/p13-test-map.ts .scratch/p13b/base.json .scratch/p13b/final3.json tests/test-map.json docs/handoff/plan13b-test-map.md`.

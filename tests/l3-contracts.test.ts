@@ -1,0 +1,503 @@
+// Plan 13b: the L3 contract pass. Every L3 fixture runs once, with the transition audit on (it reads copies: "the audit
+// reads copies" below) and every check that reads it attached: per-fixture contracts (plan 08, 10b, 12) and the named
+// cases that read a plain run of a registered L3 fixture. The checks are in tests/l3-pass.ts; the pass is split over
+// shard processes (tests/l3-shard.ts), each asking for the next fixture, so the slowest file of the suite is not one
+// worker's serial run. One test per contract over every fixture it covers, failing with the whole list: each failing
+// fixture with its first failed assertion, or every breach where the check collects them. Replaces transitions-audit,
+// foot-continuity, transitions-feet and the per-fixture parts of transitions-modes and transitions-contact. Negative
+// controls and cases that need their own runs stay their own tests (here for the audit, continuity and contact
+// retention; tests/transitions.test.ts for modes, the walking ramp and the lifecycle).
+//
+// L3_CONTRACTS=<regex> narrows the pass to the matching fixtures (to iterate on one): every test name then says so, a
+// test whose checks cover none of them is skipped, and the assertions over several fixtures together are not made.
+// L3_SHARDS=<n> sets the number of shard processes (default: a quarter of the cores, at most 4; on the 8-core M2 two
+// shards gave the shortest suite, 74-78 s, against 80-81 s with three and 84 s with four); 0 runs the pass in this
+// process (to debug a check).
+import { fork, type ChildProcess } from 'node:child_process';
+import { availableParallelism, setPriority } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { beforeAll, describe, expect, it } from 'vitest';
+import type { SimOptions } from '../src/sim/simulation';
+import type { FixtureDef } from '../src/sim/fixture';
+import { allFixtures } from '../src/sim/fixtures/index';
+import { FOOTWORK_L2, FOOTWORK_L3, stepAccelLimits } from '../src/sim/footwork';
+import { breathe, FIX, rows, run } from './helpers';
+import { L3 } from './transitions-shared';
+import {
+  ANCHORS,
+  ARM_SWING,
+  AUDIT,
+  AUDITED_FALL,
+  BAD_CANDIDATE,
+  BRAKE,
+  C,
+  CHECKS,
+  CLAMPS,
+  CARRY_AUDIT,
+  CARRY_BOUNDARIES,
+  CLEARS,
+  CONT,
+  CONTINUITY,
+  continuity,
+  type Continuity,
+  type ContinuitySeen,
+  COPIED,
+  COPIES,
+  COPY_IDS,
+  covers,
+  DEFENDER_BOB,
+  FEET,
+  FIRST,
+  FITTED,
+  type FixturePass,
+  FOLLOWS_CONTACT,
+  FOOT_LIMITS,
+  FREE_ARMS,
+  FRESH_PLANT,
+  HANDOVER,
+  HELD_LEG,
+  HOLD_SETTLES,
+  KEEP_STEPPING,
+  LANDINGS,
+  LIFT,
+  LIFT_RECOVERY,
+  mergeRecords,
+  NO_LAUNCH,
+  NOT_TWICE,
+  OFF_GROUND,
+  ONE_BALL,
+  ONE_BALL_SEEN,
+  ONE_FOOT,
+  PALM_HOLDS,
+  passFixture,
+  PLAYER_BELOW,
+  PREP_UNWINDS,
+  RAW_KEPT,
+  REACH_AT,
+  RECONTACT,
+  type Records,
+  RESEED,
+  RETAINED,
+  RETENTION_BITES,
+  RULE_FIXTURES,
+  RULE_REF,
+  RULE_REF_SPOT,
+  RUN_START,
+  runWatched,
+  SEAM,
+  SEAMS,
+  seen,
+  SETTLE_PLANTS,
+  SETTLES,
+  STANDS_STILL,
+  STEP_AS_IS,
+  STOP_MOTOR,
+  TOE_OFF,
+  WALK_STEPS,
+  WALK_VALID,
+  type Watch,
+} from './l3-pass';
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The pass
+
+const FILTER = process.env.L3_CONTRACTS ? new RegExp(process.env.L3_CONTRACTS) : null;
+const NOTE = FILTER ? ` (narrowed: L3_CONTRACTS=${process.env.L3_CONTRACTS})` : '';
+const PASS = L3(/^L3-/).filter((d) => !FILTER || FILTER.test(d.id));
+const SHARDS = Math.min(PASS.length, process.env.L3_SHARDS !== undefined ? Number(process.env.L3_SHARDS) : Math.max(1, Math.min(4, Math.floor(availableParallelism() / 4))));
+const results = new Map<string, { fixtures: string[]; failures: string[] }>();
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+/** What a shard sends (tests/l3-shard.ts). */
+type FromShard = { ready: true } | { id: string; pass: FixturePass } | { records: Records } | { id: string | null; error: string };
+
+/**
+ * Runs the pass's fixtures over `n` shard processes: each is handed the next fixture as it finishes one (the longest
+ * first), so the shards end together. Merges the shards' records into this process's. A shard that fails or exits
+ * early fails the pass with what it said.
+ */
+async function sharded(jobs: FixtureDef[], n: number, done: (id: string, p: FixturePass) => void): Promise<void> {
+  let next = 0;
+  const kids: ChildProcess[] = [];
+  const one = (k: number): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const kid = fork(`${ROOT}node_modules/vite-node/vite-node.mjs`, [`${ROOT}tests/l3-shard.ts`], { cwd: ROOT, serialization: 'advanced', stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+      kids.push(kid);
+      // below the test workers: the shards fill the cores the files that run in one worker leave idle, instead of slowing
+      // them (the pass has the slack: its work is split, theirs is not). Scheduling only, never a result
+      try {
+        setPriority(kid.pid!, 10);
+      } catch {
+        // not permitted here: the shards run at the workers' priority
+      }
+      let said = '';
+      const keep = (b: Buffer): void => void (said = (said + b.toString()).slice(-4000));
+      kid.stdout!.on('data', keep);
+      kid.stderr!.on('data', keep);
+      let current: string | null = null;
+      let ended = false;
+      const give = (): void => {
+        current = next < jobs.length ? jobs[next++]!.id : null;
+        kid.send(current ? { id: current } : { end: true });
+      };
+      kid.on('message', (m: FromShard) => {
+        if ('error' in m) {
+          ended = true;
+          reject(new Error(`L3 pass shard ${k}: ${m.id ?? ''}: ${m.error}`));
+        } else if ('records' in m) {
+          ended = true;
+          mergeRecords(m.records);
+          resolve();
+        } else {
+          if ('pass' in m) done(m.id, m.pass);
+          give();
+        }
+      });
+      kid.on('error', reject);
+      kid.on('exit', (code, signal) => {
+        if (!ended) reject(new Error(`L3 pass shard ${k} exited (${code ?? signal}) running ${current ?? 'nothing'}:\n${said}`));
+      });
+    });
+  try {
+    await Promise.all(Array.from({ length: n }, (_, k) => one(k)));
+  } finally {
+    for (const kid of kids) if (kid.exitCode === null) kid.kill();
+  }
+}
+
+beforeAll(async () => {
+  const byId = new Map<string, FixturePass>();
+  if (SHARDS > 0) {
+    // the longest runs first: run time, players, and the copy comparison's second run
+    const cost = (d: FixtureDef): number => d.durationS * d.players.length * (COPY_IDS.includes(d.id) ? 2 : 1);
+    await sharded([...PASS].sort((a, b) => cost(b) - cost(a)), SHARDS, (id, p) => byId.set(id, p));
+  } else
+    for (const d of PASS) {
+      byId.set(d.id, await passFixture(d));
+      await breathe();
+    }
+  // in the pass's own order, whatever order the shards finished in
+  for (const c of CHECKS) results.set(c.name, { fixtures: [], failures: [] });
+  for (const d of PASS) {
+    const p = byId.get(d.id);
+    if (!p) throw new Error(`the pass did not run ${d.id}`);
+    for (const name of p.covered) results.get(name)!.fixtures.push(d.id);
+    for (const [name, m] of p.failures) results.get(name)!.failures.push(m);
+  }
+}, 900000);
+
+/** One run of `def` with one watch, outside the pass (negative controls): fails with what the watch reported. */
+async function runOne(def: FixtureDef, w: Watch, opts: SimOptions = {}): Promise<void> {
+  const fails: string[] = [];
+  await runWatched(def, [{ w, fail: (m) => fails.push(m) }], opts);
+  expect(fails).toEqual([]);
+}
+
+/**
+ * One test over the named checks: every failure on every fixture they cover, prefixed with the check's name. A check
+ * given a list of fixtures must have covered exactly that list. `then` holds the assertions over several fixtures
+ * together (skipped when the pass is narrowed).
+ */
+function passTest(title: string, names: string[], then?: () => void | Promise<void>): void {
+  const cs = names.map((n) => {
+    const c = CHECKS.find((x) => x.name === n);
+    if (!c) throw new Error(`no check ${n}`);
+    return c;
+  });
+  const any = cs.some((c) => PASS.some((d) => covers(c, d.id)));
+  it.skipIf(!any)(`${title}${NOTE}`, async () => {
+    const out: string[] = [];
+    for (const c of cs) {
+      const r = results.get(c.name)!;
+      if (!FILTER) {
+        expect(r.fixtures.length, `${c.name}: covers no fixture`).toBeGreaterThan(0);
+        if (!(c.fixtures instanceof RegExp)) expect([...r.fixtures].sort(), `${c.name}: fixtures`).toEqual([...c.fixtures].sort());
+      }
+      out.push(...r.failures.map((f) => `${c.name}: ${f}`));
+    }
+    // the list goes into the message: reporters that print no diff (the JSON report) still show every failure
+    expect(out, `${out.length} failures:\n${out.join('\n')}\n`).toEqual([]);
+    if (then && !FILTER) await then();
+  });
+}
+
+describe('plan 08 transition audit', () => {
+  passTest('transition-only pose discontinuity at most 1 cm at every ownership change, all landmarks, same solved time; every reseed is a boundary: every L3 fixture', [AUDIT]);
+
+  it(`the audit reads copies: the same run with and without it is identical, every trace row and every substep's planner, sampler and pose state${NOTE}`, async () => {
+    // the audited side of each comparison is the pass's run of the fixture, the unaudited side runs right after it in the
+    // same process (tests/l3-pass.ts compareCopy: every trace row, the events and every substep's state)
+    expect(FIRST.size).toBeGreaterThanOrEqual(16);
+    expect(results.get(COPIES)!.failures).toEqual([]);
+    await rows(
+      COPY_IDS.filter((id) => !FILTER || FILTER.test(id)),
+      (id) => id,
+      (id) => {
+        expect(COPIED.has(id), `${id}: not compared`).toBe(true);
+        const fail = COPIED.get(id);
+        if (fail) throw new Error(fail);
+      },
+    );
+  }, 300000);
+
+  passTest(
+    'the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice',
+    [RESEED, STEP_AS_IS, RAW_KEPT, NOT_TWICE, LANDINGS],
+  );
+
+  passTest(
+    "the planner's handovers: a held leg handed to a step keeps the old owner's request, a support loss keeps a step on its path; a request seam goes into the offset; a fresh plant is not stepped from the moment it lands",
+    [HELD_LEG, SEAM, FRESH_PLANT],
+    () => {
+      expect(HANDOVER.carried).toBeGreaterThan(0);
+      expect(HANDOVER.kept).toBeGreaterThan(0);
+      expect(HANDOVER.airborne).toBeGreaterThan(0);
+      expect(HANDOVER.overdue).toBeGreaterThan(0);
+      expect(SEAMS.n).toBeGreaterThan(0);
+    },
+  );
+
+  it('negative control: a known old/new pose difference over 1 cm still fails (the 10b crossing heading fault put back)', async () => {
+    // L3-F7-loadRelease with the composed crossing setting a following foot's heading to the body's, as before 10b: D's
+    // left knee pole turns 19 degrees in one substep at contact entry and the leg takes another clearance variant, while
+    // the old owner keeps its heading. The audit has to report that boundary, with nothing set aside. (The plan 08 control,
+    // the handover check switched off in L3-F7-phase25, no longer gives one: with 10b's bounded step paths no handover in
+    // L3 departs by over 1 cm without it.) Plan 12: run without the joint-range profile; with it, D's run into the contact
+    // changes and the faulted crossing there stays under 1 cm
+    const sim = await run({ ...FIX('L3-F7-loadRelease'), jointRange: undefined }, { transitionAudit: true, debug: { foot: { crossingBodyHeading: true } } });
+    const ds = sim.transitionDeltas;
+    sim.dispose();
+    const x = ds.filter((b) => b.deltaM > 0.01);
+    expect(x.map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`)).toEqual(['D 0.5750 leftAnkle']);
+    for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
+  }, 30000);
+});
+
+describe('plan 10b foot target continuity', () => {
+  it('the step acceleration limits are declared from the swing limits, not measured', () => {
+    // a minimum-jerk path peaks at 80 / (15 sqrt 3) = 3.079 x its peak speed / its time: the speed cap over the shortest
+    // step, and the lift cap over half of it
+    const k = 80 / (15 * Math.sqrt(3));
+    expect(stepAccelLimits(FOOTWORK_L2.swing)).toEqual({ stepAccelMps2: (k * 3.5) / 0.2, stepAccelPerTravel: (k * 2.5) / 0.2, liftAccelMps2: (k * 1.5) / 0.1 });
+    expect(C.stepAccelMps2).toBeCloseTo(53.89, 2);
+    expect(C.stepAccelPerTravel).toBeCloseTo(38.49, 2);
+    expect(C.liftAccelMps2).toBeCloseTo(46.19, 2);
+    expect(FOOTWORK_L3.id).toBe('footwork-l3-v3');
+    expect(FOOTWORK_L2.compose).toBeUndefined();
+  });
+
+  passTest(
+    'step targets within the acceleration limit, stored vertical motion as published, chases within the lift acceleration, no jump in the clip leg request: every L3 fixture; the checks saw every kind of substep they bound',
+    [CONTINUITY],
+    () => {
+      expect(seen.steps).toBeGreaterThan(30000);
+      expect(seen.stored).toBeGreaterThan(30000);
+      expect(seen.chaseStarts).toBeGreaterThan(5);
+      expect(seen.chaseInside).toBeGreaterThan(100);
+      expect(seen.requests).toBeGreaterThan(30000);
+    },
+  );
+
+  it(`the continuity records: a step out of time while moving slows within its limit; a continued step is given the time its acceleration limit needs${NOTE}`, async () => {
+    const of = async (id: string): Promise<Continuity> => {
+      const kept = CONT.get(id);
+      if (kept) return kept;
+      const c = continuity(FIX(id), { steps: 0, stored: 0, chaseStarts: 0, chaseReseeds: 0, chaseInside: 0, requests: 0 });
+      await runOne(FIX(id), c.watch, { transitionAudit: true });
+      return c.out;
+    };
+    const ids = allFixtures()
+      .filter((x) => /^L3-F1[67]-(runStop|stop\d|reaccel|runStart)/.test(x.id))
+      .map((x) => x.id);
+    const records: [string, () => Promise<void>][] = [
+      [
+        'reproductions: a step out of time while moving slows within its limit, it does not stop at its destination in one substep',
+        async () => {
+          // before 10b: L3-F3-side D left 0.0583 s went from 20.51 m/s to 0 in one substep (8.55 cm second difference), and the
+          // same at R 0.2708 s, D left 0.3333 s and L3-F1-phase0 0.6708 s. Those runs have changed with the fix; each fixture
+          // still has steps running out of time at speed
+          for (const id of ['L3-F3-side', 'L3-F1-phase0']) {
+            const { outOfTime } = await of(id);
+            const moving = outOfTime.filter((x) => x.speed > 1);
+            expect(moving.length, id).toBeGreaterThan(0);
+            for (const x of moving) {
+              expect(x.next, `${id} ${x.at} ${x.t.toFixed(4)}`).toBeGreaterThan(0);
+              expect(x.speed - x.next, `${id} ${x.at} ${x.t.toFixed(4)}`).toBeLessThanOrEqual(x.aMax * (1 / 240) + 1e-9);
+            }
+            if (id === 'L3-F3-side') {
+              // plan 12: the first reproduction (D's left foot out of time at over 10 m/s near 0.054 s) is no longer timed
+              // shorter than its path needs (a heel-lift stance step keeps that time, fitStance) and lands on time. R's left
+              // foot runs out of time near 0.583 s at over 3 m/s and is still moving after it
+              const first = moving.find((x) => x.at === 'R:left' && Math.abs(x.t - 0.583) < 0.01);
+              expect(first, 'R left out of time near 0.583 s').toBeDefined();
+              expect(first!.speed).toBeGreaterThan(3);
+              expect(first!.next).toBeGreaterThan(1);
+            }
+          }
+        },
+      ],
+      [
+        'a continued step is given the time its acceleration limit needs: on a free stop or start it lands on time',
+        async () => {
+          // without the acceleration term in its timing a continued step was timed shorter than its path can keep (L3-F16-stop1.7
+          // left 2.258 s: 0.70 m in 0.105 s, about 3 x the limit) and ran past its time: 3 to 13 substeps on these runs. With it
+          // the most measured is 2 (L3-F16-stop2.9 R right 3.575 s), where the destination moved on after the step was timed
+          expect(ids.length).toBe(16);
+          for (const id of ids) {
+            const { overdue } = await of(id);
+            const worst = overdue.reduce((a, x) => (x.n > a.n ? x : a), { at: '-', n: 0 });
+            expect(worst.n, `${worst.at} overdue ${worst.n} substeps`).toBeLessThanOrEqual(2);
+          }
+        },
+      ],
+    ];
+    await rows(records, ([n]) => n, ([, f]) => f());
+  }, 120000);
+
+  it('B3 fault put back: with the clip heading snapping to the travel direction, the leg request jumps at contact', async () => {
+    // before 10b the sampled clip's heading took the travel direction in one substep, so a collision that turned the
+    // travel turned the leg request with it: up to 4.45 cm in L3-F8-recontact (D2 left 0.829 s), 116 substeps over 1 cm
+    // across L3. The heading now follows at the planner's follow rate (run-clips headingRadPerS)
+    const d = FIX('L3-F8-recontact');
+    expect(d.runClips?.headingRadPerS).toBe(18);
+    const fresh = (): ContinuitySeen => ({ steps: 0, stored: 0, chaseStarts: 0, chaseReseeds: 0, chaseInside: 0, requests: 0 });
+    let now = CONT.get(d.id);
+    if (!now) {
+      const c = continuity(d, fresh());
+      await runOne(d, c.watch, { transitionAudit: true });
+      now = c.out;
+    }
+    expect(now.requestDD).toEqual([]);
+    const snapDef = { ...d, runClips: { ...d.runClips!, headingRadPerS: undefined } };
+    const snap = continuity(snapDef, fresh());
+    await runOne(snapDef, snap.watch, { transitionAudit: true });
+    expect(Math.max(...snap.out.requestDD.map((r) => r.d))).toBeGreaterThan(0.03);
+  }, 60000);
+});
+
+describe('plan 08 foot limits at every actual substep', () => {
+  passTest(
+    'vertical target and offset recovery stay inside their limits, measured inside the planner and from outside: every L3 fixture; a carried handover is under the bound from its first update; the reported overruns reach the limits',
+    [FOOT_LIMITS],
+    () => {
+      const records: [string, () => void][] = [
+        [
+          'a carried handover is under the bound from its first update, and the planner records that update',
+          () => {
+            // the follow path these legs came off was going down at 3.25 m/s (phase3) and 2.85 m/s (phase0) when a step took them over
+            for (const id of ['L3-F1-phase3', 'L3-F1-phase0', 'L3-F1-low']) {
+              const { seen } = FEET.get(id)!;
+              expect(seen.nCarried, id).toBeGreaterThan(0);
+              expect(seen.lift, id).toBeGreaterThan(0.9 * LIFT);
+              expect(seen.lift, id).toBeLessThanOrEqual(LIFT + 1e-6);
+            }
+          },
+        ],
+        [
+          'the reported overruns run again: the limits are reached there, not avoided',
+          () => {
+            for (const id of ['L3-F16-runStop', 'L3-F14-walkRunStop', 'L3-F7-phase0']) {
+              const { seen, c } = FEET.get(id)!;
+              expect(seen.nLift, id).toBeGreaterThan(100);
+              expect(seen.nOffset, id).toBeGreaterThan(100);
+              expect(seen.ownerChanges, id).toBeGreaterThan(4);
+              expect(Math.max(c.lift, seen.lift), id).toBeGreaterThan(0.9 * LIFT);
+            }
+          },
+        ],
+      ];
+      return rows(records, ([n]) => n, ([, f]) => f());
+    },
+  );
+});
+
+describe('plan 08 pass 1: start, brake, settle', () => {
+  passTest('no stance is skipped: outside contact a moving player is never long off the ground: every L3-F16 run and stop, every L3-F7 fixture', [OFF_GROUND]);
+  passTest('brake phases, the comparison stop and the interrupted stops stay valid: every L3-F16 fixture', [BRAKE]);
+  passTest('a full stop stays in bounds long enough to show it settle: at rest, both feet held, no late step: every L3-F16 full stop', [SETTLES]);
+  passTest('a stop lands one foot, then the other: never two at once, never a held foot released with the other still up: every L3-F16 full stop', [ONE_FOOT]);
+  passTest(
+    'the stops: the toe-off release and the 2.55 s variant lose their L2 spike and settle; the stop keeps the plan 07 motor, the lower stance and individual steps; free arms brace, carry stays on the ball',
+    [TOE_OFF, STOP_MOTOR, FREE_ARMS],
+    () => {
+      const free = REACH_AT.get('L3-F16-runStopFree')!;
+      const carry = REACH_AT.get('L3-F16-runStop')!;
+      expect(free.right).toBeGreaterThan(carry.right + 0.05);
+      expect(free.left).toBeGreaterThan(0.45);
+    },
+  );
+});
+
+describe('plan 08 pass 2: idle and walking', () => {
+  passTest('L3-F13 and L3-F15: standing still has no stepping, root offset or arm chatter; stops settle on existing plants and stay; the fitted posture keeps the supplied stance and converts valid', [STANDS_STILL, SETTLE_PLANTS, FITTED]);
+  passTest('L3-F14: a free arm swings visibly at a walk, carry and ready keep their assignment; a walk starts and stops over steps; walk, run and stop stay valid', [ARM_SWING, WALK_STEPS, WALK_VALID]);
+  passTest('L3-F17: a run start goes foot by foot, the strides growing, through the walk into the run: every L3-F17 fixture', [RUN_START]);
+});
+
+describe('plan 08 pass 3: contact integration', () => {
+  passTest('no shared stance reset: anchors held at entry stay, every target finite, whatever the phase: every L3-F1 fixture', [ANCHORS]);
+  passTest('temporary airborne recovery: probe support lost in the named mode and regained, feet airborne, no support force in the air, no conversion: every L3-F9-lift fixture', [LIFT_RECOVERY]);
+  passTest('a labelled conversion or a loss of probe support in the named mode is an audited, irreversible fall: every L3-F9-convert and L3-F9-noProbe fixture, and the low runner in contact', [AUDITED_FALL]);
+  passTest('the defender converts on the measured sign of its bob: every L3-F9-defender fixture', [DEFENDER_BOB]);
+  passTest(
+    'contact entry: preparation unwinds with no contact (L3-F2); the mode follows the first observed contact within a tick (L3-F3); legs keep stepping in contact and tackles end as their copies do (L3-F4/F5)',
+    [PREP_UNWINDS, FOLLOWS_CONTACT, KEEP_STEPPING],
+  );
+  passTest(
+    'hold and exit: a stationary hold settles (L3-F6); a saturating load released does not launch (L3-F6/F7); contact clears from every run phase and side (L3-F7); a recontact in exit is named and audited (L3-F8)',
+    [HOLD_SETTLES, NO_LAUNCH, CLEARS, RECONTACT],
+  );
+  passTest(
+    'conversions: a player below stays a support-budget regression (L3-F9); either or both convert with retention (L3-F10); a genuine bad candidate is rejected with the safe fallback (L3-F11)',
+    [PLAYER_BELOW, RETAINED, BAD_CANDIDATE],
+  );
+  passTest(
+    'held arms: real palm holds keep the anchor and arm segments within Gate 2 through entry and remap within Gate 4; real forearm clamps keep the segments and end only for an engine reason',
+    [PALM_HOLDS, CLAMPS],
+  );
+  passTest('negative control: the retention measures fail a stretched limb and a shifted anchor, and the wrong player has no hold', [RETENTION_BITES]);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The carried ball (plan 08a, plan 10d D1(a)): what tests/ball-carry.test.ts checked on runs of registered L3 fixtures
+
+describe('the carried ball over the L3 pass (plan 08a, plan 10d D1(a))', () => {
+  passTest('contact and recontact: ownership changes under the 1 cm same-time limit, the ball included, on the achieved arm', [CARRY_AUDIT], () => {
+    let boundaries = 0;
+    for (const r of CARRY_BOUNDARIES.values()) boundaries += r.boundaries;
+    expect(boundaries).toBeGreaterThan(30);
+  });
+
+  passTest('the rule reference, the drawn ball and the official spot agree; the spot stays frozen', [RULE_REF], () => {
+    const withEnding = RULE_FIXTURES.map(FIX);
+    expect(withEnding.length).toBeGreaterThan(10);
+    let endings = 0;
+    for (const def of withEnding.slice(0, 12)) {
+      expect(def.rules!.ballSource, def.id).toBe('carryPose');
+      if (RULE_REF_SPOT.get(def.id)) endings++;
+    }
+    expect(endings).toBeGreaterThan(0);
+  });
+
+  passTest(
+    'every L3 rule fixture draws the seated ball; on every tick of every one the drawn ball, the rule reference and the evidence agree, and the spot is the ball at the ending and stays frozen',
+    [ONE_BALL],
+    () => {
+      const defs = RULE_FIXTURES.map(FIX);
+      expect(defs.length).toBeGreaterThanOrEqual(20);
+      for (const d of defs) expect(d.rules!.ballSource, d.id).toBe('carryPose');
+      let ticks = 0;
+      let seated = 0;
+      let endings = 0;
+      for (const id of RULE_FIXTURES) {
+        const e = ONE_BALL_SEEN.get(id)!;
+        ticks += e.ticks;
+        seated += e.seated;
+        if (e.ending) endings++;
+      }
+      expect(ticks).toBeGreaterThan(2000);
+      expect(seated).toBeGreaterThan(0.9 * ticks);
+      expect(endings).toBeGreaterThanOrEqual(15);
+    },
+  );
+});
