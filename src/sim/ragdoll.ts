@@ -6,7 +6,8 @@ import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
 import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry';
 import type { PhysicsWorld } from './physics';
 import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
-import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type RagdollProfile, type SelfClearanceProfile } from './profiles';
+import { clampDirToEnvelope, swingExcess, swingExtentDeg } from './joint-cone';
+import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type JointRangeProfile, type RagdollProfile, type SelfClearanceProfile } from './profiles';
 import {
   add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qFromUnitVectors, qIdentity, qMul, qRot, round, rv, scale,
   sub, toLocal, toWorld, v3, vc, worldInertia, type Mat3, type Pose, type Quat, type Vec3,
@@ -82,8 +83,16 @@ export interface Ragdoll {
   landmarks: Record<string, { seg: SegmentId; local: Vec3 }>;
   massKg: Record<SegmentId, number>;
   enabled: boolean;
-  /** Ankle pitch (deg) of the pose the candidate was built from: the shoe stays fixed on the shin at that angle. */
+  /**
+   * Ankle pitch (deg) of the pose the candidate was built from: the shoe stays fixed on the shin at that angle. Plan 12
+   * (`limpFoot`): the shoe's current pitch on the shin, easing toward the relaxed pitch.
+   */
   anklePitchDeg?: Partial<Record<ArmSide, number>>;
+  /**
+   * Plan 12 joint range: the limp foot. From the conversion each shoe turns on its shin toward `targetDeg` at its own
+   * rate (the conversion difference over the profile's ease time), its collider and landmark with it. Absent: profile off.
+   */
+  limpFoot?: { targetDeg: number; rateDegPerS: Record<ArmSide, number>; shoes: Record<ArmSide, RagdollCollider>; heldSubsteps: Record<ArmSide, number> };
   /** Plan 08a: the last supported hand and ball seat on the right forearm (frozen). */
   carry?: CarrySeat;
   /** Plan 09: soft envelope state of the shoulders and hips (absent: no envelope profile, or not switched yet). */
@@ -169,6 +178,8 @@ export function buildCandidate(
   edit?: CandidateEdit,
   /** Arm self-clearance: with `ragdoll` on and a measured trunk, the forearms also collide with their own trunk. */
   selfClearance?: SelfClearanceProfile,
+  /** Plan 12: the shoe starts at the pose's ankle pitch within the profile's range, then eases to its limp pitch. */
+  jointRange?: JointRangeProfile,
 ): Ragdoll {
   const s = phys.solver;
   const L = R.lengths;
@@ -222,11 +233,14 @@ export function buildCandidate(
     colliders.push({ collider: c, segment: seg, region, side, local });
   };
   const at = (x: number, y: number, z: number): Pose => ({ p: v3(x, y, z), q: qIdentity() });
-  // shoe on the shin at the pose's ankle pitch (plan 06 pass 2; 0 = the rigid shoe of the procedural gait)
-  const shoeLocal = (side: ArmSide): Pose => {
-    const q = pitchShin(qIdentity(), ((pose.anklePitchDeg?.[side] ?? 0) * Math.PI) / 180);
-    return { p: add(v3(0, -L.shin, 0), qRot(q, v3(0, -R.shoe.belowAnkleM, R.shoe.forwardM))), q };
+  // shoe on the shin at the pose's ankle pitch (plan 06 pass 2; 0 = the rigid shoe of the procedural gait); plan 12:
+  // within the joint-range profile's ankle range
+  const JA = jointRange?.ankle;
+  const pitch0 = (side: ArmSide): number => {
+    const p = pose.anklePitchDeg?.[side] ?? 0;
+    return JA ? Math.min(JA.plantarDeg, Math.max(-JA.dorsiDeg, p)) : p;
   };
+  const shoeLocal = (side: ArmSide): Pose => shoeOnShin(R, pitch0(side));
   // palm landmark and the palm ball's centre on the forearm; plan 08a: the carry hand turned over the ball's nose
   const palmLocal = (side: ArmSide): { palm: Vec3; hand: Vec3 } => {
     if (side !== CARRY_ARM || !pose.carry) return { palm: v3(0, -(L.forearm + L.palmExtension), 0), hand: v3(0, -(L.forearm + L.palmExtension - R.radii.palm), 0) };
@@ -348,12 +362,64 @@ export function buildCandidate(
   }
   const rag: Ragdoll = { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false, ...(selfCols ? { self: selfCols } : {}) };
   if (pose.anklePitchDeg) rag.anklePitchDeg = { ...pose.anklePitchDeg };
+  if (jointRange) {
+    const F = jointRange.limpFoot;
+    const from = { left: pitch0('left'), right: pitch0('right') };
+    const shoe = (side: ArmSide): RagdollCollider => colliders.find((c) => c.segment === `${side}Shin` && c.region === 'shoe')!;
+    rag.anklePitchDeg = { ...from };
+    rag.limpFoot = {
+      targetDeg: F.pitchDeg,
+      rateDegPerS: { left: Math.abs(F.pitchDeg - from.left) / F.easeS, right: Math.abs(F.pitchDeg - from.right) / F.easeS },
+      shoes: { left: shoe('left'), right: shoe('right') },
+      heldSubsteps: { left: 0, right: 0 },
+    };
+  }
   if (pose.carry) {
     // plan 08a: the hand and ball stay as published on their forearm, with no further carry motion
     rag.carry = { ...pose.carry };
     landmarks.carriedBall = { seg: `${CARRY_ARM}Forearm`, local: seatBallLocal(pose.carry) };
   }
   return rag;
+}
+
+/** The shoe box's pose on its shin at an ankle pitch (deg, positive toe down), in the shin frame. */
+function shoeOnShin(R: RagdollProfile, pitchDeg: number): Pose {
+  const q = pitchShin(qIdentity(), (pitchDeg * Math.PI) / 180);
+  return { p: add(v3(0, -R.lengths.shin, 0), qRot(q, v3(0, -R.shoe.belowAnkleM, R.shoe.forwardM))), q };
+}
+
+/**
+ * Plan 12: one substep of the limp foot, before the solve. Each shoe turns on its shin toward the relaxed pitch at its
+ * rate; the collider's pose on the shin, its recorded local pose, the shoe landmark and the published pitch follow. The
+ * shin's mass properties are recomputed at once: Rapier 0.21 does update them for a collider moved on its body, but only
+ * at the next step, after this substep's effort planning has read them (`.scratch/jr12/mass.ts`).
+ */
+export function easeLimpFeet(rag: Ragdoll, dt: number, blocked?: (c: RagdollCollider, from: Pose, to: Pose) => boolean): void {
+  const F = rag.limpFoot;
+  if (!F || !rag.enabled || !rag.anklePitchDeg) return;
+  for (const side of ['left', 'right'] as ArmSide[]) {
+    const cur = rag.anklePitchDeg[side] ?? 0;
+    if (cur === F.targetDeg) continue;
+    const step = F.rateDegPerS[side] * dt;
+    const next = Math.abs(F.targetDeg - cur) <= step ? F.targetDeg : cur + Math.sign(F.targetDeg - cur) * step;
+    const local = shoeOnShin(rag.profile, next);
+    const c = F.shoes[side];
+    // the plan's contact fallback: the turn is kinematic (no contact pushes back), so a shoe that would turn deeper into
+    // another player waits (L3-F9-noProbe-contact: R's right shoe turned 1.5 cm into D's thigh and D's conversion failed)
+    if (blocked) {
+      const shin = poseOfRb(rag.bodies[`${side}Shin`]);
+      if (blocked(c, composePose(shin, c.local), composePose(shin, local))) {
+        F.heldSubsteps[side]++;
+        continue;
+      }
+    }
+    rag.anklePitchDeg[side] = next;
+    c.collider.setTranslationWrtParent(local.p);
+    c.collider.setRotationWrtParent(local.q);
+    c.local = local;
+    rag.landmarks[`${side}Shoe`].local = local.p;
+    rag.bodies[`${side}Shin`].recomputeMassPropertiesFromColliders();
+  }
 }
 
 /** World pose of a ragdoll collider computed from its body (valid for disabled candidates). */
@@ -426,6 +492,9 @@ export interface SwingTwist {
 
 const REF = v3(0, -1, 0);
 
+// plan 12: the swing cone moved to joint-cone.ts (shared with the supported pose and the arm-task arms)
+export { clampDirToEnvelope, swingExcess, swingExtentDeg };
+
 /** Swing-twist split of a relative rotation (parent to child): q = swing * twist. */
 export function swingTwistOf(q: Quat): SwingTwist {
   const dir = qRot(q, REF);
@@ -449,58 +518,8 @@ export function twistAxis(q: Quat, st: SwingTwist): Vec3 {
   return addScaled(scale(qRot(q, v3(0, 1, 0)), Math.cos(half)), cross(st.dir, st.axis), -Math.sin(half));
 }
 
-/** Where a parent-frame limb direction sits in the joint's swing cone: distance `d` from the centre, boundary radius there. */
-function coneAt(E: JointEnvelope, dir: Vec3, sideSign: number): { c: Vec3; p: Vec3; d: number; sinD: number; R: number; dR: number } {
-  const t = (E.cone.tiltDeg * Math.PI) / 180;
-  const a = (E.cone.towardDeg * Math.PI) / 180;
-  const h = v3(sideSign * Math.sin(a), 0, Math.cos(a));
-  const c = add(scale(REF, Math.cos(t)), scale(h, Math.sin(t)));
-  const u = add(scale(REF, -Math.sin(t)), scale(h, Math.cos(t)));
-  const cosD = Math.max(-1, Math.min(1, dot(dir, c)));
-  const p = sub(dir, scale(c, cosD));
-  const sinD = len(p);
-  const Ra = (E.cone.alongDeg * Math.PI) / 180;
-  const Rb = (E.cone.acrossDeg * Math.PI) / 180;
-  const cs = sinD > 1e-9 ? dot(p, u) / sinD : 1;
-  const sn = sinD > 1e-9 ? dot(p, cross(c, u)) / sinD : 0;
-  const R = 1 / Math.sqrt((cs * cs) / (Ra * Ra) + (sn * sn) / (Rb * Rb));
-  return { c, p, d: Math.acos(cosD), sinD, R, dR: -(R ** 3) * sn * cs * (1 / (Rb * Rb) - 1 / (Ra * Ra)) };
-}
-
-/**
- * How far a limb direction is past the swing boundary (rad, negative inside), to first order a true angular distance,
- * and the unit parent-frame rotation axis that raises it fastest. The restoring torque follows this gradient, so it
- * derives from a potential: a limb cannot slide sideways into a deep error for free and then be paid to leave it.
- */
-export function swingExcess(E: JointEnvelope, dir: Vec3, sideSign: number): { rad: number; axis: Vec3 } {
-  const { c, d, sinD, R, dR } = coneAt(E, dir, sideSign);
-  if (sinD < 1e-6) return { rad: d - R, axis: v3() };
-  const radial = norm(cross(c, dir), v3(1, 0, 0));
-  const g = sub(radial, scale(cross(dir, radial), dR / Math.max(sinD, 0.05)));
-  const n = len(g);
-  return { rad: (d - R) / n, axis: scale(g, 1 / n) };
-}
-
-/** Parent-frame swing range (deg) along one azimuth about the hanging limb (0 forward, 90 out, 180 back, -90 in). */
-export function swingExtentDeg(E: JointEnvelope, azimuthDeg: number): number {
-  const a = (azimuthDeg * Math.PI) / 180;
-  for (let deg = 0; deg < 180; deg += 0.25) {
-    const th = (deg * Math.PI) / 180;
-    if (swingExcess(E, v3(Math.sin(th) * Math.sin(a), -Math.cos(th), Math.sin(th) * Math.cos(a)), 1).rad > 0) return deg;
-  }
-  return 180;
-}
-
 /** Twist from the joint's neutral (rad), positive external on either side. */
 export const externalTwistRad = (E: JointEnvelope, twistRad: number, sideSign: number): number => wrapPi(sideSign * (twistRad - (E.neutralTwistDeg * Math.PI) / 180));
-
-/** A parent-frame limb direction pulled inside the swing cone by `marginRad`, along the line from the cone's centre. */
-export function clampDirToEnvelope(E: JointEnvelope, dir: Vec3, sideSign: number, marginRad: number): Vec3 {
-  const { c, p, d, sinD, R } = coneAt(E, dir, sideSign);
-  const r = R - marginRad;
-  if (d <= r || sinD < 1e-9) return dir;
-  return add(scale(c, Math.cos(r)), scale(p, Math.sin(r) / sinD));
-}
 
 const envelopeOf = (rag: Ragdoll, j: RagdollJoint): JointEnvelope | null => (j.kind === 'shoulder' ? rag.profile.envelope?.shoulder ?? null : j.kind === 'hip' ? rag.profile.envelope?.hip ?? null : null);
 

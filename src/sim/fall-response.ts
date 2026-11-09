@@ -173,7 +173,8 @@ export class FallResponse {
   }
 
   private envelope(ep: FallEpisode, kind: 'shoulder' | 'hip'): JointEnvelope {
-    return ep.rag.profile.envelope![kind];
+    // the simulation admits a fall response only on an envelope with hips (plan 12: an L3 or HC one is shoulder-only)
+    return ep.rag.profile.envelope![kind]!;
   }
 
   private coreQ(ep: FallEpisode): Quat {

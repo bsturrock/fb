@@ -244,6 +244,8 @@ export interface FootState {
   seeds: number;
   /** Plan 08 composed: substeps planned since the last reseed. */
   ownN: number;
+  /** Plan 12 (heel lift): the part of the shown foot's floor lift its ankle range limit makes (m, up): the foot on its toe, not held off. */
+  rangeLiftM: number;
   /** Plan 08 composed: the substep this carried step took over: its target is the old owner's, the path starts on the next. */
   carryFirst: boolean;
   /** Plan 08 composed: what the offset took up of a request seam or jump this substep (coordinates, not foot motion). */
@@ -420,6 +422,7 @@ function newFoot(): FootState {
     soleWV: 0,
     seeds: 0,
     ownN: 0,
+    rangeLiftM: 0,
     carried: false,
     carryFirst: false,
     seamOffset: v3(),
@@ -527,7 +530,12 @@ export interface FootPlanInput {
   /** Plan 08: filtered braking blend of the support (0..1; 0 without a braking stance). */
   brakeB?: number;
   /** Plan 08: contact mode: the feet follow the actual movement, the clip (still fading) has no say. */
-  contactHold?: boolean;  /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
+  contactHold?: boolean;
+  /**
+   * Plan 12 (a joint-range profile): a touchdown of a foot tilted toe down past its planned contact (the shoe at the
+   * ankle range limit, the shin leaning past it) lands on the ball of the foot: its lowest sole corner.
+   */
+  heelLift?: boolean;  /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
   debug?: FootDebug;
 }
 
@@ -573,7 +581,12 @@ function joinsRequest(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
   if (inp.debug?.noJoinCheck) return true;
   const t = trialOf(plan, s);
   advanceStep(t, s, inp);
-  return dist(t.feet[s].target, followNext(plan, s, inp, true)) <= HANDOVER_M;
+  // plan 12 (heel lift): the pose holds a step at its ankle range limit up off the floor (its floor lift) and the follow
+  // path starts from that achieved request: the step is compared at the height it is shown (L3-F7-phase25: R's right
+  // step, held 6 cm up, never joined the clip again)
+  const f = plan.feet[s];
+  const up = inp.heelLift ? Math.max(0, f.solvedW.y - f.target.y) : 0;
+  return dist(add(t.feet[s].target, v3(0, up, 0)), followNext(plan, s, inp, true)) <= HANDOVER_M;
 }
 
 /**
@@ -650,7 +663,7 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       const f = plan.feet[s];
       const o = plan.feet[other(s)];
       if (f.mode !== 'planted' || f.tentative) return false;
-      return o.mode === 'planted' || descentS(plan, o, inp) <= reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM);
+      return o.mode === 'planted' || descentS(plan, o, inp) <= reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM, inp.heelLift);
     };
     if (!inp.clip) plan.brakeHeld = false;
     else if (plan.brakeHeld) plan.brakeHeld = b >= C.brakeExitB;
@@ -697,7 +710,7 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
         if (!clip.stance[s]) {
           // plan 08: while the clip comes in a held foot stays until the other foot is down or it runs out of reach
           const o = plan.feet[other(s)];
-          const reachable = dist(add(f.heelW!, v3(0, inp.soleM, 0)), inp.hips[s]) <= plan.reachM;
+          const reachable = dist(plantedAnkle(f, inp.soleM, inp.heelLift), inp.hips[s]) <= plan.reachM;
           const holds = !!C && !f.tentative && reachable && ((clip.weight < 1 && !(o.mode === 'planted' && !o.tentative)) || f.solves * inp.dt < C.landWithinS);
           if (!holds) {
             release(plan, f, 'liftoff', inp.t, ev, s);
@@ -724,11 +737,17 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
           const rollF = clamp(c.rollF, 0, 1);
           // composed: where the moving foot is this substep, not where the last solve left it
           const here = C ? addScaled(f.ankleW, f.ankleV, inp.dt) : f.ankleW;
-          const feat = add(here, qRot(f.footQ, v3(0, -inp.soleM, c.toeZ * rollF)));
+          const feat0 = add(here, qRot(f.footQ, v3(0, -inp.soleM, c.toeZ * rollF)));
+          // plan 12: a foot tilted toe down past the clip's contact lands on the ball of the foot
+          const ball = ballOfFoot(plan, f, inp, here, c.toeZ * rollF);
+          const feat = ball ? ball.w : feat0;
           const ankleAt = add(here, v3(0, inp.groundY - feat.y, 0));
           if ((inp.debug?.noReachCheck || dist(ankleAt, inp.hips[s]) <= plan.reachM) && (!C || dist(here, followNext(plan, s, inp, false)) <= HANDOVER_M)) {
-            f.featureW = feat;
-            proposePlant(plan, f, inp, clip.headingRad, rollF, c.toeZ);
+            if (ball) proposeOnCorner(plan, f, inp, clip.headingRad, ball, c.toeZ);
+            else {
+              f.featureW = feat;
+              proposePlant(plan, f, inp, clip.headingRad, rollF, c.toeZ);
+            }
           }
         }
       }
@@ -779,7 +798,11 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       const settled = !C || len(hz(f.ankleV)) * inp.dt <= P.plantTolM;
       if (f.gapM <= P.plantTolM && !f.stale && settled && dist(ankleAt, inp.hips[s]) <= plan.reachM - P.reachMarginM) {
         f.wait = false;
-        proposePlant(plan, f, inp, headingOf(norm(hz(qRot(f.footQ, v3(0, 0, 1))), v3(0, 0, 1))), 0, inp.toeM);
+        const heading = headingOf(norm(hz(qRot(f.footQ, v3(0, 0, 1))), v3(0, 0, 1)));
+        // plan 12: a foot tilted toe down past the sole point below its ankle lands on the ball of the foot
+        const ball = ballOfFoot(plan, f, inp, f.ankleW, 0);
+        if (ball) proposeOnCorner(plan, f, inp, heading, ball, inp.toeM);
+        else proposePlant(plan, f, inp, heading, 0, inp.toeM);
       } else if (cross && (f.gapM > P.plantTolM || !settled)) {
         f.wait = false;
         continueSwing(plan, s, inp, ev);
@@ -793,10 +816,12 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       const f = plan.feet[s];
       // a proposal (initialization) is confirmed or failed by this substep's solve, not stepped from
       if (f.mode !== 'planted' || f.tentative) continue;
-      const ankleAt = add(f.heelW!, v3(0, inp.soleM, 0));
+      const ankleAt = plantedAnkle(f, inp.soleM, inp.heelLift);
       const reach = dist(ankleAt, inp.hips[s]);
       const yawErr = Math.abs(wrapPi(bodyHeading - f.headingRad));
-      const err = len(hz(sub(ankleAt, inp.home[s])));
+      // (where the foot stands is its footprint: a lifted heel turning about the ball of the foot does not move it, plan 12)
+      const standAt = add(f.heelW!, v3(0, inp.soleM, 0));
+      const err = len(hz(sub(standAt, inp.home[s])));
       if ((reach > plan.reachM && !f.inherited) || yawErr > rad(P.yawReleaseDeg)) {
         // the anchor is no longer valid: released now, swinging from where it is (no teleport)
         const why: FootReason = reach > plan.reachM ? 'reach' : 'yaw';
@@ -807,12 +832,12 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
         continue;
       }
       // plan 08: a foot ahead of its home along the travel is catching the body: it stays until the body has passed it
-      const catching = !!C && speed > P.settleSpeedMps && dot(hz(sub(ankleAt, inp.home[s])), hz(inp.vel)) > 0;
-      const sideErr = catching ? Math.abs(dot(hz(sub(ankleAt, inp.home[s])), v3(-inp.vel.z / speed, 0, inp.vel.x / speed))) : err;
+      const catching = !!C && speed > P.settleSpeedMps && dot(hz(sub(standAt, inp.home[s])), hz(inp.vel)) > 0;
+      const sideErr = catching ? Math.abs(dot(hz(sub(standAt, inp.home[s])), v3(-inp.vel.z / speed, 0, inp.vel.x / speed))) : err;
       // (a fresh plant is held like one under a clip: it is not stepped from the moment it lands)
-      const leaving = !!C && speed > P.settleSpeedMps && f.solves * inp.dt >= C.landWithinS && reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM) < C.stepAheadS;
+      const leaving = !!C && speed > P.settleSpeedMps && f.solves * inp.dt >= C.landWithinS && reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM, inp.heelLift) < C.stepAheadS;
       if (sideErr > P.stepTriggerM) want.push({ s, why: 'step', urgency: sideErr - P.stepTriggerM });
-      else if (leaving) want.push({ s, why: 'reach', urgency: 0.5 * (C!.stepAheadS - reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM)) });
+      else if (leaving) want.push({ s, why: 'reach', urgency: 0.5 * (C!.stepAheadS - reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM, inp.heelLift)) });
       else if (yawErr > rad(P.yawTriggerDeg)) want.push({ s, why: 'yaw', urgency: yawErr - rad(P.yawTriggerDeg) });
       else if (reach > plan.reachM - P.reachMarginM) want.push({ s, why: 'reach', urgency: reach - plan.reachM + P.reachMarginM });
       else if (still && !f.settled && err > P.settleTriggerM) want.push({ s, why: 'settle', urgency: (err - P.settleTriggerM) * 0.1 });
@@ -854,7 +879,8 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     const f = plan.feet[s];
     if (f.mode === 'planted') {
       out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX };
-      f.target = add(f.heelW!, v3(0, inp.soleM, 0));
+      // (plan 12: a plant on the ball of the foot, its heel lifted, has its ankle where the leg holds it)
+      f.target = plantedAnkle(f, inp.soleM, inp.heelLift);
       continue;
     }
     if (f.source === 'follow' && f.wait) {
@@ -1086,14 +1112,19 @@ function fitStance(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
   if (inp.debug?.noQuick || o.mode !== 'planted' || o.tentative || f.durS <= 0) return;
   const p = clamp(f.elapsedS / f.durS, 0, 1);
   const remain = (1 - p) * f.durS;
-  const left = reachTimeLeft(plan, o, inp.hips[os], hz(inp.vel), inp.soleM);
+  const left = reachTimeLeft(plan, o, inp.hips[os], hz(inp.vel), inp.soleM, inp.heelLift);
   if (p >= 1 || !(left < remain)) return;
   // not below a quarter of the shortest nominal step (no vanishing shuffles): a window shorter than that releases the
   // stance foot (its hard reach release) while this one finishes
   // plan 08: a foot descending from a clip swing keeps the time its descent needs
   const C = plan.profile.compose;
   const descent = C && f.why === 'continue' ? descentS(plan, f, inp) : 0;
-  const rem = Math.min(remain, Math.max(left, 0.25 * plan.profile.swing.minS, inp.dt, descent));
+  // plan 12 (heel lift): nor below the time its horizontal path needs to arrive within its acceleration limit. A stance
+  // foot rising onto its toes stays within reach longer, and shortening the step to it over all that time asked for more
+  // than the path can do (L3-F16-runStop: R's left foot 9 substeps late at 6 m/s); the stance foot then leaves first
+  const aMax = C ? stepAccelMax(C, inp.vel) : 0;
+  const brake = inp.heelLift && C && f.dest ? boundedHorizon(HORIZONTAL, f.target, f.stepH.v, limitH(f.stepH.a, aMax), f.dest, inp.dt, inp.dt, aMax) : 0;
+  const rem = Math.min(remain, Math.max(left, 0.25 * plan.profile.swing.minS, inp.dt, descent, brake));
   f.short = true;
   f.durS = rem / (1 - p);
   f.elapsedS = p * f.durS;
@@ -1116,7 +1147,7 @@ function fitLanding(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
   let need = 0;
   // (never past the time the held foot has left within its reach: a stance foot released with this one still up is
   // worse than a quick landing, fitStance)
-  if (o.mode === 'planted') need = Math.min(C.landGapS - (inp.t - o.plantedAtS) + inp.dt, reachTimeLeft(plan, o, inp.hips[other(s)], hz(inp.vel), inp.soleM));
+  if (o.mode === 'planted') need = Math.min(C.landGapS - (inp.t - o.plantedAtS) + inp.dt, reachTimeLeft(plan, o, inp.hips[other(s)], hz(inp.vel), inp.soleM, inp.heelLift));
   else if (o.mode === 'swing' && o.source === 'step' && !o.wait && o.elapsedS < o.durS) {
     // (a foot past its time is not waited for: when it lands is not known; once it has, the case above holds)
     const left = o.durS - o.elapsedS;
@@ -1129,8 +1160,8 @@ function fitLanding(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
 }
 
 /** Time (s) until a planted foot's anchor leaves the plant reach of a hip moving at `vel` (0: already out; Infinity: still). */
-function reachTimeLeft(plan: FootPlan, f: FootState, hip: Vec3, vel: Vec3, soleM: number): number {
-  const a = sub(add(f.heelW!, v3(0, soleM, 0)), hip);
+function reachTimeLeft(plan: FootPlan, f: FootState, hip: Vec3, vel: Vec3, soleM: number, heelLift?: boolean): number {
+  const a = sub(plantedAnkle(f, soleM, heelLift), hip);
   const c = dot(a, a) - plan.reachM * plan.reachM;
   if (c >= 0) return 0;
   const vv = dot(vel, vel);
@@ -1140,25 +1171,63 @@ function reachTimeLeft(plan: FootPlan, f: FootState, hip: Vec3, vel: Vec3, soleM
 }
 
 /**
+ * The ankle of a planted foot as its reach and step triggers read it: over its footprint at the flat-foot height. Plan 12
+ * (`heelLift`): a foot standing on a corner with its heel lifted (the achieved ankle above the flat-foot one) is read
+ * where it is; its flat-foot ankle lies the corner's distance back along the footprint, nowhere the leg is.
+ */
+function plantedAnkle(f: FootState, soleM: number, heelLift?: boolean): Vec3 {
+  const flat = add(f.heelW!, v3(0, soleM, 0));
+  return heelLift && f.ankleW.y > flat.y + HEEL_LIFT_M ? f.ankleW : flat;
+}
+
+/**
  * A composed step touches down on the lowest sole corner of the achieved foot, where that corner is this substep: a foot
  * short of its target (at the reach limit, tilted with the shin) does not jump to the flat footprint below the target.
  */
 function landOnCorner(plan: FootPlan, f: FootState, inp: FootPlanInput): void {
-  const { he, centerFoot } = plan.shoe;
   // the step's own path this substep: the achieved foot is on it (advanceStep)
-  const here = f.target;
-  let low = { x: 0, z: 0, y: Infinity, w: v3() };
+  proposeOnCorner(plan, f, inp, f.headingRad, lowestCorner(plan, f, inp, f.target), inp.toeM);
+}
+
+type SoleCorner = { x: number; z: number; y: number; w: Vec3 };
+
+/** The lowest sole corner (shoe frame x, z; world point) of the achieved foot frame with its ankle at `here`. */
+function lowestCorner(plan: FootPlan, f: FootState, inp: FootPlanInput, here: Vec3): SoleCorner {
+  const { he, centerFoot } = plan.shoe;
+  let low: SoleCorner = { x: 0, z: 0, y: Infinity, w: v3() };
   for (const x of [-he.x, he.x])
     for (const z of [centerFoot.z - he.z, centerFoot.z + he.z]) {
       const w = add(here, qRot(f.footQ, v3(x, -inp.soleM, z)));
       if (w.y < low.y) low = { x, z, y: w.y, w };
     }
+  return low;
+}
+
+/** A touchdown proposal on one sole corner of the footprint (the corner on its anchor, the rest of the sole lifts). */
+function proposeOnCorner(plan: FootPlan, f: FootState, inp: FootPlanInput, headingRad: number, low: SoleCorner, toeZ: number): void {
   f.featureW = low.w;
-  const dir = dirOf(f.headingRad);
+  const dir = dirOf(headingRad);
   const lat = v3(dir.z, 0, -dir.x);
-  proposePlant(plan, f, inp, f.headingRad, low.z / inp.toeM, inp.toeM);
+  proposePlant(plan, f, inp, headingRad, low.z / toeZ, toeZ);
   f.edgeX = low.x;
   f.heelW = addScaled(f.heelW!, lat, -low.x);
+}
+
+/** Plan 12: how far (m) a toe corner must lie below the planned contact point before the touchdown is on it. */
+const HEEL_LIFT_M = 0.002;
+
+/**
+ * Plan 12 heel lift (`FootPlanInput.heelLift`): with the shoe at its ankle range limit and the shin leaning past it, the
+ * foot is tilted toe down and its lowest sole corner is at the toe, below the sole point (`featZ` along the sole) that a
+ * flat foot lands on. A plant there could only be made by turning the whole foot onto that corner in one substep, which
+ * the shown foot follows at its continuity rate and misses (a failed proposal, a slide). The touchdown is on the corner:
+ * the ball of the foot, the heel lifted. Null when the profile is off or the foot is not tilted so.
+ */
+function ballOfFoot(plan: FootPlan, f: FootState, inp: FootPlanInput, here: Vec3, featZ: number): SoleCorner | null {
+  if (!inp.heelLift) return null;
+  const low = lowestCorner(plan, f, inp, here);
+  const feat = add(here, qRot(f.footQ, v3(0, -inp.soleM, featZ)));
+  return low.z > featZ && low.y < feat.y - HEEL_LIFT_M ? low : null;
 }
 
 /**
@@ -1280,8 +1349,16 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
   const little = (f.short || (settled && remainS <= 0)) && dist(f.target, inp.hips[s]) <= plan.reachM - P.reachMarginM;
   // composed: and the achieved foot is on the ground on its primary leg (a leg held off by clearance comes down first: the
   // proposal starts from the achieved foot, however long that takes, no teleport to the target)
-  if (p >= 1 && down && (len(hz(sub(f.dest!, f.target))) < 1e-3 || little) && (!C || (f.gapM <= P.plantTolM && f.variant === 0 && dist(f.ankleW, f.target) <= P.plantTolM))) {
-    if (C) landOnCorner(plan, f, inp);
+  // plan 12 heel lift: a foot at its ankle range limit is on the ground tilted, its ankle above the flat-foot target by
+  // the floor lift: it has arrived when it is over the target, and it lands on the corner it stands on
+  const lifted = !!inp.heelLift && f.ankleW.y > f.target.y;
+  // (and, held up at the leg's reach, inside the plant reach margin: a plant there is pulled off its corner by the leg's
+  // soft reach on its first solve, L3-F5-drag D's left foot 2.567 s)
+  const arrived = lifted ? len(hz(sub(f.ankleW, f.target))) <= P.plantTolM && dist(f.ankleW, inp.hips[s]) <= plan.reachM - P.reachMarginM : dist(f.ankleW, f.target) <= P.plantTolM;
+  if (p >= 1 && down && (len(hz(sub(f.dest!, f.target))) < 1e-3 || little) && (!C || (f.gapM <= P.plantTolM && f.variant === 0 && arrived))) {
+    // (the step's own path this substep, level, at the achieved height: the foot moves on while it lands)
+    if (C && lifted) proposeOnCorner(plan, f, inp, f.headingRad, lowestCorner(plan, f, inp, v3(f.target.x, f.ankleW.y, f.target.z)), inp.toeM);
+    else if (C) landOnCorner(plan, f, inp);
     else {
       f.featureW = sub(f.target, v3(0, inp.soleM, 0));
       proposePlant(plan, f, inp, f.headingRad, 0, inp.toeM);
@@ -1360,6 +1437,7 @@ function observeFoot(plan: FootPlan, s: ArmSide, pose: PhysicalPose, soleM: numb
   if (P.compose) {
     f.ankleV = plan.dtS > 0 ? scale(sub(ankle, f.ankleW), 1 / plan.dtS) : v3();
     f.solvedW = info?.request ?? ankle;
+    f.rangeLiftM = info?.rangeLiftM ?? 0;
     f.variant = info?.variant ?? 0;
     const z = qRot(q, v3(0, 0, 1));
     // measured in the leg's own sagittal plane, the one the next solve applies it in (a heading can lie across a high shoe)

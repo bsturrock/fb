@@ -41,7 +41,7 @@ describe('plan 08 opt-in', () => {
   it('asL3 keeps the source fixture and only adds the profiles', () => {
     const src = FIX('L2-F3-runStop');
     const d = asL3(src, 'L3-x');
-    expect({ ...d, id: src.id, milestone: src.milestone, footwork: src.footwork, locomotion: undefined, carry: undefined, selfClearance: undefined, rules: src.rules, notes: src.notes, runClips: src.runClips }).toEqual({ ...src, locomotion: undefined, carry: undefined });
+    expect({ ...d, id: src.id, milestone: src.milestone, footwork: src.footwork, locomotion: undefined, carry: undefined, selfClearance: undefined, jointRange: undefined, rules: src.rules, notes: src.notes, runClips: src.runClips }).toEqual({ ...src, locomotion: undefined, carry: undefined });
     // the user's stance widths, chosen by eye: the base profile keeps none, so the committed fixtures do not move
     expect(d.runClips!.stanceWidthAddM).toEqual({ walk: 0, 'fast-run': 0.065, sprint: 0.025 });
     expect(src.runClips!.stanceWidthAddM).toBeUndefined();
@@ -180,9 +180,10 @@ describe('plan 08 pass 1: start, brake, settle', () => {
     }
     expect(low).toBeLessThan(0.84);
     // the run's own flight ends with the clip: from the first plant of the handover on one foot is always down (the
-    // planner takes the legs only when the foot in the air can land in time: that plant is at 3.28 s)
+    // planner takes the legs only when the foot in the air can land in time: that plant is at 3.28 s; plan 12: 3.325 s,
+    // the stance foot rises onto its toes and stays within reach 46 ms longer, and the step keeps the time its path needs)
     const down = sim.events.find((e) => e.type === 'footPlant' && e.t > 3.2)!;
-    expect(down.t).toBeLessThan(3.3);
+    expect(down.t).toBeLessThan(3.33);
     expect(both.filter((t) => t > down.t)).toEqual([]);
     sim.dispose();
   }, 30000);

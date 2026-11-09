@@ -94,6 +94,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
       readyHands: !!pl.intent.debug?.readyHands,
       carriesBall: pl.setup.role === 'runner',
       ...(host.def.carry ? { carry: host.def.carry } : {}),
+      ...(host.def.jointRange ? { jointRange: host.def.jointRange } : {}),
       localVelDir: sp > 0.2 ? v3(localV.x / sp, 0, localV.z / sp) : v3(0, 0, 1),
       clearance: R ? host.poseClearance(pl, limbs) : undefined,
       memory: pl.poseMemory,
@@ -230,6 +231,7 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
     sideSign: { left: -1, right: 1 },
     brakeB: sus.brakeB,
     contactHold: pl.loco?.mode === 'contact',
+    ...(host.def.jointRange ? { heelLift: true } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
   };
 }

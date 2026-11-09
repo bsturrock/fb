@@ -9,10 +9,11 @@ import type { ArmSide, SegmentId } from './contracts';
 import { CARRY_ARM, carryRequest, seatBallCapsule, seatBallLocal, seatBallWorld, seatOn, seatPalmLocal, stepHandW, type CarryProfile, type CarrySeat } from './carry';
 import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
-import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
+import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangeProfile, type RagdollProfile } from './profiles';
+import { behindDeg, clampDirToEnvelope } from './joint-cone';
 import type { PoseDebug, PoseProbe } from './debug';
 import {
-  add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qInvRot, qMul, qRot, scale, sub, toWorld, upOf, v3,
+  add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qFromUnitVectors, qInvRot, qMul, qRot, scale, sub, toWorld, upOf, v3,
   type Pose, type Quat, type Vec3,
 } from './vec';
 
@@ -45,9 +46,10 @@ export interface PhysicalPose {
   /**
    * Plan 07 (foot requests present): per leg the chosen variant (0 = primary; anything else is a clearance departure),
    * the final IK request (after the stance / plant IK and the floor lift), the floor lift itself (m) and the soft-reach
-   * clamp of the request (m, the part of the residual reach clamping explains).
+   * clamp of the request (m, the part of the residual reach clamping explains). Plan 12 (a joint-range profile): the floor
+   * lift's rise (m) when the shoe is at its dorsiflexion limit (the foot on its toe, the heel lifted).
    */
-  legInfo?: Partial<Record<ArmSide, { variant: number; request: Vec3; liftM: number; softM: number; rollF?: number; edgeX?: number; soleBase?: number; soleAngle?: number }>>;
+  legInfo?: Partial<Record<ArmSide, { variant: number; request: Vec3; liftM: number; rangeLiftM?: number; softM: number; rollF?: number; edgeX?: number; soleBase?: number; soleAngle?: number }>>;
   /**
    * Plan 08a (carry profile, ball carrier): the hand and ball on the achieved right forearm (carry.ts). The palm landmark is
    * the turned hand's and `carriedBall` the ball centre. A ragdoll keeps the last supported seat on its forearm. Absent: no
@@ -414,6 +416,12 @@ export interface ProxyPoseInput {
   carriesBall?: boolean;
   /** Plan 08a: the ball-arm carry; absent: the plan 06 hold. Ready hands leave it in place (the ball stays carried). */
   carry?: CarryProfile;
+  /**
+   * Plan 12 joint range (absent: the historical ranges). Every procedural arm candidate's upper arm is kept inside the
+   * shoulder cone (core frame) and pays a soft cost for being behind the side line; ground-relative shoes keep the
+   * profile's ankle range.
+   */
+  jointRange?: JointRangeProfile;
   /** Horizontal velocity direction in body-local frame (for leg swing direction). */
   localVelDir?: Vec3;
   clearance?: PoseClearance;
@@ -836,10 +844,25 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // plan 07a (ground-relative poses): the previous shown elbow keeps the bend plane when the pole degenerates
       const prevElbowL = gr0 ? memVec(mem, `${s}Arm:e`) : null;
       const prevElbow = prevElbowL ? W(prevElbowL) : null;
+      const JR = inp.jointRange;
       const procedural = (palmL: Vec3, poleL: Vec3) => (): ArmC => {
         const tgt = W(palmL);
         const r = twoBone(sh, tgt, R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, stablePole(sh, tgt, qRot(pose.q, poleL), prevElbow, CONT_ARM_MPS * (inp.dtS ?? 0), CONT_FAST_MPS * (inp.dtS ?? 0)), undefined, elbowMin);
-        return { ...build(r.mid, r.end), tgtL: palmL, poleL };
+        if (!JR) return { ...build(r.mid, r.end), tgtL: palmL, poleL };
+        // plan 12: an upper arm outside the shoulder cone turns the whole chain rigidly about the shoulder onto the
+        // boundary (the elbow bend kept, the palm off its target: the request residual reports it)
+        let { mid, end } = r;
+        const d = qInvRot(pose.q, norm(sub(mid, sh), v3(0, -1, 0)));
+        const dc = clampDirToEnvelope(JR.shoulder, d, sx, 0);
+        if (dc !== d) {
+          const q = qFromUnitVectors(qRot(pose.q, d), qRot(pose.q, dc));
+          mid = add(sh, qRot(q, sub(mid, sh)));
+          end = add(sh, qRot(q, sub(end, sh)));
+        }
+        const c = build(mid, end);
+        // and the forward preference: a soft cost per 30 deg behind the side line
+        const behind = behindDeg(dc);
+        return { ...c, soft: behind > 0 ? c.soft + (JR.forwardCostM * behind) / 30 : c.soft, tgtL: palmL, poleL };
       };
       let palm0 = proceduralArmTargetLocal(s, inp);
       let pole0 = v3(0.6 * sx, -0.5, -0.6);
@@ -1048,6 +1071,24 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     // keeps a minimum knee flexion, so the knee never snaps straight and its hinge axis never flips) and the clip's foot
     // pitch at the ankle (the shoe keeps the clip foot's angle to the floor within the ankle range, so a planted foot
     // stays flat while the shin leans). `depth` here is the floor depth.
+    // plan 12: a joint-range profile's ankle range on ground-relative legs (past it the plant pivots on a sole corner)
+    const JA = inp.jointRange?.ankle;
+    const dorsi = JA ? (JA.dorsiDeg * Math.PI) / 180 : ANKLE_DORSI;
+    const plantar = JA ? (JA.plantarDeg * Math.PI) / 180 : ANKLE_PLANTAR;
+    // plan 07 plant: the ankle (fixed point over the shoe frame) that puts the planted sole point (edgeX, toeZ * rollF)
+    // on its world anchor for a leg solve
+    const plantIk = (solve: (t: Vec3) => LegC, start: Vec3, f: FootRequest & { kind: 'plant' }, rf: number, ex: number): Vec3 => {
+      const dir = v3(Math.sin(f.headingRad), 0, Math.cos(f.headingRad));
+      const lat = v3(Math.cos(f.headingRad), 0, -Math.sin(f.headingRad));
+      const feature = addScaled(addScaled(f.heelW, dir, f.toeZ * rf), lat, ex);
+      const soleFoot = v3(ex, -soleUp, f.toeZ * rf);
+      let p = start;
+      for (let i = 0; i < 4; i++) {
+        const c0 = solve(p);
+        p = sub(feature, qRot(pitchShin(c0.chain.frameB, c0.pitch), soleFoot));
+      }
+      return p;
+    };
     const legSolver = (pole: Vec3) => {
       const hdir = norm(v3(pole.x, 0, pole.z), fwd);
       const a = R.lengths.thigh;
@@ -1072,10 +1113,15 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // the blended foot angle (clip at its weight, flat on the ground otherwise) at full ankle authority
         const wc = sl ? smp!.weight : 0;
         const want = Math.atan2(zw.y, dot(zw, hdir)) - (gr ? (fr?.soleW ?? 1) * wc * (sl?.footPitch ?? 0) + (fr?.soleO ?? 0) : sl!.footPitch);
-        const pitch = (gr ? 1 : wc) * clamp(Math.atan2(Math.sin(want), Math.cos(want)), -(gr ? ANKLE_DORSI : ANKLE_DORSI_LEGACY), ANKLE_PLANTAR);
+        const pitch = (gr ? 1 : wc) * clamp(Math.atan2(Math.sin(want), Math.cos(want)), -(gr ? dorsi : ANKLE_DORSI_LEGACY), gr ? plantar : ANKLE_PLANTAR);
         const shapes = legShapes(R, s, hip, r.mid, ankle, chain.frameB, pitchShin(chain.frameB, pitch));
         const zs = qRot(pitchShin(chain.frameB, pitch), v3(0, 0, 1));
-        return { knee: r.mid, ankle, chain, shapes, depth: floorDepth(shapes), soft: 0, softM: dist(t, soft(t)), pitch, pole, held: sr.held, reachLimited: sr.limited, soleAngle: Math.atan2(zs.y, dot(zs, hdir)) };
+        // plan 12 (a joint-range profile): the achieved angle in the measure the next solve applies it in, the shin frame's
+        // angle less the pitch. The shoe's own projected angle differs from it when the shin frame lies across the heading
+        // (L3-F11-invalid: D's falling left leg, its shin frame 50 degrees across, 25 degrees apart), and a new owner seeded
+        // from that would turn the shoe by the difference in one substep
+        const soleAngle = JA ? Math.atan2(Math.sin(Math.atan2(zw.y, dot(zw, hdir)) - pitch), Math.cos(Math.atan2(zw.y, dot(zw, hdir)) - pitch)) : Math.atan2(zs.y, dot(zs, hdir));
+        return { knee: r.mid, ankle, chain, shapes, depth: floorDepth(shapes), soft: 0, softM: dist(t, soft(t)), pitch, pole, held: sr.held, reachLimited: sr.limited, soleAngle };
       };
       return { solve, hdir };
     };
@@ -1100,18 +1146,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           // at the ankle range, a tilted shin), the footprint pivots on that corner instead (the same footprint's corner
           // on its anchor; the rest of the sole lifts). The pivot is a sole point (edgeX, toeZ * rollF) of the shoe
           // frame; the roll fraction then lies outside [0, 1].
-          const dir = v3(Math.sin(fr.headingRad), 0, Math.cos(fr.headingRad));
-          const lat = v3(Math.cos(fr.headingRad), 0, -Math.sin(fr.headingRad));
-          const ikAt = (rf: number, ex: number): Vec3 => {
-            const feature = addScaled(addScaled(fr.heelW, dir, fr.toeZ * rf), lat, ex);
-            const soleFoot = v3(ex, -soleUp, fr.toeZ * rf);
-            let p = target;
-            for (let i = 0; i < 4; i++) {
-              const c0 = solve(p);
-              p = sub(feature, qRot(pitchShin(c0.chain.frameB, c0.pitch), soleFoot));
-            }
-            return p;
-          };
+          const ikAt = (rf: number, ex: number): Vec3 => plantIk(solve, target, fr, rf, ex);
           let rf = fr.rollF;
           let ex = fr.edgeX ?? 0;
           let p = ikAt(rf, ex);
@@ -1224,10 +1259,15 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const extOk = Math.max(HARD_OK, chosen.depth) + 1e-9;
         const floorOk = Math.max(CONT_FLOOR_OK, floorC) + 1e-9;
         // the blended target, pushed out along the contact normals (and up off the floor) while it penetrates
+        // plan 12 (a joint-range profile): a continuing plant's shown leg, its knee pole still blending in, keeps its sole
+        // point on the anchor at the blended pole. With the shoe at the ankle range limit the foot turns with the shin
+        // about that point (the heel lifts as the shin leans past the range), and the ankle moves with it as fast as the
+        // shin turns; blended at the plant rate it would drag the sole point off its anchor (L3-F1-mirror0: D's toe, 1.2 cm)
+        const pivot = !!inp.jointRange && fr?.kind === 'plant' && r.index === 0 && !rebased && chosen.rollF !== undefined && dist(dp, dc) <= CONT_PLANT_EXACT_M ? fr : null;
         const at = (al: number, deep = false): LegC & { good: boolean; rank: number } => {
-          const t0 = W(add(base, lerp(dp, dc, al)));
-          let t = t0;
           const sol = legSolver(qRot(pose.q, towardDir(pp, pc, al)));
+          const t0 = pivot ? plantIk(sol.solve, W(add(base, lerp(dp, dc, al))), pivot, chosen.rollF!, chosen.edgeX ?? 0) : W(add(base, lerp(dp, dc, al)));
+          let t = t0;
           let c = sol.solve(t);
           let de = ext(c.shapes);
           // pushed toward validity (HARD_OK), also when no candidate is valid (tangled with another body)
@@ -1295,7 +1335,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     if (l.chain.fallback) straightFallback.push(`${s}Knee`);
     limbClearance[`${s}Leg`] = l.depth;
     if (sl || gr) anklePitchDeg[s] = (l.pitch * 180) / Math.PI;
-    if (inp.feet) legInfo[s] = { variant: r.index, request: l.req ?? W(base), liftM: l.ik && l.req ? dist(l.req, l.ik) : 0, softM: l.softM, soleBase: sl ? (fr?.soleW ?? 1) * smp!.weight * sl.footPitch : 0, soleAngle: l.soleAngle, ...(l.rollF !== undefined ? { rollF: l.rollF, edgeX: l.edgeX ?? 0 } : {}) };
+    if (inp.feet) legInfo[s] = { variant: r.index, request: l.req ?? W(base), liftM: l.ik && l.req ? dist(l.req, l.ik) : 0, ...(JA && l.ik && l.req && l.pitch <= -dorsi + 1e-6 ? { rangeLiftM: Math.max(0, l.req.y - l.ik.y) } : {}), softM: l.softM, soleBase: sl ? (fr?.soleW ?? 1) * smp!.weight * sl.footPitch : 0, soleAngle: l.soleAngle, ...(l.rollF !== undefined ? { rollF: l.rollF, edgeX: l.edgeX ?? 0 } : {}) };
   }
   const out: PhysicalPose = { playerId: inp.playerId, segments: segs, jointLandmarksWorld: lm, hingeDeg, straightFallback, limbClearance };
   if (seat) out.carry = seat;

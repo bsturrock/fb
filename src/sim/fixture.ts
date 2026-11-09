@@ -1,7 +1,7 @@
 // Fixture definition: starting conditions and requests, never post-contact trajectories.
 import type { CarryProfile } from './carry';
 import type { ArmSide, PlayerId, Role, StanceRequest } from './contracts';
-import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, FallResponseProfile, MotorProfile, RagdollProfile, RuleProfile, SelfClearanceProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
+import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, FallResponseProfile, JointRangeProfile, MotorProfile, RagdollProfile, RuleProfile, SelfClearanceProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
 import type { CandidateEdit } from './ragdoll';
 import type { FootworkProfile } from './footwork';
 import type { LocomotionProfile } from './locomotion';
@@ -80,6 +80,11 @@ export interface FixtureDef {
    * ragdoll forearms stay out of each player's own measured trunk; players without a measured trunk are unaffected.
    */
   selfClearance?: SelfClearanceProfile;
+  /**
+   * Plan 12 joint range (absent = the historical ranges): the shoulder swing cone for the supported pose, the arm-task
+   * arms and the ragdoll envelope (`withJointRange`), the supported ankle range, and the ragdoll's limp foot.
+   */
+  jointRange?: JointRangeProfile;
   /**
    * Plan 07: per-foot plant / swing planner (absent = the plan 06/06a pose path unchanged). Pose only; requires the
    * suspension support (the planner reads its probed ground).

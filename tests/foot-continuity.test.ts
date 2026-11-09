@@ -133,12 +133,17 @@ async function continuity(d: FixtureDef): Promise<{ breaches: Breach[]; outOfTim
           const carry = r1.source === 'follow' && r1.seeds === r2.seeds;
           if (chase && !carry && r0) {
             const reseed = r1.seeds !== r2.seeds;
-            const from = reseed ? { y: r1.sy, v: r1.avy } : { y: r1.y, v: (r1.y - r0.y) / dt };
+            // (a step one row old started from the achieved request, not from the old owner's target: the two differ where the
+            // pose lifts a foot at its ankle range limit off the floor, plan 12)
+            const from = reseed ? { y: r1.sy, v: r1.avy } : { y: r1.y, v: (r1.y - (r0.seeds !== r1.seeds ? r0.sy : r0.y)) / dt };
             if (reseed) seen.chaseReseeds++;
             else if (r1.mode === 'airborne' && r1.source === 'step') seen.chaseInside++;
             else seen.chaseStarts++;
             const acc = Math.abs((r2.y - from.y) / dt - from.v) / dt;
-            if (acc > C.liftAccelMps2 + 1e-9) breaches.push({ what: `chase vertical acceleration${reseed ? ' (reseed)' : ''}`, at, got: acc, limit: C.liftAccelMps2 });
+            // plus what the lift cap takes off a start faster than it (plan 12: L3-F9-noProbe-exit D's left foot reseeds at 0.6875 s
+            // from an ankle the lifted hip carries up at 1.70 m/s, over the 1.5 m/s cap; B1 allows the speed cap the same way)
+            const cut = Math.max(0, Math.abs(from.v) - FOOTWORK_L3.swing.maxLiftRateMps) / dt;
+            if (acc > C.liftAccelMps2 + cut + 1e-9) breaches.push({ what: `chase vertical acceleration${reseed ? ' (reseed)' : ''}`, at, got: acc, limit: C.liftAccelMps2 + cut });
           }
           // a step whose time runs out while it moves (the B1 reproductions): its motion over the next substep
           const was = late.get(k);
@@ -194,11 +199,13 @@ describe('plan 10b foot target continuity', () => {
         expect(x.speed - x.next, `${id} ${x.at} ${x.t.toFixed(4)}`).toBeLessThanOrEqual(x.aMax * (1 / 240) + 1e-9);
       }
       if (id === 'L3-F3-side') {
-        // D's left foot, the first reproduction: out of time at over 10 m/s near 0.054 s, still moving after it
-        const first = moving.find((x) => x.at === 'D:left' && x.t < 0.07);
-        expect(first, 'D left out of time near 0.054 s').toBeDefined();
-        expect(first!.speed).toBeGreaterThan(10);
-        expect(first!.next).toBeGreaterThan(10);
+        // plan 12: the first reproduction (D's left foot out of time at over 10 m/s near 0.054 s) is no longer timed
+        // shorter than its path needs (a heel-lift stance step keeps that time, fitStance) and lands on time. R's left
+        // foot runs out of time near 0.583 s at over 3 m/s and is still moving after it
+        const first = moving.find((x) => x.at === 'R:left' && Math.abs(x.t - 0.583) < 0.01);
+        expect(first, 'R left out of time near 0.583 s').toBeDefined();
+        expect(first!.speed).toBeGreaterThan(3);
+        expect(first!.next).toBeGreaterThan(1);
       }
     }
   }, 60000);

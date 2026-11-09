@@ -24,8 +24,12 @@ export const REQUEST_JUMP_MPS = 15;
 /** Plan 08: the largest velocity change of one substep a foot takes joining the request (m/s of the bounded recovery above rejoinMps). */
 export const HANDOVER_M = 0.008;
 
-/** Composed: a leg held off its target by another body (a clearance candidate, or pushed off it): it is mid-correction. */
-export const heldOff = (plan: FootPlan, f: FootState): boolean => f.ownN > 0 && (f.variant !== 0 || dist(f.solvedW, f.target) > plan.profile.plantTolM);
+/**
+ * Composed: a leg held off its target by another body (a clearance candidate, or pushed off it): it is mid-correction. Plan 12:
+ * the floor lift of a foot at its ankle range limit is not a hold (the foot stands on its toe over the target; counted, a toe
+ * dragged at the limit never handed back to the clip: L3-F7-phase25 R's right foot, a step from 1.06 s to the end of the run).
+ */
+export const heldOff = (plan: FootPlan, f: FootState): boolean => f.ownN > 0 && (f.variant !== 0 || dist(f.rangeLiftM > 0 ? v3(f.solvedW.x, f.solvedW.y - f.rangeLiftM, f.solvedW.z) : f.solvedW, f.target) > plan.profile.plantTolM);
 
 /**
  * Composed: an owner that may hand its foot on. A held leg is mid-correction, and an owner of one substep has shown only the motion

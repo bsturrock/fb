@@ -683,10 +683,11 @@ export interface RagdollEnvelope {
   persistS: number;
   slackDecayDegPerS: number;
   shoulder: JointEnvelope;
-  hip: JointEnvelope;
+  /** Absent (plan 12: the shoulder-only envelope of an L3 or HC ragdoll under a joint-range profile): the hips are free. */
+  hip?: JointEnvelope;
 }
 
-export const ENVELOPE_L4: RagdollEnvelope = {
+export const ENVELOPE_L4: RagdollEnvelope & { hip: JointEnvelope } = {
   // v2 (plan 10b): hip twist 800 -> 1600 N m/rad (damping 3 -> 4, the same damping ratio)
   id: 'envelope-l4-v2',
   mode: 'soft',
@@ -713,6 +714,46 @@ export const ENVELOPE_L4: RagdollEnvelope = {
     maxTorqueNm: 800,
   },
 };
+
+/**
+ * Plan 12 joint range (opt-in per fixture; absent = the historical ranges). One shoulder swing cone in the core frame for
+ * all three arm sources (supported pose, arm-task arms, ragdoll envelope), the supported ankle range, and the limp foot
+ * of a ragdoll. Engineering settings, not measured athlete ranges.
+ */
+export interface JointRangeProfile {
+  id: string;
+  /**
+   * The shoulder's range: plan 09's twist range, stiffness, damping and torque cap, with the swing cone refit to 45 deg
+   * behind the side line hanging and 30 deg raised to horizontal (`.scratch/shoulder/fit.ts`).
+   */
+  shoulder: JointEnvelope;
+  /** Supported pose: soft cost (m) per 30 deg of upper arm behind the side line, only when it is behind. */
+  forwardCostM: number;
+  /** Supported (ground-relative) legs: shoe pitch range about the shin, deg. Past `dorsiDeg` the heel lifts. */
+  ankle: { dorsiDeg: number; plantarDeg: number };
+  /** Ragdoll: from the conversion the shoe eases to `pitchDeg` (positive toe down) at the rate that covers the conversion difference in `easeS`. */
+  limpFoot: { pitchDeg: number; easeS: number };
+}
+
+export const JOINT_RANGE_V1: JointRangeProfile = {
+  id: 'joint-range-v1',
+  shoulder: { ...ENVELOPE_L4.shoulder, cone: { tiltDeg: 67.5, towardDeg: 25, alongDeg: 110, acrossDeg: 95 } },
+  forwardCostM: 0.01,
+  ankle: { dorsiDeg: 25, plantarDeg: 50 },
+  limpFoot: { pitchDeg: 15, easeS: 0.3 },
+};
+
+/**
+ * Plan 12: the ragdoll under a joint-range profile. The envelope's shoulder is the profile's (an L4 envelope keeps its
+ * hips); a ragdoll without an envelope gets a shoulder-only one with the plan 09 tolerance, persistence and slack decay.
+ */
+export function withJointRange(R: RagdollProfile, J: JointRangeProfile): RagdollProfile {
+  const E = R.envelope;
+  const envelope: RagdollEnvelope = E
+    ? { ...E, id: `${E.id}+${J.id}`, shoulder: J.shoulder }
+    : { id: `envelope-${J.id}`, mode: 'soft', toleranceDeg: ENVELOPE_L4.toleranceDeg, persistS: ENVELOPE_L4.persistS, slackDecayDegPerS: ENVELOPE_L4.slackDecayDegPerS, shoulder: J.shoulder };
+  return { ...R, id: `${R.id}+${J.id}`, envelope };
+}
 
 /**
  * Plan 09 active fall response: bounded internal joint torque on an accepted ragdoll only. Every value is an initial

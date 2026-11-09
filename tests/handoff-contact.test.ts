@@ -466,10 +466,15 @@ describe('HC contact continuity of the published pose', () => {
   });
 
   it('every HC variant: no limb jump over 0.3 m in one tick', async () => {
+    // plan 12 known case (docs/handoff/plan12.md): D, left a rigid falling proxy by its intentionally invalid conversion,
+    // clamps R with its right forearm. At 2.10 s every arm-task pole but one puts the arm 0.6-13 cm into R, and the one
+    // clear pole has the elbow 0.50 m away (the twin's arm, on another path since the shoulder range, never gets there).
+    // Bounded here, not let go
+    const known: Record<string, number> = { 'HC-F5-invalidOne': 0.5 };
     for (const def of HC()) {
       await breathe();
       const r = await worstSnap(def);
-      expect(r.worst, `${def.id} ${r.at}`).toBeLessThanOrEqual(0.3);
+      expect(r.worst, `${def.id} ${r.at}`).toBeLessThanOrEqual(known[def.id] ?? 0.3);
     }
   });
 

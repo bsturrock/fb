@@ -2,7 +2,7 @@
 // path's boundary conditions and the step's limits: a quintic substep toward a destination at rest, its sampled peak
 // acceleration over a set of axes, the remaining time lengthened until that peak is within a limit, and the limits.
 import type { FootComposeProfile } from './footwork';
-import { horiz, len, sub, v3, type Vec3 } from './vec';
+import { horiz, len, scale, sub, v3, type Vec3 } from './vec';
 
 /**
  * One substep along the quintic from (p, v, a) to the destination at rest in time T (the minimum-jerk path for those
@@ -64,7 +64,10 @@ export function boundedHorizon(axes: readonly Axis[], prev: Vec3, v: Vec3, a: Ve
   const norm2 = (w: Vec3): number => Math.sqrt(axes.reduce((q, k) => q + w[k] * w[k], 0));
   let T = T0;
   if (T <= dt + 1e-9) {
-    if (norm2(D) <= 0.5 * aMax * dt * dt && norm2(v) <= aMax * dt) return T;
+    // (and the change from the last substep's motion, the published second difference, within the limit: that motion is
+    // the mean over its substep, v - a dt / 2. Plan 12: L3-F16-kick R's left step, shortened to its stance, stopped dead
+    // from 3.6 mm a substep at 1.3 times the limit)
+    if (norm2(D) <= 0.5 * aMax * dt * dt && norm2(v) <= aMax * dt && norm2(sub(D, scale(sub(v, scale(a, dt / 2)), dt))) <= aMax * dt * dt) return T;
     T = 2 * dt;
   }
   for (let i = 0; i < 48 && peakAccel(axes, D, v, a, T, dt) > aMax; i++) T *= 1.15;

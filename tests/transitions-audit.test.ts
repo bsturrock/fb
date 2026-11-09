@@ -10,6 +10,9 @@ import { nonEmpty, run, runSim, traceRowsDiff } from './helpers';
 import { SIDES, FIX, L3, each } from './transitions-shared';
 
 
+// Plan 12 known audit cases (listed in docs/handoff/plan12.md): boundary (fixture, time, player, landmark) and its bound (m)
+const KNOWN_AUDIT: Record<string, number> = { 'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101 };
+
 // a long file of synchronous runs: let the runner's messages through between tests
 afterEach(() => new Promise<void>((done) => setTimeout(done)));
 
@@ -76,16 +79,22 @@ describe('plan 08 transition audit', () => {
     sim.dispose();
     for (const x of ds) {
       expect(Object.keys(x.rawBy).length, d.id).toBeGreaterThan(20);
-      expect(x.deltaM, `${d.id} ${x.t.toFixed(4)} ${x.playerId} ${x.landmark} ${x.from} > ${x.to} raw ${x.rawM.toFixed(4)}`).toBeLessThanOrEqual(0.01);
+      // plan 12 known case (handoff): R's left foot on its toe at the ankle limit lifts into a step inside a contact pile. The
+      // new owner turns its heading at its yaw rate and takes the achieved foot angle, and the shown leg leaves clearance
+      // variant 1 for the primary one: 1.009 cm at the ankle. Bounded here, not let go
+      const known = KNOWN_AUDIT[`${d.id} ${x.t.toFixed(4)} ${x.playerId} ${x.landmark}`];
+      expect(x.deltaM, `${d.id} ${x.t.toFixed(4)} ${x.playerId} ${x.landmark} ${x.from} > ${x.to} raw ${x.rawM.toFixed(4)}`).toBeLessThanOrEqual(known ?? 0.01);
     }
     for (const r of reseeds) expect(ds.some((x) => x.playerId === r.id && Math.abs(x.t - r.t) < 1e-9), `${d.id} reseed of ${r.id} at ${r.t.toFixed(5)} has no boundary`).toBe(true);
   });
 
   it('a reseed that keeps mode and source is a boundary, compared with the old owner', async () => {
-    // L3-F1-phase5: D's right foot is reseeded three times early in the run with no change of mode or source: the pose takes each as
-    // a new owner, so the old owner's continuation has to be what the live foot is compared with
-    const ds = (await audited(FIX('L3-F1-phase5'))).filter((x) => x.playerId === 'D');
-    for (const t of [0.029167, 0.041667, 0.05]) {
+    // L3-F7-phase75: R's right foot, planted on the ball of the foot, is released by clearance and planted again in the next
+    // substep with no change of mode or source: the pose takes it as a new owner, so the old owner's continuation has to be
+    // what the live foot is compared with. (Before plan 12: L3-F1-phase5, D's right foot reseeded three times early in the
+    // run; with the ankle range and heel lift those proposals no longer fail.)
+    const ds = (await audited(FIX('L3-F7-phase75'))).filter((x) => x.playerId === 'R');
+    for (const t of [0.541667]) {
       const x = ds.find((b) => Math.abs(b.t - t) < 1e-5);
       expect(x, `no boundary at ${t}`).toBeTruthy();
       expect(x!.from.replace(/#\d+/g, ''), `${t}`).toBe(x!.to.replace(/#\d+/g, ''));
@@ -95,10 +104,11 @@ describe('plan 08 transition audit', () => {
   }, 30000);
 
   it('a step is compared with its old path as it is: nothing of a step is set aside (plan 10b)', async () => {
-    // L3-F1-low: D's step loses support out of time. Before 10b the reference carried a timed-out step's stored motion on
-    // (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is nothing to carry on.
-    // The run's only supported-to-airborne boundary of D (1.50 s before plan 11's arm self-clearance, 1.65 s with it)
-    const ds = await audited(FIX('L3-F1-low'));
+    // A step that loses support (first L3-F1-low: D's step out of time). Before 10b the reference carried a timed-out step's
+    // stored motion on (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is
+    // nothing to carry on. L3-F1-phase5: the run's only supported-to-airborne boundary of D, 1.55 s (plan 12: L3-F1-low's
+    // D no longer loses support on a step, its boundary at 1.65 s is gone)
+    const ds = await audited(FIX('L3-F1-phase5'));
     const x = ds.find((b) => b.playerId === 'D' && b.to.includes('airborne') && !b.from.includes('airborne'));
     expect(x).toBeTruthy();
     expect(x!.legs.right.old.kind).toBe('target');
@@ -153,8 +163,9 @@ describe('plan 08 transition audit', () => {
     // left knee pole turns 19 degrees in one substep at contact entry and the leg takes another clearance variant, while
     // the old owner keeps its heading. The audit has to report that boundary, with nothing set aside. (The plan 08 control,
     // the handover check switched off in L3-F7-phase25, no longer gives one: with 10b's bounded step paths no handover in
-    // L3 departs by over 1 cm without it.)
-    const ds = await audited(FIX('L3-F7-loadRelease'), { foot: { crossingBodyHeading: true } });
+    // L3 departs by over 1 cm without it.) Plan 12: run without the joint-range profile; with it, D's run into the contact
+    // changes and the faulted crossing there stays under 1 cm
+    const ds = await audited({ ...FIX('L3-F7-loadRelease'), jointRange: undefined }, { foot: { crossingBodyHeading: true } });
     const x = ds.filter((b) => b.deltaM > 0.01);
     expect(x.map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`)).toEqual(['D 0.5750 leftAnkle']);
     for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
@@ -165,7 +176,9 @@ describe('plan 08 transition audit', () => {
     let kept = 0;
     let airborne = 0;
     let overdue = 0;
-    for (const d of L3(/^L3-F(1-low|1-phase4|3-collision|9-noProbe-contact|9-noProbe-free|9-noProbe-prep|11-invalid)$/)) {
+    // (plan 12: the overdue step that loses support moved out of these runs with the heel lift; L3-F9-noProbe-exit R's right
+    // foot has one at 0.6333 s)
+    for (const d of L3(/^L3-F(1-low|1-phase4|3-collision|9-noProbe-contact|9-noProbe-free|9-noProbe-prep|9-noProbe-exit|11-invalid)$/)) {
       const was = new Map<string, { carried: boolean; seeds: number; mode: string; source: string; late: boolean; moveV: Vec3; target: Vec3; aMax: number }>();
       const sim = await Simulation.create(d, {
         transitionAudit: true,

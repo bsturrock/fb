@@ -201,6 +201,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       carry: def.carry?.id,
       fallResponse: def.fallResponse?.id,
       selfClearance: def.selfClearance?.id,
+      jointRange: def.jointRange?.id,
     },
     profiles: {
       body: bodyProfiles,
@@ -218,6 +219,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       carry: def.carry,
       fallResponse: def.fallResponse,
       selfClearance: def.selfClearance,
+      jointRange: def.jointRange,
       supportHeights: host.heightModels ?? undefined,
     },
     diagnostics: def.diagnostics,

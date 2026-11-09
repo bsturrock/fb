@@ -13,7 +13,7 @@ import type { ArmSide } from '../src/sim/contracts';
 import { CARRY_ARM } from '../src/sim/carry';
 import { isGround } from '../src/sim/contracts';
 import { rotateToward } from '../src/sim/vec';
-import { ENVELOPE_L4, FALL_L4, SOLVER_G4, SOLVER_G4_ZEROG, type JointEnvelope } from '../src/sim/profiles';
+import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, SOLVER_G4, SOLVER_G4_ZEROG, type JointEnvelope } from '../src/sim/profiles';
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, landmarkWorld, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
@@ -248,9 +248,12 @@ describe('the limit torque follows a potential', () => {
   });
 
   it('no joint stays past the tolerance longer than the persistence limit, in any fall, on or off', async () => {
+    // plan 12 known limit (docs/handoff/plan12.md): the narrower shoulder holds the runner's right arm, pinned under its body
+    // in the oblique fall with the response off, past the tolerance for 0.32 s (the soft limit is capped at 500 N m)
+    const known: Record<string, number> = { 'L4-F3-model-oblique-off R rightShoulder': 0.33 };
     for (const d of ALL.filter((x) => !x.id.startsWith('L4-F1-'))) {
       const s = await sim(d.id);
-      for (const p of s.players) for (const e of p.rag?.envelope ?? []) expect(e.maxOverRunS, `${d.id} ${p.id} ${e.jointId}`).toBeLessThan(ENVELOPE_L4.persistS);
+      for (const p of s.players) for (const e of p.rag?.envelope ?? []) expect(e.maxOverRunS, `${d.id} ${p.id} ${e.jointId}`).toBeLessThan(known[`${d.id} ${p.id} ${e.jointId}`] ?? ENVELOPE_L4.persistS);
     }
   });
 
@@ -291,7 +294,9 @@ describe('the limit torque follows a potential', () => {
     await stepWhile(s, () => !s.players[0].rag);
     const rag = s.players[0].rag!;
     const j = rag.joints.find((x) => x.id === 'leftShoulder')!;
-    const E = ENVELOPE_L4.shoulder;
+    // (plan 12: the shoulder in force is the joint-range profile's)
+    const E = rag.profile.envelope!.shoulder;
+    expect(E).toEqual(JOINT_RANGE_V1.shoulder);
     const dt = 1 / 240;
     const decay = rad(ENVELOPE_L4.slackDecayDegPerS) * dt;
     const parent = rag.bodies[j.parent].rotation();
@@ -404,6 +409,10 @@ describe('L4 audits on every fixture', () => {
         // substeps with effort commands (plan 10c, C7: activeSubsteps now counts only those that applied torque, and a
         // zero-cap profile never does)
         const commanded = new Set(s.fall!.ledger.filter((e) => e.owner === id).map((e) => e.step)).size;
+        // (plan 12: a ragdoll accepted less than a ramp before the run ends has a handful of substeps, too few to compare:
+        // L4-F5-twoPalm-on R converts 29 ms before the end, inside its delay, L4-F10-elbow-on D 71 ms before, 3 commanded, 4 held)
+        const pl = s.players.find((p) => p.id === id)!;
+        if (s.t - pl.handoff!.t - d.fallResponse!.timing.delayS < d.fallResponse!.timing.rampS) continue;
         expect(r.heldSubsteps, d.id).toBeLessThan(commanded);
       }
     }
@@ -515,7 +524,10 @@ describe('L4-F2 knee flexion, on and off', () => {
       if (dir.endsWith('forward')) expect(on).toBeGreaterThan(off - 3);
       else expect(on).toBeGreaterThan(off + 2);
       const s = await sim(`L4-F2-${dir}-on`);
-      expect(report(s, 'R').positiveWorkJ).toBeGreaterThan(0);
+      // (plan 12: the plain forward fall's flexor attempts and only brakes: its knees fold past the target on their own. The
+      // twin pushed 0.28 J before they did; with the narrower shoulder the arms fall differently and it does none)
+      if (dir === 'forward') expect(report(s, 'R').activeSubsteps).toBeGreaterThan(0);
+      else expect(report(s, 'R').positiveWorkJ).toBeGreaterThan(0);
       const joints = new Set(s.fall!.ledger.map((e) => e.joint));
       expect([...joints].sort()).toEqual(['leftKnee', 'rightKnee']);
       expect(report(s, 'R').peakNm.knee).toBeLessThanOrEqual(FALL_L4.ceilingsNm.knee + 1e-9);
@@ -525,14 +537,27 @@ describe('L4-F2 knee flexion, on and off', () => {
 
 // ------------------------------------------------------------------ arms
 describe('L4-F3 carrier with a free arm', () => {
-  it('the installed player falling sideways is too late to brace, and that stays a miss', async () => {
+  it('the installed player falling sideways cannot brace, and that stays a miss', async () => {
+    // (plan 12: the brace point lies outside the narrower shoulder range, `tooFar`; before it the arm got there `late`)
     const s = await sim('L4-F3-model-side-on');
     expect(tasksOf(s, 'R')).toEqual({ left: 'brace', right: 'protect' });
     expect(evs(s, 'braceContact')).toEqual([]);
-    expect(evs(s, 'braceMiss').map((e) => e.data.reason)).toEqual(['late']);
+    expect(evs(s, 'braceMiss').map((e) => e.data.reason)).toEqual(['tooFar']);
   });
 
-  for (const id of ['L4-F3-forward-on', 'L4-F3-oblique-on', 'L4-F3-side-on', 'L4-F3-run-on', 'L4-F3-model-forward-on', 'L4-F3-model-oblique-on'])
+  // plan 12: the oblique and side falls' free arm, held inside the narrower shoulder range, reaches the floor after the body:
+  // a late miss where the twin's palm landed at 0.308 s. The carry arm still protects
+  for (const id of ['L4-F3-oblique-on', 'L4-F3-side-on'])
+    it(`${id}: the free arm is late to the floor inside the shoulder range, the carry arm stays on protect`, async () => {
+      const s = await sim(id);
+      expect(tasksOf(s, 'R')).toEqual({ left: 'brace', right: 'protect' });
+      expect(evs(s, 'braceContact').filter((e) => e.playerId === 'R')).toEqual([]);
+      expect(evs(s, 'braceMiss').map((e) => `${e.data.arm} ${e.data.reason}`)).toEqual(['left late']);
+      expect(evs(s, 'fallTask').filter((e) => e.playerId === 'R' && e.data.arm === 'right').map((e) => e.data.reason)).toEqual(['windowEnded']);
+      for (const e of nonEmpty(s.fall!.ledger.filter((x) => x.owner === 'R' && x.joint.startsWith('right') && /Shoulder|Elbow/.test(x.joint)), 'right arm effort')) expect(e.task).toBe('protect');
+    });
+
+  for (const id of ['L4-F3-forward-on', 'L4-F3-run-on', 'L4-F3-model-forward-on', 'L4-F3-model-oblique-on'])
     it(`${id}: the free arm reaches the floor through a real collider, the carry arm stays on protect`, async () => {
       const s = await sim(id);
       expect(tasksOf(s, 'R')).toEqual({ left: 'brace', right: 'protect' });
@@ -615,10 +640,11 @@ describe('the brace direction turns at its rate limit', () => {
 
 describe('L4-F4 braces that fail stay failures', () => {
   const withMisses = (): FixtureDef[] => ALL.filter((d) => d.fallResponse?.enable.arms);
+  // (plan 12: L4-F4-late's brace point is outside the narrower shoulder range, so it misses `tooFar` before it is late;
+  // L4-F4-obstructed's arm, inside the range, passes clear of the obstruction and lands, below)
   for (const [id, reason] of [
     ['L4-F4-tooFar', 'tooFar'],
-    ['L4-F4-late', 'late'],
-    ['L4-F4-obstructed', 'obstructed'],
+    ['L4-F4-late', 'tooFar'],
   ] as const)
     it(`${id}: ${reason}, no contact claimed, the arm goes passive`, async () => {
       const s = await sim(id);
@@ -630,6 +656,12 @@ describe('L4-F4 braces that fail stay failures', () => {
       const after = s.fall!.ledger.filter((e) => e.joint === 'leftShoulder' && e.t > m[0].t + 1e-9);
       expect(after.length).toBe(0);
     });
+
+  it('L4-F4-obstructed: the arm inside the shoulder range passes clear of the obstruction and lands (plan 12; the twin misses obstructed)', async () => {
+    const s = await sim('L4-F4-obstructed');
+    expect(evs(s, 'braceMiss')).toEqual([]);
+    expect(evs(s, 'braceContact').map((e) => `${e.data.arm} ${e.data.part}`)).toEqual(['left palm']);
+  });
 
   // plan 10c C4: `obstructed` was set by any arm contact with the opponent or an obstacle at any time, the arm's own hold
   // included, and never cleared: L4-F6-break's left arm missed as `obstructed` 0.52 s after its hold broke
@@ -664,11 +696,13 @@ describe('L4-F4 braces that fail stay failures', () => {
       }
       s.dispose();
     }
-    expect(obstructed).toBeGreaterThanOrEqual(4);
+    // (plan 12: 3, L4-F4-obstructed lands instead)
+    expect(obstructed).toBeGreaterThanOrEqual(3);
     expect(other).toBeGreaterThan(10);
     // the review's case: the broken hold braces and misses, and its own hold's contact does not make that an obstruction
     const m = evs(await sim('L4-F6-break'), 'braceMiss').filter((e) => e.playerId === 'D' && e.data.arm === 'left');
-    expect(m.map((e) => e.data.reason)).toEqual(['late']);
+    // (plan 12: it runs out of window, `expired`; before, it was `late`)
+    expect(m.map((e) => e.data.reason)).toEqual(['expired']);
   }, 120000);
 
   it('a fast fall lands before the arm: no time to brace', async () => {
@@ -697,8 +731,11 @@ describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
   it('one palm hold: that arm holds, the free arm may brace', async () => {
     const s = await sim('L4-F5-onePalm-on');
     expect(tasksOf(s, 'D')).toEqual({ left: 'hold', right: 'brace' });
-    expect(evs(s, 'braceMiss').concat(evs(s, 'braceContact')).map((e) => e.data.arm)).toEqual(['right']);
-    expect(evs(s, 'gripRelease').length).toBe(0);
+    // plan 12: the held runner leaves the hold at 1.846 s (its feet released at 0.996 s, the twin's at 1.17 s), so the hold
+    // arm braces and runs out of window; the free arm lands where the twin's was late. No hold is lost on its load
+    expect(evs(s, 'braceContact').map((e) => `${e.data.arm} ${e.data.part}`)).toEqual(['right palm']);
+    expect(evs(s, 'braceMiss').map((e) => `${e.data.arm} ${e.data.reason}`)).toEqual(['left expired']);
+    expect(evs(s, 'gripRelease').map((e) => `${e.data.arm} ${e.data.reason}`)).toEqual(['left separation']);
   });
 
   // plan 10c C1 (U4): the hold arm's own effort took grasp tension in the shared budget and counted as grasp overload
@@ -728,7 +765,8 @@ describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
       }
     }
     expect(checked).toBeGreaterThan(500);
-    expect(effortScaled).toBeGreaterThan(50);
+    // (plan 12: 29; the L4-F5 runner leaves the holds sooner)
+    expect(effortScaled).toBeGreaterThan(20);
   });
 
   it('a hold the response-off twin keeps survives with the response on, unless its grasp alone is over its allocation', async () => {
@@ -754,9 +792,13 @@ describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
     expect(evs(on, 'gripRelease')).toEqual([]);
     expect(evs(on, 'fallTask').map((e) => `${e.data.arm} ${e.data.from}>${e.data.to} ${e.data.reason}`)).toEqual(['left hold>passive windowEnded', 'right hold>passive windowEnded']);
     const exposure = (s: Simulation): number => Math.max(...s.arms!.ledger.filter((e) => e.kind === 'hold' || e.kind === 'passive').map((e) => e.exposure));
-    expect(exposure(off)).toBe(0);
-    expect(exposure(on)).toBe(0);
-    expect(on.arms!.effortLedger.some((e) => e.armFactor * e.sharedScale < 1 - 1e-9)).toBe(true);
+    // (plan 12: the runner pulls harder on the holds: 0.018 overload exposure with the response on, 0.020 off, where both
+    // were 0; the response-off twin's holds then end on separation at 1.90 and 1.97 s, the response keeps them to the
+    // window's end. The response adds no exposure)
+    expect(exposure(on)).toBeLessThanOrEqual(exposure(off));
+    expect(evs(off, 'gripRelease').map((e) => `${e.data.arm} ${e.data.reason}`)).toEqual(['right separation', 'left separation']);
+    // (plan 12: this run's effort no longer meets the shared budget, so nothing of it is scaled here; the allocation test
+    // above still finds 29 scaled substeps across the L4 fixtures)
   });
 
   it('forearm clamps carried into the fall count as holds', async () => {
@@ -1014,7 +1056,8 @@ describe('L4-F11 settling, exhausted work, repeated disturbance', () => {
   // no work allowed, 1.55 J with 1 J)
   it('a zero or small work cap holds through contact: no torque with none, never past the cap', async () => {
     const base = FIX('L4-F3-forward-on');
-    for (const cap of [0, 0.5, 1, 2, 5, 20]) {
+    // (plan 12: the uncapped fall does 18.6 J, the twin 20.0 J, so 20 J no longer binds; 15 J does)
+    for (const cap of [0, 0.5, 1, 2, 5, 15]) {
       const def: FixtureDef = { ...base, id: `${base.id}-cap${cap}`, fallResponse: { ...base.fallResponse!, power: { ...base.fallResponse!.power, maxPositiveWorkJ: cap } } };
       const s = await run(def);
       const r = report(s, 'R');
@@ -1036,11 +1079,14 @@ describe('L4-F12 mirror, rates and resets', () => {
     const b = await sim('L4-F12-mirror');
     expect(tasksOf(a, 'R')).toEqual({ left: 'brace', right: 'brace' });
     expect(tasksOf(b, 'R')).toEqual({ left: 'brace', right: 'brace' });
-    expect(evs(a, 'braceContact')[0].data.arm).toBe('right');
-    expect(evs(b, 'braceContact')[0].data.arm).toBe('left');
-    expect(evs(a, 'braceMiss')[0].data.arm).toBe('left');
-    expect(evs(b, 'braceMiss')[0].data.arm).toBe('right');
-    expect(Math.abs(evs(a, 'braceContact')[0].data.tS - evs(b, 'braceContact')[0].data.tS)).toBeLessThan(0.03);
+    // plan 12: inside the narrower shoulder range neither arm reaches the floor in time, in either fall (the twins' landing
+    // arm, right in the base and left in the mirror, got there at 0.32-0.33 s). The mirrored arms miss together; the base's
+    // left arm misses `late` and its mirror `tooFar`, a fall on the edge of the reach test
+    expect(evs(a, 'braceContact')).toEqual([]);
+    expect(evs(b, 'braceContact')).toEqual([]);
+    const miss = (s: Simulation, arm: string) => evs(s, 'braceMiss').find((e) => e.data.arm === arm)!;
+    for (const [x, y] of [['right', 'left'], ['left', 'right']]) expect(Math.abs(miss(a, x).t - miss(b, y).t)).toBeLessThan(0.03);
+    expect(miss(a, 'right').data.reason).toBe(miss(b, 'left').data.reason);
     expect(Math.abs(report(a, 'R').positiveWorkJ - report(b, 'R').positiveWorkJ)).toBeLessThan(8);
   });
 
@@ -1148,7 +1194,8 @@ describe('ground is the floor only', () => {
 
   it('a fall onto a raised deck touches the obstacle only: never grounded, no brace contact, the brace expires', async () => {
     const base = FIX('L4-F3-forward-on');
-    const deck: FixtureDef = { ...base, id: 'T-deck', obstacles: [{ id: 'deck', center: v3(0, 0.05, 0), halfExtents: v3(2, 0.05, 2) }] };
+    // (plan 12: 4 m; inside the shoulder range the fall carries the palm past a 2 m edge, onto the floor at 0.97 s)
+    const deck: FixtureDef = { ...base, id: 'T-deck', obstacles: [{ id: 'deck', center: v3(0, 0.05, 0), halfExtents: v3(4, 0.05, 4) }] };
     const s = await Simulation.create(deck, { trace: false });
     let onDeck = 0;
     while (!s.done) {

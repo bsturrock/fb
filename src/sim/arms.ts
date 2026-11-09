@@ -11,10 +11,11 @@
 //    thinnest obstacle (~0.26 m) in one substep (> 15 m/s at 1/60 s), outside every fixture.
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
-import type { ArmProfile, ArmSetup, BodyProfile, RagdollProfile, RetentionMode, SelfClearanceProfile } from './profiles';
+import type { ArmProfile, ArmSetup, BodyProfile, JointRangeProfile, RagdollProfile, RetentionMode, SelfClearanceProfile } from './profiles';
 import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
+import { swingExcess } from './joint-cone';
 import { trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
@@ -262,6 +263,8 @@ export class ArmSystem {
     readonly passive?: RagdollProfile['passiveGrip'],
     /** Arm self-clearance (absent = arms ignore their own body): each arm's self shapes stay out of its owner's trunk. */
     readonly selfClearance?: SelfClearanceProfile,
+    /** Plan 12 joint range (absent = no shoulder range): a pole whose upper arm is past the shoulder cone is invalid. */
+    readonly jointRange?: JointRangeProfile,
   ) {
     this.palmBall = new RAPIER.Ball(profile.palmRadiusM);
     for (const pl of host.players()) {
@@ -409,7 +412,10 @@ export class ArmSystem {
     const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
     const target = fixedPalmWorld ?? toWorld(ownerPose, palmLocal);
     const tol = P.surfaceTolM;
+    const J = this.jointRange;
     let best: ArmPoseSolve | null = null;
+    let bestDepth = Infinity;
+    let bestOver = Infinity;
     for (const poleL of this.poleCandidates(a)) {
       const pole = qRot(ownerPose.q, poleL);
       const r = twoBone(sW, target, P.upperArmM, P.forearmM + P.palmExtensionM, pole, P.maxReachM);
@@ -420,10 +426,20 @@ export class ArmSystem {
       const self = this.selfHit(pl, ownerPose, r.mid, wrist, r.end);
       let worst: Hit | null = null;
       for (const h of [up, fa, pc, self]) if (h && (!worst || h.distance < worst.distance)) worst = h;
-      const valid = !worst || worst.distance >= -tol;
+      // plan 12: an upper arm past the shoulder cone (owner core frame) is invalid, as a hit is
+      const over = J ? swingExcess(J.shoulder, qInvRot(ownerPose.q, norm(sub(r.mid, sW), v3(0, -1, 0))), a.sx).rad : 0;
+      const valid = (!worst || worst.distance >= -tol) && over <= 0;
       const s: ArmPoseSolve = { elbow: r.mid, wrist, palm: r.end, pole: poleL, valid, worst, palmHit: pc, forearmHit: fa };
       if (valid) return s;
-      if (!best || (worst && best.worst && worst.distance > best.worst.distance)) best = s;
+      if (J) {
+        // the least bad: by depth past the surface tolerance, then by range excess
+        const depth = worst ? Math.max(0, -worst.distance - tol) : 0;
+        if (!best || depth < bestDepth - 1e-9 || (Math.abs(depth - bestDepth) <= 1e-9 && over < bestOver)) {
+          best = s;
+          bestDepth = depth;
+          bestOver = over;
+        }
+      } else if (!best || (worst && best.worst && worst.distance > best.worst.distance)) best = s;
     }
     return best!;
   }

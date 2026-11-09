@@ -8,7 +8,7 @@ import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
 import { initPhysics, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
 import {
-  ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, validateMotorBraking, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
+  ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
 } from './profiles';
 import {
@@ -20,8 +20,8 @@ import { advanceLoco, newLocoState, type LocoState } from './locomotion';
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  applyEnvelope, auditEnvelope, bulkOf, limitGradients, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
-  type TransferAudit,
+  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
+  type RagdollCollider, type TransferAudit,
 } from './ragdoll';
 import {
   envelopeStep, measureLean, projectedLean,
@@ -33,7 +33,7 @@ import {
 } from './run-clip';
 import { RuleObserver, type EndingKind, type RuleEnding, type RuleTraceRow } from './rules';
 import type { ArmSide } from './contracts';
-import { type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg } from './vec';
+import { type Pose, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg } from './vec';
 import { fixtureExport, limitReportOf, recordTrace, summaryOf } from './sim-evidence';
 import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
@@ -41,7 +41,7 @@ import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { convertPlayers } from './conversion';
 import { observeContacts } from './contact-observation';
-import { carrySideOf, footInputOf, poseClearanceOf, sampledLimbsOf, updatePoses } from './pose-runtime';
+import { carrySideOf, footInputOf, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses } from './pose-runtime';
 import { EMPTY_APPLIED, applyMotors } from './motor-step';
 export type { AuditLeg, TransitionDelta } from './transition-audit';
 
@@ -319,6 +319,13 @@ export function checkLimbContract(A: ArmProfile, R: RagdollProfile): void {
   if (bad.length) throw new Error(`limb contract: arm profile ${A.id} and ragdoll profile ${R.id} differ (${bad.map(([k, a, r]) => `${k} ${a} vs ${r}`).join(', ')})`);
 }
 
+/**
+ * Plan 12: how near (m) another player a limp shoe may turn toward (Simulation.shoeDeeper). 2 cm left D's thigh in
+ * L3-F9-noProbe-contact 1.5 cm inside R's turned shoe at D's conversion, 5 cm D's thigh in HC-F3-phase75 2.3 cm (both
+ * rejected, D left a rigid falling proxy).
+ */
+const LIMP_SHOE_CLEARANCE_M = 0.08;
+
 export class Simulation {
   physics!: PhysicsWorld;
   players: PlayerRuntime[] = [];
@@ -369,7 +376,8 @@ export class Simulation {
 
   static async create(def: FixtureDef, opts: SimOptions = {}): Promise<Simulation> {
     await initPhysics();
-    return new Simulation(def, opts);
+    // plan 12: under a joint-range profile the ragdoll's shoulder envelope is the profile's (recorded as such)
+    return new Simulation(def.jointRange && def.ragdoll ? { ...def, ragdoll: withJointRange(def.ragdoll, def.jointRange) } : def, opts);
   }
 
   constructor(readonly def: FixtureDef, readonly opts: SimOptions = {}) {
@@ -602,11 +610,11 @@ export class Simulation {
     this.physics.world.propagateModifiedBodyPositionsToColliders();
     if (def.fallResponse || def.players.some((p) => p.arms)) {
       checkLimbContract(def.armProfile ?? ARM_G2, def.ragdoll ?? DEFAULT_POSE_PROFILE);
-      this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip, def.selfClearance);
+      this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip, def.selfClearance, def.jointRange);
     }
     if (def.fallResponse) {
       const sim = this;
-      if (!def.ragdoll?.envelope) throw new Error(`fixture ${def.id}: a fall response needs a ragdoll profile with an envelope`);
+      if (!def.ragdoll?.envelope?.hip) throw new Error(`fixture ${def.id}: a fall response needs a ragdoll profile with a shoulder and hip envelope`);
       this.fall = new FallResponse(def.fallResponse, {
         get dt() {
           return sim.physics.dt;
@@ -882,8 +890,14 @@ export class Simulation {
     // 5. bounded motors: drive, yaw and (balanced profile) finite upright support torque from the same snapshot
     applyMotors(this, snap);
     // 5b. plan 09: passive soft envelopes of every ragdoll, then this substep's effort proposals (accepted ragdolls only)
+    let limbsNow: Map<PlayerId, ExternalShape[]> | null = null;
+    const limbs = (): Map<PlayerId, ExternalShape[]> => (limbsNow ??= publishedLimbs(this));
     for (const pl of this.players) {
-      if (pl.rag) applyEnvelope(pl.rag, this.physics.dt);
+      if (pl.rag) {
+        // plan 12: the limp shoe eases toward its relaxed pitch on the shin before the envelope reads the joints
+        if (pl.rag.limpFoot) easeLimpFeet(pl.rag, this.physics.dt, (c, from, to) => this.shoeDeeper(pl, c, from, to, limbs()));
+        applyEnvelope(pl.rag, this.physics.dt);
+      }
       if (pl.fall) this.fall!.request(pl.fall, this.contacts, this.arms);
     }
     // 6. arms: collision-aware reach, acquisitions, retention demands, shared budget, reciprocal forces (once)
@@ -1097,6 +1111,28 @@ export class Simulation {
         });
       }
     }
+  }
+
+  /**
+   * Plan 12 limp foot: true when a ragdoll shoe turned from `from` to `to` (world poses) would come closer to another
+   * player, inside `LIMP_SHOE_CLEARANCE_M`: its active colliders, or the published limbs of a player that can still convert
+   * (they become its ragdoll at the switch, and its pose cannot always move a thigh out of the way). The floor and
+   * obstacles are not counted.
+   */
+  shoeDeeper(pl: PlayerRuntime, c: RagdollCollider, from: Pose, to: Pose, limbs: Map<PlayerId, ExternalShape[]>): boolean {
+    const shape = c.collider.shape;
+    const M = LIMP_SHOE_CLEARANCE_M;
+    const gap = (at: Pose, e: { shape: RAPIER.Shape; pose: Pose }): number => e.shape.contactShape(e.pose.p, e.pose.q, shape, at.p, at.q, M)?.distance ?? M;
+    for (const o of this.players) {
+      if (o === pl) continue;
+      const ext: { shape: RAPIER.Shape; pose: Pose }[] = this.activeColliders(o).map((k) => ({ shape: k.shape, pose: { p: vc(k.translation()), q: { ...k.rotation() } } }));
+      if (!o.rag && !o.handoff) ext.push(...(limbs.get(o.id) ?? []));
+      for (const e of ext) {
+        const g = gap(to, e);
+        if (g < M && g < gap(from, e) - 1e-6) return true;
+      }
+    }
+    return false;
   }
 
   /**

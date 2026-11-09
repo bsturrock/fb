@@ -44,6 +44,8 @@ export interface AuditPrev {
   supported: boolean;
   falling: boolean;
   mode: string;
+  /** The foot plan's ground height of this substep. */
+  groundY: number;
 }
 
 /** The old composition's pose input at a boundary, and the reference feet (see TransitionDelta.deltaM). */
@@ -116,7 +118,7 @@ export function auditInput(host: AuditHost, pl: PlayerRuntime, inp: ProxyPoseInp
     if (a) armsL[s] = { elbow: qInvRot(inp.pose.q, sub(a.elbow, inp.pose.p)), wrist: qInvRot(inp.pose.q, sub(a.wrist ?? a.palm, inp.pose.p)), palm: qInvRot(inp.pose.q, sub(a.palm, inp.pose.p)) };
   }
   const reqNow = { left: legRequestLocal(inp, 'left'), right: legRequestLocal(inp, 'right') };
-  host.auditPrev.set(pl.id, { key, foot: footO, arm: armO, feet: { ...inp.feet }, plan: null, reqL: reqNow, reqL2: prev?.reqL ?? reqNow, reqN: (prev?.reqN ?? 0) + 1, armsL, readyHands: !!inp.readyHands, contactW, supported, falling, mode: pl.loco?.mode ?? '' });
+  host.auditPrev.set(pl.id, { key, foot: footO, arm: armO, feet: { ...inp.feet }, plan: null, reqL: reqNow, reqL2: prev?.reqL ?? reqNow, reqN: (prev?.reqN ?? 0) + 1, armsL, readyHands: !!inp.readyHands, contactW, supported, falling, mode: pl.loco?.mode ?? '', groundY: ftIn.groundY });
   if (!prev?.plan || prev.key === key) return null;
   const old: AuditOld = { ...inp, memory: structuredClone(pl.poseMemory), from: prev.key, to: key, reference: {}, requestJumpM: { left: 0, right: 0 } };
   // the legs' support composition: the ordinary request of the old state at host root
@@ -130,7 +132,10 @@ export function auditInput(host: AuditHost, pl: PlayerRuntime, inp: ProxyPoseInp
   if (run) old.sampled = host.sampledLimbs(pl, run, inp.pose);
   const request = {} as FootPlanInput['request'];
   for (const s of SD) request[s] = toWorld(inp.pose, legRequestLocal(old, s));
-  const { requests: cont, tookUp } = continueOwners(prev.plan, { ...ftIn, request }, prev.feet);
+  // (across a support change the old composition's feet keep the ground they had: the probe that lost support reads another
+  // height, a body under the feet; L3-F1-mirror4 D at 1.4333 s, from 0 to 0.103 m, raised the old step's arc at its lift cap.
+  // That jump is the old path's own, as the request jump below is)
+  const { requests: cont, tookUp } = continueOwners(prev.plan, { ...ftIn, request, ...(seam ? { groundY: prev.groundY } : {}) }, prev.feet);
   const feet = { ...inp.feet };
   // a foot whose ownership did not change keeps host substep's request: only the handover is compared. Across a change of the
   // request's composition its offset is the old one: the live offset has taken the new request's seam up
