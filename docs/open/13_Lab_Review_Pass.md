@@ -1,6 +1,6 @@
 # 13 — Lab review pass: speed, clips, fixtures and tests
 
-Repository-aligned plan • 2026-11-09 • **13a–13d implemented** ([handoff](../handoff/plan13.md)); 13e and 13f designed, not implemented. Follows plan 12 (`4f38d34`) and the plan 13 stub (`588d63b`). The stub, the conversion overlap margin, becomes 13f; the user added five items on 2026-11-09:
+Repository-aligned plan • 2026-11-09 • **13a–13e implemented** ([handoff](../handoff/plan13.md)); 13f designed, not implemented. Follows plan 12 (`4f38d34`) and the plan 13 stub (`588d63b`). The stub, the conversion overlap margin, becomes 13f; the user added five items on 2026-11-09:
 
 1. Remove the Sprint animation; Fast Run is the base for every run speed.
 2. Use the idle and walk animations where they belong.

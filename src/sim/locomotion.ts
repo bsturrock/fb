@@ -2,7 +2,7 @@
 // per-player locomotion mode. Pose-only requests; the motor, the support budgets and the contact mechanics never read this.
 import type { ArmSide } from './contracts';
 import { hipLocal, type BodyProfile } from './profiles';
-import { v3, type Vec3 } from './vec';
+import { lerp, norm, qNormalize, qSlerp, v3, type Quat, type Vec3 } from './vec';
 import IDLE_RECORD from './model/idle-pose.record.json';
 
 /** Intake record of the supplied idle (scripts/model/idle-intake.ts). */
@@ -24,6 +24,22 @@ export interface IdlePoseRecord {
   frame: number;
   arms: Record<ArmSide, { upper: [number, number, number]; fore: [number, number, number] }>;
   stance: { widthM: number; leftForwardM: number; legScale: number };
+  /**
+   * Plan 13e: the whole cycle, one entry per frame (the last repeats the first): arm directions in that frame's chest
+   * frame (as `arms`), the head's rotation in the chest frame relative to the representative frame (x, y, z, w), and the
+   * hips' horizontal offset (x, z; m, clip root frame, before the leg scale) from the loop mean. `periodS` is the loop
+   * (frames - 1) / fps; `headMaxDeg` and `hipsMaxM` are the measured bounds of the head rotation and the hips offset.
+   */
+  cycle: {
+    frames: number;
+    periodS: number;
+    upper: Record<ArmSide, [number, number, number][]>;
+    fore: Record<ArmSide, [number, number, number][]>;
+    head: [number, number, number, number][];
+    hips: [number, number][];
+    headMaxDeg: number;
+    hipsMaxM: number;
+  };
 }
 
 export const IDLE_POSE_RECORD = IDLE_RECORD as unknown as IdlePoseRecord;
@@ -43,7 +59,17 @@ export interface LocomotionProfile {
    * ankle from the body's centre line, the clip's width scaled to the body's legs). What it adds outside the hip is taken
    * at use from the body's own hip (idleWidthAddM).
    */
-  idle: { arms: IdlePoseRecord['arms']; halfWidthM: number };
+  idle: {
+    arms: IdlePoseRecord['arms'];
+    halfWidthM: number;
+    /**
+     * Plan 13e: the supplied cycle a standing player plays (arms and head drawn, the hips offset as a physical sway),
+     * blended from the representative frame by the idle weight. Absent: the static fitted posture (plan 08).
+     */
+    cycle?: IdlePoseRecord['cycle'];
+    /** Plan 13e: the cycle's hips offset drives the standing body (a velocity request; arms and head play without it). */
+    sway?: boolean;
+  };
   /** Walking arms: follow the achieved feet's fore-aft spread (m at full swing), faded in with travel speed (m/s). */
   walk: { strideM: number; fadeMps: [number, number]; swingRad: number; restReach: number; forwardBend: number; tauS: number };
   /** Contact composition: observation hysteresis and the bounded preparation request. */
@@ -78,6 +104,87 @@ export const LOCOMOTION_L3: LocomotionProfile = {
   contact: { clearS: 0.12, prepRangeM: 2.2, prepClosingMps: 1.5, prepHoldS: 0.15, exitMinS: 0.15, prepDropM: 0.05, weightRatePerS: 5, braceRadPerS: 24, clipWeightRadPerS: 24 },
 };
 
+/**
+ * Plan 13e: LOCOMOTION_L3 with the supplied idle cycle played (the player model's fixtures; the authored bodies keep
+ * LOCOMOTION_L3, whose fitted idle is calibrated to the model).
+ */
+export const LOCOMOTION_L3_IDLE: LocomotionProfile = {
+  ...LOCOMOTION_L3,
+  id: 'locomotion-l3-v4',
+  idle: { ...LOCOMOTION_L3.idle, cycle: IDLE_POSE_RECORD.cycle, sway: true },
+};
+
+// ------------------------------------------------------------------------------------------- idle cycle (plan 13e)
+/** Phase offset between consecutive players (golden-ratio steps, so no two players of a fixture stand in step). */
+export const IDLE_PHASE_STEP = 0.618;
+const frac = (x: number): number => x - Math.floor(x);
+
+/** A player's idle phase (0..1) at simulation time `t`: from time alone, so a reset or a pause cannot shift it. */
+export function idlePhase(C: IdlePoseRecord['cycle'], t: number, playerIndex: number): number {
+  return frac(t / C.periodS + frac(IDLE_PHASE_STEP * playerIndex));
+}
+
+/** The cycle at a phase: arm directions (chest frame), head rotation (chest frame), hips offset (m) and its rate (m/s). */
+export interface IdleSample {
+  upper: Record<ArmSide, Vec3>;
+  fore: Record<ArmSide, Vec3>;
+  head: Quat;
+  /** Clip root frame (x = anatomical left, z = forward), before the leg scale. */
+  hips: Vec3;
+  hipsV: Vec3;
+}
+
+const t3 = (a: readonly number[]): Vec3 => v3(a[0], a[1], a[2]);
+const t4 = (a: readonly number[]): Quat => ({ x: a[0], y: a[1], z: a[2], w: a[3] });
+
+/**
+ * Sample the cycle at phase `u`, linearly between frames (directions renormalized, the head slerped). The hips rate is
+ * each frame's central difference over the loop, interpolated the same way, so the sway request has no steps.
+ */
+export function sampleIdle(C: IdlePoseRecord['cycle'], u: number): IdleSample {
+  const L = C.frames - 1;
+  const f = frac(u) * L;
+  const i = Math.min(Math.floor(f), L - 1);
+  const a = f - i;
+  const j = i + 1;
+  const dir = (r: [number, number, number][]): Vec3 => norm(lerp(t3(r[i]), t3(r[j]), a), t3(r[i]));
+  const h = (k: number): Vec3 => v3(C.hips[k][0], 0, C.hips[k][1]);
+  const fps = L / C.periodS;
+  const rate = (k: number): Vec3 => {
+    const p = h((k + 1) % L);
+    const m = h((k - 1 + L) % L);
+    return v3(((p.x - m.x) * fps) / 2, 0, ((p.z - m.z) * fps) / 2);
+  };
+  return {
+    upper: { left: dir(C.upper.left), right: dir(C.upper.right) },
+    fore: { left: dir(C.fore.left), right: dir(C.fore.right) },
+    head: qNormalize(qSlerp(t4(C.head[i]), t4(C.head[j]), a)),
+    hips: lerp(h(i), h(j), a),
+    hipsV: lerp(rate(i), rate(j % L), a),
+  };
+}
+
+/** The idle weight's target: the stance fade at this travel speed while moving freely and supported, else 0. */
+export function idleTarget(speed: number, freeAndSupported: boolean): number {
+  return freeAndSupported ? idleStanceFade(speed) : 0;
+}
+
+/**
+ * Advance the idle weight toward its target at the profile's weight rate (a mode change or a loss of support is no
+ * step in the arms or the head); the first call takes the target.
+ */
+export function advanceIdle(st: LocoState, P: LocomotionProfile, target: number, dt: number): void {
+  if (st.idleW === undefined) {
+    st.idleW = target;
+    return;
+  }
+  const k = P.contact.weightRatePerS * dt;
+  st.idleW += Math.max(-k, Math.min(k, target - st.idleW));
+}
+
+/** The idle weight a pose or the sway reads: the advanced weight, or (before the first substep) its target. */
+export const idleWeight = (st: LocoState, target: number): number => st.idleW ?? target;
+
 /** The fitted idle stance's width per foot outside the body's own hip (m, never inward). */
 export function idleWidthAddM(P: LocomotionProfile, body: BodyProfile, s: ArmSide): number {
   return Math.max(0, P.idle.halfWidthM - Math.abs(hipLocal(body, s).x));
@@ -110,6 +217,8 @@ export interface LocoState {
   braceV: number;
   /** Filtered walking arm swing (-1..1, + = right foot ahead). */
   swing: number;
+  /** Plan 13e: how much of the idle cycle plays (0..1; a profile with a cycle only, absent until its first substep). */
+  idleW?: number;
 }
 
 export const newLocoState = (): LocoState => ({ mode: 'free', reason: 'reset', sinceS: 0, clearS: 0, prepW: 0, contactW: 0, braceW: 0, braceV: 0, swing: 0 });

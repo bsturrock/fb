@@ -50,6 +50,8 @@ import {
   FEET,
   FIRST,
   FITTED,
+  IDLE_PLANTS,
+  IDLE_WEIGHT,
   type FixturePass,
   FOLLOWS_CONTACT,
   FOOT_LIMITS,
@@ -284,7 +286,7 @@ describe('plan 10b foot target continuity', () => {
     expect(C.stepAccelMps2).toBeCloseTo(53.89, 2);
     expect(C.stepAccelPerTravel).toBeCloseTo(38.49, 2);
     expect(C.liftAccelMps2).toBeCloseTo(46.19, 2);
-    expect(FOOTWORK_L3.id).toBe('footwork-l3-v3');
+    expect(FOOTWORK_L3.id).toBe('footwork-l3-v4');
     expect(FOOTWORK_L2.compose).toBeUndefined();
   });
 
@@ -318,8 +320,9 @@ describe('plan 10b foot target continuity', () => {
           // before 10b: L3-F3-side D left 0.0583 s went from 20.51 m/s to 0 in one substep (8.55 cm second difference), and the
           // same at R 0.2708 s, D left 0.3333 s and L3-F1-phase0 0.6708 s. Those runs have changed with the fix; each fixture
           // still has steps running out of time at speed
-          // plan 13d: L3-F1-phase0 has none now; L3-F1-phase1 D left 0.721 s slows from 11.0 to 10.5 m/s within its limit
-          for (const id of ['L3-F3-side', 'L3-F1-phase1']) {
+          // plan 13d: L3-F1-phase0 has none now; L3-F1-phase1 D left 0.721 s slows from 11.0 to 10.5 m/s within its limit.
+          // Plan 13e: L3-F3-side has none at speed now (it plays the supplied clips); L3-F3-recover has two (below)
+          for (const id of ['L3-F3-recover', 'L3-F1-phase1']) {
             const { outOfTime } = await of(id);
             const moving = outOfTime.filter((x) => x.speed > 1);
             expect(moving.length, id).toBeGreaterThan(0);
@@ -327,14 +330,14 @@ describe('plan 10b foot target continuity', () => {
               expect(x.next, `${id} ${x.at} ${x.t.toFixed(4)}`).toBeGreaterThan(0);
               expect(x.speed - x.next, `${id} ${x.at} ${x.t.toFixed(4)}`).toBeLessThanOrEqual(x.aMax * (1 / 240) + 1e-9);
             }
-            if (id === 'L3-F3-side') {
-              // plan 12: the first reproduction (D's left foot out of time at over 10 m/s near 0.054 s) is no longer timed
-              // shorter than its path needs (a heel-lift stance step keeps that time, fitStance) and lands on time. R's left
-              // foot runs out of time near 0.583 s at over 3 m/s and is still moving after it
-              const first = moving.find((x) => x.at === 'R:left' && Math.abs(x.t - 0.583) < 0.01);
-              expect(first, 'R left out of time near 0.583 s').toBeDefined();
-              expect(first!.speed).toBeGreaterThan(3);
+            if (id === 'L3-F3-recover') {
+              // plan 13e: R's left foot runs out of time near 0.838 s at 1.47 m/s and is still moving after it (1.16 m/s);
+              // D's left near 1.413 s at 9.19 m/s
+              const first = moving.find((x) => x.at === 'R:left' && Math.abs(x.t - 0.8375) < 0.01);
+              expect(first, 'R left out of time near 0.838 s').toBeDefined();
+              expect(first!.speed).toBeGreaterThan(1);
               expect(first!.next).toBeGreaterThan(1);
+              expect(moving.some((x) => x.at === 'D:left' && x.speed > 9), 'D left out of time at over 9 m/s').toBe(true);
             }
           }
         },
@@ -432,8 +435,56 @@ describe('plan 08 pass 1: start, brake, settle', () => {
   );
 });
 
+describe('plan 13e faults put back', () => {
+  /** The named check's failures on one run of `def` (its own expectations and what it reports). */
+  const failsOf = async (name: string, def: FixtureDef, opts: SimOptions): Promise<string[]> => {
+    const c = CHECKS.find((x) => x.name === name)!;
+    const fails: string[] = [];
+    const rep = (m: string): void => void fails.push(m);
+    await runWatched(def, [{ w: c.watch(def, rep), fail: rep }], opts);
+    return fails;
+  };
+
+  it('an inherited foot settling over one substep plants while it still moves, and the plant fails (L3-F1-phase4 D right 0.479 s)', async () => {
+    // the 13e fix measures an inherited foot's settling over an arrival (C.arriveS), not one substep: before it, a shoe
+    // still sliding at a third of a metre per second passed the plant tolerance in one substep and planted
+    const fails = async (debug?: SimOptions['debug']): Promise<string[]> => {
+      const sim = await run(FIX('L3-F1-phase4'), debug ? { debug } : {});
+      const out = sim.events.filter((e) => e.type === 'footPlantFailed').map((e) => `${e.playerId} ${(e as { side?: string }).side ?? (e.data as { side?: string })?.side} ${e.t.toFixed(4)}`);
+      sim.dispose();
+      return out;
+    };
+    expect(await fails()).toEqual([]);
+    expect(await fails({ foot: { settleOneSubstep: true } })).toEqual(['D right 0.4792']);
+  }, 60000);
+
+  it('the idle sway in the planner home takes a late settle step at the end of a stop (L3-F16-stop2.9)', async () => {
+    // the 13e fix leaves the integrated sway out of the home: with it in, the swaying root drags the home past the
+    // settle trigger 0.18 s before the end
+    const def = FIX('L3-F16-stop2.9');
+    expect(await failsOf(SETTLES, def, {})).toEqual([]);
+    expect((await failsOf(SETTLES, def, { debug: { foot: { swayInHome: true } } })).join(' ')).toMatch(/expected 0\.1\d+ to be greater than 0\.4/);
+  }, 60000);
+
+  it('a foot held off its home by another body re-steps toward it in a stationary hold (L3-F6-holdMirror)', async () => {
+    // the 13e fix keeps the home the held-off step could not reach: the planted foot takes no step or settle step toward
+    // it while it stays there. Without it the defender's right foot re-steps into the runner about every 0.3 s
+    const def = FIX('L3-F6-holdMirror');
+    expect(await failsOf(HOLD_SETTLES, def, {})).toEqual([]);
+    expect((await failsOf(HOLD_SETTLES, def, { debug: { foot: { noBlockedMemory: true } } })).join(' ')).toMatch(/expected \d+ to be less than or equal to 1/);
+    // and lets it go once the body that held it moves off: L3-F4-gripOwner's runner plants its held-off left foot at
+    // 1.325 s and steps home at 1.392 s, when the defender's core is 9 cm from where it was (kept to 1.99 s otherwise,
+    // and that later release crosses its boundary by 1.01 cm)
+    const sim = await run(FIX('L3-F4-gripOwner'));
+    const steps = sim.events.filter((e) => e.type === 'footSwing' && e.playerId === 'R' && (e.data as { side?: string }).side === 'left' && (e.data as { reason?: string }).reason === 'step');
+    sim.dispose();
+    expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3917');
+  }, 60000);
+});
+
 describe('plan 08 pass 2: idle and walking', () => {
   passTest('L3-F13 and L3-F15: standing still has no stepping, root offset or arm chatter; stops settle on existing plants and stay; the fitted posture keeps the supplied stance and converts valid', [STANDS_STILL, SETTLE_PLANTS, FITTED]);
+  passTest('plan 13e: the idle cycle plays by its weight (the stance fade, 0 out of free supported movement), the head within the cycle; standing idle, no foot leaves its plant: every model-body L3 fixture, L3-F13 and L3-F15', [IDLE_WEIGHT, IDLE_PLANTS]);
   passTest('L3-F14: a free arm swings visibly at a walk, carry and ready keep their assignment; a walk starts and stops over steps; walk, run and stop stay valid', [ARM_SWING, WALK_STEPS, WALK_VALID]);
   passTest('plan 13d: a constant 6.6 m/s run keeps the full stride from the first substep: L3-F16-sprint', [FULL_STRIDE]);
   passTest('L3-F17: a run start goes foot by foot, the strides growing, through the walk into the run: every L3-F17 fixture', [RUN_START]);

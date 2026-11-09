@@ -1,6 +1,6 @@
 # 13e — Idle and walk where they belong
 
-Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13d.
+Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13d. **Implemented 2026-11-09** ([handoff](../handoff/plan13.md#13e--idle-and-walk-where-they-belong)).
 
 **Goal:**
 - A standing player plays the supplied idle cycle, not one frozen frame.
@@ -49,16 +49,16 @@ HC keeps its support profile, carry, rules and diagnostics; only the foot planne
 
 ## Tasks
 
-- [ ] **Tests first.** In the files 13b leaves: the idle record's cycle reproduces from the supplied clip (as the frame does now); two standing players' free arms differ at the same time and each repeats after 8.333 s; the idle weight is 0 in contact and above 1.5 m/s; every model-body L3, L4 and HC fixture outside the two exemptions carries the full set, and every exempt one is in a listed reason group.
-- [ ] **Intake.** Extend `idle-intake.ts`; run `npm run intake-clips`; update the manifest's `posePolicy` and `models/animations/README.md`.
-- [ ] **Coverage.** Write `withLocomotion`; call it from `asL3` and the HC `label`; check the exemptions.
-- [ ] **Arms and head.** Sample the cycle in `procedural` and in the head segment.
-- [ ] **Sway.** Add the sway request in the locomotion composition; measure plant slip on L3-F13 and L3-F15; apply the fallback if needed.
-- [ ] **Sliding plant (from 13d, user ruling 2026-11-09).** L3-F16-stop1.9's right foot is planted at the clip crossing while it still slides at 0.33 m/s, and the plant fails (`footPlantFailed`, slide, 1.5 cm). The `settled` test in footwork.ts passes any foot moving up to 1 cm per substep (2.4 m/s). The candidate from 13d: measure `settled` over `C.arriveS`, not one substep (about 0.2 m/s), so a sliding foot continues as a swing. It clears stop1.9 and leaves the other ten stops byte-identical, but changes the L3-F14 walks and L3-F7-phase50/75/mirror50, which 13e changes anyway. Remove the stop1.9 allowance in `BRAKE` and `SETTLES` (tests/l3-pass.ts) with it.
-- [ ] **Look review.** The user reviews L3-F13-carrier, L3-F13-free, L3-F14-walkRunStopCarrier and two HC fixtures in the lab, at 1×.
-- [ ] **Evidence.** Full suite, typecheck, build, all fixtures. List every changed summary (HC, L3 and L4 expected), with result, ending, ball spot and handoff changes.
-- [ ] **Audits.** The transition audit at idle–walk–run boundaries, the plan 07a handoff audits on every HC fixture, the plan 09 power audit, and the plan 11 and 12 checks on the newly covered fixtures.
-- [ ] **Close.** Handoff section.
+- [x] **Tests first.** In the files 13b leaves: the idle record's cycle reproduces from the supplied clip (as the frame does now); two standing players' free arms differ at the same time and each repeats after 8.333 s; the idle weight is 0 in contact and above 1.5 m/s; every model-body L3, L4 and HC fixture outside the two exemptions carries the full set, and every exempt one is in a listed reason group.
+- [x] **Intake.** Extend `idle-intake.ts`; run `npm run intake-clips`; update the manifest's `posePolicy` and `models/animations/README.md`.
+- [x] **Coverage.** Write `withLocomotion`; call it from `asL3` and the HC `label`; check the exemptions.
+- [x] **Arms and head.** Sample the cycle in `procedural` and in the head segment.
+- [x] **Sway.** Add the sway request in the locomotion composition; measure plant slip on L3-F13 and L3-F15; apply the fallback if needed.
+- [x] **Sliding plant (from 13d, user ruling 2026-11-09).** L3-F16-stop1.9's right foot is planted at the clip crossing while it still slides at 0.33 m/s, and the plant fails (`footPlantFailed`, slide, 1.5 cm). The `settled` test in footwork.ts passes any foot moving up to 1 cm per substep (2.4 m/s). The candidate from 13d: measure `settled` over `C.arriveS`, not one substep (about 0.2 m/s), so a sliding foot continues as a swing. It clears stop1.9 and leaves the other ten stops byte-identical, but changes the L3-F14 walks and L3-F7-phase50/75/mirror50, which 13e changes anyway. Remove the stop1.9 allowance in `BRAKE` and `SETTLES` (tests/l3-pass.ts) with it.
+- [x] **Look review.** The user reviews L3-F13-carrier, L3-F13-free, L3-F14-walkRunStopCarrier and two HC fixtures in the lab, at 1×.
+- [x] **Evidence.** Full suite, typecheck, build, all fixtures. List every changed summary (HC, L3 and L4 expected), with result, ending, ball spot and handoff changes.
+- [x] **Audits.** The transition audit at idle–walk–run boundaries, the plan 07a handoff audits on every HC fixture, the plan 09 power audit, and the plan 11 and 12 checks on the newly covered fixtures.
+- [x] **Close.** Handoff section.
 
 ## Acceptance
 

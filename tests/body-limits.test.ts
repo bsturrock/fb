@@ -365,8 +365,10 @@ describe('plan 12 joint range: shoulders', () => {
 
   it('ragdoll shoulders: the runner cases stay within the 5 deg tolerance past the cone, but for brief loads; the twins go far behind', async () => {
     // plan 13d: HC-F3-phase0 (margin 14.6 deg) and L3-F1-phase0 (twin 25.8 behind) no longer load the runner's arm behind
-    // with Fast Run's contact timing; HC-F3-falling and HC-F3-mirror do (margins 32.9 and 32.0 deg)
-    for (const id of ['HC-F3-falling', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
+    // with Fast Run's contact timing; HC-F3-falling and HC-F3-mirror do (margins 32.9 and 32.0 deg). Plan 13e: on the L3
+    // planner with the idle and walk clips HC-F3-falling's twin is 28.3 deg behind (the profile's 46.6, inside the cone by
+    // 0.7 deg past it); HC-F3-phase50 loads it (twin 82.4, profile 50.4)
+    for (const id of ['HC-F3-phase50', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
       const on = await probe(FIX(id));
       const off = await probe(twin(FIX(id)));
       expect(off.worst.ragdoll.behind, id).toBeGreaterThan(45);
@@ -424,7 +426,9 @@ describe('plan 12 joint range: ankles', () => {
         }
       }
     }
-    expect([...heldCases].sort()).toEqual(['HC-F1-low D.right', 'HC-F1-low R.left']);
+    // (plan 13e: HC-F1-low D's right shoe is no longer held, on the L3 planner with the idle and walk clips: it relaxes
+    // within 1 deg like the others)
+    expect([...heldCases].sort()).toEqual(['HC-F1-low R.left']);
     // the twin keeps the supported pitch it converted with, past the range
     const off = await probe(twin(FIX('HC-F1-low')));
     for (const [pid, c] of off.feet) expect(Math.min(c.conv.left!, c.conv.right!), pid).toBeLessThan(-J.ankle.dorsiDeg);

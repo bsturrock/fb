@@ -45,6 +45,6 @@
       0,
       0
     ],
-    "posePolicy": "static: one representative frame fitted through the pose path (src/sim/model/idle-pose.record.json); the cycle is not played"
+    "posePolicy": "cycle: the 8.33 s loop plays on a standing player (arms and head drawn, the hips offset as a physical sway, plan 13e), blended from one representative frame by the idle weight; that frame gives the stance width and stagger (src/sim/model/idle-pose.record.json)"
   }
 ]

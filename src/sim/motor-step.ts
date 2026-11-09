@@ -4,7 +4,7 @@
 import type { Snapshot } from './contracts';
 import { computeDrive, computeYaw } from './motors';
 import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, desiredUpFrom, leanScale, postureGravityHold } from './balance';
-import { v3, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, UP } from './vec';
+import { add, v3, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, UP } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 
 /** What the motor step reads from the simulation. */
@@ -62,7 +62,9 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
     }
     // plan 06a: the applied suspension load bounds traction (drive and yaw scale with it, never above the legacy caps)
     const auth = pl.sus ? pl.sus.authority : 1;
-    const drive = computeDrive(pl.intent.locomotion, b.linearVelocity, b.massKg, pl.motor, supported, ls * auth);
+    // plan 13e: the idle sway joins the drive's request only
+    const loco = pl.sway ? { ...pl.intent.locomotion, desiredVelocityWorld: add(pl.intent.locomotion.desiredVelocityWorld, pl.sway) } : pl.intent.locomotion;
+    const drive = computeDrive(loco, b.linearVelocity, b.massKg, pl.motor, supported, ls * auth);
     const yaw = computeYaw(pl.intent.locomotion, b.rotation, b.angularVelocity.y, pl.motor, supported, auth);
     if (drive.cap > 0) pl.proxy.body.addForce(drive.force, true);
     let balReq = v3();

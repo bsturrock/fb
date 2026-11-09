@@ -8,7 +8,7 @@ import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
 import { cullGeom, geomNear, initPhysics, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
 import {
-  ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
+  ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, sideSignX, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
 } from './profiles';
 import {
@@ -16,7 +16,7 @@ import {
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
 import { advanceGait, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type ProxyPoseInput } from './pose';
-import { advanceLoco, newLocoState, type LocoState } from './locomotion';
+import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newLocoState, sampleIdle, type LocoState } from './locomotion';
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
@@ -112,6 +112,17 @@ export interface PlayerRuntime {
   /** Plan 08: the ramped walking request and the controller's request it advances toward (see rampWalkRequest). */
   walkRequest?: Vec3;
   walkWant?: Vec3;
+  /**
+   * Plan 13e: the idle cycle's hips sway this substep (world, horizontal, m/s), added to the drive's request only: the
+   * referee, the braking stance and the clip playback read the controller's request.
+   */
+  sway?: Vec3;
+  /**
+   * Plan 13e: the body's intended sway displacement (world, horizontal, m): the sway request integrated while it plays,
+   * unwound at IDLE_SWAY_UNWIND_MPS once it stops. The foot planner's home is taken without it, so the sway is not read
+   * as creep (the feet stay; the legs follow the body).
+   */
+  swayM?: Vec3;
   body: BodyProfile;
   motor: MotorProfile;
   proxy: ProxyBody;
@@ -325,6 +336,8 @@ export function checkLimbContract(A: ArmProfile, R: RagdollProfile): void {
  * rejected, D left a rigid falling proxy).
  */
 const LIMP_SHOE_CLEARANCE_M = 0.08;
+/** Plan 13e: how fast the sway displacement the foot planner's home leaves out unwinds once the sway stops (m/s). */
+const IDLE_SWAY_UNWIND_MPS = 0.05;
 
 export class Simulation {
   physics!: PhysicsWorld;
@@ -869,6 +882,7 @@ export class Simulation {
       // nothing changes before 4b), not the previous substep's
       if (this.suspension && !pl.rag && pl.sus) this.advanceLocoMode(pl, this.physics.dt);
       this.rampWalkRequest(pl, decided);
+      this.idleSway(pl);
     }
     // 4. clear application-owned force/torque accumulators (once, before any contribution)
     for (const pl of this.players)
@@ -1007,6 +1021,42 @@ export class Simulation {
       dt,
     );
     if (ch) this.emit('locoMode', pl.id, ch);
+    // plan 13e: the idle weight from this substep's mode, support and solved travel
+    if (P.idle.cycle) advanceIdle(st, P, idleTarget(len(horiz(v)), st.mode === 'free' && pl.grounded && pl.controlMode === 'supported'), dt);
+  }
+
+  /**
+   * Plan 13e: this player's idle phase (0..1) now, from simulation time and its index in the fixture's player list (not
+   * the body order: a reversed order keeps every player's phase).
+   */
+  idlePhaseOf(pl: PlayerRuntime): number {
+    return idlePhase(this.def.locomotion!.idle.cycle!, this.t, this.def.players.findIndex((p) => p.id === pl.id));
+  }
+
+  /**
+   * Plan 13e: the idle cycle's weight sway as a velocity request. While the idle weight is above 0 and the player's own
+   * request is zero, the drive gains the time derivative of the cycle's hips offset (leg-scaled, in the body's heading
+   * frame), scaled by the idle weight: the motor moves the body, the planted feet stay where they are.
+   */
+  private idleSway(pl: PlayerRuntime): void {
+    pl.sway = undefined;
+    const P = this.def.locomotion;
+    const C = P?.idle.cycle;
+    if (!C || !P.idle.sway) return;
+    const dt = this.physics.dt;
+    const w = pl.loco?.idleW ?? 0;
+    // (after a referee ending the physics settles passively: no sway either)
+    if (pl.rag || this.rules?.ending || !(w > 0) || len(horiz(pl.intent.locomotion.desiredVelocityWorld)) > 0) {
+      if (pl.swayM) pl.swayM = clampLen(pl.swayM, Math.max(0, len(pl.swayM) - IDLE_SWAY_UNWIND_MPS * dt));
+      return;
+    }
+    const r = sampleIdle(C, this.idlePhaseOf(pl)).hipsV;
+    const f = norm(horiz(forwardOf(this.coreBody(pl).rotation())), v3(0, 0, 1));
+    const k = w * IDLE_POSE_RECORD.stance.legScale;
+    // the clip's x is anatomical left; the body's left is on its own +X sign
+    const lx = sideSignX(pl.body, 'left') * r.x * k;
+    pl.sway = v3(lx * f.z + r.z * k * f.x, 0, -lx * f.x + r.z * k * f.z);
+    pl.swayM = add(pl.swayM ?? v3(), scale(pl.sway, dt));
   }
 
   /** A held grip or clamp on or by this player (owner or target). */

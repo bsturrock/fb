@@ -13,17 +13,21 @@ import { defenderBob, defenderPhase, hcf5, LOW, mirrorZ, withStance } from './ha
 import { g4f4 } from './gate4';
 import { rhf5PlayerBelow, rhf6, rhf6Defeat } from './ride-height';
 import { runClipsBew, runClipsL3 } from '../model/run-clips';
+import { onModel, withLocomotion } from './with-locomotion';
 
 /** The same fixture under a new L3 identity with the plan 08 transition composition. */
 export function asL3(def: FixtureDef, id: string, title?: string, notes?: string): FixtureDef {
+  // plan 13e: the player model takes the full locomotion set; the authored body keeps the plan 08 composition (static
+  // fitted idle) and its source's clips, if any
+  const model = onModel(def);
+  const set = model
+    ? withLocomotion(def)
+    : { ...def, footwork: FOOTWORK_L3, locomotion: LOCOMOTION_L3, ...(def.runClips ? { runClips: runClipsL3(def.runClips) } : {}) };
   return {
-    ...def,
+    ...set,
     id,
-    ...(def.runClips ? { runClips: runClipsL3(def.runClips) } : {}),
     milestone: 'L3',
     title: title ?? def.title,
-    footwork: FOOTWORK_L3,
-    locomotion: LOCOMOTION_L3,
     carry: CARRY_L3,
     selfClearance: SELF_CLEARANCE_V1,
     jointRange: JOINT_RANGE_V1,
@@ -31,7 +35,14 @@ export function asL3(def: FixtureDef, id: string, title?: string, notes?: string
     ...(def.rules ? { rules: rulesRevision2(ruleVariant(def.rules, 'ballSource=carryPose', { ballSource: 'carryPose' })) } : {}),
     // plan 10b: a coached entry updates its phase before it aims (the gate 1 fixtures keep their order)
     players: def.players.map((p) => (p.controller.kind === 'coachedEntry' ? { ...p, controller: { ...p.controller, phaseFirst: true } } : p)),
-    notes: [def.notes, notes, `Footwork: ${FOOTWORK_L3.id}; locomotion: ${LOCOMOTION_L3.id}; carry: ${CARRY_L3.id}.`].filter(Boolean).join(' '),
+    notes: [
+      def.notes,
+      notes,
+      `Footwork: ${FOOTWORK_L3.id}; locomotion: ${set.locomotion!.id}; carry: ${CARRY_L3.id}.`,
+      model ? '' : 'Authored body: no supplied clips or idle cycle (plan 13e: both are calibrated to the player model).',
+    ]
+      .filter(Boolean)
+      .join(' '),
   };
 }
 
@@ -61,7 +72,7 @@ export const l3f13 = (): FixtureDef[] => [
 ];
 
 export const l3f15 = (): FixtureDef[] => [
-  asL3(script(stand(), (segs) => segs.map((g) => ({ ...g, stance: { staggerM: IDLE_POSE_RECORD.stance.leftForwardM * IDLE_POSE_RECORD.stance.legScale } }))), 'L3-F15-fitted', 'Supplied idle posture: fitted arms, width and left-foot stagger, stand 3 s', `Idle source ${IDLE_POSE_RECORD.sourceSha256}, frame ${IDLE_POSE_RECORD.frame}, static.`),
+  asL3(script(stand(), (segs) => segs.map((g) => ({ ...g, stance: { staggerM: IDLE_POSE_RECORD.stance.leftForwardM * IDLE_POSE_RECORD.stance.legScale } }))), 'L3-F15-fitted', 'Supplied idle posture: fitted arms, width and left-foot stagger, stand 3 s', `Idle source ${IDLE_POSE_RECORD.sourceSha256}: frame ${IDLE_POSE_RECORD.frame} gives the stance, the ${IDLE_POSE_RECORD.cycle.periodS} s cycle plays.`),
   {
     ...asL3(free(stand()), 'L3-F15-handoff', 'Fitted idle with a labelled ragdoll conversion at 1.5 s, no ball, 2.5 s', 'Diagnostic conversion: the candidate takes the fitted idle pose and must pass the unchanged handoff audit.'),
     durationS: 2.5,

@@ -44,7 +44,7 @@ export function tippedFall(o: { id: string; dir: Dir; role?: 'runner' | 'defende
     id: o.id,
     milestone: 'L4',
     title: `Tipped ${o.dir} fall`,
-    notes: 'Diagnostic conversion at 0.05 s of a leaning, tipping player. Starting state only.',
+    notes: 'Diagnostic conversion at 0.05 s of a leaning, tipping player. Starting state only. No locomotion set (plan 13e): converted before it can stand.',
     durationS: o.durationS ?? 3,
     motor: DEFAULT_MOTOR,
     diagnostics: { conversions: [{ playerId: 'R', atS: 0.05 }] },

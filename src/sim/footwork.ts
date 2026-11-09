@@ -161,7 +161,8 @@ export const FOOTWORK_L2: FootworkProfile = {
  */
 export const FOOTWORK_L3: FootworkProfile = {
   ...FOOTWORK_L2,
-  id: 'footwork-l3-v3',
+  // v4 (plan 13e): an inherited foot settles over an arrival, not one substep
+  id: 'footwork-l3-v4',
   settleTriggerM: 0.09,
   compose: { followRadPerS: 18, liftRadPerS: 24, brakeEnterB: 0.6, brakeExitB: 0.25, brakeEnterMps: 5, arriveS: 0.05, landOffsetM: 0.12, stepAheadS: 0.25, landWithinS: 0.12, landGapS: FOOTWORK_L2.swing.minS / 2, ...stepAccelLimits(FOOTWORK_L2.swing) },
 };
@@ -277,6 +278,15 @@ export interface FootState {
   solvedW: Vec3;
   /** Settle step taken since the body became still (cleared when it moves). */
   settled: boolean;
+  /**
+   * Plan 13e, composed: the home (world, horizontal) the last step could not reach because another body held the leg off
+   * it (the step landed where the leg had got to). While the home stays within settleTriggerM of it the planted foot takes
+   * no step or settle step toward it (no re-stepping into the blocker); null when there is none, cleared by any step and
+   * when the home or the body that held it moves on.
+   */
+  blockedW: Vec3 | null;
+  /** Plan 13e: the core (world, horizontal) of the other player nearest the blocked home when it was recorded. */
+  blockerW: Vec3 | null;
   /** The current step drags along the turf (no clearance): a reach release while the other foot is in the air. */
   drag: boolean;
   /** Clip swing progress of the last clip-regime substep (null in clip stance or outside the clip regime). */
@@ -439,6 +449,8 @@ function newFoot(): FootState {
     ankleV: v3(),
     solvedW: v3(),
     settled: false,
+    blockedW: null,
+    blockerW: null,
     drag: false,
     clipSwingP: null,
     wait: false,
@@ -535,7 +547,9 @@ export interface FootPlanInput {
    * Plan 12 (a joint-range profile): a touchdown of a foot tilted toe down past its planned contact (the shoe at the
    * ankle range limit, the shin leaning past it) lands on the ball of the foot: its lowest sole corner.
    */
-  heelLift?: boolean;  /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
+  heelLift?: boolean;
+  /** Plan 13e: the other players' cores (world, horizontal: y 0), what can hold a leg off its home. */
+  others?: Vec3[];  /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
   debug?: FootDebug;
 }
 
@@ -794,8 +808,10 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       // current hip); else, crossing in the air, its own clip swing continues as a planner step (no new lift); else it
       // waits for its turn (one ordinary step at a time, below)
       const ankleAt = add(f.ankleW, v3(0, inp.groundY - f.featureW.y, 0));
-      // composed: a shoe moving more than the plant tolerance a substep cannot stay on its anchor: no proposal from it
-      const settled = !C || len(hz(f.ankleV)) * inp.dt <= P.plantTolM;
+      // composed: a shoe that would move more than the plant tolerance over an arrival (C.arriveS) cannot stay on its
+      // anchor: no proposal from it, its swing continues (plan 13e: over one substep it passed a shoe sliding at 2.4 m/s,
+      // L3-F16-stop1.9's right foot planted at 0.33 m/s and failed on the slide)
+      const settled = !C || len(hz(f.ankleV)) * (inp.debug?.settleOneSubstep ? inp.dt : C.arriveS) <= P.plantTolM;
       if (f.gapM <= P.plantTolM && !f.stale && settled && dist(ankleAt, inp.hips[s]) <= plan.reachM - P.reachMarginM) {
         f.wait = false;
         const heading = headingOf(norm(hz(qRot(f.footQ, v3(0, 0, 1))), v3(0, 0, 1)));
@@ -836,11 +852,19 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       const sideErr = catching ? Math.abs(dot(hz(sub(standAt, inp.home[s])), v3(-inp.vel.z / speed, 0, inp.vel.x / speed))) : err;
       // (a fresh plant is held like one under a clip: it is not stepped from the moment it lands)
       const leaving = !!C && speed > P.settleSpeedMps && f.solves * inp.dt >= C.landWithinS && reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM, inp.heelLift) < C.stepAheadS;
-      if (sideErr > P.stepTriggerM) want.push({ s, why: 'step', urgency: sideErr - P.stepTriggerM });
+      // plan 13e: a foot held off its home by another body stays where its step landed while the home and that body stay
+      // put (before this, L3-F6-holdMirror's defender re-stepped into the runner every 0.3 s: each step landed about where
+      // it started; L3-F4-gripOwner's runner steps home again once the defender has moved 19 cm off)
+      if (f.blockedW && (len(hz(sub(inp.home[s], f.blockedW))) > P.settleTriggerM || !f.blockerW || dist(nearestOther(inp, f.blockedW) ?? v3(Infinity, 0, 0), f.blockerW) > P.settleTriggerM)) {
+        f.blockedW = null;
+        f.blockerW = null;
+      }
+      const blocked = !!C && f.blockedW !== null && !inp.debug?.noBlockedMemory;
+      if (sideErr > P.stepTriggerM && !blocked) want.push({ s, why: 'step', urgency: sideErr - P.stepTriggerM });
       else if (leaving) want.push({ s, why: 'reach', urgency: 0.5 * (C!.stepAheadS - reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM, inp.heelLift)) });
       else if (yawErr > rad(P.yawTriggerDeg)) want.push({ s, why: 'yaw', urgency: yawErr - rad(P.yawTriggerDeg) });
       else if (reach > plan.reachM - P.reachMarginM) want.push({ s, why: 'reach', urgency: reach - plan.reachM + P.reachMarginM });
-      else if (still && !f.settled && err > P.settleTriggerM) want.push({ s, why: 'settle', urgency: (err - P.settleTriggerM) * 0.1 });
+      else if (still && !f.settled && !blocked && err > P.settleTriggerM) want.push({ s, why: 'settle', urgency: (err - P.settleTriggerM) * 0.1 });
     }
     const held = (s: ArmSide): boolean => plan.feet[s].mode === 'planted' && !plan.feet[s].tentative;
     // a waiting foot takes the next ordinary step: when no step is in progress and the other foot is held (or both wait:
@@ -1016,6 +1040,13 @@ function destination(plan: FootPlan, s: ArmSide, inp: FootPlanInput, remainS: nu
 
 const other = (s: ArmSide): ArmSide => (s === 'left' ? 'right' : 'left');
 
+/** Plan 13e: the other player's core nearest `p` (horizontal), or null with no other player. */
+function nearestOther(inp: FootPlanInput, p: Vec3): Vec3 | null {
+  let best: Vec3 | null = null;
+  for (const o of inp.others ?? []) if (!best || len(hz(sub(o, p))) < len(hz(sub(best, p)))) best = o;
+  return best;
+}
+
 function startStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput, why: FootReason, ev: FootEvent[], drag = false, onPath = false): void {
   const P = plan.profile;
   const f = plan.feet[s];
@@ -1029,6 +1060,8 @@ function startStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput, why: FootReas
   f.p0 = 0;
   f.liftExcessM = 0;
   f.short = false;
+  f.blockedW = null;
+  f.blockerW = null;
   // plan 08: a foot already on a planner path keeps it; only its destination is new
   if (!onPath) seedStep(plan, f);
   if (P.compose) {
@@ -1257,7 +1290,11 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
     const along = len(hz(inp.vel)) > 1e-6 ? dot(sub(prev, f.dest), norm(hz(inp.vel))) : 0;
     if (C && f.short && len(hz(inp.vel)) >= P.settleSpeedMps && along > 0) f.dest = addScaled(f.dest, norm(hz(inp.vel)), along);
     // a step held off its destination by another body lands where the leg has got to
-    if (C && remainS <= 0 && f.variant !== 0) f.dest = v3(f.ankleW.x, f.dest.y, f.ankleW.z);
+    if (C && remainS <= 0 && f.variant !== 0) {
+      f.dest = v3(f.ankleW.x, f.dest.y, f.ankleW.z);
+      f.blockedW = v3(inp.home[s].x, 0, inp.home[s].z);
+      f.blockerW = nearestOther(inp, f.blockedW);
+    }
   }
   if (C && remainS <= 0 && f.lateS <= 0 && len(hz(sub(f.dest!, prev))) >= 1e-3) f.lateS = C.arriveS;
   const horizonS = remainS > 0 ? remainS + dt : Math.max(f.lateS, dt);

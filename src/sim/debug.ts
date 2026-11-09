@@ -15,6 +15,12 @@ export interface FootDebug {
   noJoinCheck?: boolean;
   /** The composed crossing sets a following foot's heading to the body's, as before plan 10b (negative control). */
   crossingBodyHeading?: boolean;
+  /** An inherited foot settles over one substep, as before plan 13e: a sliding shoe can plant (negative control). */
+  settleOneSubstep?: boolean;
+  /** The planner's home includes the idle sway's displacement, as before plan 13e's fix (negative control). */
+  swayInHome?: boolean;
+  /** A foot held off its home by another body steps toward it again at once, as before plan 13e (negative control). */
+  noBlockedMemory?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */

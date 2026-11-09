@@ -387,3 +387,133 @@ Each control moved to a run that still shows its case, with the same limit, unle
 
 - `.scratch/p13d/final.json` (the closing run), `.scratch/p13d/fixtures2.log` (the export), `.scratch/p13d/diff.txt`, `clipw.txt` (the probes' output), the baseline export at `63323e1` in `.scratch/p13d/base/`.
 - Investigation probes for the re-points in `.scratch/p13d/A/`, `.scratch/p13d/B/` (untracked).
+
+## 13e — Idle and walk where they belong
+
+Plan: [13e](../open/13e_Idle_and_Walk_Coverage.md). Implemented 2026-11-09 after `c5b85a1` (13d). User rulings during the work: the hold re-stepping is fixed in 13e; three small overshoots are bounded known limits; HC-F3-phase75 D's new rejection goes to 13f; HC-F2-bothFall's post-switch window ends at A's first new contact; the L3-F6 hold's prep flicker is a bounded known limit (all below).
+
+**Result:**
+- **The idle cycle plays.** A standing player plays the supplied 8.33 s idle: the free arms (blended with frame 71 by the idle weight, through `chestArm` as before), the head on the core (bounded by the cycle, 1.02°), and the weight sway. Each player's phase is `frac(t / 8.333 + frac(0.618 × index))`, the index in the fixture's player list. The idle weight is the stance fade (1 at rest, 0 from 1.5 m/s) while free, grounded and supported, 0 otherwise, moved at the contact weight rate (5/s).
+- **Sway is physical.** The cycle's hip rate, times the weight and the leg scale, in the body's heading frame, is added to the drive's request only (`motor-step.ts`), while the player's own request is zero and outside a rules ending; the referee, braking and clip playback read the controller's request. The foot planner's home leaves out the integrated sway, so the feet stay where the body stood. Plant drift on L3-F13 and L3-F15 is 0.82 mm (0.77 mm without sway), no extra steps: the fallback (drop sway) is not needed.
+- **Coverage.** Every model-body L3, L4 and HC fixture has the L3 foot planner, `locomotion-l3-v4` and the walk and Fast Run clips (`withLocomotion`). Exempt, by reason in the notes: the 50 authored-body fixtures (no supplied clips or idle cycle: both are calibrated to the player model) and the 12 L4 tipped falls (converted before they can stand). HC moved from the L2 planner or legacy legs to the L3 planner.
+- **13d's sliding plant.** An inherited foot settles over an arrival (`C.arriveS`), not one substep; the L3-F16-stop1.9 allowances in `BRAKE` and `SETTLES` are gone.
+- **Look review.** Passed (user, 2026-11-09): L3-F13-carrier, L3-F13-free, L3-F14-walkRunStopCarrier, HC-F1-mirror and HC-F3-rising at 1×.
+- **Transitions.** The transition audit finds no L3 boundary over 1 cm outside the two listed known cases (one from plan 12, one new below).
+- **Physics.** The plan 07a handoff audits pass on every HC fixture in both body orders; the plan 09 effort audits, plan 11 self-clearance and plan 12 joint-range rows pass on the newly covered fixtures. One new rejection (HC-F3-phase75 D, to 13f); the 13d case HC-F3-lowRunner reversed R converts again.
+- **Evidence.** All 410 exported. G1–G4, L1, L2 and RH byte-identical; HC 22, L3 64 and L4 6 changed. One result change, 7 end-time changes, 8 ball-spot changes, every rule ending keeps its kind; 20 fixtures' handoffs changed.
+- **Tests.** 241 in 13 files (230 before, +11), all pass, exit 0; 95.4 s wall time. Typecheck and build pass.
+
+### What changed
+
+- `scripts/model/idle-intake.ts`: records the cycle for all 251 frames: each arm's upper and forearm directions in the Spine2 frame, the head relative to the chest and to the representative frame, the hips' horizontal offset from the loop mean, with `periodS`, `headMaxDeg`, `hipsMaxM`. `idle-pose.record.json` regenerated; the manifest's `posePolicy` is `cycle: …` and `models/animations/README.md` says so.
+- `src/sim/locomotion.ts`: `LOCOMOTION_L3_IDLE` (`locomotion-l3-v4`: `LOCOMOTION_L3` plus `idle.cycle` and `idle.sway`); `idlePhase`, `sampleIdle` (frames interpolated, directions renormalized, head slerped, the hip rate from central differences), `idleTarget`, `advanceIdle`, `idleWeight`; `LocoState.idleW`. `LOCOMOTION_L3` (`v3`) is unchanged and stays on the authored body.
+- `src/sim/simulation.ts`: the idle weight at the end of each locomotion mode update; `idlePhaseOf`; the sway (`PlayerRuntime.sway`, `swayM`), unwound at 0.05 m/s when it stops. `src/sim/motor-step.ts`: the drive adds the sway.
+- `src/sim/pose.ts`: the free arms' rest blends to the cycle; the head segment and head landmark take the cycle's head. `src/sim/pose-runtime.ts`: the idle sample in the pose input; the planner home leaves out `swayM`; `others` (the other players' cores) in the foot input.
+- `src/sim/footwork.ts` (`footwork-l3-v4`): the settle test over an arrival; the blocked-home memory (`FootState.blockedW`, `blockerW`): a foot whose step another body held off its home takes no step or settle step toward that home while the home and the nearest other player's core stay within `settleTriggerM` (9 cm) of where they were.
+- `src/sim/fixtures/with-locomotion.ts` (new): `withLocomotion`, `onModel`, `lockedOutOfLocomotion`. `asL3` (transitions.ts) and the HC `label` (handoff-contact.ts) call it; fixture notes name the set or the exemption (`falls.ts` for the tipped falls).
+- `src/sim/debug.ts`: three negative-control switches, `settleOneSubstep`, `swayInHome`, `noBlockedMemory`.
+- Probes (committed): `scripts/probe/p13e-idle.ts` (the palm path against the cycle, the head bound, no marching: PASS), `scripts/probe/p13e-handoffs.ts` (accepted, rejected and audit-failed handoffs of two exports compared).
+
+### Faults found in 13e's own change, fixed, each with a check
+
+1. **Sway in the home.** With the integrated sway in the planner home, L3-F16-stop2.9's swaying root dragged the home past the settle trigger 0.18 s before the end (a late settle step). The home leaves it out. Check: `swayInHome` puts it back and `SETTLES` fails (l3-contracts, "plan 13e faults put back").
+2. **Re-stepping into a blocker** (user ruling: fix in 13e). With the clips on L3-F6, the hold defender's step toward a home inside the runner was held off by the runner's body and landed about where it started, then re-triggered every 0.3 s: 6 plants after 3.5 s on L3-F6-holdMirror (bound 1), 2 on L3-F6-hold. The blocked-home memory holds the foot. Check: `noBlockedMemory` puts it back and `HOLD_SETTLES` fails.
+3. **A blocker that leaves.** The first memory, cleared only by the home moving, kept L3-F4-gripOwner's runner's left foot off its home after the defender had moved 19 cm away, and the later clearance release crossed its boundary by 1.01 cm. The memory now also clears when the nearest other core moves 9 cm. Check: the runner steps home at 1.3917 s (same test).
+4. **Order dependence.** The idle phase came from the body order, so a reversed run swapped the players' phases. It now comes from the fixture index. Check: each player's phase is the same in both orders (transitions.test.ts; fails with the body order).
+5. **13d's sliding plant.** Check: `settleOneSubstep` puts the one-substep settle back and L3-F1-phase4's D plants its right foot while it still moves and the plant fails at 0.4792 s (none without). L3-F16-stop1.9 no longer slides with the fault either: the clips and the other 13e changes moved its crossing.
+
+### Tests re-pointed or changed
+
+| Check | Was | Now | Why |
+| --- | --- | --- | --- |
+| Out-of-time reproduction (l3-contracts) | L3-F3-side | L3-F3-recover (R left near 0.838 s, 1.47 m/s, still moving 1.16 m/s) | L3-F3-side's moving out-of-time steps are gone on the clips |
+| Post-switch first solve (handoff-contact) | HC-F4-clear-falling | HC-F3-rising (D, 2.83 body weights) | HC-F4-clear-falling's falling feet leave the turf on the L3 planner: no impulse in its first solve |
+| HC-F2-bothFall post-switch window (user ruling) | 24 substeps | 18, pinned | A's right upper arm, falling at 5.1 m/s, meets B's head at +18 (closing 2.7 m/s along the normal); the next solve takes the impact: elbow 8.7 mm, 26.9 body weights. Through +18: 0.47 mm, 3.5 body weights. The pin fails if the first new contact moves |
+| Ragdoll shoulders (body-limits) | HC-F3-falling | HC-F3-phase50 (twin 82.4°, profile 50.4°) | HC-F3-falling's twin is 28.3° behind on the L3 planner |
+| Ankle held cases (body-limits) | HC-F1-low D.right, R.left | HC-F1-low R.left | D's right shoe relaxes within 1° like the others |
+| Planner and locomotion ids (harness) | L3 only, `v3` | L3 and HC; `footwork-l3-v4`, `locomotion-l3-v4` on the model, `locomotion-l3-v3` on the authored body | the new coverage and ids |
+| Idle record (transitions) | `posePolicy` `static…` | `cycle…` | the cycle plays |
+| Stance width with the idle (transitions) | the plain profile | the profile without sway | the width is measured at rest |
+| `KNOWN_13F` (handoff-contact) | HC-F3-lowRunner reversed R | HC-F3-phase75 D | below |
+
+New: the cycle record's structure; phase and sampling (the hip rate integrates to the hip path within 1 mm); the weight's unit rows; the two-player palm path (L3-F13-free-pair, 9 s: palms follow the cycle within 2 cm, repeat within 1 mm, move over 5 mm, the two players differ by over 5 mm); the coverage census; the phase in both orders; the L3 rows `IDLE_WEIGHT` and `IDLE_PLANTS`; the three faults put back; the HC-F2-bothFall window pin.
+
+### Known limits (user rulings)
+
+- **L3-F6-saturated:** the runner's root peaks at 0.9122 m (limit 0.91). Bounded at 0.913 m in `NO_LAUNCH`.
+- **L3-F14-lateral:** one plant fails on the slide (R left, 1.1417 s, 3.36 cm). Pinned in `WALK_VALID` (that plant only, under 3.5 cm).
+- **L3-F3-recover:** R's right knee crosses its step-to-step boundary at 0.725 s by 1.144 cm. Bounded at 1.15 cm in `KNOWN_AUDIT`.
+- **HC-F3-phase75 D:** its conversion is rejected for external penetration (left thigh 2.01 cm in R's right shoe at 1.392 s); it ends a falling proxy. Pinned (`KNOWN_13F` and the family row) and listed in [13f](../open/13f_Conversion_Overlap_Margin.md).
+- **L3-F6-hold and L3-F6-holdMirror:** on the walk clips D's run-in reaches 1.513 m/s (1.46 without clips), over the 1.5 m/s prep threshold, so both players enter prep at 0.308 s; the arrival brake takes the closing speed back under it, prep unwinds at 0.567 s and the wrap is retained at 0.604 s. Pinned in `HOLD_SETTLES`: prep, free, contact, the free gap under 50 ms.
+- The blocked-home memory knows only where the other players' cores are: a blocker that moves less than 9 cm keeps the foot off its home.
+- From the plan: backward and side walks stay procedural (the supplied walk is a forward cycle).
+
+### Changed summaries (92; G1–G4, L1, L2 and RH byte-identical)
+
+- **HC** (22 changed, 0 identical): every HC fixture.
+- **L3** (64 changed, 33 identical): L3-F1-phase4, L3-F3-side, L3-F3-sideMirror, L3-F3-recover, L3-F3-collision, L3-F5-drag, L3-F5-dragMirror, L3-F6-hold, L3-F6-holdMirror, L3-F6-saturated, L3-F7-phase0, L3-F7-phase50, L3-F7-loadRelease, L3-F8-recontact, L3-F9-lift-free, L3-F9-lift-contact, L3-F9-lift-exit, L3-F9-convert-contact, L3-F9-convert-exit, L3-F9-noProbe-exit, L3-F9-low, L3-F9-playerBelow, L3-F10-both, L3-F10-bothMirror, L3-F10-bothLow, L3-F10-rising, L3-F10-falling, L3-F11-invalid, L3-F13-carrier, L3-F13-free, L3-F13-ready, L3-F13-settle2.1, L3-F13-settle2.3, L3-F13-settle2.5, L3-F13-settle2.7, L3-F14-forward, L3-F14-backward, L3-F14-lateral, L3-F14-carrier, L3-F14-ready, L3-F14-walkRunStop, L3-F14-walkRunStopCarrier, L3-F14-handoff, L3-F15-fitted, L3-F15-handoff, L3-F16-runStop, L3-F16-runStopFree, L3-F16-runStopReady, L3-F16-runStopHard, L3-F16-stop2.55, L3-F16-stop1.7, L3-F16-stop1.9, L3-F16-stop2.1, L3-F16-stop2.3, L3-F16-stop2.45, L3-F16-stop2.75, L3-F16-stop2.9, L3-F16-stop3.05, L3-F16-reaccel, L3-F16-handoff, L3-F16-kick, L3-F16-contactStop, L3-F17-runStart, L3-F17-runStartFree
+- **L4** (6 changed, 69 identical): L4-F5-twoClamp-on, L4-F5-twoClamp-off, L4-F9-contact, L4-F9-exit, L4-F9-low, L4-F9-both
+
+**Result change (1):** L3-F3-sideMirror `duration` → `practiceOutOfBounds`, on the last tick (1.75 s, the fixture's duration).
+
+**End times (7):**
+
+| Fixture | End (s) | Change |
+| --- | --- | --- |
+| HC-F3-mirror | 1.7333 → 1.6667 | -67 ms |
+| HC-F3-phase0 | 1.6333 → 1.55 | -83 ms |
+| HC-F3-phase50 | 1.6667 → 1.6833 | +17 ms |
+| HC-F3-rising | 1.6667 → 1.6333 | -33 ms |
+| HC-F3-falling | 1.6667 → 1.6333 | -33 ms |
+| HC-F3-lowRunner | 1.8333 → 1.9167 | +83 ms |
+| L3-F3-side | 1.7333 → 1.75 | +17 ms |
+
+**Rule endings (8):** every kind stays `groundDown`. Ball spots:
+
+| Fixture | Ball spot before (x, y, z m) | After |
+| --- | --- | --- |
+| HC-F3-mirror | 3.25, 0.98, -1.04 | 2.84, 0.57, -1.31 |
+| HC-F3-phase0 | 2.21, 0.05, 1.87 | 2.27, 0.55, 1.21 |
+| HC-F3-phase50 | 1.99, 0.02, 1.64 | 2.81, 0.31, 1.36 |
+| HC-F3-phase75 | 2.05, 0.10, 1.53 | 2.74, 0.34, 1.33 |
+| HC-F3-rising | 1.73, 0.11, 1.60 | 2.66, 0.36, 1.29 |
+| HC-F3-falling | 1.69, 0.13, 1.52 | 2.66, 0.36, 1.29 |
+| HC-F3-lowRunner | 2.47, 0.06, 1.74 | 3.63, 0.05, 1.85 |
+| L3-F1-phase4 | 2.9681, 0.2357, 1.4642 | 2.9680, 0.2357, 1.4642 |
+
+**Handoffs (20 fixtures changed; `p13e-handoffs.ts`):**
+
+| Fixture | Before (accepted; rejected) | After |
+| --- | --- | --- |
+| HC-F2-bothFall | B 0.487, A 0.667 | B 0.450, A 0.667 |
+| HC-F2-bothFallL2 | B 0.637, A 0.646 | B 0.637, A 0.654 |
+| HC-F2-lift1.4 | A 1.579, B 1.629 | B 1.492 (A stays supported) |
+| HC-F2-lift3.0 | A 1.413 | A 1.354 |
+| HC-F2-lowCarrier | none | A 0.692 |
+| HC-F3-falling | D 0.713, R 0.850 | R 0.804, D 1.171 |
+| HC-F3-lowRunner | R 0.996, D 1.517 | R 1.050 (D stays supported) |
+| HC-F3-mirror | R 0.929, D 1.438 | R 0.846 (D stays supported) |
+| HC-F3-phase0 | R 0.767 | R 0.775 |
+| HC-F3-phase50 | R 0.833, D 1.475 | R 0.838, D 1.467 |
+| HC-F3-phase75 | R 0.875, D 1.446 | R 0.825; D rejected 1.392 (externalPenetration, 2.01 cm) |
+| HC-F3-rising | D 0.700, R 0.846 | R 0.804, D 1.204 |
+| HC-F5-invalidOne | R 1.200; D rejected 1.200 (jointAnchor, landmarkDiscontinuity) | the same, D's worst penetration 0.32 → 0.11 cm |
+| HC-F5-strictTransfer | R 0.842, D 1.296 (both energyGain audit failures, by design) | R 0.804, D 1.308 (the same) |
+| L3-F10-rising | D 0.842, R 1.200 | D 0.821, R 1.200 |
+| L3-F11-invalid | R 1.200; D rejected 1.200 (jointAnchor, landmarkDiscontinuity) | the same, D's worst penetration 0.52 → 0.11 cm |
+| L3-F3-collision | R 0.813, D 0.883 | R 0.779, D 0.858 |
+| L3-F3-recover | R 1.146 | R 1.129 |
+| L3-F3-side | R 0.896 | R 0.821 |
+| L3-F3-sideMirror | R 0.871 | R 0.771 |
+
+### Departures from the plan
+
+- `withLocomotion` lives in `src/sim/fixtures/with-locomotion.ts`, not transitions.ts: transitions imports handoff-contact, so the HC `label` could not import it from there.
+- The plan's `withLocomotion` sets `LOCOMOTION_L3`; the idle cycle needs a new profile id (a behaviour change on a historical path), so it sets `LOCOMOTION_L3_IDLE` (`locomotion-l3-v4`), and the authored-body L3 fixtures keep `LOCOMOTION_L3` (`v3`) without clips.
+- The sway goes to the drive's request only, not the locomotion request every reader sees, and the planner home leaves out its integral (fault 1).
+- The blocked-home memory and the `others` input are not in the plan: they are the fix the user ruled for the hold re-stepping the new clips exposed.
+
+### Evidence
+
+- `.scratch/p13e/suite6.log` (the closing run), `.scratch/p13e/fixtures.log` (the export), `.scratch/p13e/sumdiff.txt` and `handoffs.txt` (the comparisons), the baseline export at `c5b85a1` in `.scratch/p13e/base/`.
+- Investigation probes in `.scratch/p13e/` (untracked).

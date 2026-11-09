@@ -13,11 +13,18 @@ import { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { ArmSide } from '../src/sim/contracts';
 import type { FootPlanInput } from '../src/sim/footwork';
-import { advanceLoco, IDLE_POSE_RECORD, LOCOMOTION_L3, newLocoState, type LocoObs } from '../src/sim/locomotion';
-import { dist, len, qRot, v3, vc, type Vec3 } from '../src/sim/vec';
+import {
+  advanceIdle, advanceLoco, IDLE_PHASE_STEP, IDLE_POSE_RECORD, IDLE_STANCE_FADE_MPS, idlePhase, idleTarget, idleWeight, LOCOMOTION_L3, LOCOMOTION_L3_IDLE, newLocoState, sampleIdle,
+  type LocoObs,
+} from '../src/sim/locomotion';
+import { add, dist, len, qRot, scale, sub, toLocal, v3, vc, type Vec3 } from '../src/sim/vec';
+import { allFixtures } from '../src/sim/fixtures/index';
+import { lockedOutOfLocomotion, onModel } from '../src/sim/fixtures/with-locomotion';
+import { FOOTWORK_L3 } from '../src/sim/footwork';
+import { chestArm } from '../src/sim/run-clip';
 import { idleIntake } from '../scripts/model/idle-intake';
 import { pace, rows, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
-import { RULES_FOOTBALL, sideSignX } from '../src/sim/profiles';
+import { RULES_FOOTBALL, shoulderLocal, sideSignX } from '../src/sim/profiles';
 import { FIX } from './transitions-shared';
 
 // a long file of synchronous runs: let the runner's messages through between tests
@@ -35,12 +42,175 @@ describe('plan 08 opt-in', () => {
 });
 
 describe('plan 08 idle intake', () => {
-  it('the idle record reproduces from the supplied clip; the cycle is measured, one frame is used', () => {
+  it('the idle record reproduces from the supplied clip; the representative frame gives the stance, the cycle plays', () => {
     expect(idleIntake()).toEqual(IDLE_POSE_RECORD);
     const manifest = JSON.parse(readFileSync('models/animations/manifest.json', 'utf8')) as { kind?: string; sourceSha256?: string; posePolicy?: string }[];
     const idle = manifest.find((e) => e.kind === 'idle')!;
     expect(idle.sourceSha256).toBe(IDLE_POSE_RECORD.sourceSha256);
-    expect(idle.posePolicy).toMatch(/^static/);
+    expect(idle.posePolicy).toMatch(/^cycle/);
+  });
+
+  it('plan 13e: the cycle has every frame; its representative frame is the static posture, the head is relative to it, the hips about the loop mean', () => {
+    const R = IDLE_POSE_RECORD;
+    const C = R.cycle;
+    expect(C.frames).toBe(R.frames);
+    expect(C.periodS).toBeCloseTo((R.frames - 1) / R.fps, 6);
+    for (const a of [C.upper.left, C.upper.right, C.fore.left, C.fore.right, C.head, C.hips]) {
+      expect(a.length).toBe(C.frames);
+      // the loop closes: the last frame repeats the first
+      a[0].forEach((x, i) => expect(a[C.frames - 1][i]).toBeCloseTo(x, 5));
+    }
+    for (const s of ['left', 'right'] as ArmSide[]) {
+      expect(C.upper[s][R.frame]).toEqual(R.arms[s].upper);
+      expect(C.fore[s][R.frame]).toEqual(R.arms[s].fore);
+    }
+    expect(C.head[R.frame]).toEqual([0, 0, 0, 1]);
+    const n = C.frames - 1;
+    expect(Math.abs(C.hips.slice(0, n).reduce((a, h) => a + h[0], 0) / n)).toBeLessThan(1e-6);
+    expect(Math.abs(C.hips.slice(0, n).reduce((a, h) => a + h[1], 0) / n)).toBeLessThan(1e-6);
+    // the measured bounds the pose and the sway are held to: a degree of head, a centimetre of hips
+    expect(C.headMaxDeg).toBeGreaterThan(0.5);
+    expect(C.headMaxDeg).toBeLessThan(3);
+    expect(C.hipsMaxM).toBeGreaterThan(0.005);
+    expect(C.hipsMaxM).toBeLessThan(0.015);
+  });
+
+  it('plan 13e: the phase is from time and the player index; a sample at a frame is the frame; the hips rate integrates to the hips path', () => {
+    const R = IDLE_POSE_RECORD;
+    const C = R.cycle;
+    expect(idlePhase(C, 0, 0)).toBe(0);
+    expect(idlePhase(C, 0, 1)).toBeCloseTo(IDLE_PHASE_STEP, 9);
+    expect(idlePhase(C, 3 * C.periodS + 1.25, 2)).toBeCloseTo(idlePhase(C, 1.25, 2), 9);
+    const at = sampleIdle(C, R.frame / (C.frames - 1));
+    for (const s of ['left', 'right'] as ArmSide[]) {
+      expect(dist(at.upper[s], v3(...R.arms[s].upper))).toBeLessThan(1e-6);
+      expect(dist(at.fore[s], v3(...R.arms[s].fore))).toBeLessThan(1e-6);
+    }
+    expect(at.head.w).toBeCloseTo(1, 9);
+    const dt = 1 / 240;
+    let p = sampleIdle(C, 0).hips;
+    let worst = 0;
+    for (let i = 1; i <= Math.round(C.periodS / dt); i++) {
+      const u = (i * dt) / C.periodS;
+      p = add(p, scale(sampleIdle(C, u - dt / (2 * C.periodS)).hipsV, dt));
+      worst = Math.max(worst, dist(p, sampleIdle(C, u).hips));
+    }
+    expect(worst).toBeLessThan(0.001);
+  });
+
+  it('plan 13e: the idle weight is the stance fade while free and supported, 0 otherwise, rate-bounded after its first substep', () => {
+    expect(idleTarget(0, true)).toBe(1);
+    expect(idleTarget(0.75, true)).toBeCloseTo(0.5, 9);
+    expect(idleTarget(IDLE_STANCE_FADE_MPS, true)).toBe(0);
+    expect(idleTarget(3, true)).toBe(0);
+    expect(idleTarget(0, false)).toBe(0);
+    const st = newLocoState();
+    expect(idleWeight(st, 0.3)).toBe(0.3);
+    advanceIdle(st, LOCOMOTION_L3_IDLE, 1, 1 / 240);
+    expect(st.idleW).toBe(1);
+    advanceIdle(st, LOCOMOTION_L3_IDLE, 0, 1 / 240);
+    expect(st.idleW).toBeCloseTo(1 - LOCOMOTION_L3_IDLE.contact.weightRatePerS / 240, 12);
+    for (let i = 0; i < 60; i++) advanceIdle(st, LOCOMOTION_L3_IDLE, 0, 1 / 240);
+    expect(st.idleW).toBe(0);
+  });
+});
+
+describe('plan 13e idle cycle and coverage', () => {
+  it('two standing players play the cycle at different phases: each free palm follows the cycle through the chest frame within 2 cm, repeats after one period, and the two differ', async () => {
+    const base = FIX('L3-F13-free');
+    const p0 = base.players[0];
+    const def: FixtureDef = { ...base, id: 'L3-F13-free-pair', durationS: 9, players: [p0, { ...p0, id: 'P2', initial: { ...p0.initial, x: p0.initial.x + 3 } }] };
+    const C = LOCOMOTION_L3_IDLE.idle.cycle!;
+    const A = LOCOMOTION_L3_IDLE.walk;
+    const path: Record<string, Vec3[]> = {};
+    let worst = 0;
+    const sim = await Simulation.create(def);
+    try {
+      await runSim(sim, Infinity, (s) => {
+        for (const pl of s.players) {
+          const R = s.def.ragdoll!;
+          const core = s.poseOf(pl);
+          const smp = sampleIdle(C, s.idlePhaseOf(pl));
+          const mx = sideSignX(pl.body, 'left') > 0 ? 1 : -1;
+          for (const side of ['left', 'right'] as ArmSide[]) {
+            const m = (c: Vec3): Vec3 => v3(c.x * mx, c.y, c.z);
+            const r = chestArm(pl.body, R, side, m(smp.upper[side]), m(smp.fore[side]));
+            const sh = shoulderLocal(pl.body, side);
+            const want = add(sh, scale(sub(r.palmLocal, sh), A.restReach));
+            const got = toLocal(core, pl.pose!.jointLandmarksWorld[`${side}Palm`]);
+            if (s.t > 0.3) worst = Math.max(worst, dist(got, want));
+            (path[`${pl.id} ${side}`] ??= []).push(got);
+          }
+        }
+      });
+      expect(worst).toBeLessThan(0.02);
+      const per = Math.round(C.periodS / sim.tickS);
+      for (const [k, ps] of Object.entries(path)) {
+        let rep = 0;
+        let span = 0;
+        for (let i = Math.round(0.5 / sim.tickS); i < ps.length; i++) {
+          span = Math.max(span, dist(ps[i], ps[Math.round(0.5 / sim.tickS)]));
+          if (i + per < ps.length) rep = Math.max(rep, dist(ps[i], ps[i + per]));
+        }
+        expect(rep, `${k} repeats after one period`).toBeLessThan(0.001);
+        // the cycle shows: each palm moves by more than a few millimetres over the loop
+        expect(span, `${k} moves`).toBeGreaterThan(0.005);
+      }
+      for (const side of ['left', 'right']) {
+        const a = path[`${p0.id} ${side}`];
+        const b = path[`P2 ${side}`];
+        expect(Math.max(...a.map((x, i) => dist(x, b[i]))), `${side}: the two players differ`).toBeGreaterThan(0.005);
+      }
+    } finally {
+      sim.dispose();
+    }
+  }, 60000);
+
+  it('each player keeps its idle phase in either body order (the phase follows the fixture index, not the body order)', async () => {
+    const def = FIX('HC-F1-mirror');
+    const phases = async (reverseOrder: boolean): Promise<Record<string, number>> => {
+      const sim = await Simulation.create(def, reverseOrder ? { reverseOrder } : {});
+      try {
+        expect(sim.players.map((p) => p.id)).toEqual((reverseOrder ? [...def.players].reverse() : def.players).map((p) => p.id));
+        return Object.fromEntries(sim.players.map((p) => [p.id, sim.idlePhaseOf(p)]));
+      } finally {
+        sim.dispose();
+      }
+    };
+    const fwd = await phases(false);
+    expect(new Set(Object.values(fwd)).size).toBe(def.players.length);
+    expect(await phases(true)).toEqual(fwd);
+  });
+
+  it('every model-body L3, L4 and HC fixture carries the full locomotion set, except the listed reason groups', () => {
+    const defs = allFixtures().filter((d) => ['L3', 'L4', 'HC'].includes(d.milestone));
+    const groups: Record<string, string[]> = { authoredBody: [], convertedBeforeStanding: [] };
+    let full = 0;
+    for (const d of defs) {
+      if (!onModel(d)) {
+        groups.authoredBody.push(d.id);
+        // the authored body keeps the plan 08 composition (static idle, no supplied clips) where it had one
+        if (d.locomotion) expect(d.locomotion.idle.cycle, d.id).toBeUndefined();
+        expect(d.runClips, d.id).toBeUndefined();
+        continue;
+      }
+      if (lockedOutOfLocomotion(d)) {
+        groups.convertedBeforeStanding.push(d.id);
+        expect(d.locomotion, d.id).toBeUndefined();
+        expect(d.notes, d.id).toMatch(/No locomotion set \(plan 13e\)/);
+        continue;
+      }
+      expect(d.footwork, d.id).toBe(FOOTWORK_L3);
+      expect(d.locomotion, d.id).toBe(LOCOMOTION_L3_IDLE);
+      expect(d.runClips?.walk, d.id).toBeDefined();
+      expect(d.runClips!.clips.map((c) => c.id), d.id).toEqual(['walk', 'fast-run']);
+      full++;
+    }
+    expect(groups.authoredBody.length).toBe(50);
+    expect(groups.convertedBeforeStanding.length).toBe(12);
+    expect(groups.convertedBeforeStanding.every((id) => id.startsWith('L4-'))).toBe(true);
+    expect(full).toBe(defs.length - 62);
+    expect(defs.filter((d) => d.milestone === 'HC').every((d) => onModel(d) && d.locomotion === LOCOMOTION_L3_IDLE)).toBe(true);
   });
 });
 
@@ -145,7 +315,9 @@ describe('plan 08 pass 2: idle and walking', () => {
   it('the idle stance is the fitted width on either body: the width outside the hip comes from the body (plan 10b)', async () => {
     // before 10b the width added outside the hip assumed bew-v6's 0.1125 m hip: on the stock body (0.13 m) the stance
     // was 0.355 m. Both the planner's home and the ordinary leg request are read at rest
-    const fitted = FIX('L3-F15-fitted');
+    // (plan 13e: without the idle sway, which moves the standing body by up to 1 cm/s; the width is read at rest)
+    const src = FIX('L3-F15-fitted');
+    const fitted: FixtureDef = { ...src, locomotion: { ...src.locomotion!, idle: { ...src.locomotion!.idle, sway: false } } };
     const stock = FIX('L3-F4-gripTarget').players.find((p) => p.body.hipRight.x === 0.13)!.body;
     const widths: number[] = [];
     for (const d of [fitted, { ...fitted, players: fitted.players.map((p) => ({ ...p, body: stock })) }]) {

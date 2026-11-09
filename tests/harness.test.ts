@@ -34,7 +34,8 @@ import { assertUniqueIds, runFixtures } from '../scripts/fixture-runner';
 import { g1f4, g1f8Cases, g1f9Fit } from '../src/sim/fixtures/gate1';
 import { asL3 } from '../src/sim/fixtures/transitions';
 import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
-import { LOCOMOTION_L3 } from '../src/sim/locomotion';
+import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
+import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
 import { FALL_L4, JOINT_RANGE_V1, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
@@ -153,16 +154,18 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 08: only L3 fixtures take the composed planner and the locomotion profile; earlier ids keep their paths',
+    'plan 08: only L3 (and, plan 13e, HC) fixtures take the composed planner and the locomotion profile; earlier ids keep their paths',
     () => {
       expect(FOOTWORK_L2.compose).toBeUndefined();
-      expect(FOOTWORK_L3.id).toBe('footwork-l3-v3');
+      expect(FOOTWORK_L3.id).toBe('footwork-l3-v4');
       expect(LOCOMOTION_L3.id).toBe('locomotion-l3-v3');
+      expect(LOCOMOTION_L3_IDLE.id).toBe('locomotion-l3-v4');
       for (const d of allFixtures()) {
         if (d.id.startsWith('L4-')) continue; // later than L3: its falls start from L3 fixtures, with their profiles
-        if (d.id.startsWith('L3-')) {
+        if (d.id.startsWith('L3-') || d.id.startsWith('HC-')) {
+          // the player model plays the idle cycle; the authored body keeps the static fitted idle
           expect(d.footwork, d.id).toBe(FOOTWORK_L3);
-          expect(d.locomotion, d.id).toBe(LOCOMOTION_L3);
+          expect(d.locomotion, d.id).toBe(onModel(d) ? LOCOMOTION_L3_IDLE : LOCOMOTION_L3);
         } else {
           expect(d.locomotion, d.id).toBeUndefined();
           expect((d.footwork as typeof FOOTWORK_L3 | undefined)?.compose, d.id).toBeUndefined();
@@ -272,8 +275,8 @@ const EXPORTS: Row[] = [
     async () => {
       const sim = await run(FIX('L3-F7-phase0'));
       const x = sim.exportFixture() as { profiles: Record<string, unknown> };
-      expect(JSON.stringify(x.profiles)).toContain('locomotion-l3-v3');
-      expect(JSON.stringify(x.profiles)).toContain('footwork-l3-v3');
+      expect(JSON.stringify(x.profiles)).toContain('locomotion-l3-v4');
+      expect(JSON.stringify(x.profiles)).toContain('footwork-l3-v4');
       expect(sim.trace.at(-1)!.players.R.loco).toBeDefined();
       sim.dispose();
     },

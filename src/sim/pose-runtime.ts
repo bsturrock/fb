@@ -6,7 +6,7 @@ import type { PlayerId } from './contracts';
 import { ARM_G2, DEFAULT_POSE_PROFILE, hipLocal, sideSignX } from './profiles';
 import { buildProxyPose, legRequestLocal, poseLimbShapes, type PoseClearance, type PoseShape, type ProxyPoseInput } from './pose';
 import { CARRY_ARM } from './carry';
-import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
+import { idleStanceFade, idleTarget, idleWeight, idleWidthAddM, sampleIdle, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
 import { externalFromColliders, ragdollPose, type ExternalShape } from './ragdoll';
 import { boxSeg, cullGeom, geomNear, trunkContact, trunkPieces, type CullGeom, type TrunkHit } from './physics';
@@ -24,9 +24,11 @@ export type PoseHost = AuditHost &
     | 'advanceLocomotion'
     | 'arms'
     | 'auditPrev'
+    | 'coreBody'
     | 'def'
     | 'emit'
     | 'footInput'
+    | 'idlePhaseOf'
     | 'obstacleColliders'
     | 'opts'
     | 'physics'
@@ -104,7 +106,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
         : undefined,
       dtS: dt,
       handoffPossible: !!host.def.ragdoll && !pl.rag && !pl.handoff,
-      ...(host.def.locomotion ? { loco: { profile: host.def.locomotion, brakeB: pl.sus?.brakeB ?? 0, swing: walkSwing(pl, host.def.locomotion, core, sp, dt), contactW: pl.loco?.braceW ?? 0 } } : {}),
+      ...(host.def.locomotion ? { loco: { profile: host.def.locomotion, brakeB: pl.sus?.brakeB ?? 0, swing: walkSwing(pl, host.def.locomotion, core, sp, dt), contactW: pl.loco?.braceW ?? 0, ...idleOf(host, pl, sp) } } : {}),
       ...(host.opts.debug?.pose ? { debug: host.opts.debug.pose } : {}),
       ...(host.opts.debug?.poseProbe ? { probe: host.opts.debug.poseProbe } : {}),
     };
@@ -130,6 +132,14 @@ export function updatePoses(host: PoseHost, dt: number): void {
       if (prev && host.opts.transitionAudit) prev.plan = structuredClone(fp);
     }
   }
+}
+
+/** Plan 13e: the idle cycle at the player's phase and its weight (a locomotion profile with a cycle only). */
+function idleOf(host: PoseHost, pl: PlayerRuntime, sp: number): { idle?: { sample: ReturnType<typeof sampleIdle>; w: number } } {
+  const C = host.def.locomotion?.idle.cycle;
+  if (!C || !pl.loco) return {};
+  const w = idleWeight(pl.loco, idleTarget(sp, pl.loco.mode === 'free' && pl.grounded && pl.controlMode === 'supported'));
+  return { idle: { sample: sampleIdle(C, host.idlePhaseOf(pl)), w } };
 }
 
 /** The clip's limb requests of a playback at the solved root. */
@@ -197,7 +207,9 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
     const st = (s === 'left' ? 0.5 : -0.5) * (inp.ground?.staggerM ?? 0);
     // plan 08: the fitted idle stance opens as the travel stops (the same width as the ordinary request)
     const wide = inp.loco ? idleWidthAddM(inp.loco.profile, pl.body, s) * (s === 'left' ? -1 : 1) * idleStanceFade(inp.speed) : 0;
-    home[s] = v3(hip.x + fwdH.x * st + rightW.x * wide, gy + soleM, hip.z + fwdH.z * st + rightW.z * wide);
+    // plan 13e: the home leaves out the idle sway's displacement (the feet stay where the body stood)
+    const sw = (!host.opts.debug?.foot?.swayInHome && pl.swayM) || v3();
+    home[s] = v3(hip.x + fwdH.x * st + rightW.x * wide - sw.x, gy + soleM, hip.z + fwdH.z * st + rightW.z * wide - sw.z);
     request[s] = toWorld(core, legRequestLocal(inp, s));
   }
   const P = host.def.runClips;
@@ -232,6 +244,10 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
     sideSign: { left: -1, right: 1 },
     brakeB: sus.brakeB,
     contactHold: pl.loco?.mode === 'contact',
+    others: host.players.filter((o) => o !== pl).map((o) => {
+      const c = host.coreBody(o).translation();
+      return v3(c.x, 0, c.z);
+    }),
     ...(host.def.jointRange ? { heelLift: true } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
   };

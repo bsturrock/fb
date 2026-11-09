@@ -8,12 +8,12 @@
 import type { ArmSide, SegmentId } from './contracts';
 import { CARRY_ARM, carryRequest, seatBallCapsule, seatBallLocal, seatBallWorld, seatOn, seatPalmLocal, stepHandW, type CarryProfile, type CarrySeat } from './carry';
 import { chestArm, type SampledLimbs } from './run-clip';
-import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
+import { idleStanceFade, idleWidthAddM, type IdleSample, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangeProfile, type RagdollProfile } from './profiles';
 import { behindDeg, clampDirToEnvelope } from './joint-cone';
 import type { PoseDebug, PoseProbe } from './debug';
 import {
-  add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qFromUnitVectors, qInvRot, qMul, qRot, scale, sub, toWorld, upOf, v3,
+  add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qFromUnitVectors, qInvRot, qMul, qRot, qSlerp, scale, sub, toWorld, upOf, v3,
   type Pose, type Quat, type Vec3,
 } from './vec';
 
@@ -460,7 +460,14 @@ export interface ProxyPoseInput {
    */
   handoffPossible?: boolean;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
-  loco?: { profile: LocomotionProfile; brakeB: number; swing: number; contactW: number };  /** Plan 10f (F2): this simulation's pose switches (`SimOptions.debug.pose`); absent: all off. */
+  loco?: {
+    profile: LocomotionProfile;
+    brakeB: number;
+    swing: number;
+    contactW: number;
+    /** Plan 13e: the idle cycle sampled at this player's phase and its weight (a profile with a cycle only). */
+    idle?: { sample: IdleSample; w: number };
+  };  /** Plan 10f (F2): this simulation's pose switches (`SimOptions.debug.pose`); absent: all off. */
   debug?: PoseDebug;
   /** Plan 10f (F2): read-only diagnostics (`SimOptions.debug.poseProbe`). */
   probe?: PoseProbe;
@@ -773,7 +780,15 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   lm.pelvisMid = W(pelvisMidLocal(body));
   lm.neck = W(body.neck);
   lm.headCenter = W(body.headCenter);
-  segs.head = { segmentId: 'head', originWorld: lm.neck, rotationWorld: { ...pose.q } };
+  // plan 13e: the head turns on the core by the idle cycle's head rotation (chest frame), weighted from identity; the
+  // clip's anatomical left is +X, so a body with its left on -X takes the rotation mirrored
+  const idl = inp.loco?.idle;
+  if (idl && idl.w > 0) {
+    const h = sideSignX(body, 'left') > 0 ? idl.sample.head : { x: idl.sample.head.x, y: -idl.sample.head.y, z: -idl.sample.head.z, w: idl.sample.head.w };
+    const hq = qMul(pose.q, qSlerp({ x: 0, y: 0, z: 0, w: 1 }, h, idl.w));
+    lm.headCenter = add(lm.neck, qRot(hq, sub(body.headCenter, body.neck)));
+    segs.head = { segmentId: 'head', originWorld: lm.neck, rotationWorld: hq };
+  } else segs.head = { segmentId: 'head', originWorld: lm.neck, rotationWorld: { ...pose.q } };
   // flexion-bounded reach of every generated limb (the joint limits the candidate is validated against)
   const elbowMin = flexReach(R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, maxFlexRad(R, 'elbow'));
   const kneeMin = flexReach(R.lengths.thigh, R.lengths.shin, maxFlexRad(R, 'knee'));
@@ -874,7 +889,11 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       if (freeArm) {
         const mx = sideSignX(body, 'left') > 0 ? 1 : -1;
         const dir = (a: readonly number[]): Vec3 => v3(a[0] * mx, a[1], a[2]);
-        const rest = chestArm(body, R, s, dir(lo!.profile.idle.arms[s].upper), dir(lo!.profile.idle.arms[s].fore));
+        // plan 13e: the idle cycle at this player's phase, blended from the representative frame by the idle weight
+        const still = lo!.profile.idle.arms[s];
+        const id = lo!.idle;
+        const blend = (a: readonly number[], c: Vec3 | undefined): Vec3 => (id && c && id.w > 0 ? norm(lerp(dir(a), v3(c.x * mx, c.y, c.z), id.w), dir(a)) : dir(a));
+        const rest = chestArm(body, R, s, blend(still.upper, id?.sample.upper[s]), blend(still.fore, id?.sample.fore[s]));
         const sw = (s === 'left' ? 1 : -1) * lo!.swing;
         const A = lo!.profile.walk;
         // about the shoulder, the fitted arm a little bent (a straight arm has no stable elbow), more when forward

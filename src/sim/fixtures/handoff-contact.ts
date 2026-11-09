@@ -10,6 +10,9 @@ import { JOINT_RANGE_V1, ruleVariant, SELF_CLEARANCE_V1, withPoseGuard, type Rul
 import { rhf5PlayerBelow, rhf6, rhf7 } from './ride-height';
 import { asL2, l2f14OneArmFeet, l2f15PlayerBelow, withFeet } from './footwork';
 import { v3, type Vec3 } from '../vec';
+import { FOOTWORK_L3 } from '../footwork';
+import { LOCOMOTION_L3_IDLE } from '../locomotion';
+import { withLocomotion } from './with-locomotion';
 
 // ------------------------------------------------------------------ mirror across the world XZ-plane normal Z
 // Reflection z -> -z: positions, velocities and world directions flip Z; yaw (facing = (sin, cos)) becomes 180 - yaw;
@@ -88,14 +91,17 @@ export function mirrorZ(def: FixtureDef): FixtureDef {
 }
 
 // ------------------------------------------------------------------ helpers
+// plan 13e: every HC fixture is on the player model and takes the full locomotion set (the L3 foot planner, the idle
+// cycle, the walk and run clips); the support, carry, rules and diagnostics are its own. The title keeps the source's
+// planner (the plan 07a identity it was built from)
 const label = (def: FixtureDef, id: string, title: string, notes?: string): FixtureDef => ({
-  ...def,
+  ...withLocomotion(def),
   id,
   milestone: 'HC',
   selfClearance: SELF_CLEARANCE_V1,
   jointRange: JOINT_RANGE_V1,
   title: `${title} [${def.support?.id ?? 'legacy'}${def.footwork ? ' + feet' : ''}]`,
-  notes: [def.notes, notes].filter(Boolean).join(' '),
+  notes: [def.notes, notes, `Locomotion (plan 13e): ${FOOTWORK_L3.id}, ${LOCOMOTION_L3_IDLE.id}${def.footwork ? ` (was ${def.footwork.id})` : ' (was legacy legs)'}.`].filter(Boolean).join(' '),
 });
 
 /** Every player requests (and starts in) the stance, whatever its controller. */

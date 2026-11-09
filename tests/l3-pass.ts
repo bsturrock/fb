@@ -10,8 +10,8 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { carriedBall, type PhysicalPose } from '../src/sim/pose';
 import type { FixtureDef } from '../src/sim/fixture';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { IDLE_POSE_RECORD } from '../src/sim/locomotion';
-import { add, dist, horiz, len, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
+import { IDLE_POSE_RECORD, IDLE_STANCE_FADE_MPS } from '../src/sim/locomotion';
+import { add, dist, horiz, len, qConj, qMul, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { expect } from './plain-expect';
 import { create, FIX, pace, run, traceRowsDiff } from './runs';
 import { armLengthErr, armProfile, count, L3, LIMBS, modes, peaks, ragOf, SIDES } from './transitions-shared';
@@ -98,7 +98,9 @@ const check = (c: Check): string => {
 // The transition audit (plan 08, 10b, 12)
 
 // Plan 12 known audit cases (listed in docs/handoff/plan12.md): boundary (fixture, time, player, landmark) and its bound (m)
-const KNOWN_AUDIT: Record<string, number> = { 'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101 };
+// Plan 13e known case (user ruling, bounded): on the supplied walk and run clips L3-F3-recover's right knee crosses its
+// step-to-step boundary at 0.725 s by 1.144 cm
+const KNOWN_AUDIT: Record<string, number> = { 'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101, 'L3-F3-recover 0.7250 R rightKnee': 0.0115 };
 
 export const AUDIT = check({
   name: 'transition audit',
@@ -676,11 +678,11 @@ export const BRAKE = check({
       expect(sim.result === 'duration' || sim.result === 'practiceOutOfBounds', `${d.id} ${sim.result}`).toBe(true);
       expect(count(sim, 'handoffRejected'), d.id).toBe(0);
       // the kick leaves the ground: a landing proposal may fail honestly there
-      // the stopping player's own plants: L3-F16-contactStop's defender fails one honestly in contact, by 1.8 cm of reach
-      // plan 13d known limit (user ruling, fixed in 13e): L3-F16-stop1.9's right foot is planted at the crossing while it
-      // still slides at 0.33 m/s and the plant fails (slide, 1.5 cm)
+      // the stopping player's own plants: L3-F16-contactStop's defender fails one honestly in contact, by 1.8 cm of reach.
+      // Plan 13e: a foot still sliding at the crossing continues as a swing (L3-F16-stop1.9's right foot was planted
+      // sliding at 0.33 m/s and failed in 13d)
       const failed = sim.events.filter((e) => e.type === 'footPlantFailed' && e.playerId === sim.players[0].id).length;
-      expect(failed, d.id).toBeLessThanOrEqual(d.id === 'L3-F16-kick' ? 2 : d.id === 'L3-F16-stop1.9' ? 1 : 0);
+      expect(failed, d.id).toBeLessThanOrEqual(d.id === 'L3-F16-kick' ? 2 : 0);
     },
   }),
 });
@@ -702,8 +704,7 @@ export const SETTLES = check({
       // plan 13d: L3-F16-stop2.9's squaring step (8.5 cm, left foot) comes 0.41 s before the end: the final heel sits 2.5 cm
       // further from the root, so the slow creep crosses the settle trigger later (0.56 s before, old margin 0.16 s)
       expect(sim.t - last.t, d.id).toBeGreaterThan(d.id === 'L3-F16-stop2.9' ? 0.4 : 0.5);
-      // (plan 13d known limit: L3-F16-stop1.9's sliding plant at the crossing, see BRAKE)
-      expect(count(sim, 'footPlantFailed'), d.id).toBe(d.id === 'L3-F16-stop1.9' ? 1 : 0);
+      expect(count(sim, 'footPlantFailed'), d.id).toBe(0);
     },
   }),
 });
@@ -884,6 +885,87 @@ export const SETTLE_PLANTS = check({
   }),
 });
 
+// Plan 13e: the idle cycle on every model-body L3 fixture (the authored body keeps the static posture). The weight is in
+// [0, 1], moves at most its rate a substep and is 0 once the player has been out of free supported movement (contact
+// among them) or above IDLE_STANCE_FADE_MPS for longer than a full fade; the head turns on the core by at most the
+// cycle's measured bound times the weight
+export const IDLE_WEIGHT = check({
+  name: 'plan 13e: the idle weight follows the stance fade and the mode; the head stays within the cycle',
+  fixtures: /^L3-/,
+  watch(d) {
+    const P = d.locomotion;
+    const C = P?.idle.cycle;
+    if (!P || !C) return {};
+    const fadeS = 1 / P.contact.weightRatePerS + 1e-9;
+    const offS = new Map<string, number>();
+    let last = new Map<string, number>();
+    return {
+      substep(s) {
+        const now = new Map<string, number>();
+        for (const pl of s.players) {
+          if (pl.rag || !pl.loco || !pl.pose) continue;
+          const w = pl.loco.idleW!;
+          expect(w >= 0 && w <= 1, `${d.id} ${pl.id} ${s.t.toFixed(4)} idle weight ${w}`).toBe(true);
+          const prev = last.get(pl.id);
+          if (prev !== undefined) expect(Math.abs(w - prev), `${d.id} ${pl.id} ${s.t.toFixed(4)} idle weight step`).toBeLessThanOrEqual(P.contact.weightRatePerS * s.dt + 1e-9);
+          now.set(pl.id, w);
+          const v = pl.proxy.body.linvel();
+          const out = pl.loco.mode !== 'free' || !pl.grounded || pl.controlMode !== 'supported' || Math.hypot(v.x, v.z) >= IDLE_STANCE_FADE_MPS;
+          const o = out ? (offS.get(pl.id) ?? 0) + s.dt : 0;
+          offS.set(pl.id, o);
+          if (o > fadeS + s.dt) expect(w, `${d.id} ${pl.id} ${s.t.toFixed(4)} idle weight after ${o.toFixed(3)} s out (${pl.loco.mode})`).toBe(0);
+          const core = pl.pose.segments.core.rotationWorld;
+          const head = pl.pose.segments.head.rotationWorld;
+          // (the angle from the vector part: 2 acos(w) loses its digits near identity; the bound's 1e-3 deg is the record's rounding)
+          const r = qMul(qConj(core), head);
+          const deg = (2 * Math.atan2(Math.hypot(r.x, r.y, r.z), Math.abs(r.w)) * 180) / Math.PI;
+          expect(deg, `${d.id} ${pl.id} ${s.t.toFixed(4)} head on the core`).toBeLessThanOrEqual(C.headMaxDeg * w + 1e-3);
+        }
+        last = now;
+      },
+    };
+  },
+});
+
+// Plan 13e: no marching. Once a player has stood idle for 1 s (full idle weight, its own request zero) no foot leaves
+// its plant, and every plant keeps its contact feature within the plan 07 tolerance of its anchor
+export const IDLE_PLANTS = check({
+  name: 'plan 13e: standing idle, the feet stay on their plants',
+  fixtures: /^L3-F1[35]-/,
+  watch(d) {
+    const tol = (d.footwork ?? FOOTWORK_L3).plantTolM;
+    const idleS = new Map<string, number>();
+    let seen = 0;
+    let long = 0;
+    return {
+      substep(s) {
+        for (const pl of s.players) {
+          if (pl.rag || !pl.loco || !pl.feet) continue;
+          const r = pl.intent.locomotion.desiredVelocityWorld;
+          const idle = (pl.loco.idleW ?? 0) >= 0.99 && Math.hypot(r.x, r.z) === 0;
+          idleS.set(pl.id, idle ? (idleS.get(pl.id) ?? 0) + s.dt : 0);
+          if (idleS.get(pl.id)! >= 1) long++;
+          for (const side of SIDES) {
+            const f = pl.feet.feet[side];
+            if (f.mode === 'planted' && !f.tentative) expect(f.driftM, `${d.id} ${pl.id} ${side} ${s.t.toFixed(4)} plant drift`).toBeLessThanOrEqual(tol);
+          }
+        }
+      },
+      tick(s) {
+        for (const e of s.events.slice(seen)) {
+          // (a conversion releases both feet: not a step)
+          if ((e.type !== 'footSwing' && e.type !== 'footRelease') || (e.data as { reason?: string })?.reason === 'ragdoll') continue;
+          expect((idleS.get(e.playerId!) ?? 0) < 1, `${d.id} ${e.playerId} ${e.type} at ${e.t.toFixed(4)} after standing idle ${idleS.get(e.playerId!)?.toFixed(3)} s`).toBe(true);
+        }
+        seen = s.events.length;
+      },
+      finish() {
+        if (/^L3-F1[35]-(carrier|free|ready|fitted)$/.test(d.id)) expect(long, `${d.id} substeps standing idle past 1 s`).toBeGreaterThan(240);
+      },
+    };
+  },
+});
+
 export const FITTED = check({
   name: 'L3-F15: the fitted posture keeps the stance and converts valid',
   fixtures: ['L3-F15-fitted', 'L3-F15-handoff'],
@@ -981,7 +1063,13 @@ export const WALK_VALID = check({
   watch: (d) => ({
     finish(sim) {
       expect(count(sim, 'handoffRejected'), d.id).toBe(0);
-      expect(count(sim, 'footPlantFailed'), d.id).toBe(0);
+      // plan 13e known limit (user ruling, bounded): on the supplied walk clips L3-F14-lateral's left foot plants at
+      // 1.1417 s and fails on the slide (3.36 cm horizontal); no other plant fails
+      const failed = sim.events.filter((e) => e.type === 'footPlantFailed');
+      if (d.id === 'L3-F14-lateral') {
+        expect(failed.map((e) => `${e.playerId} ${(e.data as { side?: string }).side} ${e.t.toFixed(4)}`), d.id).toEqual(['R left 1.1417']);
+        expect((failed[0].data as { hzM: number }).hzM, d.id).toBeLessThan(0.035);
+      } else expect(failed.length, d.id).toBe(0);
     },
   }),
 });
@@ -1215,7 +1303,12 @@ export const HOLD_SETTLES = check({
     finish(sim) {
       expect(sim.players.every((p) => p.representation !== 'ragdoll' && p.controlMode === 'supported'), d.id).toBe(true);
       for (const id of ['R', 'D']) expect(sim.events.filter((e) => e.type === 'footPlant' && e.playerId === id && e.t > 3.5).length, d.id).toBeLessThanOrEqual(1);
-      expect(modes(sim, 'R').map((m) => m.to), d.id).toEqual(['contact']);
+      // plan 13e known limit (user ruling, bounded): with the supplied walk clips D's start ramp takes its run-in to 1.51 m/s, over the
+      // 1.5 m/s prep threshold (1.46 m/s without clips), so both enter prep at 0.31 s; the arrival brake takes the closing
+      // speed back under it and prep unwinds 37 ms before the wrap is retained. Held here: one prep, a free gap under 50 ms
+      const ms = modes(sim, 'R');
+      expect(ms.map((m) => m.to), d.id).toEqual(['prep', 'free', 'contact']);
+      expect(ms[2].t - ms[1].t, d.id).toBeLessThan(0.05);
     },
   }),
 });
@@ -1230,7 +1323,8 @@ export const NO_LAUNCH = check({
         for (const p of sim.players) if (!p.rag) y = Math.max(y, p.proxy.body.translation().y);
       },
       finish(sim) {
-        expect(y, d.id).toBeLessThan(0.91);
+        // plan 13e known limit (user ruling, bounded): with the supplied clips L3-F6-saturated's root peaks at 0.9122 m
+        expect(y, d.id).toBeLessThan(d.id === 'L3-F6-saturated' ? 0.913 : 0.91);
         expect(sim.players.every((p) => p.representation !== 'ragdoll'), d.id).toBe(true);
       },
     };
