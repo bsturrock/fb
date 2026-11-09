@@ -2,8 +2,8 @@
 // overlays. Nothing here writes to the simulation.
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { RAPIER } from '../sim/physics';
 import type { PlayerRuntime } from '../sim/simulation';
+import type { ColliderDesc, PlayerFrame } from './snapshot';
 import { footFrame, type PhysicalPose } from '../sim/pose';
 import { RAGDOLL_G4, shoulderLocal, type RagdollProfile } from '../sim/profiles';
 import { createFootball } from './football';
@@ -79,23 +79,23 @@ function marker(color: number, r: number, opacity = 0.9): THREE.Mesh {
 }
 
 /** Wireframe meshes built from the actual Rapier collider shapes (mesh/collider agreement check). */
-export function colliderMesh(c: RAPIER.Collider): THREE.Object3D {
+export function colliderMesh(c: ColliderDesc): THREE.Object3D {
   const mat = new THREE.MeshBasicMaterial({ color: 0x7cfc9a, wireframe: true, transparent: true, opacity: 0.55, depthTest: false });
   let g: THREE.BufferGeometry;
-  switch (c.shapeType()) {
-    case RAPIER.ShapeType.Ball:
-      g = new THREE.SphereGeometry(c.radius(), 12, 8);
+  switch (c.kind) {
+    case 'ball':
+      g = new THREE.SphereGeometry(c.radius, 12, 8);
       break;
-    case RAPIER.ShapeType.Capsule:
-      g = new THREE.CapsuleGeometry(c.radius(), 2 * c.halfHeight(), 4, 10);
+    case 'capsule':
+      g = new THREE.CapsuleGeometry(c.radius, 2 * c.halfHeight, 4, 10);
       break;
-    case RAPIER.ShapeType.Cuboid: {
-      const h = c.halfExtents() ?? { x: 0.05, y: 0.05, z: 0.05 };
+    case 'cuboid': {
+      const h = c.halfExtents;
       g = new THREE.BoxGeometry(2 * h.x, 2 * h.y, 2 * h.z);
       break;
     }
     default:
-      g = new THREE.SphereGeometry(0.05);
+      g = new THREE.SphereGeometry(c.radius);
   }
   const m = new THREE.Mesh(g, mat);
   m.renderOrder = 9;
@@ -144,7 +144,9 @@ export class PlayerView {
   private readonly limbs: Record<string, Limb> = {};
   private readonly joints: THREE.Mesh[] = [];
   private readonly mats: { jersey: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; helmet: THREE.MeshStandardMaterial; skin: THREE.MeshStandardMaterial };
-  private colliderMeshes: { c: RAPIER.Collider; m: THREE.Object3D }[] = [];
+  private colliderMeshes: THREE.Object3D[] = [];
+  /** The collider set the wireframes show (plan 13a: frames share one array while the set is unchanged). */
+  private colliderSet: ColliderDesc[] | null = null;
   private readonly ovl = new THREE.Group();
   readonly aVel = arrow(0xffffff);
   readonly aReq = arrow(0xffd23f);
@@ -163,7 +165,7 @@ export class PlayerView {
   constructor(
     readonly pl: PlayerRuntime,
     palette: string,
-    colliders: RAPIER.Collider[],
+    colliders: ColliderDesc[],
     /**
      * Draw the runner's cosmetic ball at the achieved ball-arm palm. False whenever a rule profile exists: the rule
      * overlay then draws the only ball, at the observer's carry reference (review finding 3).
@@ -272,16 +274,18 @@ export class PlayerView {
     this.root.add(this.label);
   }
 
-  /** Rebuild the collider wireframes for the active representation (proxy or ragdoll). */
-  syncColliders(colliders: RAPIER.Collider[]): void {
-    for (const { m } of this.colliderMeshes) {
+  /** Rebuild the collider wireframes for the active representation (proxy or ragdoll); no-op for the shown set. */
+  syncColliders(colliders: ColliderDesc[]): void {
+    if (colliders === this.colliderSet) return;
+    this.colliderSet = colliders;
+    for (const m of this.colliderMeshes) {
       this.root.remove(m);
       disposeOwned(m);
     }
     this.colliderMeshes = colliders.map((c) => {
       const m = colliderMesh(c);
       this.root.add(m);
-      return { c, m };
+      return m;
     });
   }
 
@@ -298,7 +302,8 @@ export class PlayerView {
     core: { p: Vec3; q: { x: number; y: number; z: number; w: number } },
     pose: PhysicalPose | null,
     flags: OverlayFlags,
-    bulk: { com: Vec3; v: Vec3 },
+    /** The tick's frame of this player: collider poses and overlay inputs (its collider set already synced). */
+    fr: PlayerFrame,
   ): void {
     const showModel = !!this.model && !!pose && !flags.primitives;
     this.prim.visible = !showModel;
@@ -335,32 +340,30 @@ export class PlayerView {
       this.ball.position.set(b.p.x, b.p.y, b.p.z);
       this.ball.quaternion.set(b.q.x, b.q.y, b.q.z, b.q.w);
     }
-    for (const { c, m } of this.colliderMeshes) {
+    this.colliderMeshes.forEach((m, i) => {
       m.visible = flags.colliders;
-      if (!flags.colliders) continue;
-      const t = c.translation();
-      const r = c.rotation();
-      m.position.set(t.x, t.y, t.z);
-      m.quaternion.set(r.x, r.y, r.z, r.w);
-    }
+      if (!flags.colliders) return;
+      const cp = fr.colliderPoses[i];
+      m.position.set(cp.p.x, cp.p.y, cp.p.z);
+      m.quaternion.set(cp.q.x, cp.q.y, cp.q.z, cp.q.w);
+    });
     this.ovl.visible = flags.overlays;
     this.label.visible = flags.overlays;
     if (!flags.overlays) return;
     const pl = this.pl;
-    const com = bulk.com;
-    const v = bulk.v;
-    const a = pl.applied;
+    const com = fr.com;
+    const v = fr.v;
     const base = { x: com.x, y: 0.05, z: com.z };
     setArrow(this.aVel, base, { x: v.x, y: 0, z: v.z }, 0.35);
-    setArrow(this.aReq, { x: com.x, y: 0.1, z: com.z }, a.requestedVelocity, 0.35);
-    setArrow(this.aDrive, { x: com.x, y: 0.15, z: com.z }, a.drive, 1 / 1000);
+    setArrow(this.aReq, { x: com.x, y: 0.1, z: com.z }, fr.requestedVelocity, 0.35);
+    setArrow(this.aDrive, { x: com.x, y: 0.15, z: com.z }, fr.drive, 1 / 1000);
     const fwd = toWorld({ p: { x: 0, y: 0, z: 0 }, q: core.q }, { x: 0, y: 0, z: 1 });
     setArrow(this.aFacing, { x: core.p.x, y: 1.85, z: core.p.z }, fwd, 0.6);
-    setArrow(this.aReqFacing, { x: core.p.x, y: 1.9, z: core.p.z }, pl.intent.locomotion.desiredFacingWorld, 0.5);
-    (this.groundRing.material as THREE.MeshBasicMaterial).color.setHex(pl.grounded ? 0x44ff66 : 0xff4444);
+    setArrow(this.aReqFacing, { x: core.p.x, y: 1.9, z: core.p.z }, fr.desiredFacing, 0.5);
+    (this.groundRing.material as THREE.MeshBasicMaterial).color.setHex(fr.grounded ? 0x44ff66 : 0xff4444);
     this.groundRing.position.set(com.x, 0.012, com.z);
-    const dbg = pl.intent.debug ?? {};
-    const sel = (dbg.selectedShoulder as 'left' | 'right' | undefined) ?? pl.setup.selectedShoulder;
+    const dbg = fr.debug;
+    const sel = dbg.selectedShoulder ?? pl.setup.selectedShoulder;
     for (const s of ['left', 'right'] as const) {
       const show = pl.body.kind === 'upperBodyCompound' && !!sel;
       this.patches[s].visible = show;
@@ -370,23 +373,23 @@ export class PlayerView {
       m.color.setHex(s === sel ? 0xffd23f : 0xffffff);
       m.opacity = s === sel ? 0.3 : 0.08;
     }
-    const ph = dbg.predictedHip as Vec3 | undefined;
+    const ph = dbg.predictedHip;
     this.predictedHip.visible = !!ph;
     if (ph) this.predictedHip.position.set(ph.x, 0.9, ph.z);
-    const aim = dbg.aim as Vec3 | undefined;
+    const aim = dbg.aim;
     this.aimMarker.visible = !!aim;
     if (aim) this.aimMarker.position.set(aim.x, 0.05, aim.z);
-    const lev = dbg.leverageLat as Vec3 | undefined;
+    const lev = dbg.leverageLat;
     if (lev && ph) setArrow(this.aLeverage, { x: ph.x, y: 0.9, z: ph.z }, lev, 0.6);
     else this.aLeverage.visible = false;
-    const lines = [`${pl.id}${pl.grounded ? '' : ' (air)'}`];
-    if (dbg.phase) lines.push(String(dbg.phase));
+    const lines = [`${pl.id}${fr.grounded ? '' : ' (air)'}`];
+    if (dbg.phase) lines.push(dbg.phase);
     this.labelEl.textContent = lines.join('\n');
     this.label.position.set(core.p.x, core.p.y + 1.25, core.p.z);
   }
 
   dispose(): void {
-    for (const { m } of this.colliderMeshes) disposeOwned(m);
+    for (const m of this.colliderMeshes) disposeOwned(m);
     // the model clone's geometry and materials are the asset cache's; the clone releases its own skeletons
     disposeOwned(this.root, this.model ? new Set([this.model.root]) : new Set());
     this.model?.dispose();

@@ -39,6 +39,8 @@ export interface TrunkPiece {
   collider: RAPIER.Collider;
   center: Vec3;
   radius: number;
+  /** Plan 13a: capsule (body frame) enclosing the piece's body-frame box, for the cull. */
+  seg: { a: Vec3; b: Vec3; r: number };
 }
 
 let queryWorld: RAPIER.World | null = null;
@@ -66,7 +68,8 @@ export function trunkPieces(body: BodyProfile): TrunkPiece[] | null {
       const flat = new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z]));
       const desc = RAPIER.ColliderDesc.convexHull(flat);
       if (!desc) throw new Error('trunkPieces: degenerate trunk piece');
-      return { shape: new RAPIER.ConvexPolyhedron(flat, null), collider: queryWorld!.createCollider(desc), center, radius };
+      const seg = boxSeg(center, v3(0.5 * (hi.x - lo.x), 0.5 * (hi.y - lo.y), 0.5 * (hi.z - lo.z)), { x: 0, y: 0, z: 0, w: 1 });
+      return { shape: new RAPIER.ConvexPolyhedron(flat, null), collider: queryWorld!.createCollider(desc), center, radius, seg };
     });
     trunkCache.set(h, s);
   }
@@ -94,6 +97,7 @@ export interface TrunkHit {
  */
 export function trunkContact(pieces: TrunkPiece[], bodyPose: Pose, shape: RAPIER.Shape, pos: Vec3, rot: Quat, bc: Vec3, br: number, prediction: number): TrunkHit | null {
   let best: TrunkHit | null = null;
+  let seg: CullGeom['seg'] | null | undefined;
   for (let i = 0; i < pieces.length; i++) {
     const pc = pieces[i];
     const c = add(bodyPose.p, qRot(bodyPose.q, pc.center));
@@ -102,12 +106,170 @@ export function trunkContact(pieces: TrunkPiece[], bodyPose: Pose, shape: RAPIER
     const dz = c.z - bc.z;
     const reach = pc.radius + br + prediction;
     if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
+    // plan 13a: the piece's enclosing capsule against the query shape's (exact: beyond it the query returns null)
+    if (seg === undefined) seg = cullGeom(shape, pos, rot).seg ?? null;
+    if (seg) {
+      const sr = pc.seg.r + seg.r + prediction + CULL_SLACK_M;
+      const a = add(bodyPose.p, qRot(bodyPose.q, pc.seg.a));
+      const b = add(bodyPose.p, qRot(bodyPose.q, pc.seg.b));
+      if (segmentDistanceSq(a, b, seg.a, seg.b) > sr * sr) continue;
+    }
     pc.collider.setTranslation(bodyPose.p);
     pc.collider.setRotation(bodyPose.q);
     const r = pc.collider.contactShape(shape, pos, rot, prediction);
     if (r && (!best || r.distance < best.distance)) best = { distance: r.distance, normal1: vc(r.normal1), point1: vc(r.point1), point2: vc(r.point2), piece: i };
   }
   return best;
+}
+
+// ------------------------------------------------------------------ plan 13a: query culling
+/**
+ * Slack (m) added to every cull distance. Rapier computes in single precision, so a reported distance can sit a few
+ * micrometres inside the exact one at field coordinates; 0.1 mm keeps a cull from ever skipping a pair the query would
+ * have returned, at no measurable cost.
+ */
+export const CULL_SLACK_M = 1e-4;
+
+const radiusCache = new WeakMap<RAPIER.Shape, number | null>();
+/**
+ * Bounding-sphere radius of a Rapier shape about its own origin: ball, capsule (half height + radius) and cuboid
+ * (half-extent length); null for any other kind, which is always queried. Cached per shape object (Rapier caches a
+ * collider's shape object, so a collider's radius is computed once).
+ */
+export function shapeRadius(shape: RAPIER.Shape): number | null {
+  let r = radiusCache.get(shape);
+  if (r === undefined) {
+    const T = RAPIER.ShapeType;
+    if (shape.type === T.Ball) r = (shape as RAPIER.Ball).radius;
+    else if (shape.type === T.Capsule) r = (shape as RAPIER.Capsule).halfHeight + (shape as RAPIER.Capsule).radius;
+    else if (shape.type === T.Cuboid) {
+      const h = (shape as RAPIER.Cuboid).halfExtents;
+      r = Math.hypot(h.x, h.y, h.z);
+    } else r = null;
+    radiusCache.set(shape, r);
+  }
+  return r;
+}
+
+/**
+ * Whether a shape query between two bounding spheres can return anything: false only when the spheres are farther apart
+ * than `prediction` (plus CULL_SLACK_M), where the query returns null. A null radius (unbounded kind) is always near.
+ */
+export function boundsNear(ac: Vec3, ar: number | null, bc: Vec3, br: number | null, prediction: number): boolean {
+  if (ar === null || br === null) return true;
+  const dx = ac.x - bc.x;
+  const dy = ac.y - bc.y;
+  const dz = ac.z - bc.z;
+  const reach = ar + br + prediction + CULL_SLACK_M;
+  return dx * dx + dy * dy + dz * dz <= reach * reach;
+}
+
+/**
+ * A shape's cull geometry at a pose: its bounding sphere and a capsule (segment and radius; a = b for a ball) enclosing
+ * it: the shape itself for a ball or a capsule, the box's longest axis for a cuboid. Two shapes are at least as far
+ * apart as their capsules' segment distance less both radii.
+ */
+export interface CullGeom {
+  c: Vec3;
+  r: number | null;
+  seg?: { a: Vec3; b: Vec3; r: number };
+  /** A cuboid's own box, for the tighter box test against a round shape. */
+  box?: { c: Vec3; he: Vec3; q: Quat };
+}
+
+/** Capsule enclosing a box (centre, half extents, rotation): its longest axis, radius the other two half extents' length. */
+export function boxSeg(c: Vec3, he: Vec3, q: Quat): { a: Vec3; b: Vec3; r: number } {
+  const axis = he.x >= he.y && he.x >= he.z ? v3(he.x, 0, 0) : he.y >= he.z ? v3(0, he.y, 0) : v3(0, 0, he.z);
+  const r = he.x >= he.y && he.x >= he.z ? Math.hypot(he.y, he.z) : he.y >= he.z ? Math.hypot(he.x, he.z) : Math.hypot(he.x, he.y);
+  const h = qRot(q, axis);
+  return { a: sub(c, h), b: add(c, h), r };
+}
+
+/** Cull geometry of a Rapier shape placed at `p`, `q` (a capsule's axis is its local y). */
+export function cullGeom(shape: RAPIER.Shape, p: Vec3, q: Quat): CullGeom {
+  const T = RAPIER.ShapeType;
+  if (shape.type === T.Ball) {
+    const r = (shape as RAPIER.Ball).radius;
+    return { c: p, r, seg: { a: p, b: p, r } };
+  }
+  if (shape.type === T.Capsule) {
+    const k = shape as RAPIER.Capsule;
+    const h = qRot(q, v3(0, k.halfHeight, 0));
+    return { c: p, r: k.halfHeight + k.radius, seg: { a: sub(p, h), b: add(p, h), r: k.radius } };
+  }
+  if (shape.type === T.Cuboid) {
+    const he = (shape as RAPIER.Cuboid).halfExtents;
+    return { c: p, r: shapeRadius(shape), seg: boxSeg(p, he, q), box: { c: p, he, q } };
+  }
+  return { c: p, r: shapeRadius(shape) };
+}
+
+/**
+ * Whether a shape query between two placed shapes can return anything: false when their bounding spheres, or for two
+ * round shapes their segments less both radii, are farther apart than `prediction` plus CULL_SLACK_M.
+ */
+export function geomNear(x: CullGeom, y: CullGeom, prediction: number): boolean {
+  if (!boundsNear(x.c, x.r, y.c, y.r, prediction)) return false;
+  if (!x.seg || !y.seg) return true;
+  const reach = x.seg.r + y.seg.r + prediction + CULL_SLACK_M;
+  if (segmentDistanceSq(x.seg.a, x.seg.b, y.seg.a, y.seg.b) > reach * reach) return false;
+  // a box against a ball or capsule: the box against the box-frame bounds of the other's segment
+  const round = (g: CullGeom): boolean => !g.box && !!g.seg;
+  if (x.box && round(y)) return boxSegNear(x.box, y.seg!, prediction);
+  if (y.box && round(x)) return boxSegNear(y.box, x.seg!, prediction);
+  return true;
+}
+
+/**
+ * Whether a box and a capsule (segment and radius) can be within `prediction` (plus CULL_SLACK_M): their distance is at
+ * least that between the box and the segment's bounds in the box frame, less the radius.
+ */
+function boxSegNear(box: { c: Vec3; he: Vec3; q: Quat }, seg: { a: Vec3; b: Vec3; r: number }, prediction: number): boolean {
+  const a = qInvRot(box.q, sub(seg.a, box.c));
+  const b = qInvRot(box.q, sub(seg.b, box.c));
+  const gap = (lo: number, hi: number, h: number): number => (lo > h ? lo - h : hi < -h ? -h - hi : 0);
+  const gx = gap(Math.min(a.x, b.x), Math.max(a.x, b.x), box.he.x);
+  const gy = gap(Math.min(a.y, b.y), Math.max(a.y, b.y), box.he.y);
+  const gz = gap(Math.min(a.z, b.z), Math.max(a.z, b.z), box.he.z);
+  const reach = seg.r + prediction + CULL_SLACK_M;
+  return gx * gx + gy * gy + gz * gz <= reach * reach;
+}
+
+const unit = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+/** Squared distance between segments p1-q1 and p2-q2 (Ericson, Real-Time Collision Detection 5.1.9). */
+export function segmentDistanceSq(p1: Vec3, q1: Vec3, p2: Vec3, q2: Vec3): number {
+  const d1x = q1.x - p1.x, d1y = q1.y - p1.y, d1z = q1.z - p1.z;
+  const d2x = q2.x - p2.x, d2y = q2.y - p2.y, d2z = q2.z - p2.z;
+  const rx = p1.x - p2.x, ry = p1.y - p2.y, rz = p1.z - p2.z;
+  const a = d1x * d1x + d1y * d1y + d1z * d1z;
+  const e = d2x * d2x + d2y * d2y + d2z * d2z;
+  const f = d2x * rx + d2y * ry + d2z * rz;
+  const EPS = 1e-12;
+  let s = 0;
+  let t = 0;
+  if (a <= EPS) {
+    if (e > EPS) t = unit(f / e);
+  } else {
+    const c = d1x * rx + d1y * ry + d1z * rz;
+    if (e <= EPS) s = unit(-c / a);
+    else {
+      const b = d1x * d2x + d1y * d2y + d1z * d2z;
+      const denom = a * e - b * b;
+      s = denom > 0 ? unit((b * f - c * e) / denom) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) {
+        t = 0;
+        s = unit(-c / a);
+      } else if (t > 1) {
+        t = 1;
+        s = unit((b - c) / a);
+      }
+    }
+  }
+  const dx = rx + d1x * s - d2x * t;
+  const dy = ry + d1y * s - d2y * t;
+  const dz = rz + d1z * s - d2z * t;
+  return dx * dx + dy * dy + dz * dz;
 }
 
 /** Collision-group membership bit of static ground (turf and obstacles) when a suspension player exists. */

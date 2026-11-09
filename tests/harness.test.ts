@@ -8,11 +8,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { FixedStepDriver } from '../src/sim/driver';
-import { initPhysics, PhysicsWorld, RAPIER } from '../src/sim/physics';
+import { cullGeom, geomNear, initPhysics, PhysicsWorld, RAPIER, shapeRadius } from '../src/sim/physics';
 import { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { assertUniqueIds, runFixtures } from '../scripts/fixture-runner';
-import { breathe, create, FIX, run, runSim, traceRowsDiff } from './helpers';
+import { breathe, create, FIX, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
 /** Key-order independent serialization (deep equality of plain profile data). */
@@ -252,4 +252,84 @@ describe('10a A11: the fixture registry is built once', () => {
     }).toThrow(TypeError);
     expect(a.map((d) => d.id)).toEqual(b.map((d) => d.id));
   });
+});
+
+describe('plan 13a: contact-time shape queries', () => {
+  it('the segment cull never skips a pair the query returns: 10,000 random ball, capsule and box pairs near the boundary', async () => {
+    await initPhysics();
+    let seed = 0x13a;
+    const rnd = (): number => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const span = (a: number, b: number): number => a + (b - a) * rnd();
+    const rot = (): { x: number; y: number; z: number; w: number } => {
+      const [u, v, w] = [rnd(), rnd(), rnd()];
+      const a = Math.sqrt(1 - u);
+      const b = Math.sqrt(u);
+      return { x: a * Math.sin(2 * Math.PI * v), y: a * Math.cos(2 * Math.PI * v), z: b * Math.sin(2 * Math.PI * w), w: b * Math.cos(2 * Math.PI * w) };
+    };
+    const shape = (): RAPIER.Shape => {
+      const k = rnd();
+      if (k < 0.25) return new RAPIER.Ball(span(0.02, 0.15));
+      if (k < 0.45) return new RAPIER.Cuboid(span(0.01, 0.2), span(0.01, 0.2), span(0.01, 0.2));
+      return new RAPIER.Capsule(span(0, 0.35), span(0.02, 0.15));
+    };
+    let returned = 0;
+    let missed = 0;
+    let culledEmpty = 0;
+    let empty = 0;
+    for (let i = 0; i < 10000; i++) {
+      const a = shape();
+      const b = shape();
+      // field-scale positions (f32 rounding), parallel and antiparallel axes in a fifth of the pairs
+      const pa = { x: span(-60, 60), y: span(0, 2), z: span(-30, 30) };
+      const qa = rot();
+      const k = rnd();
+      const qb = k < 0.1 ? qa : k < 0.2 ? { x: -qa.z, y: qa.w, z: qa.x, w: -qa.y } : rot();
+      const ra = shapeRadius(a)!;
+      const rb = shapeRadius(b)!;
+      const dir = { x: span(-1, 1), y: span(-1, 1), z: span(-1, 1) };
+      const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+      const reach = span(0, ra + rb + 0.08);
+      const pb = { x: pa.x + (dir.x / dl) * reach, y: pa.y + (dir.y / dl) * reach, z: pa.z + (dir.z / dl) * reach };
+      const prediction = rnd() < 0.3 ? 0 : span(0, 0.05);
+      const r = a.contactShape(pa, qa, b, pb, qb, prediction);
+      const near = geomNear(cullGeom(a, pa, qa), cullGeom(b, pb, qb), prediction);
+      if (r) {
+        returned++;
+        if (!near) missed++;
+      } else {
+        empty++;
+        if (!near) culledEmpty++;
+      }
+    }
+    expect(missed, `${missed} of ${returned} returned pairs culled`).toBe(0);
+    expect(returned).toBeGreaterThan(2000);
+    // tight: most pairs the query finds empty are culled (round pairs exactly; boxes by their enclosing capsule)
+    expect(culledEmpty / empty, `${culledEmpty} of ${empty} empty pairs culled`).toBeGreaterThan(0.9);
+  });
+
+  it('far pairs are culled: under 4,000 shape queries in every tick of the two worst contact fixtures', async () => {
+    await initPhysics();
+    const q = shapeQueryCounter();
+    try {
+      for (const id of ['L4-F10-wrap-on', 'L3-F8-recontact']) {
+        const sim = await create(FIX(id));
+        q.take();
+        let worst = { n: 0, t: 0 };
+        await runSim(sim, Infinity, (s) => {
+          const n = q.take();
+          if (n > worst.n) worst = { n, t: s.t };
+        });
+        sim.dispose();
+        expect(worst.n, `${id}: ${worst.n} queries in the tick ending ${worst.t.toFixed(3)} s`).toBeLessThan(4000);
+        await breathe();
+      }
+    } finally {
+      q.restore();
+    }
+  }, 120000);
 });

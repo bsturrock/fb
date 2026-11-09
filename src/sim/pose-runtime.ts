@@ -9,7 +9,7 @@ import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
 import { externalFromColliders, ragdollPose, type ExternalShape } from './ragdoll';
-import { trunkContact, trunkPieces, type TrunkHit } from './physics';
+import { boxSeg, cullGeom, geomNear, trunkContact, trunkPieces, type CullGeom, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
 import type { ArmSide } from './contracts';
 import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, type Quat } from './vec';
@@ -250,7 +250,7 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
   const soft: ExternalShape[] = [];
   for (const o of host.players) {
     if (o === pl) continue;
-    ext.push(...externalFromColliders(host.activeColliders(o), () => o.id));
+    ext.push(...liveExternals(host.activeColliders(o), () => o.id));
     // plan 07a (ground-relative poses): another player's published limbs are physical for host player's procedural
     // limbs while that player can still convert (they become its ragdoll colliders at the switch, possibly in the same
     // batch); a ragdoll's limbs are already active colliders
@@ -267,23 +267,35 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
         for (const sh of [capsuleShape(a.shoulderWorld, a.elbowWorld, A.upperArmRadiusM), capsuleShape(a.elbowWorld, a.wristWorld, A.forearmRadiusM)]) if (sh) soft.push({ key: `${o.id}:arm`, ...sh });
       }
   }
-  ext.push(...externalFromColliders(host.obstacleColliders, () => 'obstacle'));
+  ext.push(...liveExternals(host.obstacleColliders, () => 'obstacle'));
   const own: ExternalShape[] = [];
   for (const c of pl.proxy.colliders) {
     const t = host.physics.tags.get(c.handle);
-    if (t && (t.region === 'torso' || t.region === 'pelvis')) own.push({ key: t.region, shape: c.shape, pose: { p: vc(c.translation()), q: { ...c.rotation() } } });
+    if (t && (t.region === 'torso' || t.region === 'pelvis')) own.push({ key: t.region, shape: c.shape, pose: { p: vc(c.translation()), q: { ...c.rotation() } }, collider: c });
   }
   // arm self-clearance: the measured trunk pieces at the proxy pose, for the arms' self shapes only
   const SC = host.def.selfClearance;
   const trunk = SC ? trunkPieces(pl.body) : null;
   const bodyPose = { p: vc(pl.proxy.body.translation()), q: { ...pl.proxy.body.rotation() } };
+  // plan 13a: a pair farther apart than the query's prediction (bounding spheres, then enclosing capsules) returns
+  // nothing, so it is not queried, and a limb's Rapier shape is built only once some pair survives (exact: depth and push
+  // read only returns)
+  const geoms = new Map<ExternalShape, CullGeom>();
+  const geomOf = (e: ExternalShape): CullGeom => {
+    let g = geoms.get(e);
+    if (!g) geoms.set(e, (g = cullGeom(e.shape, e.pose.p, e.pose.q)));
+    return g;
+  };
   const depth = (shapes: PoseShape[], against: ExternalShape[]): number => {
     let d = 0;
     for (const s of shapes) {
-      const q = poseShapeToRapier(s);
-      if (!q) continue;
+      const b = poseCullGeom(s);
+      let q: ReturnType<typeof poseShapeToRapier> | undefined;
       for (const e of against) {
-        const r = e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, 0.02);
+        if (!geomNear(geomOf(e), b, 0.02)) continue;
+        if (q === undefined) q = poseShapeToRapier(s);
+        if (!q) break;
+        const r = e.collider ? e.collider.contactShape(q.shape, q.pose.p, q.pose.q, 0.02) : e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, 0.02);
         if (r) d = Math.max(d, -r.distance);
       }
     }
@@ -292,11 +304,14 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
   const push = (shapes: PoseShape[], toleranceM = 0): Vec3 => {
     const v = v3();
     for (const s of shapes) {
-      const q = poseShapeToRapier(s);
-      if (!q) continue;
+      const b = poseCullGeom(s);
+      let q: ReturnType<typeof poseShapeToRapier> | undefined;
       let best: { d: number; n: Vec3 } | null = null;
       for (const e of ext) {
-        const r = e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, 0);
+        if (!geomNear(geomOf(e), b, 0)) continue;
+        if (q === undefined) q = poseShapeToRapier(s);
+        if (!q) break;
+        const r = e.collider ? e.collider.contactShape(q.shape, q.pose.p, q.pose.q, 0) : e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, 0);
         if (r && r.distance < 0 && (!best || -r.distance > best.d)) best = { d: -r.distance, n: vc(r.normal1) };
       }
       if (best) Object.assign(v, addScaled(v, best.n, Math.max(0, best.d - toleranceM)));
@@ -354,6 +369,21 @@ function capsuleShape(a: Vec3, b: Vec3, r: number): { shape: RAPIER.Shape; pose:
   const l = len(d);
   if (l < 1e-6) return { shape: new RAPIER.Ball(r), pose: { p: a, q: { x: 0, y: 0, z: 0, w: 1 } } };
   return { shape: new RAPIER.Capsule(l / 2, r), pose: { p: addScaled(a, d, 0.5), q: qFromUnitVectors(v3(0, 1, 0), scale(d, 1 / l)) } };
+}
+
+/**
+ * Plan 13a: externals of live colliders that keep their collider, so the clearance queries convert only the pose shape
+ * (the clearance is built and queried within one pose build; no physics step moves the colliders in between).
+ */
+function liveExternals(cs: RAPIER.Collider[], keyOf: (c: RAPIER.Collider) => string): ExternalShape[] {
+  return externalFromColliders(cs, keyOf).map((e, i) => ({ ...e, collider: cs[i] }));
+}
+
+/** Cull geometry of a pose shape (plan 13a): bounding sphere, enclosing capsule (exact for a ball or capsule) and box. */
+function poseCullGeom(s: PoseShape): CullGeom {
+  if (s.kind === 'ball') return { c: s.c, r: s.r, seg: { a: s.c, b: s.c, r: s.r } };
+  if (s.kind === 'box') return { c: s.c, r: len(s.he), seg: boxSeg(s.c, s.he, s.q), box: { c: s.c, he: s.he, q: s.q } };
+  return { c: scale(add(s.a, s.b), 0.5), r: 0.5 * len(sub(s.b, s.a)) + s.r, seg: { a: s.a, b: s.b, r: s.r } };
 }
 
 /** Bounding sphere of a pose shape. */

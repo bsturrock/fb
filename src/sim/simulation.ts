@@ -6,7 +6,7 @@ import type {
 import type { Controller } from './controllers/base';
 import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
-import { initPhysics, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
+import { cullGeom, geomNear, initPhysics, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
 import {
   ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
@@ -1122,7 +1122,9 @@ export class Simulation {
   shoeDeeper(pl: PlayerRuntime, c: RagdollCollider, from: Pose, to: Pose, limbs: Map<PlayerId, ExternalShape[]>): boolean {
     const shape = c.collider.shape;
     const M = LIMP_SHOE_CLEARANCE_M;
-    const gap = (at: Pose, e: { shape: RAPIER.Shape; pose: Pose }): number => e.shape.contactShape(e.pose.p, e.pose.q, shape, at.p, at.q, M)?.distance ?? M;
+    // plan 13a: beyond the prediction the query returns nothing (the gap reads M), so the pair is not queried
+    const gap = (at: Pose, e: { shape: RAPIER.Shape; pose: Pose }): number =>
+      geomNear(cullGeom(e.shape, e.pose.p, e.pose.q), cullGeom(shape, at.p, at.q), M) ? (e.shape.contactShape(e.pose.p, e.pose.q, shape, at.p, at.q, M)?.distance ?? M) : M;
     for (const o of this.players) {
       if (o === pl) continue;
       const ext: { shape: RAPIER.Shape; pose: Pose }[] = this.activeColliders(o).map((k) => ({ shape: k.shape, pose: { p: vc(k.translation()), q: { ...k.rotation() } } }));
@@ -1143,11 +1145,17 @@ export class Simulation {
     const out: Partial<Record<SegmentId, number>> = {};
     const others: RAPIER.Collider[] = [this.physics.floorCollider, ...this.obstacleColliders];
     for (const o of this.players) if (o.id !== rag.playerId) others.push(...this.activeColliders(o));
+    // plan 13a: a pair farther apart than the prediction returns nothing, so it is not queried; the query runs between the
+    // colliders themselves (no shape conversion)
+    const geoms = others.map((c) => cullGeom(c.shape, c.translation(), c.rotation()));
     for (const rc of rag.colliders) {
       const own = rc.collider;
       const body = rag.bodies[rc.segment];
-      for (const c of others) {
-        const r = c.shape.contactShape(c.translation(), c.rotation(), own.shape, own.translation(), own.rotation(), predictionM);
+      const og = cullGeom(own.shape, own.translation(), own.rotation());
+      for (let i = 0; i < others.length; i++) {
+        const c = others[i];
+        if (!geomNear(geoms[i], og, predictionM)) continue;
+        const r = c.contactCollider(own, predictionM);
         if (!r) continue;
         const other = c.parent();
         const vRel = sub(vc(body.velocityAtPoint(r.point2)), other ? vc(other.velocityAtPoint(r.point1)) : v3());
@@ -1160,7 +1168,9 @@ export class Simulation {
       const core = rag.bodies.core;
       for (const rc of rag.self.arms) {
         const body = rag.bodies[rc.segment];
+        const ag = cullGeom(rc.collider.shape, rc.collider.translation(), rc.collider.rotation());
         for (const t of rag.self.trunk) {
+          if (!geomNear(cullGeom(t.shape, t.translation(), t.rotation()), ag, predictionM)) continue;
           const r = t.contactCollider(rc.collider, predictionM);
           if (!r) continue;
           const vRel = sub(vc(body.velocityAtPoint(r.point2)), vc(core.velocityAtPoint(r.point1)));

@@ -16,7 +16,7 @@ import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
 import { swingExcess } from './joint-cone';
-import { trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
+import { cullGeom, geomNear, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
   relPose, round, rv, scale, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
@@ -378,8 +378,11 @@ export class ArmSystem {
   // ---------------------------------------------------------------- queries
   private query(shape: RAPIER.Shape, pos: Vec3, rot: Quat, obstacles: Obstacle[], prediction: number, poses?: Map<Obstacle, Pose>): Hit | null {
     let best: Hit | null = null;
+    const qg = cullGeom(shape, pos, rot);
     for (const o of obstacles) {
       const op = poses?.get(o) ?? this.obstaclePose(o);
+      // plan 13a: beyond the prediction the query returns nothing, so the pair is not queried
+      if (!geomNear(cullGeom(o.shape, op.p, op.q), qg, prediction)) continue;
       const r = o.shape.contactShape(op.p, op.q, shape, pos, rot, prediction);
       if (!r) continue;
       if (!best || r.distance < best.distance)

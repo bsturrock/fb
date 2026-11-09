@@ -3,6 +3,7 @@ import type { SimEvent } from '../src/sim/contracts';
 import { Simulation, type SimOptions, type TraceRow } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
+import { RAPIER } from '../src/sim/physics';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
 export const FIX = (id: string): FixtureDef => {
@@ -180,4 +181,33 @@ export function nonEmpty<T>(xs: Iterable<T>, what = 'items'): T[] {
   const a = [...xs];
   expect(a.length, `${what}: expected at least one`).toBeGreaterThan(0);
   return a;
+}
+
+/**
+ * Plan 13a: counts Rapier shape queries (Shape.contactShape, Collider.contactShape, Collider.contactCollider) until
+ * `restore`. `take` returns the count since the previous `take`. Counting never changes a result.
+ */
+export function shapeQueryCounter(): { take: () => number; restore: () => void } {
+  let n = 0;
+  const undo: (() => void)[] = [];
+  const wrap = (proto: object, name: string): void => {
+    const p = proto as Record<string, unknown>;
+    const orig = p[name] as (...a: unknown[]) => unknown;
+    p[name] = function (this: unknown, ...a: unknown[]) {
+      n++;
+      return orig.apply(this, a);
+    };
+    undo.push(() => (p[name] = orig));
+  };
+  wrap(RAPIER.Shape.prototype, 'contactShape');
+  wrap(RAPIER.Collider.prototype, 'contactShape');
+  wrap(RAPIER.Collider.prototype, 'contactCollider');
+  return {
+    take: () => {
+      const k = n;
+      n = 0;
+      return k;
+    },
+    restore: () => undo.forEach((f) => f()),
+  };
 }

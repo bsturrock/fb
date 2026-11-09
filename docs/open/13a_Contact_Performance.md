@@ -1,6 +1,6 @@
 # 13a — Contact performance
 
-Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). First milestone: behaviour-neutral, so every later milestone exports, tests and reviews faster.
+Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). First milestone: behaviour-neutral, so every later milestone exports, tests and reviews faster. **Implemented 2026-11-09**; results, departures and known limits in the [handoff](../handoff/plan13.md#13a--contact-performance).
 
 **Goal:** a collision plays smoothly in the lab, and the simulation is faster in contact, with no change to what it does. Every export, trace, event log and summary stays byte-identical.
 
@@ -92,17 +92,17 @@ Each change skips work whose answer is already known; none approximates it.
 
 ## Tasks
 
-- [ ] **Baseline.** Commit the probes as `scripts/probe/p13-ticktime.ts` and `scripts/probe/p13-qcount.ts`. Regenerate all exports at the starting commit into a temporary directory for the byte comparison.
-- [ ] **Regression test first.** In `tests/harness.test.ts`: over L4-F10-wrap-on and L3-F8-recontact, the shape queries in every tick (counted through a wrapped `contactShape`, as the probe does) stay under 4,000. It fails at the baseline (27,824 and 83,682).
-- [ ] **Part 1, step 1.** Add `bound` to `ExternalShape` and its builders; cull in `depth`, `push`, `query` and `closingSpeeds`. The test passes. Byte comparison of all 410 exports.
-- [ ] **Step 2.** Segment-distance cull for round pairs, with a unit test against `contactShape` on 10,000 random capsule and ball pairs near the boundary: never a pair culled that the query returns. Byte comparison.
-- [ ] **Step 3.** Collider-side queries. Byte comparison; revert if any byte differs, and say so in the handoff.
-- [ ] **Re-measure** with the tick probe over all 410 fixtures; record the table.
-- [ ] **Part 2, test first.** A lab test (as `tests/lab-render.test.ts` does for the follow camera): driven by a fake clock, a fixture whose ticks are made slow (a stub `stepTick` that burns 30 ms) draws a frame every 16.7 ms of fake time with at most 8 ms of stepping in it, and the drawn ticks advance without a skip.
-- [ ] **Snapshots and buffer.** Write `src/lab/playback.ts` (the buffer, the per-frame budget, the scrub range); move everything the frame loop reads from the live simulation into the snapshot.
-- [ ] **Controls.** Run, pause, step, speed, `?t=`, reset, the tune sliders and the scrub bar on the buffer.
-- [ ] **Browser check.** At 1×, L4-F10-wrap-on, L3-F8-recontact and L3-F5-drag play to their ends; record a Chrome performance trace of each contact window and report the frame-time p95. No console errors.
-- [ ] **Close.** Full suite, typecheck, build, all fixtures exported and compared. Handoff section in `docs/handoff/plan13.md`.
+- [x] **Baseline.** Commit the probes as `scripts/probe/p13-ticktime.ts` and `scripts/probe/p13-qcount.ts`. Regenerate all exports at the starting commit into a temporary directory for the byte comparison.
+- [x] **Regression test first.** In `tests/harness.test.ts`: over L4-F10-wrap-on and L3-F8-recontact, the shape queries in every tick (counted through a wrapped `contactShape`, as the probe does) stay under 4,000. It fails at the baseline (27,824 and 83,682).
+- [x] **Part 1, step 1.** Add `bound` to `ExternalShape` and its builders; cull in `depth`, `push`, `query` and `closingSpeeds`. The test passes. Byte comparison of all 410 exports.
+- [x] **Step 2.** Segment-distance cull for round pairs, with a unit test against `contactShape` on 10,000 random capsule and ball pairs near the boundary: never a pair culled that the query returns. Byte comparison.
+- [x] **Step 3.** Collider-side queries. Byte comparison; revert if any byte differs, and say so in the handoff.
+- [x] **Re-measure** with the tick probe over all 410 fixtures; record the table.
+- [x] **Part 2, test first.** A lab test (as `tests/lab-render.test.ts` does for the follow camera): driven by a fake clock, a fixture whose ticks are made slow (a stub `stepTick` that burns 30 ms) draws a frame every 16.7 ms of fake time with at most 8 ms of stepping in it, and the drawn ticks advance without a skip.
+- [x] **Snapshots and buffer.** Write `src/lab/playback.ts` (the buffer, the per-frame budget, the scrub range); move everything the frame loop reads from the live simulation into the snapshot.
+- [x] **Controls.** Run, pause, step, speed, `?t=`, reset, the tune sliders and the scrub bar on the buffer.
+- [x] **Browser check.** At 1×, L4-F10-wrap-on, L3-F8-recontact and L3-F5-drag play to their ends; record a Chrome performance trace of each contact window and report the frame-time p95. No console errors.
+- [x] **Close.** Full suite, typecheck, build, all fixtures exported and compared. Handoff section in `docs/handoff/plan13.md`.
 
 ## Acceptance
 

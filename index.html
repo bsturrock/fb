@@ -55,6 +55,10 @@
       #ui select#fixture {
         width: 100%;
       }
+      #scrub {
+        flex: 1;
+        min-width: 120px;
+      }
       .row {
         display: flex;
         flex-wrap: wrap;
@@ -148,6 +152,11 @@
           <option value="1" selected>1×</option>
           <option value="2">2×</option>
         </select>
+      </div>
+      <div class="row">
+        <label for="scrub">time</label>
+        <input id="scrub" type="range" min="0" max="0" step="1" value="0" />
+        <span id="scrubOut"></span>
       </div>
       <div class="row">
         <label>camera</label>

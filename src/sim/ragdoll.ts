@@ -145,6 +145,11 @@ export interface ExternalShape {
   pose: Pose;
   /** Floor (penetration counted against the floor tolerance as well). */
   floor?: boolean;
+  /**
+   * Plan 13a: the live collider at `pose`, when the shape is one, so a query converts only the other shape. Set only where
+   * no physics step runs between the capture and the queries.
+   */
+  collider?: RAPIER.Collider;
 }
 
 /** A rigid body's solved pose. */
