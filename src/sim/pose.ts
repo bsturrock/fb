@@ -296,6 +296,13 @@ export interface PoseClearance {
   soft?(shapes: PoseShape[]): number;
   self?(shapes: PoseShape[]): number;
   /**
+   * Arm self-clearance (a fixture's `selfClearance` profile, measured bodies only): depth of an arm's self-clearance
+   * shapes (`armSelfShapes`) in the player's own measured trunk beyond the profile tolerance (m, >= 0), counted as
+   * physical depth, and the separating move (world, m) of those shapes from the trunk beyond the same tolerance.
+   */
+  body?(shapes: PoseShape[]): number;
+  bodyPush?(shapes: PoseShape[]): Vec3;
+  /**
    * Plan 07: the separating move (world, m) for shapes penetrating the external shapes: per pose shape its deepest
    * contact's outward normal times the depth beyond `toleranceM` (default 0), summed. Zero within that tolerance.
    */
@@ -336,6 +343,25 @@ export function armShapes(R: RagdollProfile, s: string, sh: Vec3, elbow: Vec3, w
     fittedCapsule(sh, elbow, R.radii.upperArm, `${s}UpperArm`),
     fittedCapsule(elbow, wrist, R.radii.forearm, `${s}Forearm`),
     { kind: 'ball', c: addScaled(palm, dir, -R.radii.palm), r: R.radii.palm, key: `${s}Palm` },
+  ];
+}
+
+/** Radius of the fingers' capsule in an arm's self-clearance shapes (m): the glove's finger half-thickness and more. */
+const HAND_SELF_R = 0.03;
+
+/**
+ * Arm self-clearance shapes (plan 11): what the drawn arm puts against its own trunk. The forearm over its full joint
+ * extent (the elbow cap included: `armShapes` fits its capsule inside the joints), the palm ball, and the fingers from the
+ * palm centre to the glove tip (`tipAlongM` from the wrist). Used only against the player's own measured trunk.
+ */
+export function armSelfShapes(radii: { forearm: number; palm: number }, tipAlongM: number, s: string, elbow: Vec3, wrist: Vec3, palm: Vec3): PoseShape[] {
+  const dir = norm(sub(palm, wrist), v3(0, -1, 0));
+  const pc = addScaled(palm, dir, -radii.palm);
+  const tip = addScaled(wrist, dir, Math.max(dist(pc, wrist), tipAlongM - HAND_SELF_R));
+  return [
+    { kind: 'capsule', a: elbow, b: wrist, r: radii.forearm, key: `${s}ForearmSelf` },
+    { kind: 'ball', c: pc, r: radii.palm, key: `${s}PalmSelf` },
+    { kind: 'capsule', a: pc, b: tip, r: HAND_SELF_R, key: `${s}HandSelf` },
   ];
 }
 
@@ -744,6 +770,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const elbowMin = flexReach(R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, maxFlexRad(R, 'elbow'));
   const kneeMin = flexReach(R.lengths.thigh, R.lengths.shin, maxFlexRad(R, 'knee'));
   const gr0 = !!inp.ground;
+  const tipAlong = body.measured?.handTipM;
   let seat: CarrySeat | null = null;
   // ---------------- arms
   for (const s of ['left', 'right'] as ArmSide[]) {
@@ -769,7 +796,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
      * deep its centre is in the player's own torso or pelvis (a soft cost: a variant with the ball through the body ranks
      * below one without).
      */
-    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; reach: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number; tgtL?: Vec3; poleL?: Vec3; seat?: CarrySeat; ball?: { depth: number; self: number } };
+    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; reach: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number; tgtL?: Vec3; poleL?: Vec3; seat?: CarrySeat; ball?: { depth: number; self: number }; body?: number; selfShapes?: PoseShape[] };
     const build = (elbow: Vec3, palm: Vec3, wristIn?: Vec3): ArmC => {
       const wrist0 = wristIn ?? add(elbow, scale(sub(palm, elbow), R.lengths.forearm / (R.lengths.forearm + R.lengths.palmExtension)));
       const chain = hingeChain(sh, elbow, [wrist0, palm], [fwd, upB], straight);
@@ -781,6 +808,10 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const shapes = armShapes(R, s, sh, elbow, wrist, palmS);
       const selfD = inp.clearance?.self ? inp.clearance.self(shapes.slice(1)) : 0;
       let depth = Math.max(ext(shapes), floorDepth(shapes));
+      // arm self-clearance (opt-in): the arm's self shapes in the player's own measured trunk count as physical depth
+      const selfShapes = inp.clearance?.body && tipAlong !== undefined ? armSelfShapes(R.radii, tipAlong, s, elbow, wrist, palmS) : undefined;
+      const bodyD = selfShapes ? inp.clearance!.body!(selfShapes) : undefined;
+      if (bodyD !== undefined) depth = Math.max(depth, bodyD);
       let ball: ArmC['ball'];
       if (seatC) {
         const bc = seatBallCapsule(fa, seatC, inp.carry!.ball);
@@ -793,7 +824,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         shapes.push(bs);
       }
       const so = softExt(shapes);
-      return { elbow, wrist, palm: palmS, reach, chain, shapes, depth, soft: Math.max(so, 0.5 * selfD, ball?.self ?? 0), softOther: so, seat: seatC, ball };
+      return { elbow, wrist, palm: palmS, reach, chain, shapes, depth, soft: Math.max(so, 0.5 * selfD, ball?.self ?? 0), softOther: so, seat: seatC, ball, ...(bodyD !== undefined ? { body: bodyD, selfShapes } : {}) };
     };
     let a: ArmC;
     if (given) {
@@ -869,8 +900,9 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // a sampled arm that crosses another body moves away from the body (horizontal, radially from the body axis: a
       // continuous direction) by the smallest clearing distance (bracketed, then bisected), so the correction changes
       // continuously with the clip; only when nothing within SWING_OUT_MAX clears does it fall back to the
-      // alternatives. Its own torso is not a constraint: the clips were authored on this skeleton, the proxy capsules
-      // are padded, and the ragdoll has no self-collision.
+      // alternatives. Its own torso is a constraint only under a fixture's self-clearance profile (the measured trunk, in
+      // `depth`); otherwise the clips' self overlap stands: they were authored on this skeleton and the proxy boxes are
+      // padded.
       let r: { best: ArmC; index: number } | null = null;
       if (held) {
         const clear = (c: ArmC) => c.depth <= CLEAR_OK && c.softOther <= CLEAR_OK;
@@ -929,7 +961,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
             let c = procedural(t, pole)();
             // pushed toward validity (HARD_OK), also when no candidate is valid (tangled with another body)
             for (let i = 0; i < CONT_PUSH_IT && c.depth > HARD_OK && inp.clearance?.push; i++) {
-              const pv = qInvRot(pose.q, inp.clearance.push(c.shapes));
+              const pw = inp.clearance.push(c.shapes);
+              const pv = qInvRot(pose.q, c.selfShapes && inp.clearance.bodyPush ? add(pw, inp.clearance.bodyPush(c.selfShapes)) : pw);
               const m = len(pv);
               if (m < 1e-6) break;
               t = add(t0, clampLen(sub(addScaled(t, pv, 1 + 0.001 / m), t0), CONT_PUSH_MAX_M));
@@ -983,6 +1016,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     hingeDeg[`${pre}Elbow`] = (a.chain.angleRad * 180) / Math.PI;
     if (a.chain.fallback) straightFallback.push(`${pre}Elbow`);
     limbClearance[`${pre}Arm`] = a.depth;
+    if (a.body !== undefined) limbClearance[`${pre}ArmTrunk`] = a.body;
   }
   // ---------------- legs: bounded procedural gait, floor-constrained, opponent-aware (no support or traction)
   const gr = inp.ground ?? null;

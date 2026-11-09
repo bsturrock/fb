@@ -20,7 +20,7 @@ import { advanceLoco, newLocoState, type LocoState } from './locomotion';
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  applyEnvelope, auditEnvelope, bulkOf, limitGradients, SEGMENTS, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
+  applyEnvelope, auditEnvelope, bulkOf, limitGradients, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
   type TransferAudit,
 } from './ragdoll';
 import {
@@ -463,6 +463,11 @@ export class Simulation {
     if (def.ragdoll || S) {
       const sameOwner = !!def.ragdoll;
       this.physics.setContactFilter((a, b) => {
+        // arm self-clearance colliders (ragdoll): a forearm's self shape meets its own trunk piece, and nothing else
+        const ta = a.key.startsWith(SELF_TRUNK_KEY);
+        const tb = b.key.startsWith(SELF_TRUNK_KEY);
+        if (ta || tb || a.key.startsWith(SELF_ARM_KEY) || b.key.startsWith(SELF_ARM_KEY))
+          return a.playerId !== null && a.playerId === b.playerId && ta !== tb && (ta ? b : a).key.startsWith(SELF_ARM_KEY);
         if (sameOwner && a.playerId !== null && a.playerId === b.playerId) return false;
         if ((a.key === 'supportGuard' && b.playerId !== null) || (b.key === 'supportGuard' && a.playerId !== null)) return false;
         return true;
@@ -597,7 +602,7 @@ export class Simulation {
     this.physics.world.propagateModifiedBodyPositionsToColliders();
     if (def.fallResponse || def.players.some((p) => p.arms)) {
       checkLimbContract(def.armProfile ?? ARM_G2, def.ragdoll ?? DEFAULT_POSE_PROFILE);
-      this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip);
+      this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip, def.selfClearance);
     }
     if (def.fallResponse) {
       const sim = this;
@@ -615,6 +620,7 @@ export class Simulation {
         gravity: Math.abs(def.solver.gravityY),
         emit: (type, id, data) => sim.emit(type, id, data),
         closingSpeeds: (rag, lookaheadS, predictionM, skinM) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM),
+        selfImpulses: (rag) => sim.selfImpulses(rag),
       });
       if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
     }
@@ -1113,6 +1119,33 @@ export class Simulation {
         if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
       }
     }
+    // plan 11: a forearm's self shapes closing on the player's own trunk pieces
+    if (rag.self) {
+      const core = rag.bodies.core;
+      for (const rc of rag.self.arms) {
+        const body = rag.bodies[rc.segment];
+        for (const t of rag.self.trunk) {
+          const r = t.contactCollider(rc.collider, predictionM);
+          if (!r) continue;
+          const vRel = sub(vc(body.velocityAtPoint(r.point2)), vc(core.velocityAtPoint(r.point1)));
+          const closing = -dot(vRel, vc(r.normal1));
+          if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Plan 11: per forearm of a ragdoll, the summed impulse of its self shapes on its own trunk in the last solve. */
+  selfImpulses(rag: Ragdoll): Partial<Record<SegmentId, number>> {
+    const out: Partial<Record<SegmentId, number>> = {};
+    if (!rag.self) return out;
+    const W = this.physics.world;
+    for (const rc of rag.self.arms)
+      for (const t of rag.self.trunk)
+        W.contactPair(rc.collider, t, (m) => {
+          for (let i = 0; i < m.numContacts(); i++) out[rc.segment] = (out[rc.segment] ?? 0) + m.contactImpulse(i);
+        });
     return out;
   }
 

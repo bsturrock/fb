@@ -5,10 +5,10 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
 import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry';
 import type { PhysicsWorld } from './physics';
-import { pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
-import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type RagdollProfile } from './profiles';
+import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
+import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type RagdollProfile, type SelfClearanceProfile } from './profiles';
 import {
-  add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qIdentity, qMul, qRot, round, rv, scale,
+  add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qFromUnitVectors, qIdentity, qMul, qRot, round, rv, scale,
   sub, toLocal, toWorld, v3, vc, worldInertia, type Mat3, type Pose, type Quat, type Vec3,
 } from './vec';
 
@@ -88,6 +88,8 @@ export interface Ragdoll {
   carry?: CarrySeat;
   /** Plan 09: soft envelope state of the shoulders and hips (absent: no envelope profile, or not switched yet). */
   envelope?: EnvelopeRuntime[];
+  /** Plan 11 arm self-clearance: the forearms' self shapes and the core's trunk pieces (absent: profile off). */
+  self?: { arms: RagdollCollider[]; trunk: RAPIER.Collider[] };
 }
 
 /**
@@ -147,6 +149,10 @@ export function twistX(q: Quat): number {
   return a;
 }
 
+/** Arm self-clearance collider keys (tags): a trunk piece on the core, an arm self shape on a forearm. */
+export const SELF_TRUNK_KEY = 'selfTrunk:';
+export const SELF_ARM_KEY = 'selfArm:';
+
 const SIDE_OF = (s: SegmentId): ArmSide | undefined => (s.startsWith('left') ? 'left' : s.startsWith('right') ? 'right' : undefined);
 
 /**
@@ -161,6 +167,8 @@ export function buildCandidate(
   R: RagdollProfile,
   totalMassKg: number,
   edit?: CandidateEdit,
+  /** Arm self-clearance: with `ragdoll` on and a measured trunk, the forearms also collide with their own trunk. */
+  selfClearance?: SelfClearanceProfile,
 ): Ragdoll {
   const s = phys.solver;
   const L = R.lengths;
@@ -247,6 +255,45 @@ export function buildCandidate(
     const he = R.shoe.halfExtents;
     add1(`${side}Shin`, RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z), shoeLocal(side), segMass[`${side}Shin`] * R.shoeMassShare, 'shoe');
   }
+  // arm self-clearance: massless trunk pieces on the core and each forearm's self shapes (radii less the profile
+  // tolerance, so the skin contact a supported pose may show converts without overlap). They meet only each other
+  // within one player (the simulation's contact filter) and are not in `colliders` (no external query sees them).
+  const trunk = selfClearance?.ragdoll && body.measured?.handTipM !== undefined ? body.measured.trunkHull : undefined;
+  let selfCols: Ragdoll['self'];
+  if (trunk && selfClearance) {
+    const sc: NonNullable<Ragdoll['self']> = { arms: [], trunk: [] };
+    selfCols = sc;
+    const self = (seg: SegmentId, desc: RAPIER.ColliderDesc | null, local: Pose, key: string): void => {
+      if (!desc) return;
+      desc
+        .setTranslation(local.p.x, local.p.y, local.p.z)
+        .setRotation(local.q)
+        .setMass(0)
+        .setFriction(s.passiveFriction)
+        .setFrictionCombineRule(RAPIER.CoefficientCombineRule[s.passiveFrictionCombine])
+        .setRestitution(s.restitution)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule[s.restitutionCombine])
+        .setActiveHooks(RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS);
+      const c = phys.world.createCollider(desc, bodies[seg]);
+      phys.addTag(c, playerId, seg, seg === 'core' ? 'torso' : 'forearm', key, SIDE_OF(seg));
+      if (seg === 'core') sc.trunk.push(c);
+      else sc.arms.push({ collider: c, segment: seg, region: 'forearm', side: SIDE_OF(seg), local });
+    };
+    trunk.forEach((pts, i) => self('core', RAPIER.ColliderDesc.convexHull(new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z]))), at(0, 0, 0), `${SELF_TRUNK_KEY}${i}`));
+    const tol = selfClearance.toleranceM;
+    for (const side of ['left', 'right'] as ArmSide[]) {
+      const shapes = armSelfShapes({ forearm: R.radii.forearm - tol, palm: R.radii.palm - tol }, body.measured!.handTipM!, side, v3(), v3(0, -L.forearm, 0), palmLocal(side).palm);
+      for (const sh of shapes) {
+        if (sh.kind === 'ball') self(`${side}Forearm`, RAPIER.ColliderDesc.ball(sh.r), at(sh.c.x, sh.c.y, sh.c.z), `${SELF_ARM_KEY}${sh.key}`);
+        else if (sh.kind === 'capsule') {
+          const d = sub(sh.b, sh.a);
+          const l = len(d);
+          const r = sh.key.endsWith('HandSelf') ? Math.max(0.005, sh.r - tol) : sh.r;
+          self(`${side}Forearm`, RAPIER.ColliderDesc.capsule(l / 2, r), { p: addScaled(sh.a, d, 0.5), q: qFromUnitVectors(v3(0, 1, 0), scale(d, 1 / Math.max(l, 1e-9))) }, `${SELF_ARM_KEY}${sh.key}`);
+        }
+      }
+    }
+  }
   for (const id of SEGMENTS) bodies[id].recomputeMassPropertiesFromColliders();
   // joints: anchors from the same world landmarks expressed in both frames
   const joints: RagdollJoint[] = [];
@@ -299,7 +346,7 @@ export function buildCandidate(
     landmarks[`${side}Ankle`] = { seg: `${side}Shin`, local: v3(0, -L.shin, 0) };
     landmarks[`${side}Shoe`] = { seg: `${side}Shin`, local: shoeLocal(side).p };
   }
-  const rag: Ragdoll = { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false };
+  const rag: Ragdoll = { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false, ...(selfCols ? { self: selfCols } : {}) };
   if (pose.anklePitchDeg) rag.anklePitchDeg = { ...pose.anklePitchDeg };
   if (pose.carry) {
     // plan 08a: the hand and ball stay as published on their forearm, with no further carry motion

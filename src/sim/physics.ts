@@ -31,6 +31,85 @@ export interface ProxyBody {
   guard?: RAPIER.Collider;
 }
 
+/** Arm self-clearance: one measured trunk piece (body frame) with its bounding sphere and its query collider. */
+export interface TrunkPiece {
+  /** Rapier shape (tests and probes: `Shape.contactShape` rebuilds the hull on every call, so the runtime never uses it). */
+  shape: RAPIER.ConvexPolyhedron;
+  /** Parentless collider in a private, never-stepped query world: built once, posed per query. */
+  collider: RAPIER.Collider;
+  center: Vec3;
+  radius: number;
+}
+
+let queryWorld: RAPIER.World | null = null;
+const trunkCache = new WeakMap<Vec3[][], TrunkPiece[]>();
+/**
+ * Arm self-clearance: a body's measured trunk pieces in the body frame (the proxy body and the ragdoll core share it),
+ * built once per trunk; null for a body without a measured trunk. The query colliders live in a private world that is
+ * never stepped, so they never meet the simulation's bodies.
+ */
+export function trunkPieces(body: BodyProfile): TrunkPiece[] | null {
+  const h = body.measured?.trunkHull;
+  if (!h) return null;
+  let s = trunkCache.get(h);
+  if (!s) {
+    queryWorld ??= new RAPIER.World({ x: 0, y: 0, z: 0 });
+    s = h.map((pts) => {
+      const lo = v3(Infinity, Infinity, Infinity);
+      const hi = v3(-Infinity, -Infinity, -Infinity);
+      for (const p of pts) {
+        lo.x = Math.min(lo.x, p.x); lo.y = Math.min(lo.y, p.y); lo.z = Math.min(lo.z, p.z);
+        hi.x = Math.max(hi.x, p.x); hi.y = Math.max(hi.y, p.y); hi.z = Math.max(hi.z, p.z);
+      }
+      const center = v3(0.5 * (lo.x + hi.x), 0.5 * (lo.y + hi.y), 0.5 * (lo.z + hi.z));
+      const radius = Math.max(...pts.map((p) => Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z)));
+      const flat = new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z]));
+      const desc = RAPIER.ColliderDesc.convexHull(flat);
+      if (!desc) throw new Error('trunkPieces: degenerate trunk piece');
+      return { shape: new RAPIER.ConvexPolyhedron(flat, null), collider: queryWorld!.createCollider(desc), center, radius };
+    });
+    trunkCache.set(h, s);
+  }
+  return s;
+}
+
+/** The trunk pieces' shapes alone (probes and tests). */
+export function trunkShapes(body: BodyProfile): RAPIER.ConvexPolyhedron[] | null {
+  return trunkPieces(body)?.map((p) => p.shape) ?? null;
+}
+
+export interface TrunkHit {
+  distance: number;
+  /** Separating direction on the trunk (out of the trunk, towards the query shape). */
+  normal1: Vec3;
+  point1: Vec3;
+  point2: Vec3;
+  /** Trunk piece index. */
+  piece: number;
+}
+
+/**
+ * Deepest contact of one query shape (world pose, bounding sphere `bc`/`br`) with a body's trunk pieces at `bodyPose`,
+ * within `prediction`; pieces whose bounding sphere is farther than that are skipped.
+ */
+export function trunkContact(pieces: TrunkPiece[], bodyPose: Pose, shape: RAPIER.Shape, pos: Vec3, rot: Quat, bc: Vec3, br: number, prediction: number): TrunkHit | null {
+  let best: TrunkHit | null = null;
+  for (let i = 0; i < pieces.length; i++) {
+    const pc = pieces[i];
+    const c = add(bodyPose.p, qRot(bodyPose.q, pc.center));
+    const dx = c.x - bc.x;
+    const dy = c.y - bc.y;
+    const dz = c.z - bc.z;
+    const reach = pc.radius + br + prediction;
+    if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
+    pc.collider.setTranslation(bodyPose.p);
+    pc.collider.setRotation(bodyPose.q);
+    const r = pc.collider.contactShape(shape, pos, rot, prediction);
+    if (r && (!best || r.distance < best.distance)) best = { distance: r.distance, normal1: vc(r.normal1), point1: vc(r.point1), point2: vc(r.point2), piece: i };
+  }
+  return best;
+}
+
 /** Collision-group membership bit of static ground (turf and obstacles) when a suspension player exists. */
 export const GROUP_STATIC = 0x0001;
 /** Rapier interaction groups: 16 membership bits (high half) and 16 filter bits (low half), unsigned. */
@@ -294,6 +373,8 @@ export class PhysicsWorld {
         const ta = this.tags.get(lo);
         const tb = this.tags.get(hi);
         if (!ta || !tb) return;
+        // arm self-clearance pairs (one ragdoll's forearm on its own trunk) are internal: never a contact record
+        if (ta.key.startsWith('self') && tb.key.startsWith('self')) return;
         let best: ContactRec | null = null;
         this.world.contactPair(ca, cb, (m, flipped) => {
           const pts: ContactPointRec[] = [];

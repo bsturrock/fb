@@ -11,10 +11,11 @@
 //    thinnest obstacle (~0.26 m) in one substep (> 15 m/s at 1/60 s), outside every fixture.
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
-import type { ArmProfile, ArmSetup, BodyProfile, RagdollProfile, RetentionMode } from './profiles';
+import type { ArmProfile, ArmSetup, BodyProfile, RagdollProfile, RetentionMode, SelfClearanceProfile } from './profiles';
 import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
-import { twoBone } from './pose';
+import { armSelfShapes, twoBone } from './pose';
+import { trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
   relPose, round, rv, scale, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
@@ -168,6 +169,8 @@ interface Obstacle {
   /** Collider pose relative to its body. */
   local: Pose;
   rb: RAPIER.RigidBody;
+  /** Arm self-clearance: a piece of the owner's own measured trunk (never a grip, clamp or touch target). */
+  self?: true;
 }
 
 interface Hit {
@@ -232,6 +235,8 @@ export class ArmSystem {
   readonly wrap = new Map<PlayerId, { status: WrapStatus; target: PlayerId | null; azimuthDeg: Partial<Record<ArmSide, number>>; basis: { near: Vec3; side: Vec3 } | null; reasons: string[] }>();
   private readonly arms = new Map<PlayerId, Record<ArmSide, ArmRt>>();
   private obstacles = new Map<PlayerId, Obstacle[]>();
+  /** Arm self-clearance: each owner's measured trunk pieces (body frame), when the profile is on. */
+  private readonly trunk = new Map<PlayerId, { pieces: TrunkPiece[]; obstacles: Obstacle[] }>();
   /** Body poses at the start of the substep, keyed by engine body handle (proxy or ragdoll segment). */
   private prePoses = new Map<number, Pose>();
   private gripSerial = 0;
@@ -255,10 +260,18 @@ export class ArmSystem {
     readonly fallingBudgetFraction = 0.35,
     /** Gate 4 passive palm retention for ragdoll owners (absent = no ragdoll profile). */
     readonly passive?: RagdollProfile['passiveGrip'],
+    /** Arm self-clearance (absent = arms ignore their own body): each arm's self shapes stay out of its owner's trunk. */
+    readonly selfClearance?: SelfClearanceProfile,
   ) {
     this.palmBall = new RAPIER.Ball(profile.palmRadiusM);
     for (const pl of host.players()) {
       this.buildObstacles(pl);
+      const T = selfClearance ? trunkPieces(pl.body) : null;
+      if (T && pl.body.measured?.handTipM !== undefined && pl.colliders[0])
+        this.trunk.set(pl.id, {
+          pieces: T,
+          obstacles: T.map((pc) => ({ playerId: pl.id, part: 'core', region: 'torso', collider: pl.colliders[0], shape: pc.shape, local: { p: v3(), q: { x: 0, y: 0, z: 0, w: 1 } }, rb: pl.rb, self: true })),
+        });
       if (!pl.arms) continue;
       const rec = {} as Record<ArmSide, ArmRt>;
       for (const side of SIDES) {
@@ -404,14 +417,43 @@ export class ArmSystem {
       const up = this.segmentHit(sW, r.mid, P.upperArmRadiusM, obstacles, tol + 0.01, poses);
       const fa = this.segmentHit(r.mid, wrist, P.forearmRadiusM, obstacles, tol + 0.01, poses);
       const pc = this.query(this.palmBall, this.palmCenter(r.end, wrist), { x: 0, y: 0, z: 0, w: 1 }, obstacles, tol + 0.01, poses);
+      const self = this.selfHit(pl, ownerPose, r.mid, wrist, r.end);
       let worst: Hit | null = null;
-      for (const h of [up, fa, pc]) if (h && (!worst || h.distance < worst.distance)) worst = h;
+      for (const h of [up, fa, pc, self]) if (h && (!worst || h.distance < worst.distance)) worst = h;
       const valid = !worst || worst.distance >= -tol;
       const s: ArmPoseSolve = { elbow: r.mid, wrist, palm: r.end, pole: poleL, valid, worst, palmHit: pc, forearmHit: fa };
       if (valid) return s;
       if (!best || (worst && best.worst && worst.distance > best.worst.distance)) best = s;
     }
     return best!;
+  }
+
+  /**
+   * Arm self-clearance: the deepest contact of the arm's self shapes (forearm over its joint extent, palm, fingers) with
+   * the owner's trunk at `ownerPose`, its distance shifted so the shared validity rule (>= -surfaceTolM) accepts exactly
+   * the profile's skin-contact tolerance. Null when the profile is off or nothing is near.
+   */
+  private selfHit(pl: ArmHostPlayer, ownerPose: Pose, elbow: Vec3, wrist: Vec3, palm: Vec3): Hit | null {
+    const T = this.trunk.get(pl.id);
+    if (!T || !this.selfClearance) return null;
+    const P = this.profile;
+    const I = { x: 0, y: 0, z: 0, w: 1 };
+    let best: Hit | null = null;
+    for (const s of armSelfShapes({ forearm: P.forearmRadiusM, palm: P.palmRadiusM }, pl.body.measured!.handTipM!, 'arm', elbow, wrist, palm)) {
+      let h: TrunkHit | null = null;
+      if (s.kind === 'ball') h = trunkContact(T.pieces, ownerPose, new RAPIER.Ball(s.r), s.c, I, s.c, s.r, P.surfaceTolM + 0.01);
+      else if (s.kind === 'capsule') {
+        const d = sub(s.b, s.a);
+        const l = len(d);
+        const mid = addScaled(s.a, d, 0.5);
+        h = l < 1e-6
+          ? trunkContact(T.pieces, ownerPose, new RAPIER.Ball(s.r), s.a, I, s.a, s.r, P.surfaceTolM + 0.01)
+          : trunkContact(T.pieces, ownerPose, new RAPIER.Capsule(l / 2, s.r), mid, qFromUnitVectors(v3(0, 1, 0), scale(d, 1 / l)), mid, l / 2 + s.r, P.surfaceTolM + 0.01);
+      }
+      if (h && (!best || h.distance < best.distance)) best = { distance: h.distance, pointTarget: h.point1, normal: h.normal1, pointQuery: h.point2, obstacle: T.obstacles[h.piece] };
+    }
+    if (best) best.distance += this.selfClearance.toleranceM - P.surfaceTolM;
+    return best;
   }
 
   private clampShell(pl: ArmHostPlayer, side: ArmSide, p: Vec3): Vec3 {

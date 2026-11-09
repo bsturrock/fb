@@ -74,7 +74,9 @@ describe('plan 08 pass 3: contact integration', () => {
     for (const d of L3(/^L3-F4-(two|one)Arm|^L3-F5-/)) {
       const sim = await run(d);
       const entry = modes(sim, 'D').find((x) => x.to === 'contact')!;
-      expect(sim.events.some((e) => e.type === 'footPlant' && e.t > entry.t), d.id).toBe(true);
+      // a step lands or starts after the contact entry (L3-F4-twoArm: D's steps start in contact, and under plan 11's arm
+      // self-clearance D falls 8 ms before the plant that used to land in exit mode)
+      expect(sim.events.some((e) => (e.type === 'footPlant' || (e.type === 'footSwing' && e.data?.source === 'step')) && e.t > entry.t), d.id).toBe(true);
       expect(count(sim, 'handoffRejected'), d.id).toBe(0);
       sim.dispose();
     }

@@ -166,10 +166,17 @@ export function recordTrace(host: EvidenceHost): void {
   host.trace.push(row);
 }
 
+/** Plan 11: the measured trunk and hand tip are read only under the self-clearance profile; other exports omit them. */
+function withoutSelfClearance(b: BodyProfile): BodyProfile {
+  if (!b.measured || (b.measured.trunkHull === undefined && b.measured.handTipM === undefined)) return b;
+  const { trunkHull: _t, handTipM: _h, ...measured } = b.measured;
+  return { ...b, measured };
+}
+
 export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
   const def = host.def;
   const bodyProfiles: Record<string, BodyProfile> = {};
-  for (const p of def.players) bodyProfiles[p.body.id] = p.body;
+  for (const p of def.players) bodyProfiles[p.body.id] = def.selfClearance ? p.body : withoutSelfClearance(p.body);
   return {
     schemaVersion: SCHEMA_VERSION,
     fixtureId: def.id,
@@ -193,6 +200,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       locomotion: def.locomotion?.id,
       carry: def.carry?.id,
       fallResponse: def.fallResponse?.id,
+      selfClearance: def.selfClearance?.id,
     },
     profiles: {
       body: bodyProfiles,
@@ -209,6 +217,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       locomotion: def.locomotion,
       carry: def.carry,
       fallResponse: def.fallResponse,
+      selfClearance: def.selfClearance,
       supportHeights: host.heightModels ?? undefined,
     },
     diagnostics: def.diagnostics,

@@ -37,6 +37,11 @@ export interface ModelCalibration {
   shoe: { vertices: number; centerShin: Tuple3; halfExtents: Tuple3; soleAboveFloorM: number; ankleAboveFloorM: number };
   torso: { vertices: number; center: Tuple3; halfExtents: Tuple3 };
   pelvis: { vertices: number; center: Tuple3; halfExtents: Tuple3 };
+  /**
+   * Arm self-clearance trunk: the Hips/Spine-dominant skin (body-local, Basis shape) as stacked convex slabs, bottom up;
+   * each piece's points are its convex hull's vertices over `yRange` widened by the slab overlap.
+   */
+  trunkHull: { vertices: number; pieces: { yRange: [number, number]; points: Tuple3[] }[] };
   helmet: { shellVertices: number; center: Tuple3; boundsMin: Tuple3; boundsMax: Tuple3 };
   /** Rest segment frames (body-local rotations) in the PhysicalPose/ragdoll limb convention. */
   segmentRest: Record<string, Tuple4>;

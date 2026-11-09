@@ -37,7 +37,7 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
   const R = host.def.ragdoll!;
   const cands = list.map((c) => ({
     ...c,
-    rag: buildCandidate(host.physics, c.pl.id, c.pl.body, c.pl.pose!, R, c.pl.proxy.body.mass(), c.edit),
+    rag: buildCandidate(host.physics, c.pl.id, c.pl.body, c.pl.pose!, R, c.pl.proxy.body.mass(), c.edit, host.def.selfClearance),
     report: null as CandidateReport | null,
   }));
   let accepted = [...cands];

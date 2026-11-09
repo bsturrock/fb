@@ -96,9 +96,10 @@ describe('plan 08 transition audit', () => {
 
   it('a step is compared with its old path as it is: nothing of a step is set aside (plan 10b)', async () => {
     // L3-F1-low: D's step loses support out of time. Before 10b the reference carried a timed-out step's stored motion on
-    // (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is nothing to carry on
+    // (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is nothing to carry on.
+    // The run's only supported-to-airborne boundary of D (1.50 s before plan 11's arm self-clearance, 1.65 s with it)
     const ds = await audited(FIX('L3-F1-low'));
-    const x = ds.find((b) => b.playerId === 'D' && b.t > 1.45 && b.t < 1.55 && b.to.includes('airborne') && !b.from.includes('airborne'));
+    const x = ds.find((b) => b.playerId === 'D' && b.to.includes('airborne') && !b.from.includes('airborne'));
     expect(x).toBeTruthy();
     expect(x!.legs.right.old.kind).toBe('target');
     expect(x!.deltaM).toBe(x!.rawM);

@@ -51,7 +51,29 @@ export interface MeasuredBody {
   ankleTargetY: number;
   /** Shoulder-to-palm-contact chain length; procedural arm targets are scaled by it (relative to the shoulder). */
   armChainM: number;
+  /**
+   * Arm self-clearance trunk: the body's own torso and pelvis skin as stacked convex pieces (body-local points, each
+   * piece's convex hull). Read only under a fixture's `selfClearance` profile.
+   */
+  trunkHull?: Vec3[][];
+  /** Glove tip distance from the wrist along the forearm axis (m): the fingers' extent in the arm self-clearance shapes. */
+  handTipM?: number;
 }
+
+/**
+ * Arm self-clearance (opt-in per fixture; absent = arms ignore their own body, as on every historical path). The own
+ * trunk is the body's measured `trunkHull` (mesh-fit convex pieces), never the padded proxy boxes: only the forearm and
+ * palm are kept out of it (the upper arm hangs from the shoulder against the trunk).
+ */
+export interface SelfClearanceProfile {
+  id: string;
+  /** Forearm/palm depth in the own trunk (m) still counted as clear: skin contact, not a crossing. */
+  toleranceM: number;
+  /** Ragdoll: each forearm body also collides with massless copies of the trunk pieces on its own core. */
+  ragdoll: boolean;
+}
+
+export const SELF_CLEARANCE_V1: SelfClearanceProfile = { id: 'self-clearance-v1', toleranceM: 0.01, ragdoll: true };
 
 const baseCompound: CompoundGeometry = {
   support: { radius: 0.16, halfHeight: 0.65, center: v3(0, -0.14, 0) },

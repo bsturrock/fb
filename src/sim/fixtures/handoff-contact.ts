@@ -6,7 +6,7 @@
 import type { ArmSide, SegmentId, StanceRequest } from '../contracts';
 import type { ControllerSpec, FixtureDef, PlayerSetup } from '../fixture';
 import type { ArmScriptSegment, ScriptSegment } from '../controllers/base';
-import { ruleVariant, withPoseGuard, type RuleProfile } from '../profiles';
+import { ruleVariant, SELF_CLEARANCE_V1, withPoseGuard, type RuleProfile } from '../profiles';
 import { rhf5PlayerBelow, rhf6, rhf7 } from './ride-height';
 import { asL2, l2f14OneArmFeet, l2f15PlayerBelow, withFeet } from './footwork';
 import { v3, type Vec3 } from '../vec';
@@ -92,6 +92,7 @@ const label = (def: FixtureDef, id: string, title: string, notes?: string): Fixt
   ...def,
   id,
   milestone: 'HC',
+  selfClearance: SELF_CLEARANCE_V1,
   title: `${title} [${def.support?.id ?? 'legacy'}${def.footwork ? ' + feet' : ''}]`,
   notes: [def.notes, notes].filter(Boolean).join(' '),
 });

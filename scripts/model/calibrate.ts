@@ -3,6 +3,7 @@
 // (models/rig.md), limb radii from bone-dominant vertices. Output: the one calibration record the sim profiles,
 // candidate construction, rules and the render adapter share (src/sim/model/bew-v6.calibration.json).
 import * as THREE from 'three';
+import { ConvexHull } from 'three/examples/jsm/math/ConvexHull.js';
 import { accessor, imagePng, nodeWorld, readGlb, texel, type GlbFile } from './glb';
 import type { ModelCalibration, Tuple3, Tuple4 } from '../../src/sim/model/calibration-types';
 
@@ -187,6 +188,31 @@ export function calibrate(path = 'models/bew-v6.glb'): ModelCalibration {
   const splitY = joint('Spine').p.y;
   const torso = box((v) => trunk(v) && v.p.y >= splitY - TRUNK_OVERLAP_M);
   const pelvis = box((v) => trunk(v) && v.p.y < splitY);
+  // ---------------- trunk hull (arm self-clearance): the spine and hips skin as stacked convex slabs (body-local). The
+  // clavicle (shoulder pad) vertices are left out so no slab fills the armpit; slabs overlap by SLAB_OVERLAP_M.
+  const SLAB_OVERLAP_M = 0.01;
+  const trunkSkin = body.filter((v) => /^(Hips|Spine|Spine1|Spine2)$/.test(v.bone)).map((v) => L(v.p));
+  const topY = Math.max(...trunkSkin.map((p) => p.y));
+  const lowY = Math.min(...trunkSkin.map((p) => p.y));
+  const slabs = (y0: number, y1: number, n: number): { yRange: [number, number]; points: Tuple3[] }[] =>
+    Array.from({ length: n }, (_, k) => {
+      const a = y0 + ((y1 - y0) * k) / n;
+      const b = y0 + ((y1 - y0) * (k + 1)) / n;
+      const pts = trunkSkin.filter((p) => p.y >= a - SLAB_OVERLAP_M && p.y <= b + SLAB_OVERLAP_M);
+      const hull = new ConvexHull().setFromPoints(pts);
+      const verts = new Map<string, Tuple3>();
+      for (const f of hull.faces) {
+        let e = f.edge;
+        do {
+          const t = t3(e.head().point);
+          verts.set(t.join(','), t);
+          e = e.next;
+        } while (e !== f.edge);
+      }
+      return { yRange: [r5(a), r5(b)] as [number, number], points: [...verts.values()].sort((u, w) => u[1] - w[1] || u[0] - w[0] || u[2] - w[2]) };
+    });
+  const splitL = L(joint('Spine').p).y;
+  const trunkHull = { vertices: trunkSkin.length, pieces: [...slabs(lowY, splitL, 2), ...slabs(splitL, topY, 5)] };
   // ---------------- helmet: shell-coloured helmet vertices -> head sphere; full helmet bounds recorded
   const shell = helmet.filter((v) => v.color === KEY.helmetShell).map((v) => L(v.p));
   const hc = shell.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / shell.length);
@@ -291,6 +317,7 @@ export function calibrate(path = 'models/bew-v6.glb'): ModelCalibration {
     },
     torso: { vertices: torso.n, center: t3(torso.center), halfExtents: t3(torso.half) },
     pelvis: { vertices: pelvis.n, center: t3(pelvis.center), halfExtents: t3(pelvis.half) },
+    trunkHull,
     helmet: { shellVertices: shell.length, center: t3(hc), boundsMin: t3(hLo), boundsMax: t3(hHi) },
     segmentRest: segFrames,
     keyColors: KEY,

@@ -9,9 +9,10 @@ import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleWidthAddM, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
 import { externalFromColliders, ragdollPose, type ExternalShape } from './ragdoll';
+import { trunkContact, trunkPieces, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
 import type { ArmSide } from './contracts';
-import { type Vec3, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, type Quat } from './vec';
+import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, type Quat } from './vec';
 import { auditInput, keepLandmarks, recordTransition, type AuditHost } from './transition-audit';
 import type { Simulation, PlayerRuntime } from './simulation';
 
@@ -270,6 +271,10 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     const t = host.physics.tags.get(c.handle);
     if (t && (t.region === 'torso' || t.region === 'pelvis')) own.push({ key: t.region, shape: c.shape, pose: { p: vc(c.translation()), q: { ...c.rotation() } } });
   }
+  // arm self-clearance: the measured trunk pieces at the proxy pose, for the arms' self shapes only
+  const SC = host.def.selfClearance;
+  const trunk = SC ? trunkPieces(pl.body) : null;
+  const bodyPose = { p: vc(pl.proxy.body.translation()), q: { ...pl.proxy.body.rotation() } };
   const depth = (shapes: PoseShape[], against: ExternalShape[]): number => {
     let d = 0;
     for (const s of shapes) {
@@ -296,7 +301,29 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     }
     return v;
   };
-  return { external: (shapes) => depth(shapes, ext), soft: (shapes) => depth(shapes, soft), self: (shapes) => depth(shapes, own), push };
+  // arm self-clearance: depth beyond the profile tolerance (skin contact is clear) and the separating move from the trunk
+  const trunkHits = (shapes: PoseShape[], prediction: number, each: (h: TrunkHit) => void): void => {
+    for (const s of shapes) {
+      const q = poseShapeToRapier(s);
+      if (!q) continue;
+      const bd = poseShapeBound(s);
+      const h = trunkContact(trunk!, bodyPose, q.shape, q.pose.p, q.pose.q, bd.c, bd.r, prediction);
+      if (h) each(h);
+    }
+  };
+  const body = (shapes: PoseShape[]): number => {
+    let d = 0;
+    trunkHits(shapes, 0.02, (h) => (d = Math.max(d, -h.distance)));
+    return Math.max(0, d - SC!.toleranceM);
+  };
+  const bodyPush = (shapes: PoseShape[]): Vec3 => {
+    const v = v3();
+    trunkHits(shapes, 0, (h) => {
+      if (h.distance < 0) Object.assign(v, addScaled(v, h.normal1, Math.max(0, -h.distance - SC!.toleranceM)));
+    });
+    return v;
+  };
+  return { external: (shapes) => depth(shapes, ext), soft: (shapes) => depth(shapes, soft), self: (shapes) => depth(shapes, own), push, ...(trunk ? { body, bodyPush } : {}) };
 }
 
 /**
@@ -325,6 +352,13 @@ function capsuleShape(a: Vec3, b: Vec3, r: number): { shape: RAPIER.Shape; pose:
   const l = len(d);
   if (l < 1e-6) return { shape: new RAPIER.Ball(r), pose: { p: a, q: { x: 0, y: 0, z: 0, w: 1 } } };
   return { shape: new RAPIER.Capsule(l / 2, r), pose: { p: addScaled(a, d, 0.5), q: qFromUnitVectors(v3(0, 1, 0), scale(d, 1 / l)) } };
+}
+
+/** Bounding sphere of a pose shape. */
+function poseShapeBound(s: PoseShape): { c: Vec3; r: number } {
+  if (s.kind === 'ball') return { c: s.c, r: s.r };
+  if (s.kind === 'box') return { c: s.c, r: len(s.he) };
+  return { c: scale(add(s.a, s.b), 0.5), r: 0.5 * len(sub(s.b, s.a)) + s.r };
 }
 
 function poseShapeToRapier(s: PoseShape): { shape: RAPIER.Shape; pose: { p: Vec3; q: Quat } } | null {

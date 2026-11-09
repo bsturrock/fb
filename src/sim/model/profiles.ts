@@ -26,6 +26,8 @@ const hipRight = symRight(lm.rightHip, lm.leftHip);
 const thighShin = C.lengths.thigh + C.lengths.shin;
 /** Authored gait leg extension: ankle target 0.78 m below the hip on a 0.80 m leg (pose.ts AUTHORED_ANKLE_Y). */
 const AUTHORED_LEG_EXTENSION = 0.78 / 0.8;
+/** Plan 11: the measured trunk pieces, one shared array for every model body (physics caches its query shapes on it). */
+const TRUNK_HULL: Vec3[][] = C.trunkHull.pieces.map((pc) => pc.points.map(t3));
 
 /**
  * Model body: the calibrated trunk boxes, helmet sphere, shoulder/hip/neck landmarks and the asset's anatomical side
@@ -55,6 +57,8 @@ export function modelBody(base: BodyProfile = upperBodyCompound()): BodyProfile 
       pelvisMid: t3(lm.pelvisMid),
       ankleTargetY: hipRight.y - AUTHORED_LEG_EXTENSION * thighShin,
       armChainM: MODEL_ARM_CHAIN_M,
+      trunkHull: TRUNK_HULL,
+      handTipM: C.glove.tipAlongM,
     },
   };
 }

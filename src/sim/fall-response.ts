@@ -128,6 +128,8 @@ export interface FallHost {
   emit(type: string, playerId: PlayerId | undefined, data: Record<string, unknown>): void;
   /** Per segment, the fastest closing speed (m/s) of a contact its geometry meets within `lookaheadS`, if any. */
   closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number): Partial<Record<SegmentId, number>>;
+  /** Plan 11: per forearm, the summed contact impulse (N s) on its own trunk in the solve just read (never a contact record). */
+  selfImpulses(rag: Ragdoll): Partial<Record<SegmentId, number>>;
 }
 
 type Limb = 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg';
@@ -356,6 +358,8 @@ export class FallResponse {
       if (c.impulse <= G.impulseNs) continue;
       for (const t of [c.a, c.b]) if (t.playerId === ep.playerId && t.part !== 'floor') out.add(LIMB_OF[t.part]);
     }
+    // plan 11: a forearm on its own trunk is an impact on that arm (the core, far heavier, is not held for it)
+    for (const [seg, j] of Object.entries(this.host.selfImpulses(ep.rag)) as [SegmentId, number][]) if (j > G.impulseNs) out.add(LIMB_OF[seg]);
     const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM);
     for (const [seg, v] of Object.entries(closing) as [SegmentId, number][]) if (v > G.closingMPerS) out.add(LIMB_OF[seg]);
     return out;
