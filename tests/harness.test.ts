@@ -9,6 +9,8 @@
 // Lab render contract (plan 06 pass 3; plan 13a look-ahead playback). The lab draws per-tick snapshots, interpolated
 // between the two frames around the shown time; the follow camera tracks what is drawn. The simulation runs ahead of
 // the shown time within a wall-time budget per display frame, so a slow tick costs buffer lead, not frames.
+// Plan 13c: the lab's review set is a short list of registered model-body fixtures; the full list and the filter reach
+// every other fixture.
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,6 +25,9 @@ import { poseProbe, type SimDebug } from '../src/sim/debug';
 import { followCenter } from '../src/lab/follow';
 import { Playback, type PlaybackSource } from '../src/lab/playback';
 import { FrameCapture, type LabFrame } from '../src/lab/snapshot';
+import { REVIEW_SET } from '../src/lab/review-set';
+import { filterList, fixtureList, inReviewSet } from '../src/lab/fixture-list';
+import { MODEL_CALIBRATION_ID } from '../src/sim/model/profiles';
 import * as L1 from '../src/sim/fixtures/locomotion';
 import { len, v3, type Vec3 } from '../src/sim/vec';
 import { assertUniqueIds, runFixtures } from '../scripts/fixture-runner';
@@ -827,5 +832,59 @@ describe('lab render: follow camera', () => {
       expect(worst).toBeLessThan(1e-3);
       sim.dispose();
     }
+  });
+});
+
+describe('plan 13c: the lab review set', () => {
+  it('every review-set id is registered, unique and on the model body; at most 30; every group and name is filled', () => {
+    const all = allFixtures();
+    const byId = new Map(all.map((f) => [f.id, f]));
+    const entries = REVIEW_SET.flatMap((g) => g.entries);
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.length).toBeLessThanOrEqual(30);
+    expect(new Set(entries.map((e) => e.id)).size, 'duplicate review-set ids').toBe(entries.length);
+    const bad: string[] = [];
+    for (const g of REVIEW_SET) if (!g.label.trim() || g.entries.length === 0) bad.push(`group '${g.label}': empty label or no entries`);
+    for (const e of entries) {
+      const f = byId.get(e.id);
+      if (!f) bad.push(`${e.id}: not registered`);
+      else if (!f.players.every((p) => p.body.measured?.calibrationId === MODEL_CALIBRATION_ID)) bad.push(`${e.id}: a player is not on the model body`);
+      if (!e.name.trim()) bad.push(`${e.id}: no name`);
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+  });
+
+  it('the review list shows the set as name · id; the full list holds every fixture as id · title; the filter narrows either by id, name or title', () => {
+    const all = allFixtures();
+    const ids = (gs: ReturnType<typeof fixtureList>): string[] => gs.flatMap((g) => g.options.map((o) => o.id));
+    const review = fixtureList(all, false);
+    expect(ids(review)).toEqual(REVIEW_SET.flatMap((g) => g.entries.map((e) => e.id)));
+    expect(review.map((g) => g.label)).toEqual(REVIEW_SET.map((g) => g.label));
+    const first = REVIEW_SET[0].entries[0];
+    expect(review[0].options[0].text).toBe(`${first.name} · ${first.id}`);
+    const full = fixtureList(all, true);
+    expect(ids(full)).toEqual(all.map((f) => f.id));
+    for (const o of full.flatMap((g) => g.options)) {
+      const title = all.find((f) => f.id === o.id)!.title;
+      expect(o.text.startsWith(`${o.id} · `)).toBe(true);
+      expect(o.text.length).toBeLessThanOrEqual(o.id.length + 3 + 60);
+      if (title.length <= 60) expect(o.text).toBe(`${o.id} · ${title}`);
+    }
+    // by name (review set), by id, by title (the review set's titles are searchable too), case and order of words ignored
+    expect(ids(filterList(review, 'HEAD-ON'))).toEqual(['L3-F3-collision']);
+    expect(ids(filterList(review, 'l4-f10'))).toEqual(['L4-F10-wrap-on']);
+    expect(ids(filterList(review, 'contested'))).toEqual(['L3-F6-hold']);
+    const g4f1 = ids(filterList(full, ' g4-F1 '));
+    expect(g4f1).toContain('G4-F1');
+    expect(g4f1).toContain('G4-F1-M');
+    expect(g4f1.length).toBeLessThan(20);
+    const wraps = ids(filterList(full, 'wrap two-arm L4'));
+    expect(wraps).toContain('L4-F10-wrap-on');
+    expect(wraps.every((id) => id.startsWith('L4'))).toBe(true);
+    expect(filterList(full, 'no fixture is called this')).toEqual([]);
+    expect(filterList(full, '  ')).toEqual(full);
+    // a URL fixture outside the set opens the full list
+    expect(inReviewSet(first.id)).toBe(true);
+    expect(inReviewSet('G4-F1')).toBe(false);
   });
 });

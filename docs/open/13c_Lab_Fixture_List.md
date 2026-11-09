@@ -1,6 +1,6 @@
 # 13c — A short lab fixture list
 
-Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13b. Lab only: nothing under `src/sim/` changes, and every export stays byte-identical.
+Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Follows 13b. **Implemented** 2026-11-09 ([handoff](../handoff/plan13.md#13c--a-short-lab-fixture-list)): the lab opens on the 26-fixture review set; the user's review of names and members is outstanding. Lab only: nothing under `src/sim/` changes, and every export stays byte-identical.
 
 **Goal:** the lab opens on a short list of about 25 fixtures that show what the simulation does now, named in plain words. All 410 stay registered and reachable for tests, evidence and anyone who asks for one.
 
@@ -61,12 +61,12 @@ Hide, don't delete. The registry, the tests and the evidence keep every fixture.
 
 ## Tasks
 
-- [ ] **Test first** (in `tests/harness.test.ts`, merged in 13b): every `REVIEW_SET` id is registered, ids are unique, there are at most 30, and every one uses the model body (`measured.calibrationId === MODEL_CALIBRATION_ID`). It fails until the file exists.
-- [ ] **Review set.** Write `src/lab/review-set.ts` with the table above.
-- [ ] **Select.** In `index.html` add the checkbox and the filter box above the select. In `main.ts`, replace `fillFixtureSelect` with a function that builds either list, applies the filter, and keeps the current fixture selected when the list changes; handle the URL case and the remembered choice.
-- [ ] **Browser check.** Load the lab: the review set shows; the filter narrows it; the checkbox shows all 410; `?fixture=G4-F1` opens the full list on G4-F1; no console errors.
+- [x] **Test first** (in `tests/harness.test.ts`, merged in 13b): every `REVIEW_SET` id is registered, ids are unique, there are at most 30, and every one uses the model body (`measured.calibrationId === MODEL_CALIBRATION_ID`). It fails until the file exists.
+- [x] **Review set.** Write `src/lab/review-set.ts` with the table above.
+- [x] **Select.** In `index.html` add the checkbox and the filter box above the select. In `main.ts`, replace `fillFixtureSelect` with a function that builds either list, applies the filter, and keeps the current fixture selected when the list changes; handle the URL case and the remembered choice.
+- [x] **Browser check.** Load the lab: the review set shows; the filter narrows it; the checkbox shows all 410; `?fixture=G4-F1` opens the full list on G4-F1; no console errors.
 - [ ] **User review.** The user edits names and members by eye; the test still passes.
-- [ ] **Close.** Suite, typecheck, build; exports byte-identical. Handoff section.
+- [x] **Close.** Suite, typecheck, build; exports byte-identical. Handoff section.
 
 ## Acceptance
 

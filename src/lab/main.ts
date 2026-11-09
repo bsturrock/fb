@@ -1,6 +1,8 @@
 // TackleLab: browser review harness. Runs the same headless Simulation as the tests, ahead of what it shows (plan 13a
 // look-ahead playback: src/lab/playback.ts), and draws solved state from per-tick snapshots (src/lab/snapshot.ts). Controls: fixture select, run/pause, single-step, reset, speed, camera presets, overlays,
 // palette (cosmetic), JSON export. URL: ?fixture=<id>&speed=0.25&cam=side&t=1.2 (run to t, then pause).
+// Plan 13c: the select shows the review set (src/lab/review-set.ts) by default; "All fixtures" shows every registered
+// fixture, the filter narrows either list, and a ?fixture= outside the review set opens the full list.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
@@ -19,6 +21,7 @@ import { followCenter } from './follow';
 import { Playback } from './playback';
 import { f2, FrameCapture, type ArmFrame, type LabFrame, type Tagged } from './snapshot';
 import { SUSPENSION_L2_BRAKE, type SuspensionSupport } from '../sim/profiles';
+import { filterList, firstReviewId, fixtureList, inReviewSet } from './fixture-list';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -108,6 +111,17 @@ let camPreset = params.get('cam') ?? 'oblique';
 /** Camera distance multiplier (URL ?zoom=0.5 brings the preset twice as close). */
 let camZoom = params.has('zoom') ? Number(params.get('zoom')) : 1;
 let runToT: number | null = params.has('t') ? Number(params.get('t')) : null;
+/** Plan 13c: the select shows every fixture (true) or the review set (false); the choice is remembered per browser. */
+const ALL_KEY = 'tackleLab.allFixtures';
+let showAll = ((): boolean => {
+  try {
+    return localStorage.getItem(ALL_KEY) === '1';
+  } catch {
+    return false;
+  }
+})();
+/** Id of the fixture loaded (or loading); the select keeps it selected when its list changes. */
+let currentId = '';
 
 /** First tick at or after simulated time `t` (the `?t=` and `lab.runTo` stop). */
 const tickAt = (t: number): number => Math.max(0, Math.ceil((t - 1e-9) / sim.def.solver.outerTickS));
@@ -117,7 +131,9 @@ const usesModel = (def: FixtureDef): boolean => def.players.some((p) => p.body.m
 
 async function load(id: string): Promise<void> {
   const serial = ++loadSerial;
-  const def = fixtures.find((f) => f.id === id) ?? fixtures[0];
+  const def = fixtures.find((f) => f.id === id) ?? fixtures.find((f) => f.id === firstReviewId()) ?? fixtures[0];
+  currentId = def.id;
+  fillFixtureSelect();
   await initPhysics();
   const next = await Simulation.create(def);
   let asset: ModelAsset | null = null;
@@ -156,7 +172,6 @@ async function load(id: string): Promise<void> {
     scene.add(field);
   }
   $('title').textContent = `${def.id} [${def.milestone}] ${def.title}${def.notes ? ` — ${def.notes}` : ''}`;
-  ($('fixture') as HTMLSelectElement).value = def.id;
   buildTune(def);
   buildBrakeTune(def);
   setCamera(camPreset, true);
@@ -360,24 +375,73 @@ function setCamera(preset: string, snap = false): void {
 }
 
 // ---------------------------------------------------------------- UI
+/**
+ * Plan 13c: rebuild the select from the chosen list (review set or all fixtures) and the filter, keeping the loaded
+ * fixture selected. A loaded fixture the list does not show (filtered out, or outside the review set) stays at the top
+ * under "Loaded", so the select always names what is on screen.
+ */
 function fillFixtureSelect(): void {
   const sel = $('fixture') as HTMLSelectElement;
-  const groups = new Map<string, HTMLOptGroupElement>();
-  for (const f of fixtures) {
-    const key = f.milestone === 'L1' ? 'L1 · supplied run clips' : f.milestone === 'RH' ? 'RH · ride height and support' : f.milestone === 'L2' ? 'L2 · support recovery and footwork' : f.milestone === 'HC' ? 'HC · ragdoll handoff during contact' : f.milestone === 'L3' ? 'L3 · locomotion transitions and contact integration' : f.milestone === 'L4' ? 'L4 · active falls and joint limits' : `Gate ${f.gate} · ${f.milestone}`;
-    let g = groups.get(key);
-    if (!g) {
-      g = document.createElement('optgroup');
-      g.label = key;
-      groups.set(key, g);
-      sel.appendChild(g);
-    }
+  const groups = filterList(fixtureList(fixtures, showAll), ($('filter') as HTMLInputElement).value);
+  const shown = groups.some((g) => g.options.some((o) => o.id === currentId));
+  sel.textContent = '';
+  const group = (label: string): HTMLOptGroupElement => {
+    const g = document.createElement('optgroup');
+    g.label = label;
+    sel.appendChild(g);
+    return g;
+  };
+  const option = (g: HTMLOptGroupElement, value: string, text: string): void => {
     const o = document.createElement('option');
-    o.value = f.id;
-    o.textContent = f.id;
+    o.value = value;
+    o.textContent = text;
     g.appendChild(o);
+  };
+  if (currentId && !shown) {
+    const cur = fixtures.find((f) => f.id === currentId);
+    if (cur) option(group('Loaded'), cur.id, `${cur.id} · ${cur.title}`);
   }
-  sel.onchange = () => void load(sel.value);
+  for (const g of groups) {
+    const og = group(g.label);
+    for (const o of g.options) option(og, o.id, o.text);
+  }
+  if (groups.length === 0) {
+    const o = document.createElement('option');
+    o.disabled = true;
+    o.textContent = 'no fixture matches the filter';
+    sel.appendChild(o);
+  }
+  sel.value = currentId;
+  ($('allFixtures') as HTMLInputElement).checked = showAll;
+  $('allLabel').textContent = `All fixtures (${fixtures.length})`;
+}
+
+function wireFixtureList(): void {
+  const sel = $('fixture') as HTMLSelectElement;
+  sel.onchange = () => {
+    if (sel.value && sel.value !== currentId) void load(sel.value);
+  };
+  const filter = $('filter') as HTMLInputElement;
+  filter.oninput = () => fillFixtureSelect();
+  // Enter loads the first match; Escape clears the filter
+  filter.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      const first = filterList(fixtureList(fixtures, showAll), filter.value)[0]?.options[0];
+      if (first && first.id !== currentId) void load(first.id);
+    } else if (e.key === 'Escape') {
+      filter.value = '';
+      fillFixtureSelect();
+    }
+  };
+  ($('allFixtures') as HTMLInputElement).onchange = (e) => {
+    showAll = (e.target as HTMLInputElement).checked;
+    try {
+      localStorage.setItem(ALL_KEY, showAll ? '1' : '0');
+    } catch {
+      // storage blocked (private window, previews): the choice lasts for this page only
+    }
+    fillFixtureSelect();
+  };
 }
 
 function updateRunButton(): void {
@@ -599,10 +663,14 @@ window.addEventListener('resize', resize);
   reset: () => resetSim(),
 };
 
+// a ?fixture= outside the review set opens the full list (for this page; the remembered choice is unchanged)
+const urlFixture = params.get('fixture');
+if (urlFixture && !inReviewSet(urlFixture) && fixtures.some((f) => f.id === urlFixture)) showAll = true;
 fillFixtureSelect();
+wireFixtureList();
 wire();
 resize();
 const sp = params.get('speed');
 if (sp) ($('speed') as HTMLSelectElement).value = sp;
-void load(params.get('fixture') ?? fixtures[0].id);
+void load(urlFixture ?? firstReviewId());
 requestAnimationFrame(frame);

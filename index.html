@@ -55,6 +55,26 @@
       #ui select#fixture {
         width: 100%;
       }
+      #ui input#filter {
+        flex: 1;
+        min-width: 120px;
+        font: inherit;
+        background: #24303b;
+        color: var(--text);
+        border: 1px solid #3a4a58;
+        border-radius: 4px;
+        padding: 3px 6px;
+        margin: 2px 2px 2px 0;
+      }
+      #listRow label {
+        margin: 0 0 0 4px;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      #allFixtures {
+        vertical-align: middle;
+        margin: 0 2px 0 0;
+      }
       #scrub {
         flex: 1;
         min-width: 120px;
@@ -138,6 +158,10 @@
   <body>
     <div id="view"></div>
     <div id="ui">
+      <div class="row" id="listRow">
+        <input id="filter" type="search" placeholder="filter" title="Narrow the list by name, id or title. Enter loads the first match; Esc clears." autocomplete="off" spellcheck="false" />
+        <label for="allFixtures"><input id="allFixtures" type="checkbox" /> <span id="allLabel">All fixtures</span></label>
+      </div>
       <select id="fixture"></select>
       <div id="title"></div>
       <div class="row">

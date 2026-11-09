@@ -170,3 +170,57 @@ Each fault was put into every simulation of a full run: appended to `tests/setup
 
 - Reports in `.scratch/p13b/`: `base.json` (the 13a tip, 851 tests), `final1.json` to `final3.json` (the three closing runs), `fault-crossing.json`, `fault-noSelfClearance.json`, `fault-noJointRange.json`, `known-off.txt`.
 - Map: `npx vite-node scripts/probe/p13-test-map.ts .scratch/p13b/base.json .scratch/p13b/final3.json tests/test-map.json docs/handoff/plan13b-test-map.md`.
+
+## 13c — A short lab fixture list
+
+Plan: [13c](../open/13c_Lab_Fixture_List.md). Implemented 2026-11-09 after `aa1157a` (13b). Lab, `index.html`, tests and docs only: no file under `src/sim/` changes.
+
+**Result:**
+- **The list.** The lab opens on the review set: the plan's 26 fixtures in four groups, each option `name · id`. The checkbox **All fixtures (410)** shows every registered fixture, grouped by milestone as before, each option `id · title` (the title cut at 60 characters). The filter box narrows whichever list shows, by id, name or title.
+- **Reach.** `?fixture=G4-F1` opens the full list on G4-F1. All 410 fixtures stay registered, tested and exported.
+- **Identity.** `npm run fixtures` exported all 410 and left `evidence/summary.json` byte-identical (no `git diff`).
+- **Tests.** 228 in 13 files (226 before, +2), all pass, exit 0, no unhandled errors; 78.3 s wall time. Typecheck and build pass.
+- **Outstanding.** The user edits names and members by eye in `src/lab/review-set.ts`; the tests hold whatever set results to the rules below.
+
+### What changed
+
+- `src/lab/review-set.ts`: `REVIEW_SET`, groups of `{ id, name }`. The only place the list is written.
+- `src/lab/fixture-list.ts` (new, no DOM): `fixtureList(fixtures, all)` builds the review or the full list; `filterList(groups, query)` keeps the options holding every word of the query (any order, ignoring case) in their id, name or full title, and drops empty groups; `inReviewSet`, `firstReviewId`; `milestoneGroup` (moved out of `main.ts`, same labels).
+- `index.html`: the filter box and the checkbox above the select.
+- `src/lab/main.ts`: `fillFixtureSelect` rebuilds the select from the chosen list and the filter and keeps the loaded fixture selected; `wireFixtureList` wires the select, the filter and the checkbox. The choice of list is stored under `tackleLab.allFixtures` in `localStorage`, each access in try/catch; the default is the review set.
+- **Tests** (`tests/harness.test.ts`, "plan 13c"):
+  - The set: every id registered and unique, every player on the model body (`MODEL_CALIBRATION_ID`), at most 30 entries, no empty group or name. It failed before `review-set.ts` existed.
+  - The lists: the review list is the set in order as `name · id`; the full list is every fixture in registry order as `id · title`, at most 60 title characters; the filter finds by name (`HEAD-ON`), id (`l4-f10`), title (`contested`) and several words (`wrap two-arm L4`), returns nothing for a non-match and the list unchanged for a blank query; G4-F1 is outside the set.
+
+### Negative check
+
+Faults put into `src/lab/review-set.ts`, then the file restored (`cmp`-identical):
+- A repeated id: `duplicate review-set ids: expected 28 to be 29`.
+- A blank name, G4-F1 and an unregistered id: `HC-F1-low: no name`, `G4-F1: a player is not on the model body`, `nope: not registered`.
+
+### Browser check (Chrome, the dev server on 5197)
+
+- No URL: the select shows 26 options in four groups, L3-F13-carrier loaded; nothing stored.
+- `wrap`: seven options. `zzzz`: a disabled "no fixture matches the filter".
+- The checkbox: 410 options, the loaded fixture kept, `1` stored; unchecked: 26, `0` stored.
+- `?fixture=G4-F1`: the full list, G4-F1 selected, the stored `0` unchanged. Unchecked, G4-F1 stays at the top under "Loaded".
+- Choosing L4-F10-wrap-on in the select loads it and sets the URL. `head-on` then Enter loads L3-F3-collision; Esc clears the filter.
+- No console errors.
+
+### Departures from the plan
+
+- **`fixture-list.ts`.** The list building and the filter are a pure module, so the second test checks them without a browser. `review-set.ts` stays data only.
+- **"Loaded".** A loaded fixture the list does not show (filtered out, or outside the review set) is kept at the top of the select under "Loaded", so the select always names what is on screen.
+- **Keys.** Enter in the filter loads the first match; Esc clears it.
+- **Default fixture.** Without `?fixture=` (or with an unregistered id) the lab opens on the first review-set fixture, L3-F13-carrier, not the first registered one (G1-F1).
+- **URL and memory.** A `?fixture=` outside the set turns on the full list for that page only; the remembered choice changes only when the checkbox is used.
+- **Groups.** The full list keeps the earlier grouping: 21 groups (each gate's milestones are separate groups), not the ten the plan counted.
+
+### Known limits
+
+- The review list's names are a first draft (the plan's table). L3-F16-sprint keeps its id after 13d removes the Sprint clip; its name ("Top speed, 6.6 m/s") does not name a clip.
+- The filter is a substring match, not a fuzzy one: `twoarm` does not find `two-arm`.
+
+### Evidence
+
+- `.scratch/p13c/final.json` (the closing run, 228 tests), `.scratch/p13c/fixtures.log` (the export).
