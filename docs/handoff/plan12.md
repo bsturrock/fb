@@ -233,7 +233,7 @@ All other endings are `groundDown`.
   - **What happens.** At 1.392 s, D's supported left thigh is 1.88 cm inside R's ragdoll right thigh, and the conversion tolerance is 1.5 cm. D is left a rigid falling proxy. The result (`groundDown`) holds, and the ending moves +83 ms.
   - **Pre-existing tangle.** The legs were tangled before plan 12. In the twin, D's legs sit 1.0–1.5 cm inside R for 0.2 s, and its conversion at 1.433 s was accepted at 1.17 cm, thigh in shin. The pose guard (`HARD_OK`, 1.2 cm) holds the leg on the tick. R's ragdoll moves 0.7 cm more into it in the substep before the conversion.
   - **Not one cause.** The case is chaotic. Variants with the old shoulder alone, or the 45° ankle alone, convert. A variant with the limp-foot ease off is rejected on another pair (1.56 cm, right thigh in R's torso).
-  - **Status.** Accepted as a known limit (user ruling, 2026-11-09). A fix belongs to the conversion and pose-guard margin, outside this plan, and would touch older fixtures; it is left to separate work.
+  - **Status.** Accepted as a known limit (user ruling, 2026-11-09). A fix belongs to the conversion and pose-guard margin, outside this plan, and would touch older fixtures; it is left to [plan 13](../open/13_Conversion_Overlap_Margin.md).
 - **Known pins:**
   - L3-F7-mirror0 audit 1.009 cm (`transitions-audit` `KNOWN_AUDIT`).
   - HC-F5-invalidOne elbow 0.50 m (`handoff-contact`).
