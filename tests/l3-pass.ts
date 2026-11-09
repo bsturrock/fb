@@ -100,7 +100,15 @@ const check = (c: Check): string => {
 // Plan 12 known audit cases (listed in docs/handoff/plan12.md): boundary (fixture, time, player, landmark) and its bound (m)
 // Plan 13e known case (user ruling, bounded): on the supplied walk and run clips L3-F3-recover's right knee crosses its
 // step-to-step boundary at 0.725 s by 1.144 cm
-const KNOWN_AUDIT: Record<string, number> = { 'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101, 'L3-F3-recover 0.7250 R rightKnee': 0.0115 };
+// plan 13f (user ruling, known limits under the predictive leg guard): L3-F3-collision D's right shoe at lift-off, after the
+// guard pushed its planted leg out of R's predicted body (closing at about 5 m/s), and L3-F1-phase1 R's right knee, whose
+// knee-pole variant the predicted depth picks differently for the old and new foot owner
+const KNOWN_AUDIT: Record<string, number> = {
+  'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101,
+  'L3-F3-recover 0.7250 R rightKnee': 0.0115,
+  'L3-F3-collision 0.6167 D rightShoe': 0.0142,
+  'L3-F1-phase1 0.6250 R rightKnee': 0.0113,
+};
 
 export const AUDIT = check({
   name: 'transition audit',
@@ -1207,7 +1215,7 @@ export const DEFENDER_BOB = check({
   name: 'the defender converts on the sign of its bob',
   // plan 13d: was /^L3-F9-defender/. With Fast Run at 6.2-6.9 m/s the one-arm defender stays in contact
   // with level vertical speed through its diagnostic window: Rising converts on loss of support at 1.54 s, Falling's
-  // conversion is rejected (plan 13f). The standing holds of L3-F10 convert on the measured sign of their bob
+  // conversion is rejected (a plan 13f known limit, DEFENDER_13F). The standing holds of L3-F10 convert on the measured sign of their bob
   fixtures: /^L3-F10-(rising|falling)$/,
   watch(d) {
     const rising = d.id.endsWith('rising');
@@ -1233,8 +1241,8 @@ export const DEFENDER_BOB = check({
   },
 });
 
-/** Plan 13d known limits (user ruling, to plan 13f): the one-arm defenders of L3-F9 (and L3-F1-falling, the same run) no
- * longer convert on their bob. */
+/** Plan 13d known limits (user ruling, to plan 13f), kept by 13f (user ruling): the one-arm defenders of L3-F9 (and
+ * L3-F1-falling, the same run) no longer convert on their bob. */
 export const DEFENDER_13F = check({
   name: 'the L3-F9 defenders as 13d leaves them',
   fixtures: ['L3-F9-defenderRising', 'L3-F9-defenderFalling', 'L3-F1-falling'],
@@ -1246,10 +1254,13 @@ export const DEFENDER_13F = check({
         expect(D.handoff?.outcome, d.id).toBe('accepted');
         expect(D.handoff!.reason, d.id).toBe('lossOfSupport');
       } else {
-        // its conversion at 1.267 s is rejected for external penetration (its left thigh 2.39 cm in R's pelvis) and it
-        // stays a falling proxy: pinned, so this fails when 13f's leg guard lets it convert
+        // its conversion at 1.267 s is rejected for external penetration and it stays a falling proxy. Its left thigh is
+        // 1.89 cm in R's pelvis under the 13f predictive leg guard (2.39 cm without): its own swing drives the thigh in near
+        // the hip, where moving the ankle moves the thigh little. Pinned at the measured depth, so this fails when a later
+        // fix lets it convert or it gets deeper
         expect(D.handoff?.outcome, d.id).toBe('rejected');
         expect(D.handoff!.report.reasons.join(','), d.id).toContain('externalPenetration');
+        expect(D.handoff!.report.maxNewExternalPenetrationM, d.id).toBeCloseTo(0.01888, 4);
       }
     },
   }),

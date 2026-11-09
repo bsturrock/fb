@@ -12,7 +12,7 @@ import { externalFromColliders, ragdollPose, type ExternalShape } from './ragdol
 import { boxSeg, cullGeom, geomNear, trunkContact, trunkPieces, type CullGeom, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
 import type { ArmSide } from './contracts';
-import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, type Quat } from './vec';
+import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, type Quat } from './vec';
 import { auditInput, keepLandmarks, recordTransition, type AuditHost } from './transition-audit';
 import type { Simulation, PlayerRuntime } from './simulation';
 
@@ -318,13 +318,13 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     }
     return d;
   };
-  const push = (shapes: PoseShape[], toleranceM = 0): Vec3 => {
+  const pushAgainst = (shapes: PoseShape[], toleranceM: number, against: ExternalShape[]): Vec3 => {
     const v = v3();
     for (const s of shapes) {
       const b = poseCullGeom(s);
       let q: ReturnType<typeof poseShapeToRapier> | undefined;
       let best: { d: number; n: Vec3 } | null = null;
-      for (const e of ext) {
+      for (const e of against) {
         if (!geomNear(geomOf(e), b, 0)) continue;
         if (q === undefined) q = poseShapeToRapier(s);
         if (!q) break;
@@ -335,6 +335,31 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     }
     return v;
   };
+  const push = (shapes: PoseShape[], toleranceM = 0): Vec3 => pushAgainst(shapes, toleranceM, ext);
+  // plan 13f (a leg-guard profile): every external collider on a moving body, moved by its motion relative to the posing
+  // player over the profile's prediction time (its point velocity at the collider centre less the player's own there;
+  // its rotation by its body's angular velocity). Static colliders and published limbs (poses: no velocity) stay as they
+  // are, so they are measured by the plain query. Built on the first leg query of the pose
+  const LG = host.def.legGuard;
+  let ahead: ExternalShape[] | null = null;
+  const aheadOf = (): ExternalShape[] => {
+    if (ahead) return ahead;
+    ahead = [];
+    if (host.opts.debug?.pose?.noLegAhead) return ahead;
+    const self = pl.proxy.body;
+    for (const e of ext) {
+      const b = e.collider?.parent();
+      if (!b || b.isFixed()) continue;
+      const dv = sub(vc(b.velocityAtPoint(e.pose.p)), vc(self.velocityAtPoint(e.pose.p)));
+      const w = vc(b.angvel());
+      const wl = len(w);
+      const q = wl > 1e-9 ? qNormalize(qMul(qFromAxisAngle(scale(w, 1 / wl), wl * LG!.aheadS), e.pose.q)) : e.pose.q;
+      ahead.push({ key: `${e.key}@ahead`, shape: e.shape, pose: { p: addScaled(e.pose.p, dv, LG!.aheadS), q } });
+    }
+    return ahead;
+  };
+  // the push from whichever is deeper, per shape: the plain and the moved colliders together
+  const legAhead = LG ? { external: (shapes: PoseShape[]) => Math.max(depth(shapes, ext), depth(shapes, aheadOf())), push: (shapes: PoseShape[], toleranceM = 0) => pushAgainst(shapes, toleranceM, [...ext, ...aheadOf()]) } : undefined;
   // arm self-clearance: depth beyond the profile tolerance (skin contact is clear) and the separating move from the trunk
   const trunkHits = (shapes: PoseShape[], prediction: number, each: (h: TrunkHit) => void): void => {
     for (const s of shapes) {
@@ -357,7 +382,7 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     });
     return v;
   };
-  return { external: (shapes) => depth(shapes, ext), soft: (shapes) => depth(shapes, soft), self: (shapes) => depth(shapes, own), push, ...(trunk ? { body, bodyPush } : {}) };
+  return { external: (shapes) => depth(shapes, ext), soft: (shapes) => depth(shapes, soft), self: (shapes) => depth(shapes, own), push, ...(trunk ? { body, bodyPush } : {}), ...(legAhead ? { legs: legAhead } : {}) };
 }
 
 /**

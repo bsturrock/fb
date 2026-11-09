@@ -744,6 +744,19 @@ export const JOINT_RANGE_V1: JointRangeProfile = {
 };
 
 /**
+ * Plan 13f leg guard (absent = the guard measures other bodies where they stand): the supported pose's leg guard also
+ * measures the legs against where the other bodies will be after `aheadS`, each moved by its motion relative to the
+ * posing player, so a shown leg the guard holds clear is still clear when a conversion checks it on the next substep.
+ */
+export interface LegGuardProfile {
+  id: string;
+  /** Prediction time (s): one physics substep. */
+  aheadS: number;
+}
+
+export const LEG_GUARD_V1: LegGuardProfile = { id: 'leg-guard-predictive-v1', aheadS: 1 / 240 };
+
+/**
  * Plan 12: the ragdoll under a joint-range profile. The envelope's shoulder is the profile's (an L4 envelope keeps its
  * hips); a ragdoll without an envelope gets a shoulder-only one with the plan 09 tolerance, persistence and slack decay.
  */

@@ -473,12 +473,12 @@ describe('plan 13e faults put back', () => {
     expect(await failsOf(HOLD_SETTLES, def, {})).toEqual([]);
     expect((await failsOf(HOLD_SETTLES, def, { debug: { foot: { noBlockedMemory: true } } })).join(' ')).toMatch(/expected \d+ to be less than or equal to 1/);
     // and lets it go once the body that held it moves off: L3-F4-gripOwner's runner plants its held-off left foot at
-    // 1.325 s and steps home at 1.392 s, when the defender's core is 9 cm from where it was (kept to 1.99 s otherwise,
-    // and that later release crosses its boundary by 1.01 cm)
+    // 1.325 s and steps home at 1.392 s (1.3875 s under the plan 13f leg guard), when the defender's core is 9 cm from
+    // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm)
     const sim = await run(FIX('L3-F4-gripOwner'));
     const steps = sim.events.filter((e) => e.type === 'footSwing' && e.playerId === 'R' && (e.data as { side?: string }).side === 'left' && (e.data as { reason?: string }).reason === 'step');
     sim.dispose();
-    expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3917');
+    expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');
   }, 60000);
 });
 
@@ -495,7 +495,7 @@ describe('plan 08 pass 3: contact integration', () => {
   passTest('temporary airborne recovery: probe support lost in the named mode and regained, feet airborne, no support force in the air, no conversion: every L3-F9-lift fixture', [LIFT_RECOVERY]);
   passTest('a labelled conversion or a loss of probe support in the named mode is an audited, irreversible fall: every L3-F9-convert and L3-F9-noProbe fixture, and the low runner in contact', [AUDITED_FALL]);
   passTest('the defender converts on the measured sign of its bob: the L3-F10 rising and falling holds', [DEFENDER_BOB]);
-  passTest('plan 13d known limits: the L3-F9 one-arm defenders convert on support loss (rising) or are rejected (falling and L3-F1-falling, to plan 13f)', [DEFENDER_13F]);
+  passTest('plan 13d known limits: the L3-F9 one-arm defenders convert on support loss (rising) or are rejected (falling and L3-F1-falling: known limits after plan 13f)', [DEFENDER_13F]);
   passTest(
     'contact entry: preparation unwinds with no contact (L3-F2); the mode follows the first observed contact within a tick (L3-F3); legs keep stepping in contact and tackles end as their copies do (L3-F4/F5)',
     [PREP_UNWINDS, FOLLOWS_CONTACT, KEEP_STEPPING],

@@ -11,6 +11,10 @@
 // limp foot eases to 15 deg toe down. Each check is shown failing with the profile removed (the twin).
 //
 // Plan 13b: self-clearance and joint range in one file, so a fixture both read is simulated once (see `watched`).
+//
+// Plan 13f: the predictive leg guard. Under the opt-in profile (the L3, L4 and HC fixtures) the supported pose's leg guard
+// measures and pushes legs against other bodies where they are now and where they will be one physics substep on, so a
+// candidate built from the pose stays inside the conversion's penetration tolerance while another player closes in.
 import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import type { FixtureDef } from '../src/sim/fixture';
@@ -21,7 +25,7 @@ import { behindDeg, swingExcess, swingExtentDeg } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
 import { ENVELOPE_L4, JOINT_RANGE_V1, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
-import { Simulation, type PlayerRuntime } from '../src/sim/simulation';
+import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { addScaled, len, qConj, qFromUnitVectors, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { FIX, rows, runSim } from './helpers';
 
@@ -367,8 +371,10 @@ describe('plan 12 joint range: shoulders', () => {
     // plan 13d: HC-F3-phase0 (margin 14.6 deg) and L3-F1-phase0 (twin 25.8 behind) no longer load the runner's arm behind
     // with Fast Run's contact timing; HC-F3-falling and HC-F3-mirror do (margins 32.9 and 32.0 deg). Plan 13e: on the L3
     // planner with the idle and walk clips HC-F3-falling's twin is 28.3 deg behind (the profile's 46.6, inside the cone by
-    // 0.7 deg past it); HC-F3-phase50 loads it (twin 82.4, profile 50.4)
-    for (const id of ['HC-F3-phase50', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
+    // 0.7 deg past it); HC-F3-phase50 loads it (twin 82.4, profile 50.4). Plan 13f: the twin keeps the leg guard, under
+    // which HC-F3-phase50's twin is 63.2 deg behind (profile 50.7: margin 12.5); HC-F3-phase0 loads it again (twin 62.7,
+    // profile 37.8)
+    for (const id of ['HC-F3-phase0', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
       const on = await probe(FIX(id));
       const off = await probe(twin(FIX(id)));
       expect(off.worst.ragdoll.behind, id).toBeGreaterThan(45);
@@ -377,9 +383,11 @@ describe('plan 12 joint range: shoulders', () => {
       expect(on.ragOverRunS, `${id} ${on.worst.ragdoll.at}`).toBeLessThan(FALLS_PERSIST_S);
       expect(on.worst.ragdoll.ex, `${id} ${on.worst.ragdoll.at}`).toBeLessThan(15);
     }
-    // HC-F1-low: the twin's runner arm is 13 deg past the cone (27 behind); with the profile it is inside
-    const on = await probe(FIX('HC-F1-low'));
-    const off = await probe(twin(FIX('HC-F1-low')));
+    // a standing pile: the twin's ragdoll arm goes past the cone, with the profile it is inside. Plan 13f: was HC-F1-low
+    // (twin 13 deg past); under the leg guard, which the twin keeps, its twin stays 22.5 deg inside. L3-F10-bothMirror:
+    // the twin's R right arm 9.9 deg past, the profile's 24.6 deg inside
+    const on = await probe(FIX('L3-F10-bothMirror'));
+    const off = await probe(twin(FIX('L3-F10-bothMirror')));
     expect(off.worst.ragdoll.ex).toBeGreaterThan(5);
     expect(on.worst.ragdoll.ex).toBeLessThanOrEqual(5);
   }, 240000);
@@ -427,10 +435,47 @@ describe('plan 12 joint range: ankles', () => {
       }
     }
     // (plan 13e: HC-F1-low D's right shoe is no longer held, on the L3 planner with the idle and walk clips: it relaxes
-    // within 1 deg like the others)
-    expect([...heldCases].sort()).toEqual(['HC-F1-low R.left']);
+    // within 1 deg like the others. Plan 13f: under the leg guard D's left shoe is held, within 8 cm of R)
+    expect([...heldCases].sort()).toEqual(['HC-F1-low D.left', 'HC-F1-low R.left']);
     // the twin keeps the supported pitch it converted with, past the range
     const off = await probe(twin(FIX('HC-F1-low')));
     for (const [pid, c] of off.feet) expect(Math.min(c.conv.left!, c.conv.right!), pid).toBeLessThan(-J.ankle.dorsiDeg);
+  }, 120000);
+});
+
+// ------------------------------------------------------------------ plan 13f: the predictive leg guard
+describe('plan 13f leg guard: a conversion beside a closing body', () => {
+  /** The defender's handoff in one run. */
+  const handoffOf = async (def: FixtureDef, opts: SimOptions = {}) => {
+    const sim = await Simulation.create(def, opts);
+    await runSim(sim);
+    const h = sim.players.find((p) => p.id === 'D')!.handoff!;
+    sim.dispose();
+    return { outcome: h.outcome, t: h.t.toFixed(4), newM: h.report.maxNewExternalPenetrationM, reasons: h.report.reasons.join(',') };
+  };
+
+  it('converts where the guard without prediction (and the twin without the profile) is rejected for external penetration', async () => {
+    // HC-F3-phase75 D (13e known limit): its left thigh met R's ragdoll right shoe, 2.01 cm at 1.3917 s; the reversed
+    // L3-F9-noProbe-contact D (13e): its left thigh in R's right shoe, 1.64 cm at 0.725 s. Tolerance 1.5 cm
+    const CASES: [string, boolean, number][] = [
+      ['HC-F3-phase75', false, 0.02013],
+      ['L3-F9-noProbe-contact', true, 0.01642],
+    ];
+    await rows(
+      CASES,
+      ([id, rev]) => `${id}${rev ? ' reversed' : ''}`,
+      async ([id, rev, beforeM]) => {
+        const o = rev ? { reverseOrder: true } : {};
+        const on = await handoffOf(FIX(id), o);
+        expect(on.outcome, id).toBe('accepted');
+        expect(on.newM, id).toBeLessThan(0.012);
+        // the fault put back: the guard measuring other bodies where they are now only, and the twin without the profile
+        for (const off of [await handoffOf(FIX(id), { ...o, debug: { pose: { noLegAhead: true } } }), await handoffOf({ ...FIX(id), id: `${id}-noGuard`, legGuard: undefined }, o)]) {
+          expect(off.outcome, id).toBe('rejected');
+          expect(off.reasons, id).toContain('externalPenetration');
+          expect(off.newM, id).toBeCloseTo(beforeM, 4);
+        }
+      },
+    );
   }, 120000);
 });

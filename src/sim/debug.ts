@@ -27,6 +27,8 @@ export interface FootDebug {
 export interface PoseDebug {
   /** Disable the plan 07 limb continuity (as with dtS 0), for A/B comparison. */
   noContinuity?: boolean;
+  /** Plan 13f fault put back: under a leg-guard profile, measure legs against other bodies where they are now only (no prediction). */
+  noLegAhead?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

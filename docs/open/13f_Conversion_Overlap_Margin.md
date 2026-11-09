@@ -1,6 +1,6 @@
 # 13f — Conversion overlap margin
 
-Repository-aligned plan • 2026-11-09 • Part of [plan 13](13_Lab_Review_Pass.md). Last milestone, after 13d and 13e change the legs. Opened as a stub after plan 12 (`4f38d34`) by the user's ruling on L4-F10-wrap-off ([plan 12 handoff](../handoff/plan12.md#known-limits)).
+Repository-aligned plan • 2026-11-09 • **Implemented** ([handoff](../handoff/plan13.md#13f--conversion-overlap-margin)). Part of [plan 13](13_Lab_Review_Pass.md). Last milestone, after 13d and 13e change the legs. Opened as a stub after plan 12 (`4f38d34`) by the user's ruling on L4-F10-wrap-off ([plan 12 handoff](../handoff/plan12.md#known-limits)).
 
 **Goal:** a supported player whose limbs are held clear by the pose converts to a ragdoll without failing the conversion's external-penetration check.
 
@@ -51,9 +51,11 @@ The forearm cases are a separate mechanism: arm-task clamp depth on a diagnostic
 ## User decisions
 
 - **2026-11-09: option B, a predictive guard.** The pose's leg guard measures against where the other bodies will be, so the shown leg stays clear of them at the next substep, where a conversion would check it. Options A (retry the conversion on the following substeps) and C (push the candidate out before validation) are not used.
-- **Defaults, not yet ruled** (the plan's recommendation; the user can change them before 13f starts):
+- **2026-11-09: the two defaults below accepted** (the user said "go for 13f" after hearing them):
   - Opt-in profile on L3, L4 and HC, under the plan 10 U2/U3 rule, as in plans 11 and 12. G, L1, L2 and RH stay byte-identical to the 13e tip.
   - The diagnostic forearm-clamp cases are not in scope. They are arm-task depth, they all pass today, and the arm guard is not changed.
+
+- **2026-11-09, during the work: thigh tangles.** The predictive guard left three thigh-near-hip tangles rejected (below). The user ruled: try a thigh push (turn the thigh about the hip), time-boxed; if it does not clear the three without new rejections, pin all three as known limits at their measured depth. It did not (see the [handoff](../handoff/plan13.md#13f--conversion-overlap-margin)); the three are pinned.
 
 ## Design
 
@@ -70,14 +72,14 @@ The forearm cases are a separate mechanism: arm-task clamp depth on a diagnostic
 
 ## Tasks
 
-- [ ] **Re-measure** the near-limit table at the 13e tip, with the plan 12 probe (`.scratch/jr12/`, untracked; recreate as `scripts/probe/p13-near-limit.ts`). Record it in the handoff. If L4-F10-wrap-off no longer fails at the 13e tip, record that, and keep the regression on the case that is closest to the limit then.
-- [ ] **Test first.** In `tests/body-limits.test.ts` (13b): L4-F10-wrap-off D converts and its candidate passes validation; the twin without `legGuard` still rejects it (or, if 13e moved the case, the closest one exceeds 1.2 cm without the profile).
-- [ ] **Profile** and its export.
-- [ ] **`externalAhead`** in `poseClearanceOf`, with the cull.
-- [ ] **Guard** in the three leg places in pose.ts.
-- [ ] **Evidence.** Full suite, typecheck, build, all fixtures. G, L1, L2 and RH byte-identical to the 13e tip; changed L3, L4 and HC summaries listed with endings.
-- [ ] **Audits.** Transition audit (1 cm), plan 07 plant limits, plan 09 power audit, handoff audits.
-- [ ] **Close.** Handoff section; move the L4-F10-wrap-off known limit in the plan 12 handoff to resolved, with a link.
+- [x] **Re-measure** the near-limit table at the 13e tip, with the plan 12 probe (`.scratch/jr12/`, untracked; recreate as `scripts/probe/p13-near-limit.ts`). Record it in the handoff. If L4-F10-wrap-off no longer fails at the 13e tip, record that, and keep the regression on the case that is closest to the limit then.
+- [x] **Test first.** In `tests/body-limits.test.ts` (13b): L4-F10-wrap-off D converts and its candidate passes validation; the twin without `legGuard` still rejects it (or, if 13e moved the case, the closest one exceeds 1.2 cm without the profile).
+- [x] **Profile** and its export.
+- [x] **`externalAhead`** in `poseClearanceOf`, with the cull.
+- [x] **Guard** in the three leg places in pose.ts.
+- [x] **Evidence.** Full suite, typecheck, build, all fixtures. G, L1, L2 and RH byte-identical to the 13e tip; changed L3, L4 and HC summaries listed with endings.
+- [x] **Audits.** Transition audit (1 cm), plan 07 plant limits, plan 09 power audit, handoff audits.
+- [x] **Close.** Handoff section; move the L4-F10-wrap-off known limit in the plan 12 handoff to resolved, with a link.
 
 ## Acceptance
 
@@ -90,6 +92,8 @@ The forearm cases are a separate mechanism: arm-task clamp depth on a diagnostic
 - **Historical evidence.** G, L1, L2 and RH exports byte-identical to the 13e tip.
 
 ## Known limits
+
+The limits found during the work (three thigh tangles still rejected, two transition-audit boundaries) are in the [handoff](../handoff/plan13.md#known-limits-user-rulings-2).
 
 - One substep of prediction. A body that accelerates hard within the substep can still move a little further than predicted; the remaining margin is the 0.3 cm between the guard and the tolerance.
 - Arms keep the present guard: the forearm cases stay near the limit.

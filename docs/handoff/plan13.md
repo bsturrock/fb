@@ -517,3 +517,129 @@ New: the cycle record's structure; phase and sampling (the hip rate integrates t
 
 - `.scratch/p13e/suite6.log` (the closing run), `.scratch/p13e/fixtures.log` (the export), `.scratch/p13e/sumdiff.txt` and `handoffs.txt` (the comparisons), the baseline export at `c5b85a1` in `.scratch/p13e/base/`.
 - Investigation probes in `.scratch/p13e/` (untracked).
+
+## 13f — Conversion overlap margin
+
+Plan: [13f](../open/13f_Conversion_Overlap_Margin.md). Implemented 2026-11-09 after `3aef372` (13e). User rulings during the work: try a thigh push for the three thigh tangles the guard leaves, time-boxed, else pin them (it did not clear them; pinned); the two new transition-audit boundaries are bounded known limits (both below).
+
+**Result:**
+- **The guard predicts.** Under `LEG_GUARD_V1` (`leg-guard-predictive-v1`, on every L3, L4 and HC fixture) the supported pose's legs are judged and pushed against every other body where it is now and where it will be one physics substep on (1/240 s). Arms keep the present guard.
+- **Fixed:** HC-F3-phase75 D (13e's rejection, 2.01 cm) converts at 1.10 cm. Reversed L3-F9-noProbe-contact D (rejected at the 13e tip, 1.64 cm) converts at 0.57 cm. L4-F10-wrap-off D keeps converting, in both orders (1.19 cm forward, 1.26 cm reversed; 1.20 and 1.44 at the 13e tip). HC-F3-lowRunner reversed R keeps converting.
+- **Not fixed (known limits, user ruling):** L3-F9-defenderFalling D and L3-F1-falling D (the same run) are still rejected, 1.89 cm (2.39 at the 13e tip). HC-F3-falling D is newly rejected, 1.68 cm. All three are a thigh tangled near the hip; see [Known limits](#known-limits-user-rulings-2).
+- **Real overlaps stay rejected:** HC-F5-invalidOne, L3-F11-invalid and L4-F9-rejected; the G4 penetration cases are byte-identical.
+- **Legs where nothing moves:** all 85 one-player L3, L4 and HC summaries are byte-identical to the 13e tip (only static bodies are external there, and they are not moved).
+- **Physics.** No transfer audit failure the 13e tip lacks (HC-F5-strictTransfer's deliberate `energyGain` pair is unchanged); the plan 09 effort audits, plan 11 self-clearance and plan 12 joint-range rows pass. The transition audit has two new boundaries over 1 cm, bounded (below).
+- **Evidence.** All 410 exported. G1–G4, L1, L2 and RH byte-identical; HC 14, L3 35 and L4 11 changed, every one a two-player fixture. No result or end-time change; 15 ball spots move (by up to 6.7 cm, HC-F3-rising and HC-F3-falling), every ending stays `groundDown`; 24 fixtures' handoffs changed.
+- **Tests.** 242 in 13 files (241 before, +1), all pass, exit 0; 146.3 s wall time. Typecheck and build pass.
+
+### Near-limit table, re-measured
+
+`scripts/probe/p13-near-limit.ts` lists every L3, L4 and HC conversion with its new external depth (`--reversed`, `--no-leg-guard`, `--all`). Leg cases over 1.2 cm, or rejected, in either order (the forearm cases, out of scope, are below the table):
+
+| Fixture | Player | 13e tip (cm) | With the guard (cm) |
+| --- | --- | --- | --- |
+| HC-F3-phase75 | D | rejected 2.01, left thigh in R's right shoe | 1.10 |
+| L3-F9-defenderFalling, L3-F1-falling | D | rejected 2.39, left thigh in R's pelvis | rejected 1.89 |
+| HC-F3-falling | D | 0.24 (floor) | **rejected 1.68**, left thigh in R's right shoe |
+| L3-F9-noProbe-contact | D | 1.46 | 0.52 |
+| L3-F9-noProbe-contact, reversed | D | rejected 1.64 | 0.57 |
+| L3-F4-twoArm | D | 1.31 | 1.17 |
+| L3-F1-phase6 | D | 1.22 | 0.00 |
+| L3-F3-collision | R | 1.20 | 0.95 |
+| L4-F10-wrap-off | D | 1.20 | 1.19 |
+| L4-F10-wrap-off, reversed | D | 1.44 | 1.26 |
+| L3-F1-mirror0, reversed | D | 1.29 | 1.25 |
+| L4-F9-defenderFalling, reversed | D | 1.49 | under 1.2 |
+| HC-F3-phase75, reversed | D | 1.36 | under 1.2 |
+| L4-F10-wrap-on, reversed | D | 1.22 | under 1.2 |
+
+The diagnostic forearm cases are unchanged, 1.40–1.47 cm, all accepted: HC-F1-mirror, HC-F1-at0.9, HC-F1-at1.6, L3-F10-both, L3-F10-bothMirror, L3-F10-rising, L3-F10-falling, L4-F5-twoClamp-on, L4-F5-twoClamp-off, L4-F9-both.
+
+Conversions that moved: reversed HC-F3-lowRunner's D no longer loses support (it converted at 1.908 s at the tip); HC-F3-phase50 D converts at 1.567 s (1.467). The other changed handoffs are conversion times: the guard changes the defenders' legs, so the moment each loses support moves (`.scratch/p13f/handoffs.txt`).
+
+### What changed
+
+- `src/sim/profiles.ts`: `LegGuardProfile`, `LEG_GUARD_V1` (`{ id, aheadS: 1/240 }`). `src/sim/fixture.ts`: `FixtureDef.legGuard`. `asL3` (transitions.ts), `asL4` (falls.ts) and the HC `label` set it beside `jointRange`; `src/sim/sim-evidence.ts` exports it in `profileIds` and `profiles`.
+- `src/sim/pose-runtime.ts` (`poseClearanceOf`): under the profile, `legs`: `external` is the deeper of the plain query and the same against the predicted colliders; `push` separates from whichever contact is deeper per shape. A predicted collider is each external collider on a non-fixed body, moved by its point velocity at the collider centre less the posing player's proxy point velocity there, times `aheadS`, and turned by its body's angular velocity; it is built once per pose, on the first leg query, and culled by its moved bound. Static colliders and published limbs are not moved.
+- `src/sim/pose.ts`: `PoseClearance.legs`; the legs' depth in the candidate choice (both leg solves), the continuity bisection and the push-out loop (with the shown-push test) use it. Arms are unchanged.
+- `src/sim/debug.ts`: `PoseDebug.noLegAhead`, the negative control (the guard without prediction; equal to the twin without the profile on every case measured).
+- `scripts/probe/p13-near-limit.ts` (committed): the table above.
+
+### Negative check
+
+`noLegAhead` puts the fault back: HC-F3-phase75 D is rejected again at 2.013 cm and reversed L3-F9-noProbe-contact D at 1.642 cm, their 13e-tip depths; so is each twin without the profile (body-limits, "plan 13f leg guard").
+
+### The thigh push (user ruling: try it, time-boxed)
+
+The three remaining rejections are a thigh overlapped near the hip, where the guard's push (it moves the ankle target) moves the thigh little: L3-F9-defenderFalling's own swing drives its left thigh into R's pelvis at up to 0.7 cm a substep while R closes at under 0.4 m/s; in HC-F3-falling the guard changes D's legs from 0.725 s and its motion from 0.91 s, so its labelled "first falling substep" comes 12 ms later, as R's ragdoll right shoe sweeps through D's thigh at about 3 m/s (0 to 2.8 cm in four substeps). Three variants turned the leg about the hip by the thigh's push:
+
+| Variant | defenderFalling / L3-F1-falling D | HC-F3-falling D | HC-F3-phase75 D | L4-F10-wrap-off reversed D |
+| --- | --- | --- | --- | --- |
+| Turn by the thigh's push at mid-thigh | 0.84 | 0.86 | 0.00 | **rejected 2.40** |
+| The turn only where it leaves the leg shallower | 1.41 | 1.03 | **rejected 11.30** (R's ragdoll torso lands on D's thigh) | 1.22 |
+| Turn about the real contact point, none within 10 cm of the hip | **rejected 4.73** | 0.94 | 1.22 | **rejected 2.27** |
+
+Each changes the defenders' timing and trades one case for another: the conversion moment is chaotic in these tangles, and a thigh this close to the hip needs the pelvis to move, not the leg. Reverted; the three are pinned (below).
+
+### Tests re-pointed or changed
+
+| Check | Was | Now | Why |
+| --- | --- | --- | --- |
+| `KNOWN_13F` (handoff-contact) and the one-arm family row | HC-F3-phase75 D rejected | HC-F3-falling D rejected, depth pinned (1.679 cm) | phase75 converts; falling is the new known limit |
+| `DEFENDER_13F` (l3-pass) | rejected | rejected, depth pinned (1.888 cm) | known limit kept (ruling) |
+| HC-F2-bothFall post-switch window (handoff-contact) | first new contact at +18; window 18 | first new contact at +19 (pinned); window the 18 substeps before it; closing measured before the contact's solve (3.6 m/s) | under the guard the contact's own solve takes the impact (5.4 mm at the elbow, 13.1 body weights; through +18: 0.66 mm, 3.7) |
+| First-solve impulse (handoff-contact) | HC-F3-rising | HC-F3-phase75 (D, 2.9 body weights) | HC-F3-rising's defender converts out of contact under the guard |
+| Ragdoll shoulders, runner cases (body-limits) | HC-F3-phase50 | HC-F3-phase0 (twin 62.7°, profile 37.8°) | the twin keeps the guard: phase50's twin is 63.2° behind, a 12.5° margin |
+| Ragdoll shoulders, standing pile (body-limits) | HC-F1-low (twin 13° past) | L3-F10-bothMirror (twin 9.9° past, profile 24.6° inside) | HC-F1-low's twin stays 22.5° inside under the guard |
+| Ankle held cases (body-limits) | HC-F1-low R.left | HC-F1-low D.left, R.left | D converts differently; its left shoe is held |
+| Blocker release (l3-contracts, 13e faults) | R left steps home at 1.3917 s | 1.3875 s | one substep earlier |
+| `KNOWN_AUDIT` (l3-pass) | 2 entries | 4 (below) | ruling |
+| `asL3` keys (transitions) | | `legGuard` | the new profile |
+
+New: the harness row (the profile on exactly the L3, L4 and HC fixtures, recorded in the export) and the body-limits row above.
+
+### Known limits (user rulings)
+
+- **L3-F9-defenderFalling D and L3-F1-falling D:** rejected for external penetration at 1.267 s, left thigh 1.888 cm in R's pelvis; they end falling proxies. Pinned at that depth (`DEFENDER_13F`).
+- **HC-F3-falling D (new):** rejected at 1.183 s, left thigh 1.679 cm in R's ragdoll right shoe; it ends a falling proxy. Pinned at that depth (`KNOWN_13F`, the one-arm family row).
+- **Transition audit, two boundaries over 1 cm, bounded in `KNOWN_AUDIT`:**
+  - L3-F3-collision D's right shoe at 0.6167 s, 1.41 cm (bound 1.42). R closes at about 5 m/s: the substep before, the guard pushes D's planted leg up to the 5 cm per-substep cap off its anchor, and at lift-off the old planted composition and the new swing one differ. Leaving planted legs on the plain guard makes it 6.57 cm.
+  - L3-F1-phase1 R's right knee at 0.625 s, 1.13 cm (bound 1.13). No push: the predicted depth picks a different knee-pole variant for the old and the new foot owner.
+- On a fast collision the predicted push moves a supported leg up to 5 cm in one substep (L3-F3-collision); the shown leg can jump there.
+- From the plan: one substep of prediction (a body accelerating hard within it can still pass the remaining 0.3 cm); arms keep the present guard, so the forearm cases stay at 1.40–1.47 cm.
+
+### Changed summaries (60; G1–G4, L1, L2 and RH byte-identical)
+
+- **HC** (14 changed, 8 identical): HC-F1-at1.6, HC-F1-low, HC-F1-lowMirror, HC-F2-lift3.0, HC-F2-lowCarrier, HC-F2-bothFall, HC-F2-bothFallL2, HC-F3-phase0, HC-F3-phase50, HC-F3-phase75, HC-F3-rising, HC-F3-falling, HC-F3-lowRunner, HC-F5-strictTransfer
+- **L3** (35 changed, 62 identical): L3-F1-phase0 to L3-F1-phase7, L3-F1-mirror0, L3-F1-mirror4, L3-F1-rising, L3-F1-falling, L3-F1-low, L3-F3-side, L3-F3-sideMirror, L3-F3-recover, L3-F3-collision, L3-F4-twoArm, L3-F4-oneArm, L3-F4-gripTarget, L3-F5-drag, L3-F5-dragMirror, L3-F7-phase25, L3-F9-convert-free, L3-F9-convert-prep, L3-F9-noProbe-free, L3-F9-noProbe-prep, L3-F9-noProbe-contact, L3-F9-defenderRising, L3-F9-defenderFalling, L3-F9-playerBelow, L3-F10-bothLow, L3-F10-rising, L3-F10-falling, L3-F10-defender
+- **L4** (11 changed, 64 identical): L4-F3-run-on, L4-F3-run-off, L4-F5-twoPalm-on, L4-F5-oneClamp-on, L4-F5-oneClamp-off, L4-F9-free, L4-F9-defenderRising, L4-F9-defenderFalling, L4-F10-elbow-off, L4-F10-wrap-on, L4-F10-wrap-off
+
+**Result changes:** none. **End times:** none.
+
+**Ball spots (15, every ending `groundDown`):**
+
+| Fixture | 13e tip | 13f |
+| --- | --- | --- |
+| HC-F3-phase0 | 2.273, 0.5475, 1.2143 | 2.2723, 0.5471, 1.2161 |
+| HC-F3-phase50 | 2.809, 0.3111, 1.3602 | 2.8129, 0.3183, 1.3487 |
+| HC-F3-phase75 | 2.7355, 0.3369, 1.3255 | 2.7368, 0.3391, 1.3202 |
+| HC-F3-rising, HC-F3-falling | 2.6567, 0.3576, 1.29 | 2.612, 0.4045, 1.2735 |
+| HC-F3-lowRunner | 3.6325, 0.0481, 1.8453 | 3.6323, 0.0477, 1.8456 |
+| L3-F1-phase0 | 2.3781, 0.5124, 1.2901 | 2.3714, 0.5144, 1.2967 |
+| L3-F1-phase1 | 2.9086, 0.258, 1.4159 | 2.9085, 0.258, 1.4159 |
+| L3-F1-phase3 | 2.4702, 0.4873, 1.3035 | 2.4865, 0.4722, 1.3101 |
+| L3-F1-phase6 | 2.9051, 0.2331, 1.4316 | 2.9083, 0.2356, 1.4291 |
+| L3-F1-phase7 | 2.321, 0.4817, 1.3221 | 2.3209, 0.4825, 1.3215 |
+| L3-F1-mirror0 | 2.937, 0.7524, -1.4122 | 2.937, 0.7524, -1.4121 |
+| L4-F5-oneClamp-on, L4-F9-defenderRising, L4-F9-defenderFalling | 2.8433, 0.3018, 1.3895 | 2.8434, 0.3018, 1.3895 |
+
+### Departures from the plan
+
+- The plan's `externalAhead(shapes)` is `PoseClearance.legs` (`external` and `push` together), so the push can come from the deeper of the two contacts per shape; the predicted colliders are ordinary externals at moved poses, so 13a's cull uses their moved bounds directly.
+- The plan's regression case, L4-F10-wrap-off, converts at the 13e tip in both arms (the twin at 1.20 cm), so it cannot show the fault. The rows use the two cases the guard fixes, each rejected without it.
+- The acceptance's "L3-F9-defenderFalling D and L3-F1-falling D convert" is not met, and HC-F3-falling D is a new rejection: user ruling, pinned (above).
+
+### Evidence
+
+- `.scratch/p13f/suite3.txt` (the closing run), `.scratch/p13f/fixtures.log` (the export), `.scratch/p13f/sumdiff.txt` and `handoffs.txt` (the comparisons), `near-base.txt`, `near-base-rev.txt`, `near-on.txt`, `near-on-rev.txt` (the table) and the 13e-tip export in `.scratch/p13f/base/`.
+- Investigation probes in `.scratch/p13f/` (untracked).

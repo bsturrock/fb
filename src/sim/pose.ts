@@ -309,6 +309,12 @@ export interface PoseClearance {
    * contact's outward normal times the depth beyond `toleranceM` (default 0), summed. Zero within that tolerance.
    */
   push?(shapes: PoseShape[], toleranceM?: number): Vec3;
+  /**
+   * Plan 13f (a leg-guard profile): the supported legs' guard. `external` is the deeper of the plain query and the same
+   * against the other bodies where they will be after the profile's prediction time; `push` separates from whichever
+   * is deeper. Absent: the legs use `external` and `push` as the arms do.
+   */
+  legs?: { external(shapes: PoseShape[]): number; push(shapes: PoseShape[], toleranceM?: number): Vec3 };
 }
 
 /** Penetration below the floor plane Y = 0 (analytic, m >= 0). */
@@ -767,6 +773,9 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const limbClearance: Record<string, number> = {};
   const mem = inp.memory ?? {};
   const ext = (shapes: PoseShape[]): number => (inp.clearance ? inp.clearance.external(shapes) : 0);
+  // plan 13f (a leg-guard profile): the legs are also judged against where the other bodies will be next substep
+  const legs = inp.clearance?.legs;
+  const extL = (shapes: PoseShape[]): number => (legs ? legs.external(shapes) : ext(shapes));
   const softExt = (shapes: PoseShape[]): number => (inp.clearance?.soft ? inp.clearance.soft(shapes) : 0);
   // a sampled request at weight 0 still routes the legs through the continuous sampled solve (procedural targets)
   const smp = inp.sampled ?? null;
@@ -1225,7 +1234,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         c.edgeX = edgeUsed;
         if (P?.on && len(o) < 1e-9) P.legs[`${inp.playerId}:${s}`] = { request: W(base), ik, lifted: target, floorLeft: c.depth };
         // floor depth left after the lift is a presentation residual, not a reason to switch variants
-        c.depth = ext(c.shapes);
+        c.depth = extL(c.shapes);
         c.soft = softExt(c.shapes);
         return c;
       }
@@ -1240,7 +1249,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         if (fd <= 0.001) break;
         target = add(target, v3(0, fd + 0.003, 0));
       }
-      c!.depth = Math.max(c!.depth, ext(c!.shapes));
+      c!.depth = Math.max(c!.depth, extL(c!.shapes));
       c!.soft = softExt(c!.shapes);
       return c!;
     };
@@ -1288,18 +1297,18 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           const t0 = pivot ? plantIk(sol.solve, W(add(base, lerp(dp, dc, al))), pivot, chosen.rollF!, chosen.edgeX ?? 0) : W(add(base, lerp(dp, dc, al)));
           let t = t0;
           let c = sol.solve(t);
-          let de = ext(c.shapes);
+          let de = extL(c.shapes);
           // pushed toward validity (HARD_OK), also when no candidate is valid (tangled with another body)
           const G = deep ? inp.ragdoll.poseGuard : undefined;
           for (let i = 0; i < (G ? G.deepPushIterations : CONT_PUSH_IT) && (de > HARD_OK || c.depth > floorOk) && inp.clearance?.push; i++) {
             // Correct only the excess depth: a full push at the validity threshold jumps by the whole tolerance.
-            const pv = inp.clearance.push(c.shapes, inp.loco ? HARD_OK - 0.001 : 0);
+            const pv = legs ? legs.push(c.shapes, inp.loco ? HARD_OK - 0.001 : 0) : inp.clearance.push(c.shapes, inp.loco ? HARD_OK - 0.001 : 0);
             if (c.depth > floorOk) pv.y += inp.loco ? c.depth - floorOk + 0.001 : c.depth;
             const m = len(pv);
             if (m < 1e-6) break;
             t = add(t0, clampLen(sub(addScaled(t, pv, inp.loco ? 1 : 1 + 0.001 / m), t0), G ? G.deepPushM : CONT_PUSH_MAX_M));
             c = sol.solve(t);
-            de = ext(c.shapes);
+            de = extL(c.shapes);
           }
           return { ...c, depth: de, soft: softExt(c.shapes), req: t, ik: chosen.ik, rollF: chosen.rollF, edgeX: chosen.edgeX, good: de <= extOk && c.depth <= floorOk, rank: Math.max(de, c.depth) };
         };
@@ -1317,7 +1326,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         if (P?.on && P.contLast) P.cont[`${inp.playerId}:${k}`] = P.contLast;
         // plan 07a: a chosen candidate that itself penetrates another body (no clear variant: tangled) is shown pushed
         // out as well, also once the blend toward it is complete (HC-F2-lowCarrier: A's shoe stood 13 cm in B's head)
-        const shownPushed = al < 1 || ext(chosen.shapes) > HARD_OK;
+        const shownPushed = al < 1 || extL(chosen.shapes) > HARD_OK;
         if (shownPushed) l = atM(al);
         // plan 10c (C6, RagdollProfile.poseGuard): a convertible player's shown leg still past HARD_OK after the ordinary
         // push (4 iterations: reversed HC-F2-bothFallL2, B's ragdoll forearm 8 cm into A's thigh, where moving the ankle

@@ -6,7 +6,7 @@ import type { ScriptSegment } from '../controllers/base';
 import { CARRY_L3 } from '../carry';
 import { FOOTWORK_L3 } from '../footwork';
 import { IDLE_POSE_RECORD, LOCOMOTION_L3 } from '../locomotion';
-import { JOINT_RANGE_V1, ruleVariant, rulesRevision2, SELF_CLEARANCE_V1 } from '../profiles';
+import { JOINT_RANGE_V1, LEG_GUARD_V1, ruleVariant, rulesRevision2, SELF_CLEARANCE_V1 } from '../profiles';
 import { v3 } from '../vec';
 import { asL2, l2f1, l2f3, l2f11, l2f12, l2f14OneArmFeet, runStop } from './footwork';
 import { defenderBob, defenderPhase, hcf5, LOW, mirrorZ, withStance } from './handoff-contact';
@@ -31,6 +31,7 @@ export function asL3(def: FixtureDef, id: string, title?: string, notes?: string
     carry: CARRY_L3,
     selfClearance: SELF_CLEARANCE_V1,
     jointRange: JOINT_RANGE_V1,
+    legGuard: LEG_GUARD_V1,
     // plan 10e: L3 referees on the corrected rules revision
     ...(def.rules ? { rules: rulesRevision2(ruleVariant(def.rules, 'ballSource=carryPose', { ballSource: 'carryPose' })) } : {}),
     // plan 10b: a coached entry updates its phase before it aims (the gate 1 fixtures keep their order)

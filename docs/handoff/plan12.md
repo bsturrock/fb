@@ -8,7 +8,7 @@ Plan: [12 — Joint range: shoulders and ankles](../open/12_Joint_Range_Limits.m
 - All 194 L3, L4 and HC exports change, because they record the profile.
   - 175 of their summaries change: HC 20, L3 81, L4 74. 19 are identical.
   - No result changes. 30 endings move by −33 to +100 ms.
-- There is one new ragdoll validation failure, against the plan's acceptance. L4-F10-wrap-off D is rejected for external penetration. The user accepted it as a known limit (see [Known limits](#known-limits)).
+- There is one new ragdoll validation failure, against the plan's acceptance. L4-F10-wrap-off D is rejected for external penetration. The user accepted it as a known limit (see [Known limits](#known-limits)); resolved in plan 13 ([13f](plan13.md#13f--conversion-overlap-margin)).
 
 ## User decisions
 
@@ -229,6 +229,7 @@ All other endings are `groundDown`.
 
 ## Known limits
 
+- **Resolved (plan 13): L4-F10-wrap-off D's conversion rejection.** It no longer occurs from plan 13d on (Fast Run's contact timing), and under plan 13f's predictive leg guard D converts in both body orders, at 1.19 cm forward and 1.26 cm reversed ([plan 13f handoff](plan13.md#13f--conversion-overlap-margin)). The original record:
 - **New conversion rejection: L4-F10-wrap-off D.** This goes against the acceptance line "no new ragdoll validation failure".
   - **What happens.** At 1.392 s, D's supported left thigh is 1.88 cm inside R's ragdoll right thigh, and the conversion tolerance is 1.5 cm. D is left a rigid falling proxy. The result (`groundDown`) holds, and the ending moves +83 ms.
   - **Pre-existing tangle.** The legs were tangled before plan 12. In the twin, D's legs sit 1.0–1.5 cm inside R for 0.2 s, and its conversion at 1.433 s was accepted at 1.17 cm, thigh in shin. The pose guard (`HARD_OK`, 1.2 cm) holds the leg on the tick. R's ragdoll moves 0.7 cm more into it in the substep before the conversion.
