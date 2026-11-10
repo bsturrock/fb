@@ -332,7 +332,12 @@ describe('the limit torque follows a potential', () => {
           // in the oblique fall with the response off, past the tolerance for 0.32 s (the soft limit is capped at 500 N m)
           // plan 13d known limit (user ruling): L4-F9-low's runner lies alone with its right shoulder 5-8 deg past the
           // tolerance from 1.93 s to the fixture's end (0.47 s)
-          const known: Record<string, number> = { 'L4-F3-model-oblique-off R rightShoulder': 0.33, 'L4-F9-low R rightShoulder': 0.5 };
+          // contact motion M1 known limit (user ruling, scoped to this fixture): L4-F5-twoClamp-off's runner lands on its right
+          // forearm, which carries 16-37 % of its body weight on the floor from 2.08 s; the shoulder is held at 112 deg external
+          // twist (range 100, 10 deg past in the envelope's cos(swing/2) measure) for 0.496 s, the envelope pushing 70 N m
+          // (cap 500) the right way. Removing the forearm's friction does not free it (the weight does), and once the load
+          // leaves at 2.58 s the joint is back inside within 0.033 s. On joint-range-v1 the same landing reached 9.5 deg for 0.10 s
+          const known: Record<string, number> = { 'L4-F3-model-oblique-off R rightShoulder': 0.33, 'L4-F9-low R rightShoulder': 0.5, 'L4-F5-twoClamp-off R rightShoulder': 0.5 };
           for (const d of ALL.filter((x) => !x.id.startsWith('L4-F1-'))) {
             const s = await sim(d.id);
             for (const p of s.players) for (const e of p.rag?.envelope ?? []) expect(e.maxOverRunS, `${d.id} ${p.id} ${e.jointId}`).toBeLessThan(known[`${d.id} ${p.id} ${e.jointId}`] ?? ENVELOPE_L4.persistS);
@@ -361,14 +366,13 @@ describe('the limit torque follows a potential', () => {
   const crowded = watch(
     (id) => id === 'L4-F9-crowded',
     () => {
-      const data = { seen: false, slack: [] as [number, number][] };
+      const data = { slack: [] as [number, number][] };
       const prev = new Map<string, number>();
       return {
         data,
         tick: (s) => {
           for (const p of s.players)
             for (const e of p.rag?.envelope ?? []) {
-              if (e.startOutsideDeg > 20) data.seen = true;
               const k = `${p.id}${e.jointId}`;
               const slack = e.swingSlack + e.twistSlackLo + e.twistSlackHi;
               if (prev.has(k)) data.slack.push([slack, prev.get(k)!]);
@@ -384,8 +388,25 @@ describe('the limit torque follows a potential', () => {
       [
         'a joint that starts outside keeps slack, so conversion adds no kick, and the slack only tightens',
         async () => {
-          const { seen, slack: ticks } = await crowded('L4-F9-crowded');
+          const { slack: ticks } = await crowded('L4-F9-crowded');
           for (const [slack, prev] of ticks) expect(slack).toBeLessThanOrEqual(prev + 1e-12);
+          // contact motion M1: under joint-range-v2 the supported arm's twist is in range, so L4-F9-crowded's runner now
+          // converts with every joint inside (its right shoulder started 51.3 deg outside, in twist); the start outside is
+          // its twin on plan 12's joint-range-v1
+          const twin = await Simulation.create({ ...FIX('L4-F9-crowded'), id: 'L4-F9-crowded-v1', jointRange: JOINT_RANGE_V1 });
+          let seen = false;
+          const prev = new Map<string, number>();
+          await runSim(twin, Infinity, (x) => {
+            for (const p of x.players)
+              for (const e of p.rag?.envelope ?? []) {
+                if (e.startOutsideDeg > 20) seen = true;
+                const k = `${p.id}${e.jointId}`;
+                const slack = e.swingSlack + e.twistSlackLo + e.twistSlackHi;
+                if (prev.has(k)) expect(slack).toBeLessThanOrEqual(prev.get(k)! + 1e-12);
+                prev.set(k, slack);
+              }
+          });
+          twin.dispose();
           expect(seen).toBe(true);
         },
       ],
@@ -1009,11 +1030,24 @@ describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
           const [on, off] = [await sim('L4-F5-twoPalm-on'), await sim('L4-F5-twoPalm-off')];
           expect(evs(on, 'gripRelease')).toEqual([]);
           expect(evs(on, 'fallTask').map((e) => `${e.data.arm} ${e.data.from}>${e.data.to} ${e.data.reason}`)).toEqual(['left hold>passive windowEnded', 'right hold>passive windowEnded']);
-          const exposure = (s: Simulation): number => Math.max(...s.arms!.ledger.filter((e) => e.kind === 'hold' || e.kind === 'passive').map((e) => e.exposure));
-          // (plan 12: the runner pulls harder on the holds: 0.018 overload exposure with the response on, 0.020 off, where both
-          // were 0; the response-off twin's holds then end on separation at 1.90 and 1.97 s, the response keeps them to the
-          // window's end. The response adds no exposure)
-          expect(exposure(on)).toBeLessThanOrEqual(exposure(off));
+          const holds = (s: Simulation) => s.arms!.ledger.filter((e) => e.kind === 'hold' || e.kind === 'passive');
+          // The response adds no exposure. (plan 12: the runner pulls harder on the holds, 0.018 s overload exposure with the
+          // response on, 0.020 off, where both were 0.) The two twins part at the conversion: the response-off twin's runner
+          // never converts and its holds end on separation at 1.90 and 1.97 s, so the exposures are of different loads, and
+          // comparing them was exact only while the runs matched. Contact motion M1: the runner's free-arm twist moves its
+          // wrist 0.5 mm by 1.18 s, and its pull just before it converts (2.02-2.15 s, up to 292 N on a 132 N allocation)
+          // then lasts 32 substeps in one episode instead of 24 in two: 0.031 s on, 0.020 off. So what is checked is the
+          // response's part directly: in every substep a hold is over its allocation the held arm takes no response effort
+          // (the overload is the grasp's load alone; the allocation row above checks the accounting), and the exposure stays
+          // within half the release threshold
+          const effort = new Map(on.arms!.effortLedger.map((e) => [`${e.owner}:${e.step}:${e.arm}`, e]));
+          const over = holds(on).filter((e) => e.raw > e.allocated + 1e-9);
+          expect(over.length).toBeGreaterThan(0);
+          for (const e of over) {
+            const f = effort.get(`${e.owner}:${e.step}:${e.arm}`);
+            expect(f ? Math.abs(f.shoulderNm) + Math.abs(f.elbowNm) : 0, `${e.owner} ${e.arm} step ${e.step}`).toBe(0);
+          }
+          expect(Math.max(...holds(on).map((e) => e.exposure))).toBeLessThanOrEqual(on.arms!.profile.hold.overloadThresholdS / 2);
           expect(evs(off, 'gripRelease').map((e) => `${e.data.arm} ${e.data.reason}`)).toEqual(['right separation', 'left separation']);
           // (plan 12: this run's effort no longer meets the shared budget, so nothing of it is scaled here; the allocation test
           // above still finds 29 scaled substeps across the L4 fixtures)

@@ -341,12 +341,13 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
         },
       ],
       [
-        'the convertible-pose guard is carried by the HC variants only; the base cases keep their historical profiles',
+        'the convertible-pose guard is carried by the HC variants and (contact motion M1) the L3 and L4 fixtures only; the base cases keep their historical profiles',
         () => {
-          const guarded = allFixtures().filter((d) => d.ragdoll?.poseGuard).map((d) => d.id);
+          const ON = (d: FixtureDef) => d.milestone === 'HC' || d.milestone === 'L3' || d.milestone === 'L4';
+          const guarded = allFixtures().filter((d) => d.ragdoll?.poseGuard);
           expect(guarded.length).toBeGreaterThan(20);
-          expect(guarded.every((id) => id.startsWith('HC-')), guarded.filter((id) => !id.startsWith('HC-')).join(' ')).toBe(true);
-          expect(HC().filter((d) => d.ragdoll && !d.ragdoll.poseGuard).map((d) => d.id)).toEqual([]);
+          expect(guarded.filter((d) => !ON(d)).map((d) => d.id)).toEqual([]);
+          expect(allFixtures().filter((d) => ON(d) && d.ragdoll && !d.ragdoll.poseGuard).map((d) => d.id)).toEqual([]);
           for (const d of HC()) if (d.ragdoll) expect(d.ragdoll.id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
         },
       ],

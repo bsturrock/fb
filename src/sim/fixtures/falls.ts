@@ -3,7 +3,7 @@
 // is the motor-off twin of a comparison.
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import { modelArm } from '../model/profiles';
-import { ARM_G2, DEFAULT_MOTOR, ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, LEG_GUARD_V1, RAGDOLL_G4, RAGDOLL_L4, RULES_FOOTBALL, RULES_LAB_CORE, SELF_CLEARANCE_V1, SOLVER_G4_ZEROG, rulesRevision2, type FallResponseProfile } from '../profiles';
+import { ARM_G2, DEFAULT_MOTOR, ENVELOPE_L4, FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, RAGDOLL_G4, RAGDOLL_L4, RULES_FOOTBALL, RULES_LAB_CORE, SELF_CLEARANCE_V1, SOLVER_G4_ZEROG, rulesRevision2, withPoseGuard, type FallResponseProfile } from '../profiles';
 import { scale, v3, type Vec3 } from '../vec';
 import { armsSetup } from './gate2';
 import { base4, bodyG4, g4f3TwoArm, g4f6Joint } from './gate4';
@@ -14,11 +14,13 @@ import { transitionFixtures } from './transitions';
 /** The fixture under an L4 identity, its own ragdoll gaining the envelope; `response` null is the motor-off twin. */
 export function asL4(def: FixtureDef, id: string, title: string, response: FallResponseProfile | null = FALL_L4, notes?: string): FixtureDef {
   const fitted = def.ragdoll !== undefined && def.ragdoll !== RAGDOLL_G4;
-  const ragdoll = fitted ? { ...def.ragdoll!, id: `${def.ragdoll!.id}+${ENVELOPE_L4.id}`, envelope: ENVELOPE_L4 } : RAGDOLL_L4;
+  const ragdoll0 = fitted ? { ...def.ragdoll!, id: `${def.ragdoll!.id}+${ENVELOPE_L4.id}`, envelope: ENVELOPE_L4 } : RAGDOLL_L4;
+  // contact motion M1: the plan 10c deep leg push (HC's pose guard) on every L4 ragdoll
+  const ragdoll = ragdoll0.poseGuard ? ragdoll0 : withPoseGuard(ragdoll0);
   // a fixture without arms never met the limb contract: the response's shared allocator needs its fitted lengths too
   const armProfile = fitted && !def.players.some((p) => p.arms) ? modelArm(def.armProfile ?? ARM_G2) : def.armProfile;
   // plan 10e: L4 referees on the corrected rules revision (an L3 fixture's rules are on it already)
-  return { ...def, id, milestone: 'L4', title, ragdoll, armProfile, fallResponse: response ?? undefined, selfClearance: SELF_CLEARANCE_V1, jointRange: JOINT_RANGE_V1, legGuard: LEG_GUARD_V1, ...(def.rules ? { rules: rulesRevision2(def.rules) } : {}), notes: [def.notes, notes].filter(Boolean).join(' ') };
+  return { ...def, id, milestone: 'L4', title, ragdoll, armProfile, fallResponse: response ?? undefined, selfClearance: SELF_CLEARANCE_V1, jointRange: JOINT_RANGE_V2, legGuard: LEG_GUARD_V1, ...(def.rules ? { rules: rulesRevision2(def.rules) } : {}), notes: [def.notes, notes].filter(Boolean).join(' ') };
 }
 
 type Dir = 'forward' | 'back' | 'side' | 'sideLeft' | 'oblique' | 'obliqueLeft';

@@ -37,7 +37,7 @@ import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
-import { FALL_L4, JOINT_RANGE_V1, LEG_GUARD_V1, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
+import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
 import { breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 
@@ -215,7 +215,8 @@ const OPT_IN: Row[] = [
   [
     'plan 12: joint range is on for exactly the L3, L4 and HC fixtures, and the export records it',
     async () => {
-      const J = JOINT_RANGE_V1;
+      // contact motion M1: joint-range-v2 (plan 12's ranges, with the upper-arm twist kept in range)
+      const J = JOINT_RANGE_V2;
       for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? J : undefined);
       for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
         const sim = await Simulation.create(d);

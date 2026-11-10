@@ -10,7 +10,7 @@ import { CARRY_ARM, carryRequest, seatBallCapsule, seatBallLocal, seatBallWorld,
 import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type IdleSample, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangeProfile, type RagdollProfile } from './profiles';
-import { behindDeg, clampDirToEnvelope } from './joint-cone';
+import { armTwistRad, behindDeg, clampDirToEnvelope, fitElbowTwist, turnForearmTwist, twistWindow } from './joint-cone';
 import type { PoseDebug, PoseProbe } from './debug';
 import {
   add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qFromUnitVectors, qInvRot, qMul, qRot, qSlerp, scale, sub, toWorld, upOf, v3,
@@ -869,6 +869,9 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const prevElbowL = gr0 ? memVec(mem, `${s}Arm:e`) : null;
       const prevElbow = prevElbowL ? W(prevElbowL) : null;
       const JR = inp.jointRange;
+      // contact motion M1: the twist this pose may show (the range, and one step from the last shown twist)
+      const TW = JR?.shoulderTwist;
+      const twWin = TW ? twistWindow(JR!.shoulder, TW, gr0 ? (mem[`${s}Arm:tw`] ?? null) : null, inp.dtS ?? 0) : null;
       const procedural = (palmL: Vec3, poleL: Vec3) => (): ArmC => {
         const tgt = W(palmL);
         const r = twoBone(sh, tgt, R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, stablePole(sh, tgt, qRot(pose.q, poleL), prevElbow, CONT_ARM_MPS * (inp.dtS ?? 0), CONT_FAST_MPS * (inp.dtS ?? 0)), undefined, elbowMin);
@@ -876,12 +879,27 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // plan 12: an upper arm outside the shoulder cone turns the whole chain rigidly about the shoulder onto the
         // boundary (the elbow bend kept, the palm off its target: the request residual reports it)
         let { mid, end } = r;
-        const d = qInvRot(pose.q, norm(sub(mid, sh), v3(0, -1, 0)));
-        const dc = clampDirToEnvelope(JR.shoulder, d, sx, 0);
-        if (dc !== d) {
-          const q = qFromUnitVectors(qRot(pose.q, d), qRot(pose.q, dc));
-          mid = add(sh, qRot(q, sub(mid, sh)));
-          end = add(sh, qRot(q, sub(end, sh)));
+        const cone = (): Vec3 => {
+          const d = qInvRot(pose.q, norm(sub(mid, sh), v3(0, -1, 0)));
+          const dc = clampDirToEnvelope(JR.shoulder, d, sx, 0);
+          if (dc !== d) {
+            const q = qFromUnitVectors(qRot(pose.q, d), qRot(pose.q, dc));
+            mid = add(sh, qRot(q, sub(mid, sh)));
+            end = add(sh, qRot(q, sub(end, sh)));
+          }
+          return dc;
+        };
+        let dc = cone();
+        // contact motion M1: then the elbow turns about the shoulder-to-palm line into the twist window (the palm kept);
+        // that turn moves the upper arm, so the cone is applied again after each turn: the cone is the hard limit, the
+        // twist after the last clamp is within a fraction of a degree of the window
+        for (let it = 0; it < 2 && twWin; it++) {
+          const f = fitElbowTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin);
+          if (!f.turned) break;
+          mid = f.elbow;
+          dc = cone();
+          // what the clamp's turn left outside the window: the forearm turns about the upper arm (the cone kept)
+          if (it === 1) end = turnForearmTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin);
         }
         const c = build(mid, end);
         // and the forward preference: a soft cost per 30 deg behind the side line
@@ -1059,6 +1077,11 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       if (held) targetResidualM[k] = dist(a.reach, W(palm0));
     }
     const pre = s;
+    // contact motion M1: the shown twist is the next pose's start (an arm task's too, so a procedural arm carries on from it)
+    if (inp.jointRange?.shoulderTwist) {
+      const tw = armTwistRad(inp.jointRange.shoulder, pose.q, sh, a.elbow, a.reach, sx);
+      if (tw !== null) mem[`${s}Arm:tw`] = tw;
+    }
     lm[`${pre}Shoulder`] = sh;
     lm[`${pre}Elbow`] = a.elbow;
     if (gr0) setMemVec(mem, `${s}Arm:e`, qInvRot(pose.q, sub(a.elbow, pose.p)));

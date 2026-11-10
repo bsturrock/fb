@@ -34,7 +34,9 @@ describe('plan 08 opt-in', () => {
   it('asL3 keeps the source fixture and only adds the profiles', () => {
     const src = FIX('L2-F3-runStop');
     const d = asL3(src, 'L3-x');
-    expect({ ...d, id: src.id, milestone: src.milestone, footwork: src.footwork, locomotion: undefined, carry: undefined, selfClearance: undefined, jointRange: undefined, legGuard: undefined, rules: src.rules, notes: src.notes, runClips: src.runClips }).toEqual({ ...src, locomotion: undefined, carry: undefined });
+    expect({ ...d, id: src.id, milestone: src.milestone, footwork: src.footwork, locomotion: undefined, carry: undefined, selfClearance: undefined, jointRange: undefined, legGuard: undefined, ragdoll: src.ragdoll, rules: src.rules, notes: src.notes, runClips: src.runClips }).toEqual({ ...src, locomotion: undefined, carry: undefined });
+    // contact motion M1: a source ragdoll takes the plan 10c pose guard
+    if (src.ragdoll) expect(d.ragdoll!.poseGuard).toBeDefined();
     // the user's stance widths, chosen by eye: the base profile keeps none, so the committed fixtures do not move
     expect(d.runClips!.stanceWidthAddM).toEqual({ walk: 0, 'fast-run': 0.065 });
     expect(src.runClips!.stanceWidthAddM).toBeUndefined();

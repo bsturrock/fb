@@ -468,10 +468,12 @@ describe('plan 13e faults put back', () => {
     expect((await failsOf(SETTLES, def, { debug: { foot: { swayInHome: true } } })).join(' ')).toMatch(/expected 0\.1\d+ to be greater than 0\.4/);
   }, 60000);
 
-  it('a foot held off its home by another body re-steps toward it in a stationary hold (L3-F6-holdMirror)', async () => {
+  it('a foot held off its home by another body re-steps toward it in a stationary hold (L3-F6-hold)', async () => {
     // the 13e fix keeps the home the held-off step could not reach: the planted foot takes no step or settle step toward
     // it while it stays there. Without it the defender's right foot re-steps into the runner about every 0.3 s
-    const def = FIX('L3-F6-holdMirror');
+    // (L3-F6-holdMirror until contact motion M1: with the arms' twist kept in range the fault there plants twice after
+    // 3.5 s, one each; on L3-F6-hold D re-steps three times, at 3.58, 3.78 and 3.98 s)
+    const def = FIX('L3-F6-hold');
     expect(await failsOf(HOLD_SETTLES, def, {})).toEqual([]);
     expect((await failsOf(HOLD_SETTLES, def, { debug: { foot: { noBlockedMemory: true } } })).join(' ')).toMatch(/expected \d+ to be less than or equal to 1/);
     // and lets it go once the body that held it moves off: L3-F4-gripOwner's runner plants its held-off left foot at

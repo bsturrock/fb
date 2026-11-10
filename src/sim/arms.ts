@@ -15,7 +15,7 @@ import type { ArmProfile, ArmSetup, BodyProfile, JointRangeProfile, RagdollProfi
 import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
-import { swingExcess } from './joint-cone';
+import { armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
 import { cullGeom, geomNear, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
@@ -224,6 +224,8 @@ interface ArmRt {
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
+/** Contact motion M1: the arm-task twist window widths tried, in steps of the profile's rate. */
+const TWIST_WIDEN = [1, 3, 9];
 const ELIGIBLE: ColliderRegion[] = ['torso', 'pelvis', 'support', 'capsule'];
 
 
@@ -419,9 +421,36 @@ export class ArmSystem {
     let best: ArmPoseSolve | null = null;
     let bestDepth = Infinity;
     let bestOver = Infinity;
-    for (const poleL of this.poleCandidates(a)) {
-      const pole = qRot(ownerPose.q, poleL);
-      const r = twoBone(sW, target, P.upperArmM, P.forearmM + P.palmExtensionM, pole, P.maxReachM);
+    // contact motion M1 (a twist profile): each pole's elbow is first turned about the shoulder-to-palm line into the
+    // twist window (the range, within one step of the last committed twist; then within 3 and 9 steps), then into the
+    // range alone, and only then taken as the pole gives it, so the twist never makes a collision-valid arm (or a grip's
+    // pose) invalid, and an obstacle that blocks the window widens it gradually instead of releasing the twist at once
+    const TW = J?.shoulderTwist;
+    const wins: ({ mid: number; lo: number; hi: number } | null)[] = [];
+    if (TW) {
+      const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? armTwistRad(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
+      if (prev !== null) for (const k of TWIST_WIDEN) wins.push(twistWindow(J!.shoulder, TW, prev, k * this.host.dt));
+      wins.push(twistWindow(J!.shoulder, TW, null, 0));
+    }
+    wins.push(null);
+    // fitted poles often land on the same elbow (the window's edge): each elbow is judged once
+    const tried: Vec3[] = [];
+    // and within a pass the elbow nearest the last committed one is judged first, so a pass that has to leave the window
+    // keeps the elbow where it can (the pole order alone could take the far side of the circle: 0.64 m in one tick)
+    const prevElbow = TW && a.solve ? toWorld(ownerPose, a.prevElbowLocal) : null;
+    const solves = (win: { mid: number; lo: number; hi: number } | null): { poleL: Vec3; mid: Vec3; end: Vec3 }[] => {
+      const out = this.poleCandidates(a).map((poleL) => {
+        const r = twoBone(sW, target, P.upperArmM, P.forearmM + P.palmExtensionM, qRot(ownerPose.q, poleL), P.maxReachM);
+        return { poleL, mid: win ? fitElbowTwist(J!.shoulder, ownerPose.q, sW, r.mid, r.end, a.sx, win).elbow : r.mid, end: r.end };
+      });
+      if (prevElbow) out.sort((x, y) => len(sub(x.mid, prevElbow)) - len(sub(y.mid, prevElbow)));
+      return out;
+    };
+    for (const win of wins) for (const { poleL, ...r } of solves(win)) {
+      if (TW) {
+        if (tried.some((e) => len(sub(e, r.mid)) < 1e-4)) continue;
+        tried.push(r.mid);
+      }
       const wrist = add(r.mid, scale(sub(r.end, r.mid), P.forearmM / (P.forearmM + P.palmExtensionM)));
       const up = this.segmentHit(sW, r.mid, P.upperArmRadiusM, obstacles, tol + 0.01, poses);
       const fa = this.segmentHit(r.mid, wrist, P.forearmRadiusM, obstacles, tol + 0.01, poses);

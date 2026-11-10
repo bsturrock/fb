@@ -733,6 +733,21 @@ export interface JointRangeProfile {
   ankle: { dorsiDeg: number; plantarDeg: number };
   /** Ragdoll: from the conversion the shoe eases to `pitchDeg` (positive toe down) at the rate that covers the conversion difference in `easeS`. */
   limpFoot: { pitchDeg: number; easeS: number };
+  /** Contact motion M1 (absent: the supported and arm-task upper arms' twist is free, as before). */
+  shoulderTwist?: ShoulderTwistProfile;
+}
+
+/**
+ * Contact motion M1: the upper arm's axial twist in the supported pose and the arm-task arms. Both place the elbow from a
+ * pole, so the twist about the upper arm was whatever the pole and target gave: outside the ragdoll's twist range (the
+ * elbow pointing up or in), and turning freely on a nearly straight arm, where the elbow hardly moves but the bend plane
+ * (and the drawn arm and hand) roll. The elbow is turned about the shoulder-to-palm line, the palm kept, so the twist
+ * stays inside the shoulder envelope's `twistDeg` less `marginDeg` and turns at most `maxRateRadPs` from the previous
+ * shown twist. Engineering settings, not measured ranges.
+ */
+export interface ShoulderTwistProfile {
+  marginDeg: number;
+  maxRateRadPs: number;
 }
 
 export const JOINT_RANGE_V1: JointRangeProfile = {
@@ -742,6 +757,9 @@ export const JOINT_RANGE_V1: JointRangeProfile = {
   ankle: { dorsiDeg: 25, plantarDeg: 50 },
   limpFoot: { pitchDeg: 15, easeS: 0.3 },
 };
+
+/** Contact motion M1: plan 12's ranges, with the upper arm's twist kept in range and continuous (`shoulderTwist`). */
+export const JOINT_RANGE_V2: JointRangeProfile = { ...JOINT_RANGE_V1, id: 'joint-range-v2', shoulderTwist: { marginDeg: 2, maxRateRadPs: 12 } };
 
 /**
  * Plan 13f leg guard (absent = the guard measures other bodies where they stand): the supported pose's leg guard also

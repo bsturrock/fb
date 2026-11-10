@@ -19,14 +19,14 @@ import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import type { FixtureDef } from '../src/sim/fixture';
 import { MODEL_CALIBRATION as C } from '../src/sim/model/profiles';
-import { armSelfShapes, type PoseShape } from '../src/sim/pose';
+import { armSelfShapes, hingeChain, twoBone, type PoseShape } from '../src/sim/pose';
 import { RAPIER, trunkShapes } from '../src/sim/physics';
-import { behindDeg, swingExcess, swingExtentDeg } from '../src/sim/joint-cone';
+import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
-import { SEGMENTS } from '../src/sim/ragdoll';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
+import { externalTwistRad, SEGMENTS, swingTwistOf } from '../src/sim/ragdoll';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
-import { addScaled, len, qConj, qFromUnitVectors, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
+import { add, addScaled, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qMul, qRot, scale, sub, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, rows, runSim } from './helpers';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -268,13 +268,16 @@ describe('arm self-clearance: supported and arm-task arms stay out of the own tr
 
 describe('arm self-clearance: ragdoll forearms collide with their own trunk', () => {
   const RAGDOLL = ['HC-F1-low', 'L3-F3-recover', 'L3-F16-handoff'];
-  measureDepth(RAGDOLL.flatMap((id) => [FIX(id), without(FIX(id))]));
+  // contact motion M1: the twin also takes plan 12's joint-range-v1: with the twist kept in range L3-F3-recover's runner
+  // converts with its forearm clear of the trunk, so without self-clearance alone it no longer crosses (0 cm)
+  const withoutV1 = (def: FixtureDef): FixtureDef => ({ ...without(def), id: `${def.id}-noSelf-v1`, jointRange: JOINT_RANGE_V1 });
+  measureDepth(RAGDOLL.flatMap((id) => [FIX(id), withoutV1(FIX(id))]));
 
   it('ragdoll forearms stay out of the trunk; without the profile they pass through, on every ragdoll fixture listed', async () => {
     await rows(RAGDOLL, (id) => id, async (id) => {
       const w = await worstBySource(FIX(id));
       expect(w.ragdoll.d, w.ragdoll.at).toBeLessThanOrEqual(0.025);
-      const off = await worstBySource(without(FIX(id)));
+      const off = await worstBySource(withoutV1(FIX(id)));
       expect(off.ragdoll.d, off.ragdoll.at).toBeGreaterThan(0.05);
     });
   }, 240000);
@@ -423,7 +426,7 @@ describe('plan 12 joint range: ankles', () => {
   it('ragdoll feet: in range at conversion, relaxed to 15 deg within 1 deg 0.35 s later unless the limp shoe is held near another player', async () => {
     // the held cases (Simulation.shoeDeeper, listed in docs/handoff/plan12.md): the shoe would turn within 8 cm of another player
     const heldCases = new Set<string>();
-    for (const id of ['L4-F3-forward-on', 'L4-F8-passive', 'HC-F1-low']) {
+    for (const id of ['L4-F3-forward-on', 'L4-F8-passive', 'HC-F1-low', 'HC-F1-lowMirror']) {
       const on = await probe(FIX(id));
       expect(on.feet.size, id).toBeGreaterThan(0);
       for (const [pid, c] of on.feet) {
@@ -439,7 +442,9 @@ describe('plan 12 joint range: ankles', () => {
     }
     // (plan 13e: HC-F1-low D's right shoe is no longer held, on the L3 planner with the idle and walk clips: it relaxes
     // within 1 deg like the others. Plan 13f: under the leg guard D's left shoe is held, within 8 cm of R)
-    expect([...heldCases].sort()).toEqual(['HC-F1-low D.left', 'HC-F1-low R.left']);
+    // (contact motion M1: with the arms' twist in range HC-F1-low's shoes are no longer held, D's and R's left; its mirror's
+    // runner holds its right shoe, within 8 cm of D)
+    expect([...heldCases].sort()).toEqual(['HC-F1-lowMirror R.right']);
     // the twin keeps the supported pitch it converted with, past the range
     const off = await probe(twin(FIX('HC-F1-low')));
     for (const [pid, c] of off.feet) expect(Math.min(c.conv.left!, c.conv.right!), pid).toBeLessThan(-J.ankle.dorsiDeg);
@@ -471,8 +476,10 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
         const on = await handoffOf(FIX(id), o);
         expect(on.outcome, id).toBe('accepted');
         expect(on.newM, id).toBeLessThan(0.012);
-        // the fault put back: the guard measuring other bodies where they are now only, and the twin without the profile
-        for (const off of [await handoffOf(FIX(id), { ...o, debug: { pose: { noLegAhead: true } } }), await handoffOf({ ...FIX(id), id: `${id}-noGuard`, legGuard: undefined }, o)]) {
+        // the fault put back: the guard measuring other bodies where they are now only, and the twin without the profile.
+        // Both also without the plan 10c deep push that contact motion M1 adds to L3 (it clears this case on its own)
+        const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
+        for (const off of [await handoffOf(noDeep(FIX(id)), { ...o, debug: { pose: { noLegAhead: true } } }), await handoffOf(noDeep({ ...FIX(id), id: `${id}-noGuard`, legGuard: undefined }), o)]) {
           expect(off.outcome, id).toBe('rejected');
           expect(off.reasons, id).toContain('externalPenetration');
           expect(off.newM, id).toBeCloseTo(beforeM, 4);
@@ -480,4 +487,172 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
       },
     );
   }, 120000);
+});
+
+// ------------------------------------------------------------------ contact motion M1: upper-arm twist
+// The supported pose and the arm-task arms place the elbow from a pole, so the upper arm's twist (and the drawn elbow and
+// hand) was free: L3-F3-side D's raised left arm reached -178 deg (the elbow up), and a nearly straight free arm rolled
+// 89 deg in one tick when plan 12's cone clamp turned it (L3-F4-twoArm R.left at 0.533 s). Under joint-range-v2 the elbow
+// turns about the shoulder-to-palm line, the palm kept, into the ragdoll envelope's twist range less 2 deg, at most
+// 12 rad/s from the last shown twist. The twin is the same fixture on plan 12's joint-range-v1.
+describe('contact motion M1: upper-arm twist', () => {
+  const J2 = JOINT_RANGE_V2;
+  const E = J2.shoulder;
+  const TW = J2.shoulderTwist!;
+  const v1 = (d: FixtureDef): FixtureDef => ({ ...d, id: `${d.id}-v1`, jointRange: JOINT_RANGE_V1 });
+  const ext = (core: Quat, upper: Quat, sx: number): number => (externalTwistRad(E, swingTwistOf(qMul(qConj(core), upper)).twistRad, sx) * 180) / Math.PI;
+
+  it('the profile: on for exactly the L3, L4 and HC fixtures, plan 12 ranges kept, the twist measure the envelope\'s on both sides', () => {
+    for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? J2 : undefined);
+    expect({ ...J2, id: JOINT_RANGE_V1.id, shoulderTwist: undefined }).toEqual({ ...JOINT_RANGE_V1, shoulderTwist: undefined });
+    expect(E.twistDeg).toEqual([-100, 100]);
+    // anatomical reference poses (core frame, the arm's own side +sx): forearm forward on a hanging arm is neutral,
+    // across the body is internal (negative); the same on both sides
+    for (const sx of [1, -1]) {
+      const cases: [Vec3, Vec3, number][] = [
+        [v3(0, -1, 0), v3(0, 0, 1), 0],
+        [v3(0, -1, 0), v3(-sx, 0, 0), -90],
+        [v3(0, -1, 0), v3(sx, 0, 0), 90],
+        [v3(sx, 0, 0), v3(0, 0, 1), 0],
+        [v3(sx, 0, 0), v3(0, 1, 0), 90],
+        [v3(0, 0, 1), v3(-sx, 0, 0), -90],
+      ];
+      for (const [ua, fa, want] of cases) {
+        const el = scale(ua, 0.3);
+        const ch = hingeChain(v3(), el, [addScaled(el, fa, 0.3)], [v3(0, 0, 1), v3(0, 1, 0)], 0.01);
+        expect(ext({ x: 0, y: 0, z: 0, w: 1 }, ch.frameA, sx)).toBeCloseTo(want, 6);
+        expect((armTwistRad(E, { x: 0, y: 0, z: 0, w: 1 }, v3(), el, addScaled(el, fa, 0.3), sx)! * 180) / Math.PI).toBeCloseTo(want, 6);
+      }
+    }
+    // and on arbitrary arms in a turned core it is the envelope's swing-twist measure of the hinge frame
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+    for (let i = 0; i < 200; i++) {
+      const core = qFromAxisAngle(v3(rnd(), rnd(), rnd()), 3 * rnd());
+      const sh = v3(rnd(), 1 + rnd(), rnd());
+      const el = addScaled(sh, norm(v3(rnd(), rnd(), rnd()), v3(0, -1, 0)), 0.36);
+      const pm = addScaled(el, norm(v3(rnd(), rnd(), rnd()), v3(0, -1, 0)), 0.35);
+      const ch = hingeChain(sh, el, [pm], [v3(0, 0, 1)], 0.01);
+      if (ch.fallback) continue;
+      for (const sx of [1, -1]) expect(Math.abs(wrapPi(((armTwistRad(E, core, sh, el, pm, sx)! * 180) / Math.PI - ext(core, ch.frameA, sx)) * D) / D)).toBeLessThan(1e-6);
+    }
+  });
+
+  it('a fit turns the elbow about the shoulder-to-palm line into the window: palm and reach kept, mirrored sides alike', () => {
+    const I = { x: 0, y: 0, z: 0, w: 1 };
+    const win = twistWindow(E, TW, null, 0);
+    expect(win.hi).toBeCloseTo(98 * D, 9);
+    // a hand across the chest at shoulder height with the elbow pointing up (a pole straight up): 140 deg, past the range
+    for (const sx of [1, -1]) {
+      const sh = v3(0.23 * sx, 1.5, 0);
+      const tgt = v3(-0.1 * sx, 1.45, 0.4);
+      const r = twoBone(sh, tgt, 0.36, 0.358, v3(0, 1, 0));
+      const t0 = (armTwistRad(E, I, sh, r.mid, r.end, sx)! * 180) / Math.PI;
+      expect(t0).toBeCloseTo(140.5, 0);
+      const f = fitElbowTwist(E, I, sh, r.mid, r.end, sx, win);
+      expect(f.turned).toBe(true);
+      expect((f.twistRad! * 180) / Math.PI).toBeCloseTo(98, 3);
+      expect(dist(f.elbow, sh)).toBeCloseTo(0.36, 9);
+      expect(dist(f.elbow, r.end)).toBeCloseTo(0.358, 9);
+      // the mirrored arm's fitted elbow is the mirror image
+      const m = fitElbowTwist(E, I, v3(-sh.x, sh.y, sh.z), v3(-r.mid.x, r.mid.y, r.mid.z), v3(-r.end.x, r.end.y, r.end.z), -sx, win);
+      expect(dist(m.elbow, v3(-f.elbow.x, f.elbow.y, f.elbow.z))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('a target swept across the chest, and a nearly straight reach, keep a continuous elbow plane inside the range', () => {
+    const I = { x: 0, y: 0, z: 0, w: 1 };
+    const dt = 1 / 240;
+    for (const sx of [1, -1]) {
+      const sh = v3(0.23 * sx, 1.5, 0);
+      // across the chest: out to the side, forward and on to the far shoulder, slightly below the shoulder, the elbow
+      // pole up and out; straight reach: a reach past the arm's length from forward round the outside to behind, down
+      // through the line of the plan 07 default pole (out, down and back), where that pole stops defining a plane
+      const sweeps = [
+        ['across the chest', v3(0.3 * sx, 0.9, -0.3), 0.55, 100, -90, -0.15],
+        ['straight reach', v3(0.6 * sx, -0.5, -0.6), 0.9, 10, 170, -0.51],
+      ] as const;
+      for (const [name, pole, reach, az0, az1, y] of sweeps) {
+        let prev: number | null = null;
+        let rawJump = 0;
+        let rawOut = 0;
+        let rawPrev: number | null = null;
+        let worst = 0;
+        let lo = 0;
+        for (let i = 0; i <= 240; i++) {
+          // in one second
+          const az = (az0 + (i / 240) * (az1 - az0)) * D;
+          const c = Math.sqrt(1 - y * y);
+          const tgt = add(sh, scale(v3(c * Math.sin(az) * sx, y, c * Math.cos(az)), reach));
+          const r = twoBone(sh, tgt, 0.36, 0.358, pole);
+          const raw = armTwistRad(E, I, sh, r.mid, r.end, sx);
+          if (raw !== null && rawPrev !== null) rawJump = Math.max(rawJump, Math.abs(wrapPi(raw - rawPrev)));
+          if (raw !== null) rawOut = Math.max(rawOut, Math.abs(raw) / D - 100);
+          rawPrev = raw;
+          const f = fitElbowTwist(E, I, sh, r.mid, r.end, sx, twistWindow(E, TW, prev, dt));
+          if (f.twistRad === null) continue;
+          if (prev !== null) worst = Math.max(worst, Math.abs(wrapPi(f.twistRad - prev)));
+          lo = Math.min(lo, f.twistRad);
+          prev = f.twistRad;
+          expect(dist(f.elbow, r.end), name).toBeCloseTo(0.358, 9);
+        }
+        expect(worst / D, `${name} ${sx}`).toBeLessThanOrEqual((TW.maxRateRadPs * dt) / D + 1e-3);
+        expect(lo / D, `${name} ${sx}`).toBeGreaterThanOrEqual(-98 - 1e-3);
+        // the control: the pole alone takes the elbow past the range (across the chest: up and in) or turns the plane
+        // of the nearly straight arm faster than the rate
+        if (name === 'across the chest') expect(rawOut, `${name} ${sx}`).toBeGreaterThan(10);
+        else expect(rawJump / D, `${name} ${sx}`).toBeGreaterThan((10 * TW.maxRateRadPs * dt) / D);
+      }
+    }
+  });
+
+  /** Per arm source: worst twist (deg) past the range, the largest change in one tick of one source, where. */
+  async function twistRun(def: FixtureDef): Promise<Record<Src, { over: number; jump: number; at: string; jat: string }> & { startOutside: number }> {
+    const out = { pose: { over: -999, jump: 0, at: '', jat: '' }, armTask: { over: -999, jump: 0, at: '', jat: '' }, ragdoll: { over: -999, jump: 0, at: '', jat: '' }, startOutside: 0 };
+    const last = new Map<string, { src: Src; tw: number }>();
+    const sim = await Simulation.create(def);
+    await runSim(sim, Infinity, (s) => {
+      for (const pl of s.players) {
+        if (!pl.pose?.segments.leftUpperArm) continue;
+        if (pl.rag) for (const e of pl.rag.envelope ?? []) if (/Shoulder/.test(e.jointId)) out.startOutside = Math.max(out.startOutside, e.startOutsideDeg);
+        for (const side of SIDES) {
+          const src: Src = pl.rag ? 'ragdoll' : s.arms?.obs(pl.id)?.[side]?.enabled ? 'armTask' : 'pose';
+          const tw = ext(pl.pose.segments.core.rotationWorld, pl.pose.segments[`${side}UpperArm`].rotationWorld, sideSignX(pl.body, side));
+          const w = out[src];
+          const at = `${pl.id}.${side}@${s.t.toFixed(3)}`;
+          if (Math.abs(tw) - 100 > w.over) [w.over, w.at] = [Math.abs(tw) - 100, at];
+          const k = `${pl.id}.${side}`;
+          const p = last.get(k);
+          if (p && p.src === src) {
+            const j = Math.abs(wrapPi((tw - p.tw) * D)) / D;
+            if (j > w.jump) [w.jump, w.jat] = [j, at];
+          }
+          last.set(k, { src, tw });
+        }
+      }
+    });
+    sim.dispose();
+    return out;
+  }
+
+  it('supported arms stay inside the twist range and turn at most the rate per tick; the plan 12 twins roll past both', async () => {
+    const tick = ((TW.maxRateRadPs / 60) * 180) / Math.PI;
+    await rows(['L3-F4-twoArm', 'L3-F3-side', 'L3-F8-recontact', 'L4-F9-contact'], (id) => id, async (id) => {
+      const on = await twistRun(FIX(id));
+      expect(on.pose.over, `${id} ${on.pose.at}`).toBeLessThanOrEqual(-2 + 0.5);
+      // the cone applied again after the turn adds a little
+      expect(on.pose.jump, `${id} ${on.pose.jat}`).toBeLessThanOrEqual(tick + 1);
+      const off = await twistRun(v1(FIX(id)));
+      expect(Math.max(off.pose.over, off.pose.jump - tick - 1), `${id} twin ${off.pose.at} ${off.pose.jat}`).toBeGreaterThan(5);
+    });
+  }, 240000);
+
+  it('arm-task arms stay inside the twist range; ragdolls start their shoulders less far outside it than the twins', async () => {
+    await rows(['L3-F4-twoArm', 'HC-F3-phase0', 'L3-F6-hold', 'HC-F1-low', 'L4-F5-twoClamp-on'], (id) => id, async (id) => {
+      const on = await twistRun(FIX(id));
+      expect(on.armTask.over, `${id} ${on.armTask.at}`).toBeLessThanOrEqual(-2 + 0.5);
+      const off = await twistRun(v1(FIX(id)));
+      expect(on.startOutside, id).toBeLessThanOrEqual(off.startOutside + 1);
+    });
+  }, 240000);
 });

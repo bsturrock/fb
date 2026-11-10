@@ -105,10 +105,13 @@ const check = (c: Check): string => {
 // knee-pole variant the predicted depth picks differently for the old and new foot owner
 // plan 14 (user ruling, known limit): with the clip arm's elbow pole following the clip the side hit's contact changes,
 // and L3-F3-side R's right shoe crosses its step-to-step boundary at 0.592 s by 1.029 cm
+// contact motion M1 (user ruling, this boundary only): the plan 10c deep leg push, now on L3, pushes the same planted leg
+// further before lift-off: 1.478 cm (1.410 without it, either twist profile). It changes one other L3 boundary of 2243
+// (L3-F1-phase6 D's right knee, 0.922 to 0.956 cm); no pop is visible in the lab at 0.608-0.617 s
 const KNOWN_AUDIT: Record<string, number> = {
   'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101,
   'L3-F3-recover 0.7250 R rightKnee': 0.0115,
-  'L3-F3-collision 0.6167 D rightShoe': 0.0142,
+  'L3-F3-collision 0.6167 D rightShoe': 0.0148,
   'L3-F1-phase1 0.6250 R rightKnee': 0.0113,
   'L3-F3-side 0.5917 R rightShoe': 0.0103,
 };
