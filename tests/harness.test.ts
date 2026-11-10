@@ -788,9 +788,30 @@ describe('lab render: look-ahead playback', () => {
         expect(pb.shown).toBe(0);
       },
     ],
+    [
+      'plan 14: with a lead cap the buffer stays at most the cap ahead of the shown time, paused or playing; step and seek still compute past it',
+      () => {
+        const clock = { ms: 0 };
+        const src = fakeSource(200, () => 0.1, clock);
+        const pb = new Playback(src, 1 / 60, () => clock.ms, 8);
+        pb.maxLeadTicks = 3;
+        pb.frame(1 / 60);
+        pb.frame(1 / 60);
+        expect(pb.newest).toBe(3);
+        pb.paused = false;
+        for (let f = 0; f < 60; f++) {
+          pb.frame(1 / 60);
+          expect(pb.newest - pb.shown).toBeLessThanOrEqual(3 + 1e-9);
+        }
+        expect(pb.shown).toBeCloseTo(60, 6);
+        pb.seek(120);
+        expect(pb.view().tick).toBe(120);
+        expect(pb.newest).toBe(120);
+      },
+    ],
   ];
 
-  it('on a fake clock: a slow stretch costs buffer lead, not frames; caught up, playback holds the newest frame and resumes without skipping a tick; paused, the buffer fills and step, seek, finish and restart address ticks exactly', async () => {
+  it('on a fake clock: a slow stretch costs buffer lead, not frames; caught up, playback holds the newest frame and resumes without skipping a tick; paused, the buffer fills and step, seek, finish and restart address ticks exactly; a lead cap bounds the buffer', async () => {
     await rows(FAKE_CLOCK, ([n]) => n, ([, f]) => f());
   });
 

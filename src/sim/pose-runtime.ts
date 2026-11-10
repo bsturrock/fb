@@ -155,6 +155,8 @@ export function sampledLimbsOf(host: PoseHost, pl: PlayerRuntime, st: RunPlaybac
     ...(st.stride !== undefined ? { strideScale: st.stride, ...(P.walk ? { carryShare: clamp(st.pos, 0, 1) } : {}) } : {}),
     ...(st.lift !== undefined ? { lift: st.lift } : {}),
     ...(host.def.carry ? { carryRaw: true } : {}),
+    // plan 14: the composed pose's upright core takes the clip's free arms as the clip shows them (ground frame)
+    ...(composed ? { groundArms: host.def.jointRange ? { shoulder: host.def.jointRange.shoulder } : {} } : {}),
   });
 }
 

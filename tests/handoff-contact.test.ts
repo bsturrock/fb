@@ -147,15 +147,16 @@ function supportCounters(sim: Simulation): { tick: () => void; result: () => { f
 const HC_F2_IMPACT_K = 19;
 const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror', 'L3-F4-twoArm', 'L3-F9-convert-contact', 'L3-F9-noProbe-contact', 'L3-F9-defenderRising', 'L3-F10-both', 'L3-F10-defender'];
 /**
- * Substeps observed after acceptance, per fixture: 24, or only the very first solve for HC-F3-phase75 (plan 13e: before,
+ * Substeps observed after acceptance, per fixture: 24, or only the very first solve for HC-F2-lift1.4 (plan 13e: before,
  * HC-F4-clear-falling, whose falling feet now leave the turf on the L3 planner, so its first solve has no impulse; plan
- * 13f: HC-F3-rising, whose defender converts out of contact under the leg guard).
+ * 13f: HC-F3-rising, whose defender converts out of contact under the leg guard; plan 14: HC-F3-phase75, whose
+ * defender converts out of contact once the clip arms swing as the clip shows them).
  * Plan 13e (user ruling): HC-F2-bothFall's window ends at A's first new contact (pinned below): on the L3 locomotion A's
  * falling right upper arm meets B's head, a fall impact, not the switch. Plan 13f: the window is the substeps before
  * that contact, 18 (at 13e the contact substep, +18, was itself clean and the impact came on the next solve; under the
  * leg guard the contact comes at +19 and its own solve takes the impact).
  */
-const POST_N: Record<string, number> = { ...Object.fromEntries(POST_SWITCH.map((id) => [id, 24])), 'HC-F3-phase75': 1, 'HC-F2-bothFall': HC_F2_IMPACT_K - 1 };
+const POST_N: Record<string, number> = { ...Object.fromEntries(POST_SWITCH.map((id) => [id, 24])), 'HC-F2-lift1.4': 1, 'HC-F2-bothFall': HC_F2_IMPACT_K - 1 };
 /** Limb-snap bounds of the required cases (the HC variants: 0.3 m, or a known case's bound). */
 const SNAP_REQUIRED: [string, number][] = [
   ['RH-F5-playerBelow', 0.15],
@@ -315,11 +316,10 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
   });
 
   it('the post-switch impulse check includes the very first solve', async () => {
-    // HC-F3-phase75's defender converts in contact (left thigh on R's right shin): its first solve takes the runner's
-    // push (2.9 body weights)
-    const post = (await hcRun(FIX('HC-F3-phase75'))).post!;
-    expect(post.D.extBW).toBeGreaterThan(1);
-    expect(post.D.extBW).toBeLessThan(25);
+    // HC-F2-lift1.4's B converts as A lands on it: its first solve takes A's load (1.76 body weights)
+    const post = (await hcRun(FIX('HC-F2-lift1.4'))).post!;
+    expect(post.B.extBW).toBeGreaterThan(1);
+    expect(post.B.extBW).toBeLessThan(25);
   });
 });
 
@@ -355,7 +355,6 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
   });
 
   it('every HC natural-contact variant, in both player orders: each fall that happens is an audited ragdoll; nobody ends as a rigid falling proxy', async () => {
-    const KNOWN_13F = new Set(['HC-F3-falling D']);
     // plan 10c (C6, U7): the guarantee holds for either body order (reversed HC-F2-bothFallL2 rejected A as
     // externalPenetration before the convertible-pose guard: its shown thigh stood 8 cm in B's ragdoll forearm)
     const lines: string[] = [];
@@ -370,17 +369,8 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
         const tag = `${def.id}${reverseOrder ? ' reversed' : ''}`;
         lines.push(`${tag.padEnd(29)} ${handoffs(sim)}`);
         for (const pl of sim.players) {
-          // plan 13f known limit (user ruling): under the predictive leg guard the defender's labelled conversion in
-          // HC-F3-falling (the first falling substep from 0.7 s) comes 12 ms later, at 1.1833 s, as R's ragdoll right shoe
-          // sweeps through its left thigh near the hip (1.68 cm, tolerance 1.5 cm); it is rejected and stays a falling
-          // proxy. Pinned at the measured depth, so the row fails when a later fix lets it convert or it gets deeper. (The
-          // 13e case, HC-F3-phase75 D, converts under the guard and is checked as audited again)
-          if (KNOWN_13F.has(`${tag} ${pl.id}`)) {
-            expect(pl.handoff?.outcome, `${tag} ${pl.id}`).toBe('rejected');
-            expect(pl.handoff!.report.reasons.join(','), `${tag} ${pl.id}`).toContain('externalPenetration');
-            expect(pl.handoff!.report.maxNewExternalPenetrationM, `${tag} ${pl.id}`).toBeCloseTo(0.01679, 4);
-            continue;
-          }
+          // plan 14: the 13f known limit (HC-F3-falling D rejected, 1.68 cm) is gone: with the clip arm's elbow shown
+          // where the clip puts it, the defender converts and is checked as audited like every other variant
           if (pl.handoff) expectAudited(pl, tag);
           expect(pl.controlMode === 'falling' && !pl.rag, `${tag} ${pl.id} rigid falling proxy`).toBe(false);
         }
@@ -405,9 +395,7 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
         async (id) => {
           const sim = (await hcRun(FIX(id))).sim;
           const D = sim.players.find((p) => p.id === 'D')!;
-          // plan 13f known limit (pinned in the natural-contact row above)
-          if (id === 'HC-F3-falling') expect(D.handoff?.outcome, id).toBe('rejected');
-          else if (D.controlMode === 'supported') expect(D.handoff, id).toBeNull();
+          if (D.controlMode === 'supported') expect(D.handoff, id).toBeNull();
           else expectAudited(D, id);
           expectAudited(sim.players.find((p) => p.id === 'R')!, id);
         },

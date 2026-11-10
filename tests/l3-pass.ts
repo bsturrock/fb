@@ -103,11 +103,14 @@ const check = (c: Check): string => {
 // plan 13f (user ruling, known limits under the predictive leg guard): L3-F3-collision D's right shoe at lift-off, after the
 // guard pushed its planted leg out of R's predicted body (closing at about 5 m/s), and L3-F1-phase1 R's right knee, whose
 // knee-pole variant the predicted depth picks differently for the old and new foot owner
+// plan 14 (user ruling, known limit): with the clip arm's elbow pole following the clip the side hit's contact changes,
+// and L3-F3-side R's right shoe crosses its step-to-step boundary at 0.592 s by 1.029 cm
 const KNOWN_AUDIT: Record<string, number> = {
   'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101,
   'L3-F3-recover 0.7250 R rightKnee': 0.0115,
   'L3-F3-collision 0.6167 D rightShoe': 0.0142,
   'L3-F1-phase1 0.6250 R rightKnee': 0.0113,
+  'L3-F3-side 0.5917 R rightShoe': 0.0103,
 };
 
 export const AUDIT = check({
@@ -173,11 +176,12 @@ export const RESEED = check({
 
 export const STEP_AS_IS = check({
   name: 'a step compared with its old path as it is',
-  fixtures: ['L3-F1-phase6'],
+  fixtures: ['L3-F4-twoArm'],
   // A step that loses support (first L3-F1-low: D's step out of time). Before 10b the reference carried a timed-out step's
   // stored motion on (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is
-  // nothing to carry on. L3-F1-phase6: the run's only supported-to-airborne boundary of D, 1.26 s (plan 12: L3-F1-low's
-  // D no longer loses support on a step, its boundary at 1.65 s is gone; plan 13d: nor does L3-F1-phase5's at 1.55 s)
+  // nothing to carry on. L3-F4-twoArm: the run's only supported-to-airborne boundary of D, 1.36 s (plan 12: L3-F1-low's
+  // D no longer loses support on a step, its boundary at 1.65 s is gone; plan 13d: nor does L3-F1-phase5's at 1.55 s, so
+  // it was L3-F1-phase6's at 1.26 s; plan 14, with the clip arms as the clip shows them, no L3-F1 run has one)
   watch: onDeltas((ds) => {
     const x = ds.find((b) => b.playerId === 'D' && b.to.includes('airborne') && !b.from.includes('airborne'));
     expect(x).toBeTruthy();
@@ -1214,8 +1218,9 @@ export const AUDITED_FALL = check({
 export const DEFENDER_BOB = check({
   name: 'the defender converts on the sign of its bob',
   // plan 13d: was /^L3-F9-defender/. With Fast Run at 6.2-6.9 m/s the one-arm defender stays in contact
-  // with level vertical speed through its diagnostic window: Rising converts on loss of support at 1.54 s, Falling's
-  // conversion is rejected (a plan 13f known limit, DEFENDER_13F). The standing holds of L3-F10 convert on the measured sign of their bob
+  // with level vertical speed through its diagnostic window: Rising converted on loss of support at 1.54 s, Falling's
+  // conversion was rejected (plan 13f known limits; plan 14: both convert at the labelled conversion again, DEFENDER_13F).
+  // The standing holds of L3-F10 convert on the measured sign of their bob
   fixtures: /^L3-F10-(rising|falling)$/,
   watch(d) {
     const rising = d.id.endsWith('rising');
@@ -1241,27 +1246,21 @@ export const DEFENDER_BOB = check({
   },
 });
 
-/** Plan 13d known limits (user ruling, to plan 13f), kept by 13f (user ruling): the one-arm defenders of L3-F9 (and
- * L3-F1-falling, the same run) no longer convert on their bob. */
+/**
+ * Plan 13d known limits (user ruling, to plan 13f), kept by 13f (user ruling): the one-arm defenders of L3-F9 (and
+ * L3-F1-falling, the same run) no longer converted on their bob; Falling's conversion was rejected (2.39 cm, 1.89 under
+ * the 13f guard). Plan 14: with the clip arms swinging as the clip shows them, all three convert at their labelled
+ * conversion again, audited, and nothing is rejected.
+ */
 export const DEFENDER_13F = check({
-  name: 'the L3-F9 defenders as 13d leaves them',
+  name: 'the L3-F9 defenders convert at their labelled conversion',
   fixtures: ['L3-F9-defenderRising', 'L3-F9-defenderFalling', 'L3-F1-falling'],
   watch: (d) => ({
     finish(sim) {
       const D = sim.byId.get('D')!;
-      if (d.id.endsWith('Rising')) {
-        // in contact with level vertical speed through the diagnostic window: it converts on losing support instead
-        expect(D.handoff?.outcome, d.id).toBe('accepted');
-        expect(D.handoff!.reason, d.id).toBe('lossOfSupport');
-      } else {
-        // its conversion at 1.267 s is rejected for external penetration and it stays a falling proxy. Its left thigh is
-        // 1.89 cm in R's pelvis under the 13f predictive leg guard (2.39 cm without): its own swing drives the thigh in near
-        // the hip, where moving the ankle moves the thigh little. Pinned at the measured depth, so this fails when a later
-        // fix lets it convert or it gets deeper
-        expect(D.handoff?.outcome, d.id).toBe('rejected');
-        expect(D.handoff!.report.reasons.join(','), d.id).toContain('externalPenetration');
-        expect(D.handoff!.report.maxNewExternalPenetrationM, d.id).toBeCloseTo(0.01888, 4);
-      }
+      expect(D.handoff?.outcome, d.id).toBe('accepted');
+      expect(D.handoff!.reason, d.id).toBe('diagnostic');
+      expect(count(sim, 'handoffRejected'), d.id).toBe(0);
     },
   }),
 });

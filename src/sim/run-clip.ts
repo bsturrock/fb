@@ -13,14 +13,16 @@
 // - legs stay in that ground frame (floor y = 0), in units of the clip's rest leg length (thigh + shin), heights
 //   measured from the rest ankle height, so feet keep their floor relation on any calibrated player;
 // - arms are unit segment directions in the clip's chest frame (Spine2 rotation), so the arm-to-trunk relation is
-//   kept on the player's own (physical, rigid) core.
+//   kept on the player's own (physical, rigid) core; plan 14: also in the ground frame (`armG`), which the composed
+//   (L3) pose uses for free arms, since its upright core does not take the clip's forward chest lean.
 // The Hips bob, pelvis rotation and spine lean are not transferred: the physical core stays authoritative.
 import { carryArmSwing } from './carry';
 import type { ArmSide } from './contracts';
-import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type RagdollProfile } from './profiles';
+import { easeDirIntoEnvelope } from './joint-cone';
+import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type RagdollProfile } from './profiles';
 import {
-  add, addScaled, clamp, closestOnSegment, headingOf, len, norm, qFromYaw, qInvRot, qNormalize, qRot, rad, scale, smooth, sub,
-  wrapPi, type Pose, type Quat, type Vec3, v3,
+  add, addScaled, clamp, closestOnSegment, headingOf, len, norm, qFromUnitVectors, qFromYaw, qInvRot, qNormalize, qRot, rad, scale,
+  smooth, sub, wrapPi, type Pose, type Quat, type Vec3, v3,
 } from './vec';
 
 export class RunClipError extends Error {
@@ -319,6 +321,12 @@ interface WorkFrame {
   leg: Record<ArmSide, { hip: Vec3; knee: Vec3; ankle: Vec3; toe: Vec3; heelH: number; toeH: number }>;
   /** Unit directions in the chest (Spine2) frame: upper arm (shoulder to elbow), forearm (elbow to wrist). */
   arm: Record<ArmSide, { upper: Vec3; fore: Vec3 }>;
+  /**
+   * Plan 14: the same directions in the ground frame (travel +Z, no chest rotation). The Fast Run chest leans about 32 deg
+   * forward; on the composed pose's upright core the chest-frame arms swing that much further forward and up (the hand
+   * above the shoulder), so a composed free arm takes these, as the clip shows them.
+   */
+  armG: Record<ArmSide, { upper: Vec3; fore: Vec3 }>;
 }
 
 /** Decoded clip: immutable working samples plus the record's stored calibration. Shared by every player. */
@@ -362,6 +370,8 @@ export function decodeRunClip(rec: RunClipRecord, raw: unknown): RunClip {
     const dirIn = (from: string, to: string): Vec3 => norm(qInvRot(chest, sub(t3(src.frames[i][to]), t3(src.frames[i][from]))), v3(0, -1, 0));
     const leg = {} as WorkFrame['leg'];
     const arm = {} as WorkFrame['arm'];
+    const armG = {} as WorkFrame['armG'];
+    const dirG = (from: string, to: string): Vec3 => norm(sub(f[to], f[from]), v3(0, -1, 0));
     for (const s of SIDES) {
       const S = CAP[s];
       leg[s] = {
@@ -373,8 +383,9 @@ export function decodeRunClip(rec: RunClipRecord, raw: unknown): RunClip {
         toeH: (f[`${S}ToeBase`].y - a.restToeY) / L,
       };
       arm[s] = { upper: dirIn(`${S}Arm`, `${S}ForeArm`), fore: dirIn(`${S}ForeArm`, `${S}Hand`) };
+      armG[s] = { upper: dirG(`${S}Arm`, `${S}ForeArm`), fore: dirG(`${S}ForeArm`, `${S}Hand`) };
     }
-    return { leg, arm };
+    return { leg, arm, armG };
   });
   const restToe = {} as Record<ArmSide, Vec3>;
   const meanArm = {} as Record<ArmSide, { upper: Vec3; fore: Vec3 }>;
@@ -421,14 +432,17 @@ export function sampleRunClip(clip: RunClip, u: number): ClipSample {
   const [a, b, c, d] = [at(-1), at(0), at(1), at(2)];
   const leg = {} as WorkFrame['leg'];
   const arm = {} as WorkFrame['arm'];
+  const armG = {} as WorkFrame['armG'];
   for (const sd of SIDES) {
     const P = (k: 'hip' | 'knee' | 'ankle' | 'toe'): Vec3 => cr(a.leg[sd][k], b.leg[sd][k], c.leg[sd][k], d.leg[sd][k], t);
     const H = (k: 'heelH' | 'toeH'): number => cr(v3(a.leg[sd][k]), v3(b.leg[sd][k]), v3(c.leg[sd][k]), v3(d.leg[sd][k]), t).x;
     leg[sd] = { hip: P('hip'), knee: P('knee'), ankle: P('ankle'), toe: P('toe'), heelH: H('heelH'), toeH: H('toeH') };
     const D = (k: 'upper' | 'fore'): Vec3 => norm(cr(a.arm[sd][k], b.arm[sd][k], c.arm[sd][k], d.arm[sd][k], t), b.arm[sd][k]);
     arm[sd] = { upper: D('upper'), fore: D('fore') };
+    const G = (k: 'upper' | 'fore'): Vec3 => norm(cr(a.armG[sd][k], b.armG[sd][k], c.armG[sd][k], d.armG[sd][k], t), b.armG[sd][k]);
+    armG[sd] = { upper: G('upper'), fore: G('fore') };
   }
-  return { leg, arm };
+  return { leg, arm, armG };
 }
 
 function lerpSample(a: ClipSample, b: ClipSample, t: number): ClipSample {
@@ -437,6 +451,7 @@ function lerpSample(a: ClipSample, b: ClipSample, t: number): ClipSample {
   const L = (x: Vec3, y: Vec3): Vec3 => addScaled(x, sub(y, x), t);
   const leg = {} as WorkFrame['leg'];
   const arm = {} as WorkFrame['arm'];
+  const armG = {} as WorkFrame['armG'];
   for (const s of SIDES) {
     const n = (x: number, y: number): number => x + (y - x) * t;
     leg[s] = {
@@ -448,8 +463,9 @@ function lerpSample(a: ClipSample, b: ClipSample, t: number): ClipSample {
       toeH: n(a.leg[s].toeH, b.leg[s].toeH),
     };
     arm[s] = { upper: norm(L(a.arm[s].upper, b.arm[s].upper), a.arm[s].upper), fore: norm(L(a.arm[s].fore, b.arm[s].fore), a.arm[s].fore) };
+    armG[s] = { upper: norm(L(a.armG[s].upper, b.armG[s].upper), a.armG[s].upper), fore: norm(L(a.armG[s].fore, b.armG[s].fore), a.armG[s].fore) };
   }
-  return { leg, arm };
+  return { leg, arm, armG };
 }
 
 // ------------------------------------------------------------------------------------------- profile + playback
@@ -921,7 +937,21 @@ export interface RetargetOptions {
   carryShare?: number;
   /** Plan 08a: publish the clip's arm swing for the carry profile. */
   carryRaw?: boolean;
+  /**
+   * Plan 14 (composed pose): free arms take the ground-frame directions (`armG`), each upper arm eased inside the
+   * shoulder range (the joint-range profile's cone, when given; GROUND_ARM_RANGE) with the forearm turned with it. The
+   * carry arm's swing stays in the chest frame.
+   */
+  groundArms?: { shoulder?: JointEnvelope };
 }
+
+/**
+ * Plan 14: a ground-frame clip arm in the shoulder cone (rad). On the upright core the clip's back swing (up to 86 deg
+ * behind the vertical, under a 32 deg chest lean) is past the cone; eased in over the last `knee` before the boundary
+ * less `margin`, the swing bends smoothly onto the cone (a hard clamp turned a corner there: a one-tick wrist jolt at
+ * the stop), and the pose's own clamp after the arm IK stays idle, so the request is what the pose shows.
+ */
+const GROUND_ARM_RANGE = { margin: rad(1), knee: rad(10) };
 
 /**
  * A free arm from chest-frame segment directions (already in the body's side convention): from the player's shoulder,
@@ -998,7 +1028,19 @@ export function retargetSample(sample: ClipSample, weight: number, body: BodyPro
       const u = M(sample.arm[s].upper);
       const f = M(sample.arm[s].fore);
       const swing = add(scale(sub(u, M(o.armMean[s].upper)), Lu), scale(sub(f, M(o.armMean[s].fore)), Lf));
-      arms[s] = { ...chestArm(body, R, s, u, f), swingLocal: swing };
+      if (!o.groundArms) {
+        arms[s] = { ...chestArm(body, R, s, u, f), swingLocal: swing };
+        continue;
+      }
+      let ug = M(sample.armG[s].upper);
+      let fg = M(sample.armG[s].fore);
+      const E = o.groundArms.shoulder;
+      const uc = E ? easeDirIntoEnvelope(E, ug, sideSignX(body, s), GROUND_ARM_RANGE.margin, GROUND_ARM_RANGE.knee) : ug;
+      if (uc !== ug) {
+        fg = qRot(qFromUnitVectors(ug, uc), fg);
+        ug = uc;
+      }
+      arms[s] = { ...chestArm(body, R, s, ug, fg), swingLocal: swing };
     }
   }
   const out: SampledLimbs = { weight, legs, arms, carrySwing: o.carrySwing * (o.carryShare ?? 1), carrySampled: o.carrySwing > 0 };

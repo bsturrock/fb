@@ -14,7 +14,7 @@ import { IDLE_POSE_RECORD } from '../src/sim/locomotion';
 import FAST from '../models/animations/fast-run.json';
 import { RUN_CLIPS_RECORD, decodeRunClips, runClipsBew, runClipsL3, suppliedRunClips, suppliedWalkClip } from '../src/sim/model/run-clips';
 import { clipHeightModel, runHeight } from '../src/sim/support';
-import { SUSPENSION_RH } from '../src/sim/profiles';
+import { SUSPENSION_RH, shoulderLocal } from '../src/sim/profiles';
 import {
   RunClipError,
   advanceRunPlayback,
@@ -34,9 +34,12 @@ import * as L1 from '../src/sim/fixtures/locomotion';
 import { Simulation, type PlayerTraceRow, type TraceRow } from '../src/sim/simulation';
 import { FixedStepDriver } from '../src/sim/driver';
 import type { FixtureDef } from '../src/sim/fixture';
-import { add, dist, len, qInvRot, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { footFrame } from '../src/sim/pose';
+import { add, dist, dot, len, norm, qInvRot, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
+import { flexReach, footFrame, maxFlexRad, twoBone } from '../src/sim/pose';
+import { poseProbe } from '../src/sim/debug';
 import { create, FIX, pace, rows, run, runSim, stepWhile } from './helpers';
+import { addEdit, applyClipEdits, editedRunClip, editValue, EDIT_LIMIT_DEG, hashEdits, normalizeEdits, parseClipEdits, type ClipEdit, type EditJoint } from '../src/sim/clip-edit';
+import { runLab, RUN_LAB_DEFAULT } from '../src/sim/fixtures/transitions';
 
 type Raw = { fps: number; frames: Record<string, number[]>[]; rest: Record<string, number[]>; rot: Record<string, number[]>[] };
 const clone = (): Raw => JSON.parse(JSON.stringify(FAST));
@@ -828,3 +831,122 @@ function maxRes(rows: { r: PlayerTraceRow }[]): Record<string, number> {
   for (const x of rows) for (const [k, v] of Object.entries(x.r.run?.res ?? {})) m[k] = Math.max(m[k] ?? 0, v);
   return m;
 }
+
+// ------------------------------------------------------------------------------------------- plan 14: keyframe edits
+const angleAt = (f: Record<string, number[]>, a: string, b: string, c: string): number => {
+  const u = sub(v3(...(f[b] as [number, number, number])), v3(...(f[a] as [number, number, number])));
+  const w = sub(v3(...(f[c] as [number, number, number])), v3(...(f[b] as [number, number, number])));
+  return (Math.acos((u.x * w.x + u.y * w.y + u.z * w.z) / (len(u) * len(w))) * 180) / Math.PI;
+};
+const boneM = (f: Record<string, number[]>, a: string, b: string): number => dist(v3(...(f[a] as [number, number, number])), v3(...(f[b] as [number, number, number])));
+
+describe('plan 14: run clip keyframe edits', () => {
+  const rec = RUN_CLIPS_RECORD.clips.find((c) => c.id === 'fast-run')!;
+  const raw = FAST as unknown as { frames: Record<string, number[]>[]; rot: Record<string, number[]>[] };
+
+  it('an edit turns only its joint children, keeps every bone length and the loop seam, moves the angle by exactly its degrees, and the edited clip goes through intake into a running fixture', async () => {
+    // no edits: the data and the decoded clip are the committed ones
+    expect(JSON.stringify(applyClipEdits('fast-run', FAST, []))).toBe(JSON.stringify(FAST));
+    expect(editedRunClip(rec, FAST, []).clip.identity).toBe(suppliedRunClips().find((c) => c.id === 'fast-run')!.identity);
+    const HINGES: [EditJoint, string, string, string, string[]][] = [
+      ['knee', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', ['LeftFoot', 'LeftToeBase', 'LeftToe_End']],
+      ['ankle', 'LeftLeg', 'LeftFoot', 'LeftToeBase', ['LeftToeBase', 'LeftToe_End']],
+      ['elbow', 'LeftArm', 'LeftForeArm', 'LeftHand', ['LeftHand', 'LeftHandIndex1', 'LeftHandThumb1']],
+    ];
+    await rows(HINGES, ([j]) => j, ([joint, a, b, c, moved]) => {
+      const d = applyClipEdits('fast-run', FAST, [{ frame: 3, side: 'left', joint, channel: 'flex', deg: 10 }]);
+      expect(angleAt(d.frames[3], a, b, c) - angleAt(raw.frames[3], a, b, c)).toBeCloseTo(10, 6);
+      for (const [j, p] of Object.entries(raw.frames[3])) if (!moved.includes(j)) expect(d.frames[3][j], j).toEqual(p);
+      for (let i = 0; i < raw.frames.length; i++) if (i !== 3) expect(d.frames[i]).toEqual(raw.frames[i]);
+    });
+    // ball joints in their frames; every bone length kept; frame 0's edit closes the loop on the last source frame
+    const all: ClipEdit[] = [
+      { frame: 0, side: 'left', joint: 'hip', channel: 'flex', deg: 12 },
+      { frame: 0, side: 'right', joint: 'hip', channel: 'abduct', deg: -8 },
+      { frame: 0, side: 'left', joint: 'shoulder', channel: 'abduct', deg: 15 },
+      { frame: 0, side: 'right', joint: 'knee', channel: 'flex', deg: 20 },
+    ];
+    const d = applyClipEdits('fast-run', FAST, all);
+    const N = raw.frames.length - 1;
+    expect(d.frames[N]).toEqual(d.frames[0]);
+    expect(d.rot[N]).toEqual(d.rot[0]);
+    for (const S of ['Left', 'Right'])
+      for (const [a, b] of [['UpLeg', 'Leg'], ['Leg', 'Foot'], ['Foot', 'ToeBase'], ['Arm', 'ForeArm'], ['ForeArm', 'Hand']])
+        expect(boneM(d.frames[0], S + a, S + b)).toBeCloseTo(boneM(raw.frames[0], S + a, S + b), 9);
+    const hipsFwd = qRot({ x: raw.rot[0].Hips[0], y: raw.rot[0].Hips[1], z: raw.rot[0].Hips[2], w: raw.rot[0].Hips[3] }, v3(0, 0, 1));
+    const dKnee = sub(v3(...(d.frames[0].LeftLeg as [number, number, number])), v3(...(raw.frames[0].LeftLeg as [number, number, number])));
+    expect(dKnee.x * hipsFwd.x + dKnee.z * hipsFwd.z, 'hip flex moves the knee forward').toBeGreaterThan(0);
+    expect(d.frames[0].LeftHand[0] - raw.frames[0].LeftHand[0], 'left shoulder abduct moves the hand out (+X)').toBeGreaterThan(0);
+    expect(() => applyClipEdits('fast-run', FAST, [{ frame: N, side: 'left', joint: 'knee', channel: 'flex', deg: 5 }])).toThrow(RunClipError);
+    // the edited clip is re-analysed (its own nominal speed and stance), decoded, and runs in the run lab fixture
+    const E = editedRunClip(rec, FAST, addEdit([], { frame: 5, side: 'left', joint: 'knee', channel: 'flex' }, 15, 2, rec.cycleFrames));
+    expect(E.clip.identity).not.toBe(editedRunClip(rec, FAST, []).clip.identity);
+    expect(E.analysis.nominalSpeedMps).not.toBe(rec.nominalSpeedMps);
+    const base = runLab();
+    const P = base.runClips!;
+    const def = runLab({ ...RUN_LAB_DEFAULT, durationS: 1, runClips: { ...P, id: `${P.id}+edit`, clips: P.clips.map((c) => (c.id === 'fast-run' ? E.clip : c)) } });
+    const s = await Simulation.create(def);
+    await runSim(s);
+    expect(s.summary().result).toBe('duration');
+    s.dispose();
+  });
+
+  it('spread reaches neighbours on the closed cycle; edits sum per channel, clamp, round and drop zeros; the edits file is validated', () => {
+    const at = { frame: 0, side: 'right' as const, joint: 'elbow' as const, channel: 'flex' as const };
+    const e = addEdit([], at, 9, 2, 16);
+    expect(e.map((x) => [x.frame, x.deg])).toEqual([[0, 9], [1, 6], [2, 3], [14, 3], [15, 6]]);
+    expect(editValue(addEdit(e, at, -9, 0, 16), at)).toBe(0);
+    expect(normalizeEdits([{ ...at, deg: 40 }, { ...at, deg: 40 }])).toEqual([{ ...at, deg: EDIT_LIMIT_DEG }]);
+    expect(hashEdits(e)).toBe(hashEdits([...e].reverse()));
+    expect(hashEdits(e)).toMatch(/^[0-9a-f]{16}$/);
+    const ok = { version: 1, clip: 'fast-run', baseDataSha256: rec.dataSha256, edits: e };
+    expect(parseClipEdits('fast-run', ok).edits).toEqual(e);
+    for (const bad of [{ ...ok, version: 2 }, { ...ok, clip: 'walk' }, { ...ok, edits: [{ ...at, joint: 'neck', deg: 1 }] }, { ...ok, edits: [{ ...at, deg: Number.NaN }] }])
+      expect(() => parseClipEdits('fast-run', bad)).toThrow(RunClipError);
+  });
+
+  it('a free clip arm swings as the clip shows it: the elbow pole follows the clip and the arm is the ground-frame clip arm, so the hand stays below the shoulder', async () => {
+    // every traced sampled arm pose after the start: the shown elbow against the plain IK of the clip request (palm and
+    // pole), and the shown elbow and wrist heights against the clip's. Before plan 14's fixes the continuity held the pole
+    // (elbow up to 13 deg above the shoulder, 34 deg off the request), and the chest-frame arm on the upright core put
+    // the wrist 9 cm above the shoulder where the clip keeps it 12 cm below
+    let traced: { k: string; palm0: Vec3; poleC: Vec3; elbow: Vec3; wrist: Vec3 }[] = [];
+    const probe = poseProbe({ trace: (k, r) => { if (/:(left|right)Arm$/.test(k) && r.sampled) traced.push({ k, ...(r as { palm0: Vec3; poleC: Vec3; elbow: Vec3; wrist: Vec3 }) }); } });
+    const def = runLab();
+    const sim = await create(def, { debug: { poseProbe: probe } });
+    const R = def.ragdoll!;
+    const Lu = R.lengths.upperArm;
+    const Lf = R.lengths.forearm + R.lengths.palmExtension;
+    const elbowMin = flexReach(Lu, Lf, maxFlexRad(R, 'elbow'));
+    const clip = suppliedRunClips().find((c) => c.id === 'fast-run')!;
+    const g = clip.frames.flatMap((f) => [f.armG.left, f.armG.right]);
+    const elbowTop = Math.max(...g.map((a) => a.upper.y));
+    const wristTop = Math.max(...g.map((a) => Lu * a.upper.y + R.lengths.forearm * a.fore.y));
+    let n = 0;
+    let worstDeg = 0;
+    let elbow = -1;
+    let wrist = -1;
+    while (!sim.done) {
+      traced = [];
+      sim.stepTick();
+      await pace();
+      if (sim.t < 1) continue;
+      for (const r of traced) {
+        const sh = shoulderLocal(sim.players[0].body, r.k.endsWith(':leftArm') ? 'left' : 'right');
+        const shown = norm(sub(r.elbow, sh), v3());
+        const want = norm(sub(twoBone(sh, r.palm0, Lu, Lf, r.poleC, undefined, elbowMin).mid, sh), v3());
+        worstDeg = Math.max(worstDeg, (Math.acos(Math.min(1, dot(shown, want))) * 180) / Math.PI);
+        elbow = Math.max(elbow, shown.y);
+        wrist = Math.max(wrist, r.wrist.y - sh.y);
+        n++;
+      }
+    }
+    sim.dispose();
+    expect(n).toBeGreaterThan(1000);
+    // a short lag where the arm moves fastest (measured 4.9 deg)
+    expect(worstDeg).toBeLessThan(6);
+    expect(wristTop).toBeLessThan(-0.08);
+    expect(elbow).toBeLessThan(elbowTop + 0.02);
+    expect(wrist).toBeLessThan(wristTop + 0.02);
+  });
+});

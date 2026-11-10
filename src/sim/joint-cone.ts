@@ -57,6 +57,19 @@ export function clampDirToEnvelope(E: JointEnvelope, dir: Vec3, sideSign: number
 }
 
 /**
+ * Plan 14: a parent-frame limb direction eased inside the swing cone: unchanged up to `kneeRad` before the boundary less
+ * `marginRad`, then its distance from the cone's centre compressed toward that limit (exponentially, slope 1 where it
+ * starts), so a request that runs past the cone bends smoothly onto it instead of turning a corner there.
+ */
+export function easeDirIntoEnvelope(E: JointEnvelope, dir: Vec3, sideSign: number, marginRad: number, kneeRad: number): Vec3 {
+  const { c, p, d, sinD, R } = coneAt(E, dir, sideSign);
+  const r0 = R - marginRad - kneeRad;
+  if (d <= r0 || sinD < 1e-9) return dir;
+  const r = r0 + kneeRad * (1 - Math.exp(-(d - r0) / kneeRad));
+  return add(scale(c, Math.cos(r)), scale(p, Math.sin(r) / sinD));
+}
+
+/**
  * Plan 12: how far a parent-frame upper-arm direction is behind the body's side line (the coronal plane), deg: positive
  * behind, whatever the elevation. The core frame's +Z is forward.
  */

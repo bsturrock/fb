@@ -28,6 +28,11 @@ export class Playback<F> {
   /** Simulated seconds per wall second (0 holds time). */
   speed = 1;
   paused = true;
+  /**
+   * Plan 14: the most ticks computed ahead of the shown time (default unbounded). The run lab caps it so a live request
+   * (its speed slider) reaches the shown run within a few ticks.
+   */
+  maxLeadTicks = Infinity;
   /** Wall time of the last computed tick (ms), the estimate for the next one. */
   private tickCostMs = 0;
 
@@ -79,12 +84,15 @@ export class Playback<F> {
 
   /**
    * Compute ahead within the budget: one tick per display frame always (a tick cannot be split, so one slower than the
-   * budget lengthens its frame either way), then more while the estimated cost of the next (the last tick's) still fits.
+   * budget lengthens its frame either way), then more while the estimated cost of the next (the last tick's) still fits;
+   * never past `maxLeadTicks` ahead of the shown time.
    */
   fill(): void {
+    const ahead = (): boolean => this.newest - this.pos < this.maxLeadTicks;
+    if (!ahead()) return;
     const t0 = this.now();
     if (!this.extend()) return;
-    while (this.now() - t0 + this.tickCostMs <= this.budgetMs && this.extend()) {
+    while (ahead() && this.now() - t0 + this.tickCostMs <= this.budgetMs && this.extend()) {
       // keep computing
     }
   }

@@ -272,6 +272,9 @@ export function segmentDistanceSq(p1: Vec3, q1: Vec3, p2: Vec3, q2: Vec3): numbe
   return dx * dx + dy * dy + dz * dz;
 }
 
+/** Default half size of the static floor (m): the practice area of every fixture fits well inside it. */
+export const FLOOR_HALF_M = 40;
+
 /** Collision-group membership bit of static ground (turf and obstacles) when a suspension player exists. */
 export const GROUP_STATIC = 0x0001;
 /** Rapier interaction groups: 16 membership bits (high half) and 16 filter bits (low half), unsigned. */
@@ -306,14 +309,21 @@ export class PhysicsWorld {
    */
   private hookEvents: RAPIER.EventQueue | undefined;
 
-  constructor(readonly solver: SolverProfile) {
+  /**
+   * `floorHalfM`: the static floor's half size (m, square). Plan 14: the run lab's long area needs more than the 40 m
+   * every other fixture uses.
+   */
+  constructor(
+    readonly solver: SolverProfile,
+    floorHalfM = FLOOR_HALF_M,
+  ) {
     this.world = new RAPIER.World({ x: 0, y: solver.gravityY, z: 0 });
     this.dt = solver.outerTickS / solver.substeps;
     this.world.timestep = this.dt;
     this.world.numSolverIterations = solver.solverIterations;
     this.floorBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0));
     this.floorCollider = this.world.createCollider(
-      RAPIER.ColliderDesc.cuboid(40, 0.5, 40)
+      RAPIER.ColliderDesc.cuboid(floorHalfM, 0.5, floorHalfM)
         .setFriction(solver.passiveFriction)
         .setFrictionCombineRule(combine(solver.passiveFrictionCombine))
         .setRestitution(solver.restitution)

@@ -14,6 +14,7 @@ import { g4f4 } from './gate4';
 import { rhf5PlayerBelow, rhf6, rhf6Defeat } from './ride-height';
 import { runClipsBew, runClipsL3 } from '../model/run-clips';
 import { onModel, withLocomotion } from './with-locomotion';
+import type { RunClipProfile } from '../run-clip';
 
 /** The same fixture under a new L3 identity with the plan 08 transition composition. */
 export function asL3(def: FixtureDef, id: string, title?: string, notes?: string): FixtureDef {
@@ -306,4 +307,51 @@ export const l3f17 = (): FixtureDef[] => [
   startRamp(asL3(free(runStop('L2-F3-runStop', 2.6, true)), 'L3-F17-runStartFree', 'Stand, start foot by foot at 6 m/s^2 into the run, stop at 2.6 s, no ball, 5.5 s')),
 ];
 
-export const transitionFixtures = (): FixtureDef[] => [...l3f1(), ...l3f2(), ...l3f3(), ...l3f4(), ...l3f5(), ...l3f6(), ...l3f7(), ...l3f8(), ...l3f9(), ...l3f10(), ...l3f11(), ...l3f13(), ...l3f14(), ...l3f15(), ...l3f16(), ...l3f17()];
+// ------------------------------------------------------------------ L3-F18 run lab (plan 14)
+/** Plan 14: the run lab's fixture; the lab opens its speed and keyframe panel on this id (src/lab/run-lab.ts). */
+export const RUN_LAB_ID = 'L3-F18-runLab';
+
+export interface RunLabOptions {
+  /** Constant requested speed +X from t = 0, and the initial velocity (m/s). */
+  speedMps: number;
+  durationS: number;
+  /** Start position on x (m); the practice area's half length (m). */
+  startX: number;
+  halfX: number;
+  /** Ball carrier (the carry pose holds one arm) or no ball (both arms swing from the clip). */
+  ball: boolean;
+  /** Run-clip profile in place of the fixture's (the lab's edited Fast Run). */
+  runClips?: RunClipProfile;
+}
+
+/** The registered run lab: 5 m/s, no ball, 6 s. */
+export const RUN_LAB_DEFAULT: RunLabOptions = { speedMps: 5, durationS: 6, startX: -30, halfX: 40, ball: false };
+
+/**
+ * Plan 14: one player on the model running +X at a constant request on the full L3 set (the L3-F16-sprint source: the
+ * sprint motor, ceiling 6.8 m/s). The lab builds its own copies (a long area, the live speed, the edited clip); the
+ * registered one is the default.
+ */
+export function runLab(o: RunLabOptions = RUN_LAB_DEFAULT): FixtureDef {
+  const v = v3(o.speedMps, 0, 0);
+  const base = asL3(
+    pick(l2f11(), 'L2-F11-sprint'),
+    RUN_LAB_ID,
+    `Run lab: constant ${o.speedMps} m/s run +X from t = 0, ${o.ball ? 'ball carrier' : 'no ball'}, ${o.durationS} s`,
+    'The lab drives the speed live and plays edited Fast Run keyframes on this fixture (plan 14).',
+  );
+  return {
+    ...base,
+    durationS: o.durationS,
+    area: { ...base.area, halfX: o.halfX },
+    ...(o.runClips ? { runClips: o.runClips } : {}),
+    players: base.players.map((p) => ({
+      ...p,
+      role: o.ball ? 'runner' : 'defender',
+      initial: { ...p.initial, x: o.startX, velocity: v },
+      controller: { kind: 'script', segments: [{ fromS: 0, velocity: v, facing: v3(1, 0, 0), effort: 1 }] },
+    })),
+  };
+}
+
+export const transitionFixtures = (): FixtureDef[] => [...l3f1(), ...l3f2(), ...l3f3(), ...l3f4(), ...l3f5(), ...l3f6(), ...l3f7(), ...l3f8(), ...l3f9(), ...l3f10(), ...l3f11(), ...l3f13(), ...l3f14(), ...l3f15(), ...l3f16(), ...l3f17(), runLab()];

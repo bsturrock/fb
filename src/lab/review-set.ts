@@ -27,6 +27,7 @@ export const REVIEW_SET: readonly ReviewGroup[] = [
       { id: 'L3-F16-runStop', name: 'Run at 6 m/s, then stop' },
       { id: 'L3-F16-reaccel', name: 'Brake, then run again' },
       { id: 'L3-F16-sprint', name: 'Top speed, 6.6 m/s' },
+      { id: 'L3-F18-runLab', name: 'Run lab: live speed, edit Fast Run keyframes' },
     ],
   },
   {

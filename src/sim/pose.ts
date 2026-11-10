@@ -1000,7 +1000,17 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const handed = !!pb && !!last2 && dist(palm0, pb) > CONT_BASE_MPS * dt;
         const dp0 = contPrev(mem, k, palm0, dt);
         const dp = handed ? sub(sub(scale(last!, 2), last2!), palm0) : dp0;
-        const pp = memVec(mem, `${k}:p`);
+        // plan 14: a clip arm on a composed pose turns its shown pole with the request's own pole, as the departure is
+        // measured from the moving request: only a departure from the request is rate-limited. Before, the clip's elbow
+        // plane (which turns about 110 degrees each half cycle) was held at the rate limit, and the run's forward swing
+        // lifted the elbow out and above the shoulder. Only consecutive clip-arm poses carry; a request jump (`handed`)
+        // is not carried.
+        const clipPole = !!lo && sampledArm;
+        const pp0 = memVec(mem, `${k}:p`);
+        const pq = clipPole && !handed ? memVec(mem, `${k}:q`) : null;
+        const pp = pp0 && pq ? qRot(qFromUnitVectors(norm(pq, pole0), norm(pole0, pq)), pp0) : pp0;
+        if (clipPole) setMemVec(mem, `${k}:q`, pole0);
+        else for (const c of ['x', 'y', 'z']) delete mem[`${k}:q:${c}`];
         if (dp && pp && dt > 0) {
           const chosen = a;
           const extOk = Math.max(HARD_OK, chosen.depth) + 1e-9;

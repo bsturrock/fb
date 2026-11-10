@@ -260,8 +260,9 @@ describe('arm self-clearance: supported and arm-task arms stay out of the own tr
   }, 240000);
 
   it('without the profile the same walk swing crosses the trunk (the historical path is unchanged)', async () => {
+    // plan 14: 2.17 cm (was over 2.5) with the walk's free arms in the ground frame (its chest leans 3 to 7 deg)
     const w = await worstBySource(without(FIX('L3-F14-forward')));
-    expect(w.pose.d).toBeGreaterThan(0.025);
+    expect(w.pose.d).toBeGreaterThan(0.02);
   });
 });
 
@@ -378,7 +379,9 @@ describe('plan 12 joint range: shoulders', () => {
       const on = await probe(FIX(id));
       const off = await probe(twin(FIX(id)));
       expect(off.worst.ragdoll.behind, id).toBeGreaterThan(45);
-      expect(on.worst.ragdoll.behind, id).toBeLessThan(off.worst.ragdoll.behind - 20);
+      // plan 14: margin 15 (was 20): the profile's supported back swing now eases to 42 deg behind (the clip arm in the
+      // ground frame), and L3-F1-low's runner ragdoll arm is 47.3 deg behind against its twin's 63.1
+      expect(on.worst.ragdoll.behind, id).toBeLessThan(off.worst.ragdoll.behind - 15);
       // past the tolerance only for a run shorter than the envelope's persistence limit
       expect(on.ragOverRunS, `${id} ${on.worst.ragdoll.at}`).toBeLessThan(FALLS_PERSIST_S);
       expect(on.worst.ragdoll.ex, `${id} ${on.worst.ragdoll.at}`).toBeLessThan(15);
@@ -455,12 +458,11 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
   };
 
   it('converts where the guard without prediction (and the twin without the profile) is rejected for external penetration', async () => {
-    // HC-F3-phase75 D (13e known limit): its left thigh met R's ragdoll right shoe, 2.01 cm at 1.3917 s; the reversed
-    // L3-F9-noProbe-contact D (13e): its left thigh in R's right shoe, 1.64 cm at 0.725 s. Tolerance 1.5 cm
-    const CASES: [string, boolean, number][] = [
-      ['HC-F3-phase75', false, 0.02013],
-      ['L3-F9-noProbe-contact', true, 0.01642],
-    ];
+    // the reversed L3-F9-noProbe-contact D (13e): its left thigh in R's right shoe, 1.74 cm (1.64 before plan 14).
+    // Tolerance 1.5 cm.
+    // (HC-F3-phase75 D, 13e's other case, converts without the prediction too since plan 14 shows the clip arms as the
+    // clip has them, so it no longer tells the guard from the fault)
+    const CASES: [string, boolean, number][] = [['L3-F9-noProbe-contact', true, 0.01736]];
     await rows(
       CASES,
       ([id, rev]) => `${id}${rev ? ' reversed' : ''}`,

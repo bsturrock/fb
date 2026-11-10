@@ -445,17 +445,19 @@ describe('plan 13e faults put back', () => {
     return fails;
   };
 
-  it('an inherited foot settling over one substep plants while it still moves, and the plant fails (L3-F1-phase4 D right 0.479 s)', async () => {
+  it('an inherited foot settling over one substep plants while it still moves, and the plant fails (L3-F7-phase50 D left 0.575 s)', async () => {
     // the 13e fix measures an inherited foot's settling over an arrival (C.arriveS), not one substep: before it, a shoe
-    // still sliding at a third of a metre per second passed the plant tolerance in one substep and planted
+    // still sliding passed the plant tolerance in one substep and planted. Plan 14 moved the case: with the clip arms
+    // shown as the clip has them, L3-F1-phase4 no longer shows it; L3-F7-phase50 does, beside its own plant
+    // failure at 0.567 s (there with or without the fault, and before plan 14)
     const fails = async (debug?: SimOptions['debug']): Promise<string[]> => {
-      const sim = await run(FIX('L3-F1-phase4'), debug ? { debug } : {});
+      const sim = await run(FIX('L3-F7-phase50'), debug ? { debug } : {});
       const out = sim.events.filter((e) => e.type === 'footPlantFailed').map((e) => `${e.playerId} ${(e as { side?: string }).side ?? (e.data as { side?: string })?.side} ${e.t.toFixed(4)}`);
       sim.dispose();
       return out;
     };
-    expect(await fails()).toEqual([]);
-    expect(await fails({ foot: { settleOneSubstep: true } })).toEqual(['D right 0.4792']);
+    expect(await fails()).toEqual(['D left 0.5667']);
+    expect(await fails({ foot: { settleOneSubstep: true } })).toEqual(['D left 0.5667', 'D left 0.5750']);
   }, 60000);
 
   it('the idle sway in the planner home takes a late settle step at the end of a stop (L3-F16-stop2.9)', async () => {
@@ -495,7 +497,7 @@ describe('plan 08 pass 3: contact integration', () => {
   passTest('temporary airborne recovery: probe support lost in the named mode and regained, feet airborne, no support force in the air, no conversion: every L3-F9-lift fixture', [LIFT_RECOVERY]);
   passTest('a labelled conversion or a loss of probe support in the named mode is an audited, irreversible fall: every L3-F9-convert and L3-F9-noProbe fixture, and the low runner in contact', [AUDITED_FALL]);
   passTest('the defender converts on the measured sign of its bob: the L3-F10 rising and falling holds', [DEFENDER_BOB]);
-  passTest('plan 13d known limits: the L3-F9 one-arm defenders convert on support loss (rising) or are rejected (falling and L3-F1-falling: known limits after plan 13f)', [DEFENDER_13F]);
+  passTest('plan 13d known limits gone (plan 14): the L3-F9 one-arm defenders and L3-F1-falling convert at their labelled conversion', [DEFENDER_13F]);
   passTest(
     'contact entry: preparation unwinds with no contact (L3-F2); the mode follows the first observed contact within a tick (L3-F3); legs keep stepping in contact and tackles end as their copies do (L3-F4/F5)',
     [PREP_UNWINDS, FOLLOWS_CONTACT, KEEP_STEPPING],

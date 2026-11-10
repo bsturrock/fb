@@ -350,7 +350,8 @@ export class FallResponse {
   /**
    * Limbs (or the whole body) about to take an impact this substep: a contact the geometry says closes faster than the
    * guard speed, or a contact impulse over the guard impulse in the solve just read. Effort holds off them, because the
-   * solve will change their joint speeds faster than any cap set before it can follow.
+   * solve will change their joint speeds faster than any cap set before it can follow. A thigh or upper arm closing
+   * faster than the body speed holds the whole body: the hit moves the core, and with it every joint the core parents.
    */
   private impactsAhead(ep: FallEpisode, contacts: ContactRec[]): Set<Limb | 'body'> {
     const G = this.P.impactGuard;
@@ -362,7 +363,10 @@ export class FallResponse {
     // plan 11: a forearm on its own trunk is an impact on that arm (the core, far heavier, is not held for it)
     for (const [seg, j] of Object.entries(this.host.selfImpulses(ep.rag)) as [SegmentId, number][]) if (j > G.impulseNs) out.add(LIMB_OF[seg]);
     const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM);
-    for (const [seg, v] of Object.entries(closing) as [SegmentId, number][]) if (v > G.closingMPerS) out.add(LIMB_OF[seg]);
+    // plan 14: a segment jointed to the core passes a hard hit straight into it, and the core parents every other limb
+    const onCore = (seg: SegmentId): boolean => ep.rag.joints.some((j) => j.child === seg && j.parent === 'core');
+    for (const [seg, v] of Object.entries(closing) as [SegmentId, number][])
+      if (v > G.closingMPerS) out.add(v > G.bodyClosingMPerS && onCore(seg) ? 'body' : LIMB_OF[seg]);
     return out;
   }
 

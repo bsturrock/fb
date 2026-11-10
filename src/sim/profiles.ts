@@ -816,9 +816,10 @@ export interface FallResponseProfile {
   /**
    * Contact changes joint speeds inside the solve faster than any cap set before it can follow, so effort holds off a
    * limb (the whole body, for the core or head) in a substep where its geometry meets something closing faster than
-   * `closingMPerS` within `lookaheadSubsteps`, or after a solve that gave it a contact impulse over `impulseNs`.
+   * `closingMPerS` within `lookaheadSubsteps`, or after a solve that gave it a contact impulse over `impulseNs`. A
+   * segment jointed to the core (thigh, upper arm) closing faster than `bodyClosingMPerS` holds the whole body.
    */
-  impactGuard: { closingMPerS: number; impulseNs: number; lookaheadSubsteps: number; predictionM: number; skinM: number };
+  impactGuard: { closingMPerS: number; bodyClosingMPerS: number; impulseNs: number; lookaheadSubsteps: number; predictionM: number; skinM: number };
   enable: { knee: boolean; hip: boolean; arms: boolean };
 }
 
@@ -829,8 +830,13 @@ export interface FallResponseProfile {
  * brace was blocked within its shortest prediction horizon, never by a hold. C5: the brace direction turns at its rate
  * limit also between opposite vectors. Bookkeeping (C7): `activeSubsteps` counts only substeps that applied torque.
  */
+/**
+ * v3 (plan 14): a thigh or upper arm closing on something faster than 2 m/s holds the whole body. In
+ * `L4-F9-defenderFalling` the runner's core met the defender's right thigh at 3.0 m/s; the guard held only that leg, and
+ * the kick through the hip into the core drove the right shoulder to 44.6 W against its predicted 20.0, 171 W in all.
+ */
 export const FALL_L4: FallResponseProfile = {
-  id: 'fall-response-l4-v2',
+  id: 'fall-response-l4-v3',
   timing: { delayS: 0.04, rampS: 0.08, fadeStartS: 0.8, fadeS: 0.2 },
   ceilingsNm: { shoulder: 15, elbow: 10, hip: 18, knee: 22 },
   gains: { shoulder: { kp: 60, kd: 6 }, elbow: { kp: 35, kd: 3 }, hip: { kp: 45, kd: 6 }, knee: { kp: 40, kd: 5 } },
@@ -850,7 +856,7 @@ export const FALL_L4: FallResponseProfile = {
     envelopeMarginDeg: 8,
   },
   power: { maxPositiveW: 150, maxPositiveWorkJ: 100, toleranceFraction: 0.05, planFraction: 0.9, impactOmegaRadPerS: 1 },
-  impactGuard: { closingMPerS: 0.5, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002 },
+  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002 },
   enable: { knee: true, hip: true, arms: true },
 };
 

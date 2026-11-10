@@ -23,6 +23,9 @@ import { f2, FrameCapture, type ArmFrame, type LabFrame, type Tagged } from './s
 import { SUSPENSION_L2_BRAKE, type SuspensionSupport } from '../sim/profiles';
 import { filterList, firstReviewId, fixtureList, inReviewSet } from './fixture-list';
 import { RUN_JOG } from '../sim/model/run-clips';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RunLab } from './run-lab';
+import { RUN_LAB_ID } from '../sim/fixtures/transitions';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -52,21 +55,31 @@ sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12 });
 scene.add(sun);
+// plan 14: the sun (and its shadow box) follows the camera target, so a long run keeps its shadow
+const SUN_OFFSET = new THREE.Vector3(-6, 12, 8);
+scene.add(sun.target);
 
 function buildField(area: { halfX: number; halfZ: number }): THREE.Group {
   const g = new THREE.Group();
-  const grass = new THREE.Mesh(new THREE.PlaneGeometry(60, 50).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3f7a3a, roughness: 1 }));
+  // plan 14: the grass covers the practice area (the run lab's is 800 m long); the lines are one merged mesh
+  const grass = new THREE.Mesh(
+    new THREE.PlaneGeometry(Math.max(60, 2 * area.halfX + 30), Math.max(50, 2 * area.halfZ + 30)).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0x3f7a3a, roughness: 1 }),
+  );
   grass.receiveShadow = true;
   g.add(grass);
   const lineMat = new THREE.MeshBasicMaterial({ color: 0xf4f4f4 });
+  const strips: THREE.BufferGeometry[] = [];
   const strip = (x0: number, z0: number, x1: number, z1: number, w = 0.06): void => {
     const dx = x1 - x0;
     const dz = z1 - z0;
     const l = Math.hypot(dx, dz);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(l, w).rotateX(-Math.PI / 2), lineMat);
-    m.position.set((x0 + x1) / 2, 0.004, (z0 + z1) / 2);
-    m.rotation.y = -Math.atan2(dz, dx);
-    g.add(m);
+    strips.push(
+      new THREE.PlaneGeometry(l, w)
+        .rotateX(-Math.PI / 2)
+        .rotateY(-Math.atan2(dz, dx))
+        .translate((x0 + x1) / 2, 0.004, (z0 + z1) / 2),
+    );
   };
   const { halfX: X, halfZ: Z } = area;
   g.userData = { halfX: X, halfZ: Z };
@@ -82,6 +95,9 @@ function buildField(area: { halfX: number; halfZ: number }): THREE.Group {
       strip(x, -0.15, x, 0.15, 0.04);
     }
   }
+  const lines = new THREE.Mesh(mergeGeometries(strips), lineMat);
+  for (const s of strips) s.dispose();
+  g.add(lines);
   return g;
 }
 
@@ -123,6 +139,8 @@ let showAll = ((): boolean => {
 })();
 /** Id of the fixture loaded (or loading); the select keeps it selected when its list changes. */
 let currentId = '';
+/** Plan 14: the run lab panel (shown on L3-F18-runLab). */
+const runLab = new RunLab(scene, () => void load(RUN_LAB_ID));
 
 /** First tick at or after simulated time `t` (the `?t=` and `lab.runTo` stop). */
 const tickAt = (t: number): number => Math.max(0, Math.ceil((t - 1e-9) / sim.def.solver.outerTickS));
@@ -136,7 +154,9 @@ async function load(id: string): Promise<void> {
   currentId = def.id;
   fillFixtureSelect();
   await initPhysics();
-  const next = await Simulation.create(def);
+  // plan 14: the run lab runs its own copy of the fixture (the live speed, the edited clip, a long area)
+  const simDef = runLab.handles(def) ? await runLab.prepare(def) : def;
+  const next = await Simulation.create(simDef);
   let asset: ModelAsset | null = null;
   let error: string | null = null;
   if (usesModel(def))
@@ -151,6 +171,9 @@ async function load(id: string): Promise<void> {
     next.dispose();
     return;
   }
+  // reloading the fixture on screen (a tune slider, a run lab restart) keeps the camera where the user put it
+  const keepCamera = !!sim && sim.def.id === def.id;
+  const camOffset = camera.position.clone().sub(controls.target);
   if (sim) sim.dispose();
   disposeViews();
   // a fixture without the model retires the cached asset (its shared geometry, textures and materials)
@@ -161,6 +184,8 @@ async function load(id: string): Promise<void> {
   capture = new FrameCapture(sim);
   playback = new Playback({ capture: () => capture.capture(), step: () => sim.stepTick(), done: () => sim.done }, def.solver.outerTickS, () => performance.now(), LOOKAHEAD_BUDGET_MS);
   playback.speed = Number(($('speed') as HTMLSelectElement).value);
+  if (runLab.handles(def)) runLab.attach(sim, playback as Playback<unknown>);
+  else runLab.detach();
   if (def.cosmetic?.palette && def.cosmetic.palette !== 'default') palette = def.cosmetic.palette;
   buildViews();
   // The field depends only on the practice bounds: reuse it while they match, dispose its resources when replaced.
@@ -172,11 +197,16 @@ async function load(id: string): Promise<void> {
     field = buildField(def.area);
     scene.add(field);
   }
-  $('title').textContent = `${def.id} [${def.milestone}] ${def.title}${def.notes ? ` — ${def.notes}` : ''}`;
+  $('title').textContent = `${def.id} [${def.milestone}] ${simDef.title}${simDef.notes ? ` — ${simDef.notes}` : ''}`;
   buildTune(def);
   buildJogTune(def);
   buildBrakeTune(def);
-  setCamera(camPreset, true);
+  if (keepCamera) {
+    const c = actionCenter();
+    controls.target.copy(c);
+    camera.position.copy(c).add(camOffset);
+    controls.update();
+  } else setCamera(camPreset, true);
   const u = new URL(location.href);
   u.searchParams.set('fixture', def.id);
   history.replaceState(null, '', u);
@@ -378,6 +408,11 @@ function disposeViews(): void {
 }
 
 function resetSim(): void {
+  // plan 14: the run lab's script grows with the live speed: a reset starts its run again at the current speed
+  if (runLab.active) {
+    runLab.restart();
+    return;
+  }
   disposeViews();
   sim.reset();
   capture = new FrameCapture(sim);
@@ -642,6 +677,9 @@ function draw(): void {
     controls.target.add(d);
     camera.position.add(d);
   }
+  sun.position.copy(controls.target).add(SUN_OFFSET);
+  sun.target.position.copy(controls.target);
+  if (runLab.active) runLab.frame(actionCenter());
 }
 
 let last = performance.now();
@@ -711,6 +749,8 @@ window.addEventListener('resize', resize);
     $('prim').classList.toggle('on', on);
   },
   reset: () => resetSim(),
+  /** Plan 14: the run lab (speed, edits, state) on L3-F18-runLab. */
+  runLab,
 };
 
 // a ?fixture= outside the review set opens the full list (for this page; the remembered choice is unchanged)

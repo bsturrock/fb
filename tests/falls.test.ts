@@ -1197,7 +1197,9 @@ describe('L4-F9 fall boundaries', () => {
         expect(p.handoff!.outcome, `${id} ${p.id}`).toBe('accepted');
         expect(p.fall).not.toBeNull();
         const q = b.players.find((x) => x.id === p.id)!;
-        if (q.handoff && Math.abs(q.handoff.t - p.handoff!.t) < 1e-9) expect(p.handoff!.audit).toEqual(q.handoff.audit);
+        // the runs are identical only up to the first conversion: a later conversion at the same time in both (plan 14:
+        // L4-F9-defenderRising D at 1.4125 s, after R's at 0.804 s) has a different state behind it
+        if (q.handoff && Math.abs(p.handoff!.t - conv) < 1e-9 && Math.abs(q.handoff.t - p.handoff!.t) < 1e-9) expect(p.handoff!.audit).toEqual(q.handoff.audit);
       }
       b.dispose();
     });

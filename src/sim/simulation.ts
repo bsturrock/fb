@@ -6,7 +6,7 @@ import type {
 import type { Controller } from './controllers/base';
 import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
-import { cullGeom, geomNear, initPhysics, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
+import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
 import {
   ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, sideSignX, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
@@ -477,7 +477,8 @@ export class Simulation {
   // ------------------------------------------------------------------ lifecycle
   private build(): void {
     const def = this.def;
-    this.physics = new PhysicsWorld(def.solver);
+    // plan 14: the floor covers the practice area with 10 m to spare (40 m for every area up to 30 m)
+    this.physics = new PhysicsWorld(def.solver, Math.max(FLOOR_HALF_M, def.area.halfX + 10, def.area.halfZ + 10));
     const S = this.suspension;
     // Gate 4: same-owner self pairs never generate contact (owner identity, not a per-player collision bit). Plan 06a:
     // a suspension guard ball touches static ground only (never a player collider).
