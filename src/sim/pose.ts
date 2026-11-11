@@ -1310,7 +1310,9 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const shownPrev = rebased && last ? (last2 ? sub(scale(last, 2), last2) : last) : null;
       const dp0 = contPrev(mem, k, base, dt);
       if (rebased) setMemVec(mem, `${k}:b`, base);
-      const dp = shownPrev ? sub(shownPrev, base) : dp0;
+      const dp0r = shownPrev ? sub(shownPrev, base) : dp0;
+      // fault (PoseDebug.ownerChangeJumpM): a new owner's step starts off the shown path
+      const dp = rebased && dp0r && inp.debug?.ownerChangeJumpM ? add(dp0r, v3(0, inp.debug.ownerChangeJumpM, 0)) : dp0r;
       const pp = memVec(mem, `${k}:p`);
       const poleStep = pp && inp.loco ? dist(norm(pp), norm(pc)) : 0;
       const exactPlant = fr?.kind === 'plant' && r.index === 0 && !!dp && dist(dp, dc) <= (rebased ? CONT_L3_PLANT_MPS * (inp.dtS ?? 0) : CONT_PLANT_EXACT_M) && poleStep <= CONT_L3_RADPS * (inp.dtS ?? 0);

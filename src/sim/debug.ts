@@ -21,6 +21,12 @@ export interface FootDebug {
   swayInHome?: boolean;
   /** A foot held off its home by another body steps toward it again at once, as before plan 13e (negative control). */
   noBlockedMemory?: boolean;
+  /**
+   * Controlled coverage (tests only): the solve at time `t` (s, within half a substep) releases a confirmed plant of
+   * `side` as a clearance solve does (observeFeet: the foot rejoins the request from the achieved ankle on the next plan;
+   * where the clip stance goes on, the planner proposes it again there: a reseed that keeps mode and source).
+   */
+  releasePlantAt?: { t: number; side: 'left' | 'right' };
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */
@@ -29,6 +35,11 @@ export interface PoseDebug {
   noContinuity?: boolean;
   /** Plan 13f fault put back: under a leg-guard profile, measure legs against other bodies where they are now only (no prediction). */
   noLegAhead?: boolean;
+  /**
+   * Fault (negative control of the transition audit): a composed leg whose foot owner changed starts its continuity step
+   * this far (m, body up) off the shown path, so the shown leg jumps at the ownership change.
+   */
+  ownerChangeJumpM?: number;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

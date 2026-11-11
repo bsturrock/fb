@@ -1454,9 +1454,9 @@ function invalidWhy(f: FootState, info: NonNullable<PhysicalPose['legInfo']>[Arm
  *   continues from the achieved ankle (no jump back to the anchor). One that holds counts a survived solve.
  * Coverage: eligible stance time and its confirmed-planted part accumulate per foot.
  */
-export function observeFeet(plan: FootPlan, pose: PhysicalPose, soleM: number, groundY: number, ev: FootEvent[], t: number): void {
+export function observeFeet(plan: FootPlan, pose: PhysicalPose, soleM: number, groundY: number, ev: FootEvent[], t: number, debug?: FootDebug): void {
   for (const s of SIDES) {
-    observeFoot(plan, s, pose, soleM, groundY, ev, t);
+    observeFoot(plan, s, pose, soleM, groundY, ev, t, debug);
     const f = plan.feet[s];
     if (f.eligible && plan.dtS > 0) {
       plan.stats.cover[s].eligibleS += plan.dtS;
@@ -1465,7 +1465,7 @@ export function observeFeet(plan: FootPlan, pose: PhysicalPose, soleM: number, g
   }
 }
 
-function observeFoot(plan: FootPlan, s: ArmSide, pose: PhysicalPose, soleM: number, groundY: number, ev: FootEvent[], t: number): void {
+function observeFoot(plan: FootPlan, s: ArmSide, pose: PhysicalPose, soleM: number, groundY: number, ev: FootEvent[], t: number, debug?: FootDebug): void {
   const P = plan.profile;
   const f = plan.feet[s];
   const ankle = pose.jointLandmarksWorld[`${s}Ankle`];
@@ -1529,8 +1529,10 @@ function observeFoot(plan: FootPlan, s: ArmSide, pose: PhysicalPose, soleM: numb
     ev.push({ type: 'footSwing', side: s, data: { mode: 'swing', source: 'rejoin', reason: why, failed: true } });
     return;
   }
-  if (f.featureErrM > P.plantTolM) {
-    const why = invalidWhy(f, info);
+  // controlled coverage (FootDebug.releasePlantAt): this solve releases the plant as a clearance solve would
+  const forced = debug?.releasePlantAt?.side === s && Math.abs(t - debug.releasePlantAt.t) < plan.dtS / 2;
+  if (f.featureErrM > P.plantTolM || forced) {
+    const why = forced ? 'clearance' : invalidWhy(f, info);
     release(plan, f, why, t, ev, s, detail());
     toFollow(f, ankle, why);
     f.released = true;

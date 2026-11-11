@@ -17,7 +17,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { availableParallelism, setPriority } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { SimOptions } from '../src/sim/simulation';
+import type { SimOptions, TransitionDelta } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { FOOTWORK_L2, FOOTWORK_L3, stepAccelLimits } from '../src/sim/footwork';
@@ -80,6 +80,7 @@ import {
   RECONTACT,
   type Records,
   RESEED,
+  reseedCovered,
   RETAINED,
   RETENTION_BITES,
   RULE_FIXTURES,
@@ -95,6 +96,7 @@ import {
   SETTLES,
   STANDS_STILL,
   STEP_AS_IS,
+  stepAsIsCovered,
   STOP_MOTOR,
   TOE_OFF,
   WALK_STEPS,
@@ -249,6 +251,25 @@ describe('plan 08 transition audit', () => {
     [RESEED, STEP_AS_IS, RAW_KEPT, NOT_TWICE, LANDINGS],
   );
 
+  it('the boundary records, controlled: a reseed that keeps mode and source is a boundary; a step that loses support is compared with its old path as it is', async () => {
+    // the same two records on situations the test makes where its run shows them (tests/l3-pass.ts reseedCovered,
+    // stepAsIsCovered): a plant mid-stance released by its solve, a step mid-swing over a strip the probe finds no support
+    // on. Each passes with its drive and fails without it (no reseed, no support loss: the record is not made)
+    await rows(
+      [
+        [RESEED, reseedCovered, () => reseedCovered({ release: false }), [/: released at /, /reseeded in the next substep/]],
+        [STEP_AS_IS, stepAsIsCovered, () => stepAsIsCovered({ strip: false }), [/no supported-to-airborne boundary/]],
+      ] as const,
+      ([n]) => n,
+      async ([, f, off, why]) => {
+        const fails = await f();
+        expect(fails, fails.join('\n')).toEqual([]);
+        const undriven = await off();
+        for (const w of why) expect(undriven.some((m) => w.test(m)), `${w} in ${undriven.join('\n')}`).toBe(true);
+      },
+    );
+  }, 120000);
+
   passTest(
     "the planner's handovers: a held leg handed to a step keeps the old owner's request, a support loss keeps a step on its path; a request seam goes into the offset; a fresh plant is not stepped from the moment it lands",
     [HELD_LEG, SEAM, FRESH_PLANT],
@@ -275,6 +296,44 @@ describe('plan 08 transition audit', () => {
     expect(x.map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`)).toEqual(['D 0.5750 leftAnkle']);
     for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
   }, 30000);
+
+  it('negative control: a known old/new pose difference over 1 cm still fails (a new foot owner shown off its path)', async () => {
+    // the audit check itself (AUDIT), on the free 6.6 m/s run of one player (L3-F16-sprint): passes as it is, and with every
+    // composed leg whose foot owner changed starting its continuity step 3 cm off the shown path (PoseDebug.ownerChangeJumpM)
+    // it reports each such boundary over 1 cm, the old owner's continuation kept as it was. Unlike the 10b crossing fault
+    // above, it does not depend on a contact run reaching a particular crossing: every ownership change of the run carries it
+    const def = FIX('L3-F16-sprint');
+    const audited = async (debug?: SimOptions['debug']) => {
+      const c = CHECKS.find((x) => x.name === AUDIT)!;
+      const fails: string[] = [];
+      let ds: TransitionDelta[] = [];
+      const rep = (m: string): void => void fails.push(m);
+      await runWatched(def, [{ w: c.watch(def, rep), fail: rep }, { w: { finish: (s) => void (ds = s.transitionDeltas) }, fail: rep }], { transitionAudit: true, ...(debug ? { debug } : {}) });
+      return { fails, ds };
+    };
+    const ok = await audited();
+    expect(ok.fails).toEqual([]);
+    expect(ok.ds.filter((b) => b.deltaM > 0.01)).toEqual([]);
+    const bad = await audited({ pose: { ownerChangeJumpM: 0.03 } });
+    const x = bad.ds.filter((b) => b.deltaM > 0.01);
+    expect(x.length).toBeGreaterThan(0);
+    // every one is an ownership change the audit fails on its 1 cm limit, and nothing else fails: one failure per such
+    // boundary, each naming that boundary's time, player, landmark and owners
+    for (const b of x) expect(b.from).not.toBe(b.to);
+    const named = (b: TransitionDelta): string => `L3-F16-sprint ${b.t.toFixed(4)} ${b.playerId} ${b.landmark} ${b.from} > ${b.to} raw ${b.rawM.toFixed(4)}: `;
+    expect(bad.fails.map((m) => m.slice(0, m.indexOf(': ') + 2)).sort()).toEqual(x.map(named).sort());
+    for (const m of bad.fails) expect(m).toMatch(/: expected 0\.0\d+ to be less than or equal to 0\.01$/);
+    // nothing set aside: every boundary over 1 cm raw is still over 1 cm after the correction; and a boundary whose
+    // reference took no request jump out (transition-audit.ts sets requestJumpM exactly where it moves a reference foot's
+    // offset) is compared as it is, its measure exactly the raw difference
+    expect(bad.ds.filter((b) => b.rawM > 0.01 && b.deltaM <= 0.01)).toEqual([]);
+    for (const run of [ok, bad]) {
+      const plain = run.ds.filter((b) => b.requestJumpM.left === 0 && b.requestJumpM.right === 0);
+      expect(plain.length).toBeGreaterThan(0);
+      for (const b of plain) expect(b.deltaM, `${b.t.toFixed(4)} ${b.landmark}`).toBe(b.rawM);
+    }
+    expect(x.filter((b) => b.requestJumpM.left === 0 && b.requestJumpM.right === 0).length).toBeGreaterThan(0);
+  }, 60000);
 });
 
 describe('plan 10b foot target continuity', () => {

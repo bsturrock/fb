@@ -81,6 +81,38 @@ function depthObserver(def: FixtureDef): { out: Record<Src, { d: number; at: str
 
 const without = (def: FixtureDef): FixtureDef => ({ ...def, id: `${def.id}-noSelf`, selfClearance: undefined });
 
+// The ragdoll negative control's deliberate drive: from the substep a player's ragdoll takes over, for PULL_S, each
+// forearm's palm is pulled toward its own core by an equal and opposite PULL_N pair (on the forearm at the palm, on the
+// core at the same point: internal, so the body's momentum is unchanged). Every converted forearm is then driven into its
+// own trunk, whatever the run before the switch did, so the profile and its twin meet the same load: with the profile the
+// trunk pieces stop it, without them it passes through. Runs listed with `pulled` take it.
+const PULL_N = 300;
+const PULL_S = 0.3;
+const PULLED = new Set<string>();
+const pulled = (def: FixtureDef): FixtureDef => {
+  const d = { ...def, id: `${def.id}-pulled` };
+  PULLED.add(d.id);
+  return d;
+};
+function pullForearms(): (s: Simulation) => void {
+  const from = new Map<string, number>();
+  return (s) => {
+    for (const pl of s.players) {
+      if (!pl.rag || !pl.pose) continue;
+      if (!from.has(pl.id)) from.set(pl.id, s.t);
+      if (s.t - from.get(pl.id)! > PULL_S) continue;
+      const core = pl.rag.bodies.core;
+      const c = core.translation();
+      for (const side of ['left', 'right'] as const) {
+        const palm = pl.pose.jointLandmarksWorld[`${side}Palm`];
+        const j = scale(norm(sub(v3(c.x, c.y, c.z), palm)), PULL_N * s.physics.dt);
+        pl.rag.bodies[`${side}Forearm`].applyImpulseAtPoint(j, palm, true);
+        core.applyImpulseAtPoint(scale(j, -1), palm, true);
+      }
+    }
+  };
+}
+
 // ------------------------------------------------------------------ plan 12: the joint-range probe
 /** Plan 09's persistence limit (s), which the ragdoll envelope under the profile keeps. */
 const FALLS_PERSIST_S = ENVELOPE_L4.persistS;
@@ -173,7 +205,7 @@ const watched = (def: FixtureDef): Promise<{ depth?: Record<Src, { d: number; at
   return runs.get(def.id)!;
 };
 async function runWatched(def: FixtureDef): Promise<{ depth?: Record<Src, { d: number; at: string }>; range: Probe }> {
-  const sim = await Simulation.create(def);
+  const sim = await Simulation.create(def, PULLED.has(def.id) ? { onSubstep: pullForearms() } : {});
   const depth = DEPTH.has(def.id) ? depthObserver(def) : null;
   const range = rangeObserver();
   await runSim(sim, Infinity, (s) => {
@@ -271,7 +303,7 @@ describe('arm self-clearance: ragdoll forearms collide with their own trunk', ()
   // contact motion M1: the twin also takes plan 12's joint-range-v1: with the twist kept in range L3-F3-recover's runner
   // converts with its forearm clear of the trunk, so without self-clearance alone it no longer crosses (0 cm)
   const withoutV1 = (def: FixtureDef): FixtureDef => ({ ...without(def), id: `${def.id}-noSelf-v1`, jointRange: JOINT_RANGE_V1 });
-  measureDepth(RAGDOLL.flatMap((id) => [FIX(id), withoutV1(FIX(id))]));
+  measureDepth(RAGDOLL.flatMap((id) => [FIX(id), withoutV1(FIX(id)), pulled(FIX(id)), pulled(without(FIX(id)))]));
 
   it('ragdoll forearms stay out of the trunk; without the profile they pass through, on every ragdoll fixture listed', async () => {
     await rows(RAGDOLL, (id) => id, async (id) => {
@@ -279,6 +311,17 @@ describe('arm self-clearance: ragdoll forearms collide with their own trunk', ()
       expect(w.ragdoll.d, w.ragdoll.at).toBeLessThanOrEqual(0.025);
       const off = await worstBySource(withoutV1(FIX(id)));
       expect(off.ragdoll.d, off.ragdoll.at).toBeGreaterThan(0.05);
+    });
+  }, 240000);
+
+  it('negative control, driven: a forearm pulled into its own trunk is stopped by the profile and passes through without it, on every ragdoll fixture listed', async () => {
+    // the natural sample above depends on where each run puts its forearms at the switch; the pulled pair does not: the
+    // same fixture with and without the profile under the same deliberate pull of each converted forearm into its own trunk
+    await rows(RAGDOLL, (id) => id, async (id) => {
+      const on = await worstBySource(pulled(FIX(id)));
+      expect(on.ragdoll.d, `pulled ${on.ragdoll.at}`).toBeLessThanOrEqual(0.025);
+      const off = await worstBySource(pulled(without(FIX(id))));
+      expect(off.ragdoll.d, `pulled twin ${off.ragdoll.at}`).toBeGreaterThan(0.05);
     });
   }, 240000);
 

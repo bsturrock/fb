@@ -126,7 +126,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
     if (host.opts.transitionAudit) keepLandmarks(host, pl, poseIn, pl.pose);
     if (fp && ftIn) {
       if (!fp.initialized) initFeet(fp, pl.pose, ftIn, ev);
-      else observeFeet(fp, pl.pose, ftIn.soleM, ftIn.groundY, ev, ftIn.t);
+      else observeFeet(fp, pl.pose, ftIn.soleM, ftIn.groundY, ev, ftIn.t, ftIn.debug);
       emitFeet(host, pl, ev);
       const prev = host.auditPrev.get(pl.id);
       if (prev && host.opts.transitionAudit) prev.plan = structuredClone(fp);

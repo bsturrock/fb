@@ -44,6 +44,17 @@ uncommitted diff), the untracked files, and the s17 patches (`b`, `query`, `arm`
 | 8 | Turn `LEG_GUARD_V3` on for L3, L4, HC (split by family if that isolates failures) | the judged rung |
 | 9 | Arm overhead-twist singularity and palm continuity (the sound parts of `arm.patch`) | L3/L4/HC change |
 
+## Status
+
+Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each compared against the previous rung.
+
+- **0** (`r0-baseline`) landed: 250/250, no L4-matrix row over the power ceiling, highest audited peak 145.9 W.
+- **1** (`r1-query-memo`) landed: byte-identical.
+- **2** (`r2-controls`) landed: byte-identical; 253/253 (three added tests). The pulled-forearm control (body-limits),
+  the `PoseDebug.ownerChangeJumpM` audit control on L3-F16-sprint (l3-contracts), and the controlled reseed and
+  support-loss boundary records (`FootDebug.releasePlantAt`, `reseedCovered` / `stepAsIsCovered` in l3-pass), each beside
+  the natural sample it backs up; nothing replaced.
+
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
 
@@ -63,3 +74,6 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 - Posed thigh held 1.0-1.45 cm inside a ragdoll pelvis for 15 substeps with every clearance loop capped
   (L4-F10-wrap-on D).
 - Shoulder persistence under a loaded forearm (L4-F9-exit, L4-F3-run-on).
+- Shape-query budget exceeded outside the budget test's two fixtures at `a6d712f`: HC-F5-invalidOne asks 4412 queries in
+  one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. The budget test checks
+  only L4-F10-wrap-on and L3-F8-recontact.
