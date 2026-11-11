@@ -82,6 +82,7 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   `tests/corerock.test.ts` on the old tree's tipped-forward seed (step 105), valid here unchanged: same ragdoll profile
   id; in the third seeded solve the core's closest point reads no closing, the far corner 3.5 m/s, the solve takes 56 N s,
   nothing over the impulse rule before it; on the closest point alone 219 W, FALL_L4 133.5 W.
+- **4c** (carried impacts) parked, see Parked.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -92,6 +93,10 @@ order, not hunk-split.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
 - D4/D5 footwork: reverted (see the handoff's known issues).
+- Rung 4c, `impactGuard.carried` (the old tree's D3): no case at 4b needs it. With the flag on the L4 matrix (92 rows) is
+  identical; `carriedImpacts` fires in 5 runs for one substep each and changes nothing. The old tree's case
+  (L4-F9-defenderFalling, 179.8 W) was measured with the physical supported legs on. Patch and evidence:
+  `.scratch/ladder/parked/r4c-carried/`. Reconsider at the physical-legs rungs (6-8).
 
 ## Open defects to test on the ladder
 
