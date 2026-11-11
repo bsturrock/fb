@@ -25,7 +25,8 @@ import type { ArmSide } from '../src/sim/contracts';
 import type { FootDebug } from '../src/sim/debug';
 import type { FootRequest, PhysicalPose } from '../src/sim/pose';
 import { add, v3, type Vec3 } from '../src/sim/vec';
-import { breathe, FIX, rows, run } from './helpers';
+import { breathe, FIX, rows, run, runSim } from './helpers';
+import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
   ANCHORS,
@@ -767,17 +768,22 @@ describe('plan 08 pass 3: contact integration', () => {
 
 describe('ladder tracked defects (rule 7)', () => {
   // Mechanisms that exist before the ladder rung whose moved trajectories reached them (docs/open/contact-motion/
-  // prerequisites-ladder.md, open defects). Each test pins the defect where it shows (a deterministic run of the fixture;
-  // the controlled twin, the same state with the rung's change off, shows it as well) and fails once it is gone, when the
-  // check that sets it aside (tests/l3-pass.ts LEG_IN_RAGDOLL, HOLD_CLEARANCE_REPLANT) is to lose the exception.
+  // prerequisites-ladder.md, open defects). Each test resumes from a full-state capture of the fixture shortly before the
+  // defect (tests/state.ts, tests/data/state; how to capture and when to regenerate: tests/README.md), so a later rung
+  // that moves the fixture's trajectory before that point does not move the test, and a twin can resume the same state
+  // with a change off. Each fails once the defect is gone from that state, when the check that sets it aside on the live
+  // fixtures (tests/l3-pass.ts LEG_IN_RAGDOLL, HOLD_CLEARANCE_REPLANT) is to lose the exception.
+  const resumed = async (capture: string, opts: SimOptions = {}) => runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { opts }));
   it('a posed leg held inside the runner\'s ragdoll, the defender\'s conversion rejected for it (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off)', async () => {
-    await rows(['L3-F4-oneArm', 'L3-F1-phase2', 'L4-F10-wrap-off'], (id) => id, async (id) => {
-      const def = FIX(id);
-      const tol = def.ragdoll!.validation.penetrationTolM;
+    // captured with R a ragdoll and D supported beside it, 2 ticks before D's posed legs pass the conversion tolerance
+    // (12 substeps from 1.200 s on the L3 fixtures, 8 from 1.271 s on L4-F10-wrap-off at rung 4b), D converting at 1.30 s
+    await rows(['L3-F4-oneArm@70', 'L3-F1-phase2@70', 'L4-F10-wrap-off@74'], (c) => c, async (c) => {
+      const id = c.split('@')[0];
+      const tol = FIX(id).ragdoll!.validation.penetrationTolM;
       // the deepest posed-leg clearance of D against the other bodies, per substep while R is a ragdoll and D supported
       let run0 = 0;
       let longest = 0;
-      const sim = await run(def, {
+      const sim = await resumed(c, {
         onSubstep: (s) => {
           const D = s.players.find((p) => p.id === 'D')!;
           const R = s.players.find((p) => p.id === 'R')!;
@@ -789,18 +795,22 @@ describe('ladder tracked defects (rule 7)', () => {
       });
       const rej = sim.events.filter((e) => e.type === 'handoffRejected');
       const R = sim.players.find((p) => p.id === 'R')!;
+      const solver = sim.def.solver;
       sim.dispose();
       expect(rej.map((e) => e.playerId), id).toEqual(['D']);
       expect(LEG_IN_RAGDOLL.is(rej[0].data), `${id} ${JSON.stringify(rej[0].data?.worstExternal)}`).toBe(true);
       expect(R.representation, id).toBe('ragdoll');
       // held there, not met in the last tick: D's posed legs past the conversion tolerance for longer than one tick
-      expect(longest, id).toBeGreaterThan(def.solver.substeps);
+      expect(longest, id).toBeGreaterThan(solver.substeps);
     });
   }, 120000);
 
   it('a held player\'s planted foot released by its clearance solve and planted again, in a stationary hold (L3-F6-hold, L3-F6-holdMirror)', async () => {
-    await rows(HOLD_CLEARANCE_REPLANT.fixtures, (id) => id, async (id) => {
-      const sim = await run(FIX(id));
+    // captured in the stationary hold before the counted window (after 3.5 s): L3-F6-hold at 3.600 s, 0.1 s before R's
+    // left foot's first clearance release in it; L3-F6-holdMirror at 3.500 s, inside R's right foot's release cycle
+    await rows(['L3-F6-hold@216', 'L3-F6-holdMirror@210'], (c) => c, async (c) => {
+      const id = c.split('@')[0];
+      const sim = await resumed(c);
       const all = (pid: string) => sim.events.filter((e) => e.type === 'footPlant' && e.playerId === pid && e.t > 3.5).length;
       const tracked = ['R', 'D'].map((pid) => all(pid) - HOLD_CLEARANCE_REPLANT.plants(sim, id, pid, 3.5).length);
       const releases = sim.events.filter((e) => e.type === 'footRelease' && e.t > 3.5 && (e.data as { reason?: string }).reason === 'clearance');

@@ -87,6 +87,11 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   rule on every hold decision of its four fixtures (held exactly when the turn would come closer to another player inside
   8 cm, recomputed unculled; a held shoe keeps its pitch, a turned one moves one rate step), with a positive sample and
   the rule disabled and inverted as fault controls.
+- **4e** (`r4e-state-capture`) landed: byte-identical, no `src/sim` change. Full-state capture and resume for tests
+  (`tests/state.ts`, `scripts/capture-state.ts`, `tests/README.md`): the Rapier snapshot and the Simulation's whole JS
+  state graph at a tick boundary, resumed into a fresh build of the (possibly variant) definition; resumed runs
+  reproduce the uninterrupted export byte for byte. The rule 7 tracked-defect tests (`LEG_IN_RAGDOLL`,
+  `HOLD_CLEARANCE_REPLANT`) resume from captures 2 ticks before the defect (`tests/data/state/`, 166-232 KB each).
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.

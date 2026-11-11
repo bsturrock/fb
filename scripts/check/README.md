@@ -62,3 +62,7 @@ It exits 1 only on the hard invariants: a new suite failure or a changed G/L1/L2
 for judgement under the ladder's rules. `COMPARE_MAX=<n>` lists more than 60 lines per section.
 
 Determinism: two full checks of the same tree compare with every file byte-identical.
+
+Seeded regression tests: a test that must start from a fixed state of a fixture run (ladder rule 7) resumes a full-state
+capture from `tests/data/state/` (`tests/state.ts`); how to capture one and when it must be regenerated:
+`tests/README.md`.
