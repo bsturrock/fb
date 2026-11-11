@@ -684,6 +684,12 @@ export const HIP_STOPS_V1: HipStopProfile = { id: 'hip-stops-v1', flexionDeg: 12
 
 /** Ladder rung 8d: the ragdoll profile with hard hip stops, under an id that names them. */
 export const withHipStops = (r: RagdollProfile, h: HipStopProfile = HIP_STOPS_V1): RagdollProfile => ({ ...r, id: `${r.id}+${h.id}`, hipStops: h });
+/** The ragdoll profile without hip stops, under the id it had before them (the lab's `hips=off`). */
+export function withoutHipStops(r: RagdollProfile): RagdollProfile {
+  if (!r.hipStops) return r;
+  const { hipStops, ...rest } = r;
+  return { ...rest, id: r.id.replace(`+${hipStops.id}`, '') };
+}
 
 export interface PoseGuard {
   id: string;
