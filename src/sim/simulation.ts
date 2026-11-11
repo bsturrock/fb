@@ -641,7 +641,7 @@ export class Simulation {
         },
         gravity: Math.abs(def.solver.gravityY),
         emit: (type, id, data) => sim.emit(type, id, data),
-        closingSpeeds: (rag, lookaheadS, predictionM, skinM, jointResidual) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM, jointResidual),
+        closingSpeeds: (rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints),
         selfImpulses: (rag) => sim.selfImpulses(rag),
       });
       if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
@@ -1192,7 +1192,7 @@ export class Simulation {
    * Plan 09 impact guard: per segment of a ragdoll, the fastest closing speed of a contact its geometry meets within
    * `lookaheadS` (floor, obstacles, other players' active colliders), read before the solve. Observation only.
    */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual = false): Partial<Record<SegmentId, number>> {
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual = false, manifoldPoints = false): Partial<Record<SegmentId, number>> {
     const out: Partial<Record<SegmentId, number>> = {};
     // `impactGuard.jointResidual`: per child segment, the parent's velocity at their joint pivot less the child's (zero
     // for a solved joint). The next solve passes what the last one left unsatisfied into the child, and through a contact
@@ -1218,11 +1218,37 @@ export class Simulation {
         const r = c.contactCollider(own, predictionM);
         if (!r) continue;
         const other = c.parent();
-        const vRel = sub(vc(body.velocityAtPoint(r.point2)), other ? vc(other.velocityAtPoint(r.point1)) : v3());
-        const ownClosing = -dot(vRel, vc(r.normal1));
         const res = residual.get(rc.segment);
-        const closing = res ? Math.max(ownClosing, ownClosing - dot(res, vc(r.normal1))) : ownClosing;
-        if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+        // closing at a point pair: own point `pOwn`, the other's `pOther`, `n` the other's outward normal toward own
+        const test = (pOwn: Vec3, pOther: Vec3, n: Vec3, distance: number): void => {
+          const vRel = sub(vc(body.velocityAtPoint(pOwn)), other ? vc(other.velocityAtPoint(pOther)) : v3());
+          const ownClosing = -dot(vRel, n);
+          const closing = res ? Math.max(ownClosing, ownClosing - dot(res, n)) : ownClosing;
+          if (closing > 0 && distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+        };
+        test(vc(r.point2), vc(r.point1), vc(r.normal1), r.distance);
+        if (!manifoldPoints) continue;
+        // `impactGuard.manifoldPoints`: the closest pair is one point of a face or edge contact. A segment turning on its
+        // contact (a core rocking on a torso corner) closes at its far points while the closest one, the pivot,
+        // separates, and the solve resolves every point of the pair's manifold. Each point of the last narrow phase's
+        // manifold (collider-local, so it moves with both colliders) is tested at its current gap
+        this.physics.world.contactPair(c, own, (m, flipped) => {
+          // shape 1 is `c` unless flipped; local normal 1 is shape 1's outward normal
+          const P1 = this.physics.colliderPose(flipped ? own : c);
+          const P2 = this.physics.colliderPose(flipped ? c : own);
+          const n1 = qRot(P1.q, vc(m.localNormal1()));
+          const n = flipped ? neg(n1) : n1;
+          for (let k = 0; k < m.numContacts(); k++) {
+            const l1 = m.localContactPoint1(k);
+            const l2 = m.localContactPoint2(k);
+            if (!l1 || !l2) continue;
+            const p1 = toWorld(P1, vc(l1));
+            const p2 = toWorld(P2, vc(l2));
+            const pOwn = flipped ? p1 : p2;
+            const pOther = flipped ? p2 : p1;
+            test(pOwn, pOther, n, dot(sub(pOwn, pOther), n));
+          }
+        });
       }
     }
     // plan 11: a forearm's self shapes closing on the player's own trunk pieces

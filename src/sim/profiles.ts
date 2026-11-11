@@ -850,6 +850,12 @@ export interface FallResponseProfile {
      * it rests on (absent: off).
      */
     jointResidual?: true;
+    /**
+     * A contact closes at every point of its pair's last contact manifold (moved with both colliders to their current
+     * poses), not only at the closest point: a segment turning on a face or edge contact separates at its pivot while
+     * its far points close, and the solve resolves them all (absent: the closest point only).
+     */
+    manifoldPoints?: true;
   };
   enable: { knee: boolean; hip: boolean; arms: boolean };
 }
@@ -870,8 +876,12 @@ export interface FallResponseProfile {
  * v4 (ladder rung 4a): a contact's closing speed counts its segment's joint residual (`impactGuard.jointResidual`): a
  * joint the last solve left unsatisfied passes the rest through the segment into what it rests on in the next one.
  */
+/**
+ * v5 (ladder rung 4b): a contact's closing speed is read at every point of its manifold (`impactGuard.manifoldPoints`):
+ * a core rocking on one torso corner closes at the others while the closest point, the pivot, separates.
+ */
 export const FALL_L4: FallResponseProfile = {
-  id: 'fall-response-l4-v4',
+  id: 'fall-response-l4-v5',
   timing: { delayS: 0.04, rampS: 0.08, fadeStartS: 0.8, fadeS: 0.2 },
   ceilingsNm: { shoulder: 15, elbow: 10, hip: 18, knee: 22 },
   gains: { shoulder: { kp: 60, kd: 6 }, elbow: { kp: 35, kd: 3 }, hip: { kp: 45, kd: 6 }, knee: { kp: 40, kd: 5 } },
@@ -891,7 +901,7 @@ export const FALL_L4: FallResponseProfile = {
     envelopeMarginDeg: 8,
   },
   power: { maxPositiveW: 150, maxPositiveWorkJ: 100, toleranceFraction: 0.05, planFraction: 0.9, impactOmegaRadPerS: 1 },
-  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002, jointResidual: true },
+  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002, jointResidual: true, manifoldPoints: true },
   enable: { knee: true, hip: true, arms: true },
 };
 

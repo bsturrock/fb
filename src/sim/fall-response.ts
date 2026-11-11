@@ -128,9 +128,10 @@ export interface FallHost {
   emit(type: string, playerId: PlayerId | undefined, data: Record<string, unknown>): void;
   /**
    * Per segment, the fastest closing speed (m/s) of a contact its geometry meets within `lookaheadS`, if any; with
-   * `jointResidual`, counting the segment's parent-joint velocity residual along the contact normal.
+   * `jointResidual`, counting the segment's parent-joint velocity residual along the contact normal; with
+   * `manifoldPoints`, at every point of the pair's last contact manifold as well as the closest one.
    */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual?: boolean): Partial<Record<SegmentId, number>>;
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual?: boolean, manifoldPoints?: boolean): Partial<Record<SegmentId, number>>;
   /** Plan 11: per forearm, the summed contact impulse (N s) on its own trunk in the solve just read (never a contact record). */
   selfImpulses(rag: Ragdoll): Partial<Record<SegmentId, number>>;
 }
@@ -370,7 +371,11 @@ export class FallResponse {
     // is at rest, but the solve left the core descending 1.08 m/s at the neck; the next solve takes 54.4 N s through the
     // resting head, the core's jolt swings both elbows and they realize 177.3 W against 157.5. Its closing with the
     // residual is 1.08: the body holds
-    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, !!G.jointResidual);
+    // v5 (`manifoldPoints`): every point of a contact closes, not only the closest. A core rocking on a torso corner
+    // (tipped forward fall 3.5 m/s, 40 deg, 0.5 rad/s, seeded in tests/corerock.test.ts): that corner, the closest point,
+    // does not close, the far corner closes at 3.5 m/s and the solve takes 56 N s through it; on the closest point alone
+    // the response realizes 219 W against 157.5. Its closing over the manifold is 3.5: the body holds
+    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, !!G.jointResidual, !!G.manifoldPoints);
     // plan 14: a segment jointed to the core passes a hard hit straight into it, and the core parents every other limb
     const onCore = (seg: SegmentId): boolean => ep.rag.joints.some((j) => j.child === seg && j.parent === 'core');
     for (const [seg, v] of Object.entries(closing) as [SegmentId, number][])

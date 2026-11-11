@@ -74,6 +74,14 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   old tree's L4-F9-low seed (step 326), valid here unchanged: the same ragdoll profile id, the head touches with 9.75 N s
   (under the impulse rule) and is at rest (0.004 m/s), closes at 1.08 m/s with its neck's residual, takes 54.4 N s; the
   twin without the residual realizes 177.3 W (1 substep over), FALL_L4 holds the body and peaks at 129.7 W.
+- **4b** (`r4b-manifold-points`) landed, `fall-response-l4-v5`: the closing speed is read at every point of the pair's
+  last manifold. Summaries changed: L4 33/75 only; no L4-matrix row over the power ceiling (highest rise L4-F10-wrap-on
+  reversed D 131.2 to 154.7 W, under 157.5). Who falls: L4-F10-elbow-on D no longer falls: R's guard reads a manifold
+  point closing at 0.383 s and holds one substep more; R's pelvis meets D's support 8 ms earlier with 27.4 N s instead of
+  33.6, and D's lean stays inside its recovery envelope (the twin lost support at 0.779 s, 36.9 deg). Test:
+  `tests/corerock.test.ts` on the old tree's tipped-forward seed (step 105), valid here unchanged: same ragdoll profile
+  id; in the third seeded solve the core's closest point reads no closing, the far corner 3.5 m/s, the solve takes 56 N s,
+  nothing over the impulse rule before it; on the closest point alone 219 W, FALL_L4 133.5 W.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
