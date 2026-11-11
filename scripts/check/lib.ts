@@ -24,6 +24,9 @@ export function round(x: number, d = 4): number | string {
  */
 export const SHAPE_QUERY_BUDGET = 4000;
 
+/** Families the passive-energy matrix covers (every fixture of them with a ragdoll profile; scripts/check/energymx.ts). */
+export const ENERGY_FAMILIES = ['L3', 'L4', 'HC'];
+
 /** Ragdoll and physical-leg collider regions counted as legs. */
 export const LEG_REGIONS = new Set(['thigh', 'shin', 'shoe']);
 

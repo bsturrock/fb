@@ -1,8 +1,8 @@
-// The full check (scripts/check/README.md): typecheck, build, the test suite, the fixture export, the leg matrix and the
-// L4 matrix of the current tree, written into one result directory.
+// The full check (scripts/check/README.md): typecheck, build, the test suite, the fixture export, the leg matrix, the
+// L4 matrix and the passive-energy matrix of the current tree, written into one result directory.
 //   npx vite-node scripts/check/full-check.ts <result dir>
 // Env: CHECK_JOBS (parallel workers after the suite, default 6), CHECK_SKIP (comma list of
-// typecheck,build,suite,fixtures,legmx,l4mx; a skipped part is recorded as skipped).
+// typecheck,build,suite,fixtures,legmx,l4mx,energymx; a skipped part is recorded as skipped).
 // The leg matrix's runs also write the shape-query budget (queries.jsonl).
 // The suite runs first and alone (no competing load, so no induced timeouts); the export and matrix shards then run in a
 // bounded pool. Every compared file is deterministic: no timestamps, stable order. Timings go to meta.json and logs/.
@@ -10,6 +10,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { familyOf } from './lib';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const outArg = process.argv[2];
@@ -22,7 +23,7 @@ const WORK = join(OUT, '.work');
 const LOGS = join(OUT, 'logs');
 const JOBS = Math.max(1, Number(process.env.CHECK_JOBS ?? 6));
 const SKIP = new Set((process.env.CHECK_SKIP ?? '').split(',').filter(Boolean));
-const SHARDS = { fixtures: 8, legmx: 8, l4mx: 4 };
+const SHARDS = { fixtures: 8, legmx: 8, l4mx: 4, energymx: 8 };
 const VITE_NODE = join(ROOT, 'node_modules/vite-node/vite-node.mjs');
 
 rmSync(WORK, { recursive: true, force: true });
@@ -157,6 +158,7 @@ const shard = (part: keyof typeof SHARDS, script: string): void => {
     });
 };
 shard('legmx', join(ROOT, 'scripts/check/legmx.ts'));
+shard('energymx', join(ROOT, 'scripts/check/energymx.ts'));
 shard('fixtures', join(ROOT, 'scripts/check/fixtures-shard.ts'));
 shard('l4mx', join(ROOT, 'scripts/check/l4mx.ts'));
 const tp = Date.now();
@@ -166,6 +168,22 @@ const shardFailed = Object.entries(shardCodes)
   .filter(([, c]) => c !== 0)
   .map(([k]) => k);
 status.shardsFailed = shardFailed.sort();
+
+/** The passive-energy matrix's headline per family: runs, runs and solves injecting, total injected and the largest gain (J). */
+type EnergyRow = { id: string; pl: Record<string, { injecting: number; injectedJ: number; maxJ: number }> };
+function energyHeadline(rows: EnergyRow[]): Record<string, { runs: number; injectingRuns: number; injecting: number; injectedJ: number; maxJ: number }> {
+  const out: Record<string, { runs: number; injectingRuns: number; injecting: number; injectedJ: number; maxJ: number }> = {};
+  for (const r of rows)
+    for (const p of Object.values(r.pl)) {
+      const f = (out[familyOf(r.id)] ??= { runs: 0, injectingRuns: 0, injecting: 0, injectedJ: 0, maxJ: 0 });
+      f.runs++;
+      if (p.injecting > 0) f.injectingRuns++;
+      f.injecting += p.injecting;
+      f.injectedJ = Number((f.injectedJ + p.injectedJ).toFixed(3));
+      f.maxJ = Math.max(f.maxJ, p.maxJ);
+    }
+  return out;
+}
 
 const outputs = (part: keyof typeof SHARDS): string[] =>
   Array.from({ length: SHARDS[part] }, (_, i) => join(WORK, `${part}-${i}.out`)).filter((f) => existsSync(f));
@@ -199,7 +217,7 @@ else {
     sameAsCommittedSummary: existsSync(committed) && readFileSync(committed, 'utf8') === summary,
   };
 }
-for (const part of ['legmx', 'l4mx'] as const) {
+for (const part of ['legmx', 'l4mx', 'energymx'] as const) {
   if (SKIP.has(part)) {
     status[part] = 'skipped';
     continue;
@@ -209,7 +227,7 @@ for (const part of ['legmx', 'l4mx'] as const) {
     .map((l) => JSON.parse(l) as { k: number; rev: boolean });
   rows.sort((a, b) => a.k - b.k || Number(a.rev) - Number(b.rev));
   write(`${part}.jsonl`, rows.map(({ k: _k, ...r }) => JSON.stringify(r) + '\n').join(''));
-  status[part] = { rows: rows.length };
+  status[part] = { rows: rows.length, ...(part === 'energymx' ? { byFamily: energyHeadline(rows as unknown as EnergyRow[]) } : {}) };
 }
 // the shape-query budget (the leg matrix's runs): the most queries in one tick per fixture and order
 if (!SKIP.has('legmx')) {
@@ -233,7 +251,7 @@ console.log(
     `typecheck ${JSON.stringify(status.typecheck)}  build ${JSON.stringify(status.build)}`,
     suite ? `suite ${suite.passed}/${suite.total} passed, ${suite.failed} failed` : 'suite skipped',
     `fixtures ${JSON.stringify(status.fixtures)}`,
-    `legmx ${JSON.stringify(status.legmx)}  l4mx ${JSON.stringify(status.l4mx)}`,
+    `legmx ${JSON.stringify(status.legmx)}  l4mx ${JSON.stringify(status.l4mx)}  energymx ${JSON.stringify(status.energymx)}`,
     shardFailed.length ? `SHARDS FAILED: ${shardFailed.join(', ')} (see logs/)` : 'all shards ok',
   ].join('\n'),
 );

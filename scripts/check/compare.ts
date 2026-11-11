@@ -4,7 +4,8 @@
 // or RH fixture summary. Everything else is reported for judgement. Env COMPARE_MAX: lines listed per section (default 60).
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { familyOf, FAMILIES, FROZEN_FAMILIES, SHAPE_QUERY_BUDGET } from './lib';
+import { ENERGY_FAMILIES, familyOf, FAMILIES, FROZEN_FAMILIES, SHAPE_QUERY_BUDGET } from './lib';
+import { INJECTION_J } from '../../tests/passive-energy';
 
 const [A, B] = [process.argv[2], process.argv[3]].map((p) => (p ? resolve(p) : ''));
 if (!A || !B) {
@@ -29,7 +30,7 @@ const ma = readJson<{ head: string; dirtyFiles: number }>(A, 'meta.json');
 const mb = readJson<{ head: string; dirtyFiles: number }>(B, 'meta.json');
 say(`A ${A}  (${ma?.head?.slice(0, 7) ?? '?'}${ma?.dirtyFiles ? `, ${ma.dirtyFiles} dirty` : ''})`);
 say(`B ${B}  (${mb?.head?.slice(0, 7) ?? '?'}${mb?.dirtyFiles ? `, ${mb.dirtyFiles} dirty` : ''})`);
-const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl'];
+const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl', 'energymx.jsonl'];
 const same = files.filter((f) => read(A, f) != null && read(A, f) === read(B, f));
 say(`files byte-identical: ${same.length}/${files.length}${same.length < files.length ? ` (differ or missing: ${files.filter((f) => !same.includes(f)).join(', ')})` : ''}`);
 
@@ -318,6 +319,67 @@ matrix('l4mx.jsonl', 'L4 matrix');
       }
       say(`  worst tick rises: ${rises.length}, falls: ${fell}`);
       list(rises.map(([k, r]) => `${k}: ${qa.get(k)!.worstTickQueries} -> ${r.worstTickQueries}`), '    ');
+    }
+  }
+}
+
+// ------------------------------------------------------------------------------------------------ passive energy
+// informational (tests/passive-energy.ts): gains over INJECTION_J in solves no other player touches
+{
+  type EPl = { solves: number; injecting: number; injectedJ: number; maxJ: number; maxAt: number | null; maxPinch: string | null; quietMaxJ: number };
+  type ERow = { id: string; rev: boolean; pl: Record<string, EPl> };
+  const load = (dir: string): Map<string, ERow> | null => {
+    const s = read(dir, 'energymx.jsonl');
+    return s == null
+      ? null
+      : new Map(
+          s
+            .split('\n')
+            .filter(Boolean)
+            .map((l) => JSON.parse(l) as ERow)
+            .map((r) => [`${r.id} ${r.rev ? 'rev' : 'fwd'}`, r]),
+        );
+  };
+  const ea = load(A);
+  const eb = load(B);
+  say();
+  if (!eb) say('passive energy: B has no energymx.jsonl (skipped)');
+  else {
+    const head = (m: Map<string, ERow>, f: string): string => {
+      let runs = 0, inj = 0, solves = 0, J = 0, max = 0;
+      for (const r of m.values())
+        if (familyOf(r.id) === f)
+          for (const p of Object.values(r.pl)) {
+            runs++;
+            if (p.injecting) inj++;
+            solves += p.injecting;
+            J += p.injectedJ;
+            max = Math.max(max, p.maxJ);
+          }
+      return `${J.toFixed(1)} J in ${solves} solves (${inj}/${runs} runs; largest ${max.toFixed(2)} J)`;
+    };
+    say(`passive energy (solves gaining > ${INJECTION_J} J with no other player touching): rows ${ea ? `A ${ea.size}, ` : ''}B ${eb.size}`);
+    for (const f of ENERGY_FAMILIES) say(`  ${f}: ${ea ? `${head(ea, f)} -> ` : ''}${head(eb, f)}`);
+    if (!ea) say('  A has no energymx.jsonl: no comparison');
+    else {
+      const rose: string[] = [];
+      const fresh: string[] = [];
+      for (const [k, b] of eb)
+        for (const [p, x] of Object.entries(b.pl)) {
+          const y = ea.get(k)?.pl[p];
+          const where = `${k} ${p}: ${y ? `${y.maxJ} J at ${y.maxAt}` : '-'} -> ${x.maxJ} J at ${x.maxAt}${x.maxPinch ? ` (pinch ${x.maxPinch})` : ''}`;
+          if (x.injecting > 0 && !y?.injecting) fresh.push(`${where}, ${x.injecting} solves ${x.injectedJ} J`);
+          else if (x.maxJ > INJECTION_J && x.maxJ > (y?.maxJ ?? 0) + 0.01) rose.push(where);
+        }
+      if (fresh.length) {
+        say(`  NEW runs injecting: ${fresh.length}`);
+        list(fresh, '    ');
+      }
+      if (rose.length) {
+        say(`  largest gain rose (over ${INJECTION_J} J): ${rose.length}`);
+        list(rose, '    ');
+      }
+      if (!fresh.length && !rose.length) say('  no new injecting run, no largest gain rose');
     }
   }
 }

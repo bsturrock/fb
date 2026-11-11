@@ -198,6 +198,23 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   tests/loaded-limb.test.ts on `L4-F3-run-on~v3@66`: old clock 0.2875 s, rule passes; twins: swing spring off while
   pinned (8.8 deg over the bound, free clock under), off from the start (R's unloaded left arm 0.39 s free), the floor
   letting go at 1.40 s (back in 0.013 s, bound 0.065) and the same with k/25 (0.158 s).
+- **7g** (`r7g-energy-check`) landed: byte-identical, 293/293; tests and check only (`tests/passive-energy.ts`, the
+  passive-energy matrix `scripts/check/energymx.ts`, informational lines in compare). Per ragdoll per solve (one
+  1/240 s step): passive = change of kinetic (linear and angular, world inertia) plus potential energy, less the work of
+  every applied force and torque (trapezoid), counted only when no other player's collider has a contact impulse with
+  it (solved or raw: the solved reading can miss one, below). A counted solve gaining over 0.5 J injects (the smallest
+  the investigation called a defect; gravity's integration reads -0.08 J; a solve with no contact at all gains only
+  where a segment moves off its velocity's path, mostly CCD holding it back before a first contact: up to 1.7 J, 10
+  runs). Per run (fixture x order x player): injecting solves, their total, the largest with solve, time and pinch
+  segments, the contact-free floor, each injecting solve with the largest loss of the tick before and its contact flag.
+  Matches the investigation: L4-F9-contact reversed V3, R's solve 270 +7.70 J (kinetic 4.62, potential 3.20, applied
+  0.11), pinch right forearm. Test tests/passive-energy.test.ts: L4-F2-side-off R under 0.5 J in every solve against the
+  twin given exactly 2 J of core kinetic energy inside one solve (read 2.000000 J more, the earlier solves identical).
+  Baseline (V1, both orders): HC 949 J in 230 solves (55 of 72 runs, largest 196.7 J), L3 1150 J in 325 (86 of 138,
+  128.3 J), L4 2907 J in 327 (114 of 175, 122.5 J). By class: rebound (a loss at least as large in the tick before)
+  689 solves 4590 J, pinch (a segment on the floor and its own shape) 36 / 85.7 J, contact-free 10 / 11.4 J, other
+  147 / 318.8 J (largest L4-F9-crowded reversed R 122.5 J at 0.371 s inside a knee impact: -69 and -41 J before,
+  -248 J after). Cost: full check 279 s against 253 s (8 shards of 32-46 s); nothing when off.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -266,6 +283,11 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   0.754 s, not a leg), rebounds at 2.1 m/s, and its left shin meets R's pelvis while rising (one real 64.9 N s
   substep, injected 0.11 J, loaded depth 1.1 mm). The leg contact is plausible momentum exchange; the ledger's
   320.7 N s includes the stale repeats above. The rebound of a rigid proxy off a ragdoll shoe is the questionable part.
+- Solved-impulse reading misses a solved contact among coincident manifold points (found at 7g; rung 7c's reading):
+  L3-F1-phase6 reversed, solve 266, R's pelvis on D's support capsule: points 2-4 at one position (2.8 mm deep), one
+  solver contact; Rapier wrote 15.53 N s to point 4, the nearest-point match gives the solver contact to point 2
+  (raw 0), so the pair reads 0 (R's momentum changed 15.4 N s). The passive-energy meter reads max(solved, raw) for
+  that reason. To check: which contact records and ledger rows read 0 for a real contact this way.
 - Shape-query budget exceeded outside the budget test's two fixtures at `a6d712f`: HC-F5-invalidOne asks 4412 queries in
   one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. Resolved with the flags
   off at rung 5b (every leg-matrix run under 4000, counted by the full check).
