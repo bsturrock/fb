@@ -54,6 +54,20 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   the `PoseDebug.ownerChangeJumpM` audit control on L3-F16-sprint (l3-contracts), and the controlled reseed and
   support-loss boundary records (`FootDebug.releasePlantAt`, `reseedCovered` / `stepAsIsCovered` in l3-pass), each beside
   the natural sample it backs up; nothing replaced.
+- **3** (`r3-twist-anchor`) landed. The arm-task twist window is anchored once per substep and never widened: the
+  largest arm-task twist change in one tick on the M1 review fixtures goes from 55.6 deg (L3-F4-twoArm D.left 0.867 s;
+  17.8-23.6 deg on the others) to the rate, 11.46 deg (at most 0.0016 deg over, inside the fit's stopping tolerance).
+  Summaries changed: L3 30/98, L4 10/75, HC 14/22; G/L1/L2/RH byte-identical; no L4-matrix row over the power ceiling
+  (highest rise L4-F10-wrap-on D 125.5 to 138.2 W). Everything moves from the first tick: D's arm-task elbow is 2.4-3 cm
+  elsewhere at 0.017 s (the first substep's solves no longer turn past one rate step), its palm meets R elsewhere from
+  about 0.43-0.6 s, and the contacts follow. Who falls: L3-F4-oneArm and L3-F1-phase2 D (conversion rejected, tracked
+  defect below), L4-F10-wrap-off D (the same), L3-F1-low D (R falls 4 ms later; D keeps its support, it lost it at 1.696 s
+  before), HC-F3-mirror D (R falls 54 ms later; D's probe lands on R's ragdoll at 1.400 s and D loses support at 1.475 s).
+  Tests: the arm-task per-tick bound (body-limits M1); two rule 7 tracked defects with their own tests (l3-contracts
+  "ladder tracked defects"); the STEP_AS_IS natural sample (L3-F4-twoArm) gone, covered by rung 2's controlled record;
+  the 13e blocked-home fault no longer moves a foot of L3-F6-hold, shown on the old tree's constructed planner hold
+  instead; the limp-shoe hold catalogue gains HC-F1-low R.left and HC-F1-lowMirror D.right (plan 12's rule; the twin
+  with the change off from 1.20 s, before either player converts, holds the same shoes for the same substeps).
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -74,6 +88,15 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 - Posed thigh held 1.0-1.45 cm inside a ragdoll pelvis for 15 substeps with every clearance loop capped
   (L4-F10-wrap-on D).
 - Shoulder persistence under a loaded forearm (L4-F9-exit, L4-F3-run-on).
+- Posed leg held inside another player's ragdoll, the conversion then rejected (tracked from rung 3, `LEG_IN_RAGDOLL`
+  in tests/l3-pass.ts): D's posed legs 2-6.6 cm inside R's ragdoll core for 8-25 substeps before D's conversion,
+  rejected for external penetration: L3-F4-oneArm and L3-F1-phase2 (right thigh in R's pelvis, 4.28 cm at 1.304 s),
+  L4-F10-wrap-off (right thigh in R's torso, 5.34 cm at 1.300 s). Controlled twin: rung 3's change off from 1.0 s (the
+  same state) gives the same rejection to the last digit. Probably the deeper form of the L4-F10-wrap-on entry above.
+- A held player's planted foot released by its clearance solve (plant drift just over 1 cm on clearance variant 1) and
+  planted again every 0.2-0.6 s in a stationary hold (tracked from rung 3, `HOLD_CLEARANCE_REPLANT`): L3-F6-hold R left
+  (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
+  keeps the cycle (L3-F6-hold 2 plants, holdMirror 3 R plants).
 - Shape-query budget exceeded outside the budget test's two fixtures at `a6d712f`: HC-F5-invalidOne asks 4412 queries in
   one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. The budget test checks
   only L4-F10-wrap-on and L3-F8-recontact.

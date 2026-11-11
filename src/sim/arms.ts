@@ -224,8 +224,6 @@ interface ArmRt {
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
-/** Contact motion M1: the arm-task twist window widths tried, in steps of the profile's rate. */
-const TWIST_WIDEN = [1, 3, 9];
 const ELIGIBLE: ColliderRegion[] = ['torso', 'pelvis', 'support', 'capsule'];
 
 
@@ -237,6 +235,13 @@ export class ArmSystem {
   keepLedger = false;
   readonly wrap = new Map<PlayerId, { status: WrapStatus; target: PlayerId | null; azimuthDeg: Partial<Record<ArmSide, number>>; basis: { near: Vec3; side: Vec3 } | null; reasons: string[] }>();
   private readonly arms = new Map<PlayerId, Record<ArmSide, ArmRt>>();
+  /**
+   * Contact motion M1: the arm-task substep (counted by preStep, so a substep's reach and its post-step solve share it)
+   * and each arm's twist when the substep began: every solve of a substep is windowed around that one twist, so the
+   * twist turns at most one rate step per substep however often the arm is solved and committed within it.
+   */
+  private twSubstep = 0;
+  private readonly twAnchor = new Map<string, { substep: number; rad: number | null }>();
   private obstacles = new Map<PlayerId, Obstacle[]>();
   /** Arm self-clearance: each owner's measured trunk pieces (body frame), when the profile is on. */
   private readonly trunk = new Map<PlayerId, { pieces: TrunkPiece[]; obstacles: Obstacle[] }>();
@@ -421,18 +426,23 @@ export class ArmSystem {
     let best: ArmPoseSolve | null = null;
     let bestDepth = Infinity;
     let bestOver = Infinity;
-    // contact motion M1 (a twist profile): each pole's elbow is first turned about the shoulder-to-palm line into the
-    // twist window (the range, within one step of the last committed twist; then within 3 and 9 steps), then into the
-    // range alone, and only then taken as the pole gives it, so the twist never makes a collision-valid arm (or a grip's
-    // pose) invalid, and an obstacle that blocks the window widens it gradually instead of releasing the twist at once
+    // contact motion M1 (a twist profile): each pole's elbow is turned about the shoulder-to-palm line into the twist
+    // window: the range, within one rate step of the arm's twist when this substep began (the range alone before there
+    // is one). Nothing outside it is tried: collision-free end poses do not make a continuous path between them, so a
+    // palm the window cannot reach validly gets the least bad pose inside it, and the callers' obstruction handling
+    // stalls or retreats the reach (`reach`, the post-step push-out) or releases a held hand (`invalidPose`), instead of
+    // the elbow turning around the obstacle in one step
     const TW = J?.shoulderTwist;
     const wins: ({ mid: number; lo: number; hi: number } | null)[] = [];
     if (TW) {
-      const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? armTwistRad(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
-      if (prev !== null) for (const k of TWIST_WIDEN) wins.push(twistWindow(J!.shoulder, TW, prev, k * this.host.dt));
-      wins.push(twistWindow(J!.shoulder, TW, null, 0));
-    }
-    wins.push(null);
+      const key = `${pl.id}:${a.side}`;
+      let anchor = this.twAnchor.get(key);
+      if (!anchor || anchor.substep !== this.twSubstep) {
+        const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? armTwistRad(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
+        this.twAnchor.set(key, (anchor = { substep: this.twSubstep, rad: prev }));
+      }
+      wins.push(twistWindow(J!.shoulder, TW, anchor.rad, this.host.dt));
+    } else wins.push(null);
     // fitted poles often land on the same elbow (the window's edge): each elbow is judged once
     const tried: Vec3[] = [];
     // and within a pass the elbow nearest the last committed one is judged first, so a pass that has to leave the window
@@ -522,6 +532,7 @@ export class ArmSystem {
 
   // ---------------------------------------------------------------- stage 5-7: before the solve
   preStep(): void {
+    this.twSubstep++;
     const host = this.host;
     const dt = host.dt;
     const P = this.profile;

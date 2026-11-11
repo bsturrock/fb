@@ -177,22 +177,13 @@ export const RESEED = check({
   }),
 });
 
-export const STEP_AS_IS = check({
-  name: 'a step compared with its old path as it is',
-  fixtures: ['L3-F4-twoArm'],
-  // A step that loses support (first L3-F1-low: D's step out of time). Before 10b the reference carried a timed-out step's
-  // stored motion on (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is
-  // nothing to carry on. L3-F4-twoArm: the run's only supported-to-airborne boundary of D, 1.36 s (plan 12: L3-F1-low's
-  // D no longer loses support on a step, its boundary at 1.65 s is gone; plan 13d: nor does L3-F1-phase5's at 1.55 s, so
-  // it was L3-F1-phase6's at 1.26 s; plan 14, with the clip arms as the clip shows them, no L3-F1 run has one)
-  watch: onDeltas((ds) => {
-    const x = ds.find((b) => b.playerId === 'D' && b.to.includes('airborne') && !b.from.includes('airborne'));
-    expect(x).toBeTruthy();
-    expect(x!.legs.right.old.kind).toBe('target');
-    expect(x!.deltaM).toBe(x!.rawM);
-    expect('stepStopM' in x!).toBe(false);
-  }),
-});
+// A step that loses support (first L3-F1-low: D's step out of time). Before 10b the reference carried a timed-out step's
+// stored motion on (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is nothing
+// to carry on. Its natural samples are gone: L3-F1-low D 1.65 s before plan 12, L3-F1-phase5 1.55 s before 13d,
+// L3-F1-phase6 1.26 s before plan 14, L3-F4-twoArm D 1.36 s until ladder rung 3 (with the arm-task twist anchored per
+// substep D's wrap arms no longer swing round R; R falls 8 ms earlier and D loses support at 1.300 s, before its probe
+// meets R's ragdoll, so the run has no supported-to-airborne boundary). Covered by `stepAsIsCovered` below.
+export const STEP_AS_IS = 'a step compared with its old path as it is';
 
 // Controlled coverage of the two boundary records above, beside their natural samples: each is shown on a situation the
 // test sets up, found in the run itself rather than at a pinned time (a first run finds the moment, a second makes the
@@ -1448,10 +1439,43 @@ export const KEEP_STEPPING = check({
       // a step lands or starts after the contact entry (L3-F4-twoArm: D's steps start in contact, and under plan 11's arm
       // self-clearance D falls 8 ms before the plant that used to land in exit mode)
       expect(sim.events.some((e) => (e.type === 'footPlant' || (e.type === 'footSwing' && e.data?.source === 'step')) && e.t > entry.t), d.id).toBe(true);
-      expect(count(sim, 'handoffRejected'), d.id).toBe(0);
+      // (ladder rule 7, tracked defect LEG_IN_RAGDOLL: a rejection of that kind on a listed fixture is the defect, pinned by
+      // its own test in l3-contracts, not a stepping failure; any other rejection fails here)
+      const rejected = sim.events.filter((e) => e.type === 'handoffRejected' && !(LEG_IN_RAGDOLL.fixtures.includes(d.id) && LEG_IN_RAGDOLL.is(e.data)));
+      expect(rejected.length, d.id).toBe(0);
     },
   }),
 });
+
+/**
+ * Ladder rule 7 tracked defects (docs/open/contact-motion/prerequisites-ladder.md, open defects): mechanisms that exist
+ * before the rung that moved a trajectory onto them, each pinned by its own test (l3-contracts, "ladder tracked defects")
+ * and set aside only where a listed fixture shows exactly that mechanism.
+ */
+export const LEG_IN_RAGDOLL = {
+  // a posed leg held inside another player's ragdoll for many substeps, the defender's conversion then rejected for it
+  fixtures: ['L3-F4-oneArm'],
+  is: (data: Record<string, unknown> | undefined): boolean => {
+    const w = data?.worstExternal as { own?: string; other?: string } | undefined;
+    return data?.reasons === 'externalPenetration' && /^(left|right)(Thigh|Shin):/.test(w?.own ?? '') && /^R:core:/.test(w?.other ?? '');
+  },
+};
+export const HOLD_CLEARANCE_REPLANT = {
+  // a held player's planted foot released by its clearance solve (the plant drifts over the tolerance on a clearance
+  // variant) and planted again, repeatedly, in a stationary hold
+  fixtures: ['L3-F6-hold', 'L3-F6-holdMirror'],
+  /** The plants of `id` after `fromS`; on a listed fixture without those that follow the same foot's clearance release. */
+  plants: (sim: Simulation, defId: string, id: string, fromS: number) => {
+    const ev = sim.events.filter((e) => e.playerId === id);
+    const side = (e: { data?: Record<string, unknown> }) => (e.data as { side?: string } | undefined)?.side;
+    return ev.filter((e) => {
+      if (e.type !== 'footPlant' || e.t <= fromS) return false;
+      if (!HOLD_CLEARANCE_REPLANT.fixtures.includes(defId)) return true;
+      const rel = ev.filter((r) => r.type === 'footRelease' && side(r) === side(e) && r.t < e.t).pop();
+      return (rel?.data as { reason?: string } | undefined)?.reason !== 'clearance';
+    });
+  },
+};
 
 export const HOLD_SETTLES = check({
   name: 'L3-F6: a stationary hold settles',
@@ -1459,7 +1483,9 @@ export const HOLD_SETTLES = check({
   watch: (d) => ({
     finish(sim) {
       expect(sim.players.every((p) => p.representation !== 'ragdoll' && p.controlMode === 'supported'), d.id).toBe(true);
-      for (const id of ['R', 'D']) expect(sim.events.filter((e) => e.type === 'footPlant' && e.playerId === id && e.t > 3.5).length, d.id).toBeLessThanOrEqual(1);
+      // (ladder rule 7, tracked defect HOLD_CLEARANCE_REPLANT: on a listed fixture a plant after its foot's clearance
+      // release is the defect, pinned by its own test; a re-step for any other reason still counts)
+      for (const id of ['R', 'D']) expect(HOLD_CLEARANCE_REPLANT.plants(sim, d.id, id, 3.5).length, d.id).toBeLessThanOrEqual(1);
       // plan 13e known limit (user ruling, bounded): with the supplied walk clips D's start ramp takes its run-in to 1.51 m/s, over the
       // 1.5 m/s prep threshold (1.46 m/s without clips), so both enter prep at 0.31 s; the arrival brake takes the closing
       // speed back under it and prep unwinds 37 ms before the wrap is retained. Held here: one prep, a free gap under 50 ms

@@ -122,6 +122,9 @@ export function twistWindow(E: JointEnvelope, T: ShoulderTwistProfile, prevRad: 
  * upper arm's external twist is inside `win`, by the smallest turn. A twist inside is unchanged; a straight arm (no bend
  * plane) is returned as given. `twistRad` is the twist shown after the fit.
  */
+/** Contact motion M1: `fitElbowTwist` stops once the fitted twist is this close to its window (rad). */
+export const TWIST_FIT_TOL_RAD = 1e-5;
+
 export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, win: { mid: number; lo: number; hi: number }): { elbow: Vec3; twistRad: number | null; turned: boolean } {
   const t0 = armTwistRad(E, coreQ, sh, elbow, end, sideSign);
   if (t0 === null) return { elbow, twistRad: null, turned: false };
@@ -139,7 +142,7 @@ export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Ve
   let phi = 0;
   let fp = wrapPi(u0 - target);
   let best = { phi: 0, err: Math.abs(fp) };
-  for (let i = 0; i < 8 && Math.abs(fp) > 1e-5; i++) {
+  for (let i = 0; i < 8 && Math.abs(fp) > TWIST_FIT_TOL_RAD; i++) {
     const h = 1e-4;
     const f1 = f(phi + h);
     if (f1 === null) break;

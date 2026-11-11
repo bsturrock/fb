@@ -21,7 +21,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { MODEL_CALIBRATION as C } from '../src/sim/model/profiles';
 import { armSelfShapes, hingeChain, twoBone, type PoseShape } from '../src/sim/pose';
 import { RAPIER, trunkShapes } from '../src/sim/physics';
-import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow } from '../src/sim/joint-cone';
+import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
 import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf } from '../src/sim/ragdoll';
@@ -487,7 +487,11 @@ describe('plan 12 joint range: ankles', () => {
     // within 1 deg like the others. Plan 13f: under the leg guard D's left shoe is held, within 8 cm of R)
     // (contact motion M1: with the arms' twist in range HC-F1-low's shoes are no longer held, D's and R's left; its mirror's
     // runner holds its right shoe, within 8 cm of D)
-    expect([...heldCases].sort()).toEqual(['HC-F1-lowMirror R.right']);
+    // (ladder rung 3, rule 7: with the arm-task twist anchored per substep the HC-F1 arms meet at another place and both
+    // players convert at 1.217 s in a new arrangement: HC-F1-low R's left shoe is held 13 substeps and the mirror's D right
+    // shoe 43, each within 8 cm of the other player. The hold is plan 12's rule reached by the moved conversion: the twin
+    // with the rung's change off from 1.20 s, before either converts, holds the same shoes for the same substeps)
+    expect([...heldCases].sort()).toEqual(['HC-F1-low R.left', 'HC-F1-lowMirror D.right', 'HC-F1-lowMirror R.right']);
     // the twin keeps the supported pitch it converted with, past the range
     const off = await probe(twin(FIX('HC-F1-low')));
     for (const [pid, c] of off.feet) expect(Math.min(c.conv.left!, c.conv.right!), pid).toBeLessThan(-J.ankle.dorsiDeg);
@@ -690,10 +694,18 @@ describe('contact motion M1: upper-arm twist', () => {
     });
   }, 240000);
 
-  it('arm-task arms stay inside the twist range; ragdolls start their shoulders less far outside it than the twins', async () => {
+  it('arm-task arms stay inside the twist range and turn at most the rate per tick; ragdolls start their shoulders less far outside it than the twins', async () => {
+    const tick = ((TW.maxRateRadPs / 60) * 180) / Math.PI;
     await rows(['L3-F4-twoArm', 'HC-F3-phase0', 'L3-F6-hold', 'HC-F1-low', 'L4-F5-twoClamp-on'], (id) => id, async (id) => {
       const on = await twistRun(FIX(id));
       expect(on.armTask.over, `${id} ${on.armTask.at}`).toBeLessThanOrEqual(-2 + 0.5);
+      // M1 follow-up (ladder rung 3): collision-free end poses do not make a continuous path between them. The window is
+      // anchored once per substep and never widened past the rate, so a wrap arm whose palm cannot be reached within it
+      // stalls or retreats (reach), or a held one is released (invalidPose), instead of turning its elbow around the
+      // obstacle (L3-F4-twoArm D.left turned 55.6 deg in one tick at 0.867 s). The bound is the rate over the tick's
+      // substeps, each of which may land past its window edge by the fit's stopping tolerance
+      const S = FIX(id).solver.substeps;
+      expect(on.armTask.jump, `${id} ${on.armTask.jat}`).toBeLessThanOrEqual(tick + (S * TWIST_FIT_TOL_RAD * 180) / Math.PI);
       const off = await twistRun(v1(FIX(id)));
       expect(on.startOutside, id).toBeLessThanOrEqual(off.startOutside + 1);
     });

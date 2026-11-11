@@ -20,7 +20,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { SimOptions, TransitionDelta } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
-import { FOOTWORK_L2, FOOTWORK_L3, stepAccelLimits } from '../src/sim/footwork';
+import { FOOTWORK_L2, FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, stepAccelLimits, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
+import type { ArmSide } from '../src/sim/contracts';
+import type { FootDebug } from '../src/sim/debug';
+import type { FootRequest, PhysicalPose } from '../src/sim/pose';
+import { add, v3, type Vec3 } from '../src/sim/vec';
 import { breathe, FIX, rows, run } from './helpers';
 import { L3 } from './transitions-shared';
 import {
@@ -59,9 +63,11 @@ import {
   FRESH_PLANT,
   HANDOVER,
   HELD_LEG,
+  HOLD_CLEARANCE_REPLANT,
   HOLD_SETTLES,
   KEEP_STEPPING,
   LANDINGS,
+  LEG_IN_RAGDOLL,
   LIFT,
   LIFT_RECOVERY,
   mergeRecords,
@@ -247,8 +253,8 @@ describe('plan 08 transition audit', () => {
   }, 300000);
 
   passTest(
-    'the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice',
-    [RESEED, STEP_AS_IS, RAW_KEPT, NOT_TWICE, LANDINGS],
+    'the boundary records: a reseed that keeps mode and source is a boundary; a landing is compared with its old path as it is; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice',
+    [RESEED, RAW_KEPT, NOT_TWICE, LANDINGS],
   );
 
   it('the boundary records, controlled: a reseed that keeps mode and source is a boundary; a step that loses support is compared with its old path as it is', async () => {
@@ -504,6 +510,77 @@ describe('plan 13e faults put back', () => {
     return fails;
   };
 
+  // ------------------------------------------------------------------- planner substeps on constructed input (no physics)
+  // Plan 13e's planner rules guarded on constructed planner input, the L3 planner (FOOTWORK_L3) on an L3 fixture's ragdoll
+  // and shoe: what the rule decides does not depend on any run reaching the case. The solve is synthetic: flat shoes at
+  // the requested ankles, except where a row says what the shown leg does instead.
+  const R = FIX('L3-F6-hold').ragdoll!;
+  const SOLE = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
+  const TOE = R.shoe.forwardM + 0.5 * R.shoe.halfExtents.z;
+  const DT = 1 / 240;
+  const I = { x: 0, y: 0, z: 0, w: 1 };
+  const HOME: Record<ArmSide, Vec3> = { left: v3(-0.12, SOLE, 0), right: v3(0.12, SOLE, 0) };
+  const P = FOOTWORK_L3;
+  type Ev = FootEvent & { t: number };
+  /** A still body standing over `home`, hips 0.75 m above it. */
+  const input = (t: number, o: { home?: Record<ArmSide, Vec3>; request?: Partial<Record<ArmSide, Vec3>>; clip?: FootPlanInput['clip']; contactHold?: boolean; others?: Vec3[]; debug?: FootDebug }): FootPlanInput => {
+    const home = o.home ?? HOME;
+    return {
+      t,
+      dt: DT,
+      core: { p: v3(0, SOLE + 0.85, 0), q: I },
+      vel: v3(),
+      yawRate: 0,
+      supported: true,
+      falling: false,
+      ragdoll: false,
+      groundY: 0,
+      hips: { left: add(home.left, v3(0, 0.75, 0)), right: add(home.right, v3(0, 0.75, 0)) },
+      home,
+      request: { left: o.request?.left ?? { ...home.left }, right: o.request?.right ?? { ...home.right } },
+      clip: o.clip ?? null,
+      contactHold: o.contactHold,
+      soleM: SOLE,
+      toeM: TOE,
+      rightW: v3(1, 0, 0),
+      sideSign: { left: -1, right: 1 },
+      others: o.others,
+      debug: o.debug,
+    };
+  };
+  /** A synthetic solve: flat shoes (shin frame = identity) at `ankles`, each leg on the given clearance variant (0: primary). */
+  const pose = (ankles: Record<ArmSide, Vec3>, variant: Partial<Record<ArmSide, number>> = {}): PhysicalPose => {
+    const seg = (id: string) => ({ segmentId: id, originWorld: v3(), rotationWorld: I });
+    const li = (s: ArmSide) => ({ variant: variant[s] ?? 0, request: ankles[s], liftM: 0, softM: 0 });
+    return {
+      playerId: 'T',
+      segments: { leftShin: seg('leftShin'), rightShin: seg('rightShin') } as unknown as PhysicalPose['segments'],
+      jointLandmarksWorld: { leftAnkle: { ...ankles.left }, rightAnkle: { ...ankles.right } } as unknown as PhysicalPose['jointLandmarksWorld'],
+      hingeDeg: {},
+      straightFallback: [],
+      limbClearance: {},
+      legInfo: { left: li('left'), right: li('right') },
+    } as unknown as PhysicalPose;
+  };
+  /** The ankle an exact solve of each request reaches. */
+  const exact = (out: Record<ArmSide, FootRequest>, inp: FootPlanInput): Record<ArmSide, Vec3> => {
+    const a = {} as Record<ArmSide, Vec3>;
+    for (const s of ['left', 'right'] as const) {
+      const r = out[s];
+      a[s] = r.kind === 'plant' ? add(r.heelW, v3(0, SOLE, 0)) : r.kind === 'target' ? { ...r.ankleW } : add(inp.request[s], r.offsetW);
+    }
+    return a;
+  };
+  /** One substep: plan, solve (`solve` from the exact ankles), observe; the events go into `all`. */
+  const substep = (plan: FootPlan, inp: FootPlanInput, all: Ev[], solve: (a: Record<ArmSide, Vec3>, out: Record<ArmSide, FootRequest>) => PhysicalPose = (a) => pose(a)): Record<ArmSide, FootRequest> => {
+    const ev: FootEvent[] = [];
+    const out = planFeet(plan, inp, ev);
+    observeFeet(plan, solve(exact(out, inp), out), SOLE, 0, ev, inp.t);
+    for (const e of ev) all.push({ ...e, t: inp.t });
+    return out;
+  };
+
+
   it('an inherited foot settling over one substep plants while it still moves, and the plant fails (L3-F7-phase50 D left 0.575 s)', async () => {
     // the 13e fix measures an inherited foot's settling over an arrival (C.arriveS), not one substep: before it, a shoe
     // still sliding passed the plant tolerance in one substep and planted. Plan 14 moved the case: with the clip arms
@@ -530,11 +607,11 @@ describe('plan 13e faults put back', () => {
   it('a foot held off its home by another body re-steps toward it in a stationary hold (L3-F6-hold)', async () => {
     // the 13e fix keeps the home the held-off step could not reach: the planted foot takes no step or settle step toward
     // it while it stays there. Without it the defender's right foot re-steps into the runner about every 0.3 s
-    // (L3-F6-holdMirror until contact motion M1: with the arms' twist kept in range the fault there plants twice after
-    // 3.5 s, one each; on L3-F6-hold D re-steps three times, at 3.58, 3.78 and 3.98 s)
+    // (L3-F6-holdMirror until contact motion M1, then L3-F6-hold until ladder rung 3: with the arm-task twist anchored per
+    // substep the fault moves no foot of L3-F6-hold, its defender is not held off its home; the fault is shown on the
+    // constructed hold below)
     const def = FIX('L3-F6-hold');
     expect(await failsOf(HOLD_SETTLES, def, {})).toEqual([]);
-    expect((await failsOf(HOLD_SETTLES, def, { debug: { foot: { noBlockedMemory: true } } })).join(' ')).toMatch(/expected \d+ to be less than or equal to 1/);
     // and lets it go once the body that held it moves off: L3-F4-gripOwner's runner plants its held-off left foot at
     // 1.325 s and steps home at 1.392 s (1.3875 s under the plan 13f leg guard), when the defender's core is 9 cm from
     // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm)
@@ -543,6 +620,113 @@ describe('plan 13e faults put back', () => {
     sim.dispose();
     expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');
   }, 60000);
+
+  it('a foot held off its home by another body re-steps toward it in a stationary hold, and steps home once that body moves off (constructed hold)', async () => {
+    // the 13e fix keeps the home the held-off step could not reach (FootState.blockedW): the planted foot takes no step or
+    // settle step toward it while the home and the body that held it stay put, and lets it go when either moves more than
+    // settleTriggerM. Without it a defender's foot re-stepped into the runner about every 0.3 s, each step landing about
+    // where it started (L3-F6-holdMirror before M1, then L3-F6-hold until ladder rung 3, where the fault no longer moves
+    // a foot of L3-F6-hold: its defender is not held off its home). The hold is constructed, on the planner alone: a still
+    // body whose right home moves
+    // 28 cm toward another player's core (over stepTriggerM); the shown right leg cannot pass that body's near side (a
+    // request past it is solved on clearance variant 1, the leg stopped at it). The re-steps are counted by their reason:
+    // a plant released for a 'step' trigger (not a clearance release, not a settle step)
+    const wallX = 0.2;
+    const homeR = v3(0.4, SOLE, 0);
+    const blocked = (o: { debug?: FootDebug; blockerMoveM?: number; homeMoveM?: number }) => {
+      const plan = newFootPlan(P, R);
+      const all: Ev[] = [];
+      const stands: { t: number; at: Vec3 }[] = [];
+      let blocker = v3(0.55, 0, 0);
+      let home = { left: HOME.left, right: homeR };
+      let t = 0;
+      initFeet(plan, pose({ ...HOME }), input(t, { others: [blocker], debug: o.debug }), []);
+      const MOVE = 240 * 3;
+      for (let k = 0; k < 240 * 4; k++) {
+        t += DT;
+        // after 3 s the body that held the leg moves off along the side line (taking its near side along), or the home moves
+        if (k === MOVE && o.blockerMoveM) blocker = add(blocker, v3(0, 0, o.blockerMoveM));
+        if (k === MOVE && o.homeMoveM) home = { left: HOME.left, right: add(homeR, v3(0, 0, o.homeMoveM)) };
+        const wall = k >= MOVE && (o.blockerMoveM ?? 0) > P.settleTriggerM ? Infinity : wallX;
+        const n = all.length;
+        substep(plan, input(t, { home, others: [blocker], debug: o.debug }), all, (a) => {
+          const r = { ...a.right };
+          const held = r.x > wall;
+          if (held) r.x = wall;
+          return pose({ left: a.left, right: r }, { right: held ? 1 : 0 });
+        });
+        // where each right plant stands (its heel: the footprint the home is measured from)
+        if (all.slice(n).some((e) => e.side === 'right' && e.type === 'footPlant')) stands.push({ t, at: { ...plan.feet.right.heelW! } });
+      }
+      const right = all.filter((e) => e.side === 'right' && e.t > 0.01);
+      const reason = (e: Ev): string | undefined => (e.data as { reason?: string }).reason;
+      return {
+        // the planted foot's re-steps: released for a step trigger after the first (held-off) step has landed
+        firstPlant: right.find((e) => e.type === 'footPlant'),
+        steps: (from: number, to: number) => right.filter((e) => e.type === 'footRelease' && reason(e) === 'step' && e.t > from && e.t < to),
+        others: right.filter((e) => e.type === 'footRelease' && reason(e) !== 'step'),
+        plants: stands.filter((p) => p.t > 0.01),
+        moveT: MOVE * DT,
+      };
+    };
+    const records: [string, () => void][] = [
+      [
+        'held off: one step lands where the leg got to, then no re-step while the home and the body stay put; the fault re-steps into it about every 0.36 s, each landing where it started',
+        () => {
+          const fixed = blocked({});
+          expect(fixed.firstPlant, 'the held-off step lands').toBeDefined();
+          const t0 = fixed.firstPlant!.t;
+          // it landed where the leg got to, at the body's near side: short of its home by more than the step trigger
+          const at0 = fixed.plants[0].at;
+          expect(fixed.plants[0].t).toBe(t0);
+          expect(Math.abs(at0.x - wallX)).toBeLessThanOrEqual(P.plantTolM);
+          expect(homeR.x - at0.x).toBeGreaterThan(P.stepTriggerM);
+          expect(fixed.steps(t0, 4).map((e) => e.t.toFixed(4)), 're-steps (reason step) toward the blocked home').toEqual([]);
+          expect(fixed.others).toEqual([]);
+          expect(fixed.plants).toHaveLength(1);
+          // the fault put back: the same held-off landing, then re-steps. Only re-steps with reason 'step' are counted (a
+          // plant released for a step trigger): the fault alone gives them, about one every 0.36 s
+          const fault = blocked({ debug: { noBlockedMemory: true } });
+          expect(fault.plants[0]).toEqual(fixed.plants[0]);
+          const re = fault.steps(t0, 4);
+          expect(re.length).toBeGreaterThan(5);
+          expect(fault.others).toEqual([]);
+          // unnecessary: every re-step lands within the plant tolerance of where the held-off step had landed
+          expect(fault.plants.length).toBeGreaterThanOrEqual(re.length);
+          for (const p of fault.plants) expect(Math.hypot(p.at.x - at0.x, p.at.z - at0.z), p.t.toFixed(4)).toBeLessThanOrEqual(P.plantTolM);
+        },
+      ],
+      [
+        'the body that held it moves off by more than settleTriggerM: the foot steps home at once and plants there',
+        () => {
+          const r = blocked({ blockerMoveM: 0.2 });
+          const after = r.steps(r.moveT - 1e-9, 4);
+          expect(after.length).toBe(1);
+          expect(after[0].t - r.moveT).toBeLessThanOrEqual(2 * DT + 1e-9);
+          const last = r.plants[r.plants.length - 1];
+          expect(last.t).toBeGreaterThan(after[0].t);
+          expect(Math.hypot(last.at.x - homeR.x, last.at.z - homeR.z)).toBeLessThan(P.settleTriggerM);
+        },
+      ],
+      [
+        'the body moves by less than settleTriggerM: the home stays blocked, no step',
+        () => {
+          const r = blocked({ blockerMoveM: 0.05 });
+          expect(r.steps(r.firstPlant!.t, 4)).toEqual([]);
+        },
+      ],
+      [
+        'the home itself moves on by more than settleTriggerM: the memory goes, and the foot steps toward the new home',
+        () => {
+          const r = blocked({ homeMoveM: 0.2 });
+          const after = r.steps(r.moveT - 1e-9, 4);
+          expect(after.length).toBeGreaterThan(0);
+          expect(after[0].t - r.moveT).toBeLessThanOrEqual(2 * DT + 1e-9);
+        },
+      ],
+    ];
+    await rows(records, ([n]) => n, ([, f]) => f());
+  });
 });
 
 describe('plan 08 pass 2: idle and walking', () => {
@@ -580,6 +764,55 @@ describe('plan 08 pass 3: contact integration', () => {
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The carried ball (plan 08a, plan 10d D1(a)): what tests/ball-carry.test.ts checked on runs of registered L3 fixtures
+
+describe('ladder tracked defects (rule 7)', () => {
+  // Mechanisms that exist before the ladder rung whose moved trajectories reached them (docs/open/contact-motion/
+  // prerequisites-ladder.md, open defects). Each test pins the defect where it shows (a deterministic run of the fixture;
+  // the controlled twin, the same state with the rung's change off, shows it as well) and fails once it is gone, when the
+  // check that sets it aside (tests/l3-pass.ts LEG_IN_RAGDOLL, HOLD_CLEARANCE_REPLANT) is to lose the exception.
+  it('a posed leg held inside the runner\'s ragdoll, the defender\'s conversion rejected for it (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off)', async () => {
+    await rows(['L3-F4-oneArm', 'L3-F1-phase2', 'L4-F10-wrap-off'], (id) => id, async (id) => {
+      const def = FIX(id);
+      const tol = def.ragdoll!.validation.penetrationTolM;
+      // the deepest posed-leg clearance of D against the other bodies, per substep while R is a ragdoll and D supported
+      let run0 = 0;
+      let longest = 0;
+      const sim = await run(def, {
+        onSubstep: (s) => {
+          const D = s.players.find((p) => p.id === 'D')!;
+          const R = s.players.find((p) => p.id === 'R')!;
+          if (!R.rag || D.rag || D.controlMode !== 'supported' || !D.pose) return;
+          const lc = D.pose.limbClearance;
+          run0 = Math.max(lc.leftLeg ?? 0, lc.rightLeg ?? 0) > tol ? run0 + 1 : 0;
+          longest = Math.max(longest, run0);
+        },
+      });
+      const rej = sim.events.filter((e) => e.type === 'handoffRejected');
+      const R = sim.players.find((p) => p.id === 'R')!;
+      sim.dispose();
+      expect(rej.map((e) => e.playerId), id).toEqual(['D']);
+      expect(LEG_IN_RAGDOLL.is(rej[0].data), `${id} ${JSON.stringify(rej[0].data?.worstExternal)}`).toBe(true);
+      expect(R.representation, id).toBe('ragdoll');
+      // held there, not met in the last tick: D's posed legs past the conversion tolerance for longer than one tick
+      expect(longest, id).toBeGreaterThan(def.solver.substeps);
+    });
+  }, 120000);
+
+  it('a held player\'s planted foot released by its clearance solve and planted again, in a stationary hold (L3-F6-hold, L3-F6-holdMirror)', async () => {
+    await rows(HOLD_CLEARANCE_REPLANT.fixtures, (id) => id, async (id) => {
+      const sim = await run(FIX(id));
+      const all = (pid: string) => sim.events.filter((e) => e.type === 'footPlant' && e.playerId === pid && e.t > 3.5).length;
+      const tracked = ['R', 'D'].map((pid) => all(pid) - HOLD_CLEARANCE_REPLANT.plants(sim, id, pid, 3.5).length);
+      const releases = sim.events.filter((e) => e.type === 'footRelease' && e.t > 3.5 && (e.data as { reason?: string }).reason === 'clearance');
+      const still = sim.players.every((p) => p.controlMode === 'supported');
+      sim.dispose();
+      expect(still, id).toBe(true);
+      expect(releases.length, id).toBeGreaterThan(0);
+      // more re-plants after a clearance release than the hold's one settle plant
+      expect(Math.max(...tracked), id).toBeGreaterThan(1);
+    });
+  }, 120000);
+});
 
 describe('the carried ball over the L3 pass (plan 08a, plan 10d D1(a))', () => {
   passTest('contact and recontact: ownership changes under the 1 cm same-time limit, the ball included, on the achieved arm', [CARRY_AUDIT], () => {
