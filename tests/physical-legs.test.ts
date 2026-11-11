@@ -11,12 +11,13 @@ import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import type { FixtureDef } from '../src/sim/fixture';
 import { CONT_LEG_MPS, HARD_OK, PHYS_LEG_OK, poseLimbShapes, type PhysicalPose, type PoseShape } from '../src/sim/pose';
-import { initPhysics, isSupportedLeg, PHYS_LEG_KEY, PhysicsWorld, RAPIER } from '../src/sim/physics';
+import { initPhysics, isSupportedLeg, PhysicsWorld, RAPIER } from '../src/sim/physics';
 import { legHull, legMeets, legPointMove, legSurfaceAdvance, observePhysicalLegs, physicalLegsLive, syncPhysicalLegs, type LegLedger, type LegPlace, type PhysicalLegs } from '../src/sim/pose-runtime';
 import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromUnitVectors, qFromYaw, qInvRot, qMul, qRot, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, rows } from './helpers';
+import { SEGMENTS } from '../src/sim/ragdoll';
 
 type Check = [string, () => void | Promise<void>];
 const checks = (cs: Check[]): Promise<void> => rows(cs, ([n]) => n, ([, f]) => f());
@@ -174,10 +175,12 @@ describe('rung 6 (1): a physical leg contact acts on the proxy exactly once', ()
 // ------------------------------------------------------------------ requirement 5: the collision filter
 // What a physical leg of D meets in the solve, pair by pair against every collider of the world, through the solver's
 // own three layers (collision groups both ways, the simulation's contact hook, one body never meeting itself), is
-// legMeets (the pose guard's statement of it): another player's colliders but its support capsule, support guard, self
-// clearance shapes and physical legs; never the floor or D's own. Read on L3-F9-convert-free (legacy support, ragdoll,
-// self clearance) at 0.10 s (R supported, its legs physical) and 0.30 s (R a ragdoll). The twins drop one layer each:
-// groups alone admit the floor and R's support capsule, the hook alone R's physical legs.
+// legMeets (the pose guard's statement of it): another player's ragdoll segment colliders and nothing else; never another
+// player's proxy (its torso, pelvis, head, support capsule or guard: supported against supported stays the proxy
+// collision's and the pose guards'), self clearance shapes, physical legs, the floor or D's own. Read on
+// L3-F9-convert-free (suspension support, ragdoll, self clearance) at 0.10 s (R supported, its legs physical) and 0.30 s
+// (R a ragdoll), and on L4-F2-forward-on (legacy support). The hook alone is legMeets; the twin, groups alone, admits R's
+// supported proxy (torso, pelvis, head, support capsule) and the legacy floor.
 describe('rung 6 (5): the physical leg collision filter', () => {
   /** Per collider of the world, whether a leg of `owner` meets it through each layer, against legMeets, at each stop. */
   async function filterTable(id: string, owner: string, stops: ((sim: Simulation) => boolean)[]) {
@@ -194,6 +197,7 @@ describe('rung 6 (5): the physical leg collision filter', () => {
     const O = player(sim, owner);
     const kinds = new Set<string>();
     const wrong = { solver: [] as string[], groupsOnly: [] as string[], hookOnly: [] as string[] };
+    const met = new Set<string>();
     for (const stop of stops) {
       expect(stepUntil(sim, () => stop(sim)), `${id} stop`).toBe(true);
       expect(O.legs?.enabled, `${id} ${owner} legs at ${sim.t}`).toBe(true);
@@ -204,6 +208,7 @@ describe('rung 6 (5): the physical leg collision filter', () => {
           const want = legMeets(t, owner);
           const name = `${t?.playerId}:${t?.key}`;
           kinds.add(t?.playerId === null ? 'floor' : t?.playerId === owner ? 'own' : t && isSupportedLeg(t) ? 'leg' : (t?.key ?? '?').replace(/:.*/, ''));
+          if (want) met.add(name);
           if ((groups(c, k) && hooked(c, k) && !sameBody(c, k)) !== want) wrong.solver.push(name);
           if ((groups(c, k) && !sameBody(c, k)) !== want) wrong.groupsOnly.push(name);
           if ((hooked(c, k) && !sameBody(c, k)) !== want) wrong.hookOnly.push(name);
@@ -211,22 +216,28 @@ describe('rung 6 (5): the physical leg collision filter', () => {
     }
     const suspension = !!sim.suspension;
     sim.dispose();
-    return { kinds, wrong, suspension };
+    return { kinds, wrong, suspension, met: [...met] };
   }
 
-  it("every pair a leg can form is legMeets; groups alone admit a support capsule (and the legacy floor), the hook alone another physical leg", async () => {
+  it("every pair a leg can form is legMeets, another player's ragdoll segments only; the hook alone is legMeets, groups alone admit a supported proxy (and the legacy floor)", async () => {
     // L3-F9-convert-free (suspension support, ragdoll, self clearance): D at 0.10 s (R supported, its legs physical) and
     // 0.30 s (R a ragdoll)
     const L3 = await filterTable('L3-F9-convert-free', 'D', [(s) => s.t >= 0.1 - 1e-9 && !!player(s, 'R').legs?.enabled, (s) => s.t >= 0.3 - 1e-9 && !!player(s, 'R').rag]);
-    // L4-F2-forward-on (legacy support): R's first physical substep
+    // L4-F2-forward-on (legacy support, R alone): R's first physical substep
     const L4 = await filterTable('L4-F2-forward-on', 'R', [(s) => !!player(s, 'R').legs?.enabled]);
     expect([L3.suspension, L4.suspension]).toEqual([true, false]);
-    for (const k of ['floor', 'own', 'leg', 'support', 'torso', 'head', 'selfTrunk', 'selfArm']) expect([...L3.kinds].some((x) => x.startsWith(k)), k).toBe(true);
+    // every kind of collider was paired: the floor, D's own, R's proxy parts and physical legs (0.10 s), R's ragdoll
+    // segments (core, limbs, head) and self-clearance shapes (0.30 s)
+    for (const k of ['floor', 'own', 'leg', 'support', 'torso', 'pelvis', 'head', 'core', 'leftThigh', 'selfTrunk', 'selfArm']) expect([...L3.kinds].some((x) => x.startsWith(k)), k).toBe(true);
+    // legMeets: R's ragdoll segments, none of R's proxy parts
+    expect(L3.met.some((n) => /^R:core:/.test(n)) && L3.met.some((n) => /^R:(left|right)Thigh:/.test(n)), "R's ragdoll segments").toBe(true);
+    expect(L3.met.filter((n) => { const [pid, seg, region, more] = n.split(':'); return !(pid === 'R' && (SEGMENTS as string[]).includes(seg) && !!region && more === undefined); })).toEqual([]);
+    expect(L4.met).toEqual([]);
     expect(L3.wrong.solver).toEqual([]);
     expect(L4.wrong.solver).toEqual([]);
-    // the twins, one layer each
-    expect(L3.wrong.groupsOnly, "groups alone admit R's support capsule").toContain('R:support');
-    expect(L3.wrong.hookOnly.some((n) => n.startsWith(`R:${PHYS_LEG_KEY}`)), "the hook alone admits R's physical legs").toBe(true);
+    // the hook alone states it; the twin, collision groups alone, admits R's supported proxy
+    expect(L3.wrong.hookOnly).toEqual([]);
+    for (const k of ['R:support', 'R:torso', 'R:pelvis', 'R:head']) expect(L3.wrong.groupsOnly, `groups alone admit ${k}`).toContain(k);
     // under the suspension the floor is static (GROUP_STATIC) and both layers keep it out; under legacy support only the hook
     expect(L3.wrong.groupsOnly.some((n) => n.startsWith('null:'))).toBe(false);
     expect(L4.wrong.groupsOnly.some((n) => n === 'null:floor'), 'groups alone admit the legacy floor').toBe(true);
@@ -412,6 +423,126 @@ describe('rung 6 (4): ownership at conversion', () => {
       ],
     ]);
   }, 60000);
+});
+
+// ------------------------------------------------------------------ rung 6b: a conversion mid-contact
+// A physical leg meets ragdoll segments only (legMeets), so it can stand inside a supported proxy (the pose guard bounds
+// that, within HARD_OK of its torso / pelvis / head), and the ragdoll that proxy converts into stands where its pose
+// stood. Constructed on L3-F9-convert-prep under V3 (R converted by label at 0.45 s, the players closing): at the end of
+// the substep before the conversion, D's leg nearest to R's posed limbs (closing on it at about 1.9 m/s) is placed DEPTH
+// into it (its hull moved along the contact normal; D's pose and body untouched). The conversion is accepted (the candidate clears D's leg
+// within its tolerance) and legsOffInsideConverted takes that leg out of the solve: no solve starts with a leg of D's on
+// inside R's ragdoll, and the leg comes on again once clear (syncPhysicalLegs, from D's own pose). The twin turns the
+// leg on again before the first solve after the switch: that solve starts DEPTH deep and resolves it (the leg ledger
+// reads a loaded depth near DEPTH; measured 8.1 mm, 39.7 N s in that one solve).
+describe('rung 6b: a conversion with a physical leg inside the new ragdoll', () => {
+  const AT = 0.45;
+  const DEPTH = 0.008;
+  const rapShape = (s: PoseShape): { shape: RAPIER.Shape; p: Vec3; q: Quat } => {
+    if (s.kind === 'ball') return { shape: new RAPIER.Ball(s.r), p: s.c, q: { x: 0, y: 0, z: 0, w: 1 } };
+    if (s.kind === 'box') return { shape: new RAPIER.Cuboid(s.he.x, s.he.y, s.he.z), p: s.c, q: s.q };
+    const ab = sub(s.b, s.a);
+    const l = len(ab);
+    return { shape: new RAPIER.Capsule(l / 2, s.r), p: add(s.a, scale(ab, 0.5)), q: qFromUnitVectors(v3(0, 1, 0), scale(ab, 1 / l)) };
+  };
+  const moved = (s: PoseShape, d: Vec3): PoseShape => (s.kind === 'capsule' ? { ...s, a: add(s.a, d), b: add(s.b, d) } : { ...s, c: add(s.c, d) });
+  interface Solve {
+    t: number;
+    fresh: boolean;
+    on: boolean;
+    depth: number;
+  }
+  async function run(twin: boolean): Promise<{ placed: { leg: string; other: string; closing: number } | null; atSwitch: number; solves: Solve[]; outcome?: string; ledger?: LegLedger }> {
+    const d = V3(FIX('L3-F9-convert-prep'), { durationS: AT + 0.1 });
+    let placed: { leg: string; other: string; i: number; closing: number } | null = null;
+    const sim = await Simulation.create(d, {
+      trace: false,
+      onSubstep: (s) => {
+        const D = player(s, 'D');
+        const R = player(s, 'R');
+        if (placed || R.rag || s.t < AT - 1e-9 || !D.legs?.enabled || !R.pose) return;
+        // the conversion runs at the start of the next substep
+        const b = D.proxy.body;
+        const bp = vecOf(b.translation());
+        const bq = { ...b.rotation() };
+        const mine = poseLimbShapes(s.def.ragdoll!, D.pose!);
+        const theirs = poseLimbShapes(s.def.ragdoll!, R.pose);
+        let best: { i: number; x: PoseShape; o: PoseShape; dist: number; n: Vec3; closing: number } | null = null;
+        D.legs.keys.forEach((k, i) => {
+          if (!D.legs!.on[i]) return;
+          const x = mine.find((m) => m.key === k)!;
+          const a = rapShape(x);
+          for (const o of theirs) {
+            const c = rapShape(o);
+            const r = a.shape.contactShape(a.p, a.q, c.shape, c.p, c.q, 2);
+            if (r && (!best || r.distance < best.dist)) best = { i, x, o, dist: r.distance, n: vecOf(r.normal1), closing: dot(sub(vecOf(b.velocityAtPoint(r.point1)), vecOf(R.proxy.body.velocityAtPoint(r.point2))), vecOf(r.normal1)) };
+          }
+        });
+        if (!best) return;
+        const B = best as { i: number; x: PoseShape; o: PoseShape; dist: number; n: Vec3; closing: number };
+        s.physics.reshapeLeg(D.legs.colliders[B.i], legHull(moved(B.x, scale(B.n, B.dist + DEPTH)), bp, bq));
+        placed = { leg: B.x.key, other: B.o.key, i: B.i, closing: B.closing };
+      },
+    });
+    const solves: Solve[] = [];
+    let atSwitch = -1;
+    const step0 = sim.physics.step.bind(sim.physics);
+    sim.physics.step = () => {
+      const D = player(sim, 'D');
+      const R = player(sim, 'R');
+      if (placed && R.rag && D.legs) {
+        const fresh = atSwitch < 0;
+        if (fresh) atSwitch = solves.length;
+        const c = D.legs.colliders[placed.i];
+        if (fresh && twin && !D.legs.on[placed.i]) {
+          c.setEnabled(true);
+          D.legs.on[placed.i] = true;
+        }
+        const on = D.legs.enabled && D.legs.on[placed.i] && c.isEnabled();
+        let depth = 0;
+        for (const k of R.rag.colliders) {
+          const r = c.shape.contactShape(D.proxy.body.translation(), D.proxy.body.rotation(), k.collider.shape, k.collider.translation(), k.collider.rotation(), 0);
+          if (r) depth = Math.max(depth, -r.distance);
+        }
+        solves.push({ t: sim.t, fresh, on, depth });
+      }
+      step0();
+    };
+    stepUntil(sim, () => false);
+    const P = placed as { leg: string; other: string; closing: number } | null;
+    const out = { placed: P ? { leg: P.leg, other: P.other, closing: P.closing } : null, atSwitch, solves, outcome: player(sim, 'R').handoff?.outcome, ledger: sim.legLedger?.get('D') };
+    sim.dispose();
+    return out;
+  }
+
+  it("a leg of D's inside R's new ragdoll leaves the solve at the switch and comes on again once clear; the twin's first solve starts in it", async () => {
+    const on = await run(false);
+    const tw = await run(true);
+    for (const x of [on, tw]) {
+      expect(x.placed).not.toBeNull();
+      // the construct: D's leg closes on R's limb (an overlap there loads the solve)
+      expect(x.placed!.closing).toBeGreaterThan(0.5);
+      expect(x.outcome).toBe('accepted');
+      expect(x.atSwitch).toBe(0);
+      // the construct: the leg is in R's ragdoll at the first solve after the switch, near DEPTH
+      expect(x.solves[0].depth).toBeGreaterThan(DEPTH / 2);
+      expect(x.solves[0].depth).toBeLessThan(2 * DEPTH);
+    }
+    await checks([
+      ['the leg is off at the first solve after the switch', () => expect(on.solves[0].on).toBe(false)],
+      ['the leg comes on again within a tick, clear of R\'s ragdoll (within PHYS_LEG_ON_M; what it meets later is ordinary contact)', () => {
+        const k = on.solves.findIndex((x) => x.on);
+        expect(k).toBeGreaterThan(0);
+        expect(k).toBeLessThanOrEqual(4);
+        expect(on.solves[k].depth).toBeLessThanOrEqual(0.001);
+      }],
+      ['the twin: its first solve starts with the leg on, DEPTH deep, and the ledger reads a loaded depth there', () => {
+        expect(tw.solves[0].on).toBe(true);
+        expect(tw.ledger!.maxLoadedDepthM).toBeGreaterThan(DEPTH / 2);
+        expect(tw.ledger!.maxLoadedDepthM).toBeGreaterThan(2 * on.ledger!.maxLoadedDepthM);
+      }],
+    ]);
+  }, 120000);
 });
 
 // ------------------------------------------------------------------ requirement 6 (D1): a leg yields where a body stops

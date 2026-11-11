@@ -4,6 +4,7 @@ import type { PlayerId } from './contracts';
 import { newLocoState } from './locomotion';
 import { buildCandidate, externalFromColliders, externalFromRagdoll, initEnvelope, ragdollPose, removeRagdoll, switchToRagdoll, validateCandidate, type CandidateEdit, type CandidateReport, type ExternalShape } from './ragdoll';
 import { vc, round } from './vec';
+import { legsOffInsideConverted } from './pose-runtime';
 import type { Simulation, HandoffRecord, PlayerRuntime } from './simulation';
 
 /** What a conversion batch reads and writes on the simulation. */
@@ -137,6 +138,9 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
     }
   }
   if (switched.length) {
+    // contact motion (`LegGuardProfile.physicalLegs`): another player's physical leg inside a new ragdoll leaves the solve
+    // until clear
+    if (host.def.legGuard?.physicalLegs) legsOffInsideConverted(host, switched.map((id) => host.byId.get(id)!));
     host.arms?.onRepresentationChange(switched, captured);
     for (const id of switched) {
       const pl = host.byId.get(id)!;

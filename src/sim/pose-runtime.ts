@@ -8,8 +8,8 @@ import { buildProxyPose, legRequestLocal, poseLimbShapes, type PoseClearance, ty
 import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleTarget, idleWeight, idleWidthAddM, sampleIdle, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
-import { externalFromColliders, ragdollPose, SELF_ARM_KEY, SELF_TRUNK_KEY, type ExternalShape } from './ragdoll';
-import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, PHYS_LEG_KEY, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
+import { colliderWorldPose, externalFromColliders, ragdollPose, SEGMENTS, type ExternalShape } from './ragdoll';
+import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
 import type { ArmSide } from './contracts';
 import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, type Quat } from './vec';
@@ -171,12 +171,25 @@ export interface LegPlace {
   h?: number;
 }
 
+const RAGDOLL_SEGMENTS = new Set<string>(SEGMENTS);
 /**
- * Whether a collider (by its tag) is one a physical leg of `owner` meets in the solve (`addLegCollider`'s filter): another
- * player's, not its support capsule or support guard, not a ragdoll's self-clearance shapes, not another physical leg.
+ * Whether a collider tag is a ragdoll segment collider (`<segment>:<region>`, ragdoll.ts): not a proxy's (torso, pelvis,
+ * head, support capsule, support guard), a ragdoll's self-clearance shape or a physical leg.
+ */
+export function isRagdollSegment(t: { key: string }): boolean {
+  const i = t.key.indexOf(':');
+  return i > 0 && RAGDOLL_SEGMENTS.has(t.key.slice(0, i));
+}
+
+/**
+ * Whether a collider (by its tag) is one a physical leg of `owner` meets in the solve (the contact hook, `addLegCollider`):
+ * a segment collider of another player's ragdoll, and nothing else. Not another player's proxy (supported or falling:
+ * torso, pelvis, head, support capsule or guard; supported against supported stays the proxy collision's and the pose
+ * guards'), a ragdoll's self-clearance shapes, another physical leg, the floor or an obstacle. The physical legs are
+ * there to stop a ragdoll passing into a supported player's legs.
  */
 export function legMeets(t: { playerId: PlayerId | null; key: string } | undefined, owner: PlayerId): boolean {
-  return !!t && t.playerId !== null && t.playerId !== owner && t.key !== 'support' && t.key !== 'supportGuard' && !t.key.startsWith(SELF_TRUNK_KEY) && !t.key.startsWith(SELF_ARM_KEY) && !t.key.startsWith(PHYS_LEG_KEY);
+  return !!t && t.playerId !== null && t.playerId !== owner && isRagdollSegment(t);
 }
 
 /** Depth (m) past which a leg coming on is not clear of a body it meets. */
@@ -337,6 +350,31 @@ export function syncPhysicalLegs(host: PoseHost, pl: PlayerRuntime): void {
     // a leg coming on has no animated move yet
     L.prev[i] = L.now[i];
   });
+}
+
+/**
+ * At a conversion (after the switch): each new ragdoll stands where its player's pose stood, and another player's
+ * physical leg in the solve can lie inside one of its colliders, a body the leg never met as a proxy (`legMeets`). The
+ * next solve would start from that overlap and resolve it on the whole proxy at once. Such a leg (deeper than
+ * PHYS_LEG_ON_M in a collider of the new ragdolls) leaves the solve and comes on again like any leg, once clear
+ * (`syncPhysicalLegs`). A leg merely near the new body, or closing on it, stays on: meeting it is what the leg is for.
+ */
+export function legsOffInsideConverted(host: Pick<PoseHost, 'players'>, converted: PlayerRuntime[]): void {
+  // (the new ragdolls' collider poses from their bodies, as the candidate validation reads them)
+  const shapes = converted.flatMap((x) => (x.rag ? x.rag.colliders.map((c) => ({ shape: c.collider.shape, pose: colliderWorldPose(x.rag!, c) })) : []));
+  if (!shapes.length) return;
+  for (const o of host.players) {
+    const L = o.legs;
+    if (!L?.enabled || converted.includes(o)) continue;
+    const bp = o.proxy.body.translation();
+    const bq = o.proxy.body.rotation();
+    L.colliders.forEach((c, i) => {
+      if (!L.on[i]) return;
+      if (!shapes.some((k) => (c.shape.contactShape(bp, bq, k.shape, k.pose.p, k.pose.q, 0)?.distance ?? 0) < -PHYS_LEG_ON_M)) return;
+      c.setEnabled(false);
+      L.on[i] = false;
+    });
+  }
 }
 
 /** Physical legs off (kept on the body, out of the solve): not live, or the proxy leaves the supported mode. */
@@ -693,10 +731,10 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
   // its rotation by its body's angular velocity). Static colliders and published limbs (poses: no velocity) stay as they
   // are, so they are measured by the plain query. Built on the first leg query of the pose
   const LG = host.def.legGuard;
-  // contact motion (`physicalLegs`, live): the shapes the physical legs meet in the solve (`addLegCollider`'s filter,
-  // `legMeets`): another player's live colliders other than its support capsule and support guard (not the floor,
-  // obstacles or published limbs), with their predicted copies (`met`) and, for each on a moving body, the same body
-  // stopped (`stopped`): moved by the posing player's own motion only. The solve can stop the other body (a body on the
+  // contact motion (`physicalLegs`, live): the shapes the physical legs meet in the solve (the contact hook, `legMeets`):
+  // another player's ragdoll segment colliders (not a proxy's, the floor, obstacles or published limbs: a supported or
+  // falling proxy's parts keep the HARD_OK checks alone), with their predicted copies (`met`) and, for each on a moving
+  // body, the same body stopped (`stopped`): moved by the posing player's own motion only. The solve can stop the other body (a body on the
   // floor stops on it, and gives way to nothing), so a physical leg clears it there as well (D1). Only the physical-leg
   // target reads these; the HARD_OK checks keep the 13f prediction alone
   const legsLive = physicalLegsLive(host, pl);

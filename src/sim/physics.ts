@@ -291,8 +291,9 @@ export interface LegHull {
 }
 export const LEG_HULL_EPS_M = 2e-4;
 /**
- * A supported proxy's physical leg collider (contact motion). Its contacts are ordinary contact records (contact
- * observation, the fall response, rules, evidence all see them); a consumer that must not use one says so where it filters.
+ * A supported proxy's physical leg collider (contact motion). Its contacts (with ragdoll segments only, `addLegCollider`)
+ * are ordinary contact records (contact observation, the fall response, rules, evidence all see them); a consumer that
+ * must not use one says so where it filters.
  */
 export const isSupportedLeg = (tag: { key: string }): boolean => tag.key.startsWith(PHYS_LEG_KEY);
 /** Rapier interaction groups: 16 membership bits (high half) and 16 filter bits (low half), unsigned. */
@@ -500,11 +501,12 @@ export class PhysicsWorld {
    * itself, so the solver applies each once, equal and opposite. What it meets (the collision filter, every pair):
    * - collision groups: membership GROUP_LEGS only, filter every bit but GROUP_STATIC and GROUP_LEGS, so never another
    *   physical leg, nor ground a suspension marks static;
-   * - the simulation's contact hook (FILTER_CONTACT_PAIRS on this collider): never an untagged-player collider (the floor
-   *   and obstacles, in every fixture), another proxy's support capsule (a supported proxy's stand-in for its legs: leg on
-   *   leg stays the pose guard's) or support guard, or a ragdoll's self-clearance shapes;
+   * - the simulation's contact hook (FILTER_CONTACT_PAIRS on this collider): another player's ragdoll segment colliders
+   *   only (pose-runtime `legMeets`): never an untagged-player collider (the floor and obstacles, in every fixture), a
+   *   proxy's collider (supported or falling: torso, pelvis, head, support capsule or guard; supported against supported
+   *   stays the proxy collision's and the pose guards'), a ragdoll's self-clearance shapes or a physical leg;
    * - colliders of one body never meet each other: never its own proxy's trunk, support or guard.
-   * It meets every other collider of another player: a proxy's torso, pelvis and head, every ragdoll segment collider.
+   * It meets every segment collider of another player's ragdoll (ragdoll legs included), and nothing else.
    * Reshaped by `reshapeLeg`; removed with the body.
    */
   addLegCollider(body: RAPIER.RigidBody, playerId: PlayerId, part: BodyPartId, region: ColliderRegion, hull: LegHull, key: string): RAPIER.Collider {

@@ -41,7 +41,7 @@ import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { convertPlayers } from './conversion';
 import { observeContacts } from './contact-observation';
-import { carrySideOf, disablePhysicalLegs, footInputOf, legPointMove, observePhysicalLegs, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
+import { carrySideOf, disablePhysicalLegs, footInputOf, legMeets, legPointMove, observePhysicalLegs, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
 import { EMPTY_APPLIED, applyMotors } from './motor-step';
 export type { AuditLeg, TransitionDelta } from './transition-audit';
 
@@ -502,13 +502,12 @@ export class Simulation {
           return a.playerId !== null && a.playerId === b.playerId && ta !== tb && (ta ? b : a).key.startsWith(SELF_ARM_KEY);
         if (sameOwner && a.playerId !== null && a.playerId === b.playerId) return false;
         if ((a.key === 'supportGuard' && b.playerId !== null) || (b.key === 'supportGuard' && a.playerId !== null)) return false;
-        // contact motion (`LegGuardProfile.physicalLegs`): a physical leg meets other players' bodies only, not the floor or
-        // an obstacle (GROUP_STATIC covers them only where a suspension marks them static) and not another proxy's support
-        // capsule (its stand-in for its legs); the rules above already exclude support guards and self-clearance shapes,
-        // its collision groups other physical legs, and its own body never meets it (PhysicsWorld.addLegCollider)
-        const la = isSupportedLeg(a);
-        const lb = isSupportedLeg(b);
-        if ((la && (b.playerId === null || b.key === 'support')) || (lb && (a.playerId === null || a.key === 'support'))) return false;
+        // contact motion (`LegGuardProfile.physicalLegs`): a physical leg meets exactly what `legMeets` states, another
+        // player's ragdoll segment colliders: not the floor or an obstacle (GROUP_STATIC covers them only where a suspension
+        // marks them static), not another player's proxy (supported or falling), not another physical leg (its collision
+        // groups exclude those too) or a self-clearance shape; its own body never meets it (PhysicsWorld.addLegCollider)
+        if (isSupportedLeg(a)) return legMeets(b, a.playerId!);
+        if (isSupportedLeg(b)) return legMeets(a, b.playerId!);
         return true;
       });
     }

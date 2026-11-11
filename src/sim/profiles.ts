@@ -780,12 +780,14 @@ export interface LegGuardProfile {
   /**
    * Contact motion prerequisite (ladder rung 6): the supported proxy's legs are physical. Massless thigh, shin and shoe
    * colliders on the proxy's own body follow the achieved pose each substep, so another body's contact on a shown leg
-   * is a contact on the proxy (the solver applies it once, equal and opposite). They meet other players' proxy torso,
-   * pelvis and head and every ragdoll collider (ragdoll legs included); not another supported proxy's physical legs,
-   * support capsule or support guard, a ragdoll's self-clearance shapes, static ground (floor, obstacles) or their own
-   * body. Live only while the proxy stands on static ground (pose-runtime `physicalLegsLive`); removed with the proxy at
-   * a conversion. The pose leaves a physical leg at most PHYS_LEG_OK (pose.ts) in a body it meets, where that body
-   * stands, where the prediction puts it, and where it stands stopped (absent: unchanged).
+   * is a contact on the proxy (the solver applies it once, equal and opposite). They meet another player's ragdoll
+   * segment colliders (ragdoll legs included) and nothing else (pose-runtime `legMeets`): not another player's proxy,
+   * supported or falling (supported against supported stays the proxy collision's and the pose guards'), its physical
+   * legs, a ragdoll's self-clearance shapes, static ground (floor, obstacles) or their own body. Live only while the
+   * proxy stands on static ground (pose-runtime `physicalLegsLive`); removed with the proxy at a conversion; a leg inside
+   * another player's new ragdoll at its conversion leaves the solve until clear (`legsOffInsideConverted`). The pose
+   * leaves a physical leg at most PHYS_LEG_OK (pose.ts) in a body it meets, where that body stands, where the prediction
+   * puts it, and where it stands stopped (absent: unchanged).
    */
   physicalLegs?: true;
 }
