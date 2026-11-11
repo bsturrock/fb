@@ -1429,6 +1429,14 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // about that point (the heel lifts as the shin leans past the range), and the ankle moves with it as fast as the
         // shin turns; blended at the plant rate it would drag the sole point off its anchor (L3-F1-mirror0: D's toe, 1.2 cm)
         const pivot = !!inp.jointRange && fr?.kind === 'plant' && primaryAt && !rebased && chosen.rollF !== undefined && dist(dp, dc) <= CONT_PLANT_EXACT_M ? fr : null;
+        const mpsL = inp.loco ? (fr?.kind === 'plant' ? CONT_L3_PLANT_MPS : CONT_L3_MPS) : CONT_LEG_MPS;
+        // Rung 7b (physical legs, `legSweep`): an exact plant is shown where it stands, never pushed, so a body the legs
+        // meet can come into it (L3-F4-gripOwner R: 5.9 mm, on a knee pole); the first step after it (the swing's start)
+        // pushed the whole depth out at once (the ankle 1.3 cm, the shoe 2.0 cm in one substep with the rate step). The
+        // leg held so (`${k}:mh`) moves at most at the plant rate from where it stands, push-out included, until it is
+        // clear of the met bodies (PHYS_LEG_OK): it leaves the plant's own correction as a plant would make it. Fault:
+        // PoseDebug.noHeldMetExit
+        const heldMet = sweep && physMet && mem[`${k}:mh`] === 1 && !inp.debug?.noHeldMetExit;
         // the step toward a placement (its departure `dcT`, pole `pcT`, candidate `ch`, plant pivot `pv`) at blend `al`: the
         // chosen one, or (`legSweep`) another placement tried for a step that is not clear
         const atTo = (dcT: Vec3, pcT: Vec3, ch: LegC, pv: typeof pivot, al: number, deep = false): LegC & { good: boolean; rank: number } => {
@@ -1456,6 +1464,17 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
             de = extL(c.shapes);
             dm = metD(c);
           }
+          // rung 7b: a leg leaving a held plant in a met body moves at most the plant rate from where it stands, its
+          // push-out included
+          if (heldMet) {
+            const s0 = W(add(base, dp));
+            const cap = (inp.loco ? CONT_L3_PLANT_MPS : CONT_LEG_MPS) * dt;
+            if (dist(t, s0) > cap + 1e-9) {
+              t = add(s0, clampLen(sub(t, s0), cap));
+              c = sol.solve(t);
+              de = extL(c.shapes);
+            }
+          }
           return { ...c, depth: de, soft: softExt(c.shapes), req: t, ik: ch.ik, rollF: ch.rollF, edgeX: ch.edgeX, good: de <= extOk && c.depth <= floorOk, rank: Math.max(de, c.depth) };
         };
         const at = (al: number, deep = false): ReturnType<typeof atTo> => atTo(dc, pc, chosen, pivot, al, deep);
@@ -1466,7 +1485,6 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           if (!c) memo.set(x, (c = at(x)));
           return c;
         };
-        const mpsL = inp.loco ? (fr?.kind === 'plant' ? CONT_L3_PLANT_MPS : CONT_L3_MPS) : CONT_LEG_MPS;
         const radL = inp.loco ? CONT_L3_RADPS : CONT_POLE_RADPS;
         const al = continuityAlpha(dp, pp, dc, pc, dt, mpsL, radL, (x) => {
           const c = atM(x);
@@ -1585,6 +1603,11 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         setMemVec(mem, `${k}:p`, pc);
       }
     }
+    // rung 7b: a shown leg held exactly at its plant inside a met body (no step: never pushed) is marked; the mark goes
+    // once the shown leg is clear of the met bodies
+    if (kneePoles.length && physMet && metL(l.shapes) > PHYS_LEG_OK) {
+      if (l === r.best && fr?.kind === 'plant') mem[`${k}:mh`] = 1;
+    } else if (mem[`${k}:mh`] !== undefined) delete mem[`${k}:mh`];
     // physical legs: the shown leg's ankle request (body frame), the next step's start; kept only while they are live
     if (kneePoles.length && physMet) setMemVec(mem, `${k}:q`, Lw(l.req ?? W(base)));
     else if (mem[`${k}:q:x`] !== undefined) for (const a of ['x', 'y', 'z']) delete mem[`${k}:q:${a}`];

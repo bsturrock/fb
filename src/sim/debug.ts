@@ -50,6 +50,11 @@ export interface PoseDebug {
    * footwork releases), never the primary at another knee pole.
    */
   noPlantedPole?: boolean;
+  /**
+   * Fault (rung 7b, physical legs): a leg shown exactly at its plant inside a body the legs meet is pushed out of it at
+   * once by its next step (an ownership change jumps by the whole push-out), not at the continuity rate.
+   */
+  noHeldMetExit?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

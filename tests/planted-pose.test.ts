@@ -3,6 +3,9 @@ import { buildProxyPose, CONT_FAST_MPS, CONT_L3_PLANT_MPS, CONT_L3_RADPS, footFr
 import { initPhysics, RAPIER } from '../src/sim/physics';
 import { add, addScaled, dist, len, norm, qFromUnitVectors, qFromYaw, qRot, scale, sub, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX } from './helpers';
+import { LEG_GUARD_V3 } from '../src/sim/profiles';
+import { runSim } from './runs';
+import { loadState, resumeState } from './state';
 
 // Ladder rung 7: the planted primary pose, knee-pole first (`LegGuardProfile.sweep`, the pose input `legSweep`). On
 // constructed poses: one standing L3 body (yaw 0, its left leg at +x, the locomotion composition on, crouched so the
@@ -167,4 +170,45 @@ describe('rung 7: the planted primary pose, knee-pole first (constructed poses, 
     for (const [i, x] of on.slice(FREE + N).entries()) expect([x.variant, x.index], `pose ${i}`).toEqual([0, 0]);
     expect(dist(on[on.length - 1].pole, PRIMARY_POLE)).toBeLessThan(1e-6);
   });
+});
+
+describe('rung 7b: a leg leaving a plant held in a body the legs meet (physical legs, LEG_GUARD_V3)', () => {
+  // An exact plant is shown where it stands and never pushed, so under the physical legs a met body can come into it: in
+  // L3-F4-gripOwner under V3, R's left leg held at a knee pole (rung 7) is 5-6 mm in a met body for the last substeps
+  // before its swing starts at 1.7125 s. The swing's first step pushed the whole depth out at once: with the rate step
+  // the shoe moved 2.03 cm in the substep of the ownership change (the right ankle 1.31 cm at 2.083 s, the same way),
+  // over the transition audit's 1 cm. Capture: tick 96 (1.60 s) of the V3 run with the audit on
+  // (`scripts/capture-state.ts L3-F4-gripOwner 96 --v3 --audit`); it must hold R's left leg at a knee pole, planted and
+  // in a met body, before 1.7125 s. Fault twin: PoseDebug.noHeldMetExit (the push-out at once).
+  const id = 'L3-F4-gripOwner';
+  const CAPTURE = `tests/data/state/${id}~v3-audit@96.json.gz`;
+  const run = async (fault: boolean) => {
+    let heldAtPole = 0;
+    const sim = await runSim(
+      await resumeState(loadState(CAPTURE), {
+        def: { ...FIX(id), legGuard: LEG_GUARD_V3 },
+        ...(fault ? { faults: { pose: { noHeldMetExit: true } } } : {}),
+        opts: {
+          onSubstep: (s) => {
+            const R = s.players.find((p) => p.id === 'R')!;
+            if (s.t < 1.7125 - 1e-6 && R.feet?.feet.left.mode === 'planted' && R.poseMemory.leftLeg >= 10 && R.poseMemory['leftLeg:mh'] === 1) heldAtPole++;
+          },
+        },
+      }),
+    );
+    const over = sim.transitionDeltas.filter((b) => b.deltaM > 0.01).map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`);
+    const n = sim.transitionDeltas.length;
+    sim.dispose();
+    return { over, heldAtPole, n };
+  };
+
+  it('the swing starts from where the held leg stands: every ownership change after the capture within 1 cm; the twin pushing out at once jumps', async () => {
+    const on = await run(false);
+    const off = await run(true);
+    // the capture holds the case: R's left leg planted at a knee pole inside a met body before its swing starts
+    expect(on.heldAtPole).toBeGreaterThan(0);
+    expect(on.n).toBeGreaterThan(5);
+    expect(on.over).toEqual([]);
+    expect(off.over).toEqual(['R 1.7125 leftShoe', 'R 2.0833 rightAnkle']);
+  }, 60000);
 });

@@ -148,6 +148,14 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   `tests/planted-pose.test.ts` and the hold captures under V2/V3 (l3-contracts). `HOLD_CLEARANCE_REPLANT` under V2/V3:
   no clearance release and no plant after 3.5 s on either capture, the fault twin keeps the cycle. L3-F4-twoArm does not
   reach it (D's left foot there is released by reach at 0.583 s, not a plant).
+- **7b** (`r7b-pole-exit`) landed: byte-identical, 286/286. The knee-pole exit was not a candidate switch: an exact plant
+  is shown where it stands and never pushed, so a body the physical legs meet comes into it (R's left leg on its knee
+  pole 5-6 mm deep), and the swing's first step pushed that depth out at once on top of the rate step. Under V3 a leg
+  held so (pose memory `<side>Leg:mh`) now moves at most the plant rate from where it stands, push-out included, until
+  it is clear of the met bodies. The rung-7-off breaches (L3-F4-gripTarget D 1.14 cm, L3-F4-gripOwner R 1.33 cm) are
+  the same mechanism on the primary: with the fix every ownership change of the three runs is under 0.72 cm, with the
+  fault `PoseDebug.noHeldMetExit` they come back. Test: tests/planted-pose.test.ts on
+  `L3-F4-gripOwner~v3-audit@96` (`capture-state.ts --audit`), fault twin 2.03 / 1.31 cm.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -194,7 +202,7 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
   keeps the cycle (L3-F6-hold 2 plants, holdMirror 3 R plants). Resolved under V2/V3 by rung 7; tracked under V1 until
   the flip.
-- Knee-pole exit at a swing start (V3, rung 7): a planted leg held at a knee pole because its primary is in a body the
+- Resolved at 7b: knee-pole exit at a swing start (V3, rung 7): a planted leg held at a knee pole because its primary is in a body the
   legs meet leaves it for clearance alternative 9 in the substep its swing starts (the planted pose applies to plants
   only): the shown shoe moves 2.04 cm, over the transition audit's 1 cm (L3-F4-gripOwner R left 1.7125 s, right ankle
   1.31 cm at 2.083 s). From 1.60 s (`L3-F4-gripOwner~v3-audit@96`) the twin with the legs off and the twin with rung 7
