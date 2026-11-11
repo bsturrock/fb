@@ -132,6 +132,12 @@ export interface FallHost {
    * `manifoldPoints`, at every point of the pair's last contact manifold as well as the closest one.
    */
   closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual?: boolean, manifoldPoints?: boolean): Partial<Record<SegmentId, number>>;
+  /**
+   * `impactGuard.carried`: of the segments `segs` of `rag`, those closing faster than `closeMPerS` (within the
+   * lookahead) on another player's ragdoll that is itself about to land on static ground faster than `landMPerS`, valued
+   * at that landing speed. Observation only.
+   */
+  carriedImpacts(rag: Ragdoll, segs: SegmentId[], lookaheadS: number, predictionM: number, skinM: number, landMPerS: number, closeMPerS: number): Partial<Record<SegmentId, number>>;
   /** Plan 11: per forearm, the summed contact impulse (N s) on its own trunk in the solve just read (never a contact record). */
   selfImpulses(rag: Ragdoll): Partial<Record<SegmentId, number>>;
 }
@@ -380,6 +386,16 @@ export class FallResponse {
     const onCore = (seg: SegmentId): boolean => ep.rag.joints.some((j) => j.child === seg && j.parent === 'core');
     for (const [seg, v] of Object.entries(closing) as [SegmentId, number][])
       if (v > G.closingMPerS) out.add(v > G.bodyClosingMPerS && onCore(seg) ? 'body' : LIMB_OF[seg]);
+    // v6 (`carried`): a landing carried through a closing contact. L4-F9-defenderFalling under the physical legs
+    // (seeded in tests/carried.test.ts): D's right thigh closes on R's core at 1.5 m/s, under the body speed, while R's
+    // core lands on the floor at 4.9 m/s; the solve takes R's landing through the thigh (83.7 N s) and D's response
+    // realizes 172 W against 157.5. A segment jointed to the core closing on a ragdoll that lands faster than the body speed holds the
+    // body. Only such a segment can add a hold (a closing on the landing body is a closing above, so any other segment
+    // already holds its limb, or the core and head the body), and only while the body is not held already
+    if (G.carried && !out.has('body')) {
+      const segs = (Object.entries(closing) as [SegmentId, number][]).filter(([seg, v]) => v > G.closingMPerS && onCore(seg)).map(([seg]) => seg);
+      if (segs.length && Object.keys(this.host.carriedImpacts(ep.rag, segs, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, G.bodyClosingMPerS, G.closingMPerS)).length) out.add('body');
+    }
     return out;
   }
 

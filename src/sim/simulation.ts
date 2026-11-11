@@ -658,6 +658,7 @@ export class Simulation {
         gravity: Math.abs(def.solver.gravityY),
         emit: (type, id, data) => sim.emit(type, id, data),
         closingSpeeds: (rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints),
+        carriedImpacts: (rag, segs, lookaheadS, predictionM, skinM, landMPerS, closeMPerS) => sim.carriedImpacts(rag, segs, lookaheadS, predictionM, skinM, landMPerS, closeMPerS),
         selfImpulses: (rag) => sim.selfImpulses(rag),
       });
       if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
@@ -1314,6 +1315,53 @@ export class Simulation {
     const bp = vc(o.proxy.body.translation());
     const bq = { ...o.proxy.body.rotation() };
     return scale(qRot(bq, legPointMove(o.legs!, i, qInvRot(bq, sub(pw, bp)))), 1 / this.physics.dt);
+  }
+
+  /**
+   * `impactGuard.carried` (fall response v6): of the segments `segs` of `rag`, those closing on another player's ragdoll
+   * faster than `closeMPerS` within the lookahead (the `closingSpeeds` test, the closest point, against that body only:
+   * mere proximity, a resting touch that carries no load, does not count) while one of that ragdoll's segments closes on
+   * static ground (floor, obstacles) faster than `landMPerS` within the lookahead, valued at that landing speed. Read
+   * before the solve, like `closingSpeeds`. Pairs farther apart than the prediction are not queried (plan 13a), nor a
+   * landing body whose segment cannot move that fast at any point of its collider (its speed bound: the centre of
+   * mass's speed plus the angular speed times the collider's farthest reach from it).
+   */
+  carriedImpacts(rag: Ragdoll, segs: SegmentId[], lookaheadS: number, predictionM: number, skinM: number, landMPerS: number, closeMPerS: number): Partial<Record<SegmentId, number>> {
+    const out: Partial<Record<SegmentId, number>> = {};
+    const mine = rag.colliders.filter((rc) => segs.includes(rc.segment)).map((rc) => ({ rc, g: cullGeom(rc.collider.shape, rc.collider.translation(), rc.collider.rotation()) }));
+    const ground: RAPIER.Collider[] = [this.physics.floorCollider, ...this.obstacleColliders];
+    const groundG = ground.map((c) => cullGeom(c.shape, c.translation(), c.rotation()));
+    for (const o of this.players) {
+      if (!o.rag || o.rag === rag) continue;
+      const theirs = o.rag.colliders.map((oc) => ({ oc, g: cullGeom(oc.collider.shape, oc.collider.translation(), oc.collider.rotation()) }));
+      // the segments closing on this ragdoll
+      const hit = new Set<SegmentId>();
+      for (const { rc, g } of mine)
+        for (const { oc, g: og } of theirs) {
+          if (hit.has(rc.segment) || !geomNear(og, g, predictionM)) continue;
+          const r = oc.collider.contactCollider(rc.collider, predictionM);
+          if (!r) continue;
+          const vRel = sub(vc(rag.bodies[rc.segment].velocityAtPoint(r.point2)), vc(o.rag.bodies[oc.segment].velocityAtPoint(r.point1)));
+          const closing = -dot(vRel, vc(r.normal1));
+          if (closing > closeMPerS && r.distance - closing * lookaheadS < skinM) hit.add(rc.segment);
+        }
+      if (!hit.size) continue;
+      // its landing
+      let land = 0;
+      for (const { oc, g } of theirs) {
+        const b = o.rag.bodies[oc.segment];
+        if (g.r !== null && len(vc(b.linvel())) + len(vc(b.angvel())) * (len(sub(g.c, vc(b.worldCom()))) + g.r) <= landMPerS) continue;
+        for (let i = 0; i < ground.length; i++) {
+          if (!geomNear(groundG[i], g, predictionM)) continue;
+          const r = ground[i].contactCollider(oc.collider, predictionM);
+          if (!r) continue;
+          const closing = -dot(vc(b.velocityAtPoint(r.point2)), vc(r.normal1));
+          if (closing > landMPerS && r.distance - closing * lookaheadS < skinM) land = Math.max(land, closing);
+        }
+      }
+      if (land) for (const seg of hit) out[seg] = Math.max(out[seg] ?? 0, land);
+    }
+    return out;
   }
 
   /** Plan 11: per forearm of a ragdoll, the summed impulse of its self shapes on its own trunk in the last solve. */

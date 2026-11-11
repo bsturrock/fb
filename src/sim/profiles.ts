@@ -880,6 +880,13 @@ export interface FallResponseProfile {
      * its far points close, and the solve resolves them all (absent: the closest point only).
      */
     manifoldPoints?: true;
+    /**
+     * A landing carried through a closing contact: a segment jointed to the core, closing faster than `closingMPerS` on
+     * another player's ragdoll that is itself about to land on static ground (floor, obstacles) faster than
+     * `bodyClosingMPerS`, holds the whole body, though its own closing is under the body speed (absent: off). Only a
+     * segment closing on the landing body counts, not one near it.
+     */
+    carried?: true;
   };
   enable: { knee: boolean; hip: boolean; arms: boolean };
 }
@@ -903,9 +910,10 @@ export interface FallResponseProfile {
 /**
  * v5 (ladder rung 4b): a contact's closing speed is read at every point of its manifold (`impactGuard.manifoldPoints`):
  * a core rocking on one torso corner closes at the others while the closest point, the pivot, separates.
+ * v6 (ladder rung 6c): a landing carried through a closing contact holds the body (`impactGuard.carried`).
  */
 export const FALL_L4: FallResponseProfile = {
-  id: 'fall-response-l4-v5',
+  id: 'fall-response-l4-v6',
   timing: { delayS: 0.04, rampS: 0.08, fadeStartS: 0.8, fadeS: 0.2 },
   ceilingsNm: { shoulder: 15, elbow: 10, hip: 18, knee: 22 },
   gains: { shoulder: { kp: 60, kd: 6 }, elbow: { kp: 35, kd: 3 }, hip: { kp: 45, kd: 6 }, knee: { kp: 40, kd: 5 } },
@@ -925,7 +933,7 @@ export const FALL_L4: FallResponseProfile = {
     envelopeMarginDeg: 8,
   },
   power: { maxPositiveW: 150, maxPositiveWorkJ: 100, toleranceFraction: 0.05, planFraction: 0.9, impactOmegaRadPerS: 1 },
-  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002, jointResidual: true, manifoldPoints: true },
+  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002, jointResidual: true, manifoldPoints: true, carried: true },
   enable: { knee: true, hip: true, arms: true },
 };
 

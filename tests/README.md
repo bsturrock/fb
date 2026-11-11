@@ -11,12 +11,14 @@ profile variant (only the paths named in `variant` may differ from the capture's
 ## Capture
 
 ```sh
-npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers]
+npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3]
 ```
 
 Runs the fixture with the fixture export's defaults (ledgers off; `--ledgers` for a test that reads them, about twice
 the size), writes `tests/data/state/<fixture>@<tick>.json.gz` and checks that the resumed run reproduces the
-uninterrupted one to the end (exits 1 otherwise). Captures are between ticks (a tick is the fixture's
+uninterrupted one to the end (exits 1 otherwise). `--v3` runs it under `LEG_GUARD_V3` (the physical supported legs, which
+no registered fixture runs yet) and writes `<fixture>~v3@<tick>.json.gz`; a test resumes that one with the same
+definition, `{ def: { ...FIX(id), legGuard: LEG_GUARD_V3 } }`. Captures are between ticks (a tick is the fixture's
 `solver.substeps` physics substeps). They are 170-230 KB; a later tick is larger (the trace and events so far are part
 of the state).
 
