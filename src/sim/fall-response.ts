@@ -126,8 +126,11 @@ export interface FallHost {
   readonly steps: number;
   readonly gravity: number;
   emit(type: string, playerId: PlayerId | undefined, data: Record<string, unknown>): void;
-  /** Per segment, the fastest closing speed (m/s) of a contact its geometry meets within `lookaheadS`, if any. */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number): Partial<Record<SegmentId, number>>;
+  /**
+   * Per segment, the fastest closing speed (m/s) of a contact its geometry meets within `lookaheadS`, if any; with
+   * `jointResidual`, counting the segment's parent-joint velocity residual along the contact normal.
+   */
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual?: boolean): Partial<Record<SegmentId, number>>;
   /** Plan 11: per forearm, the summed contact impulse (N s) on its own trunk in the solve just read (never a contact record). */
   selfImpulses(rag: Ragdoll): Partial<Record<SegmentId, number>>;
 }
@@ -362,7 +365,12 @@ export class FallResponse {
     }
     // plan 11: a forearm on its own trunk is an impact on that arm (the core, far heavier, is not held for it)
     for (const [seg, j] of Object.entries(this.host.selfImpulses(ep.rag)) as [SegmentId, number][]) if (j > G.impulseNs) out.add(LIMB_OF[seg]);
-    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM);
+    // v4 (`jointResidual`): a contact also closes at what the segment's own joint still owes it from the last solve.
+    // L4-F9-low (intermediate pose, seeded in tests/headplant.test.ts): R's head lands (9.75 N s, under the impulse) and
+    // is at rest, but the solve left the core descending 1.08 m/s at the neck; the next solve takes 54.4 N s through the
+    // resting head, the core's jolt swings both elbows and they realize 177.3 W against 157.5. Its closing with the
+    // residual is 1.08: the body holds
+    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, !!G.jointResidual);
     // plan 14: a segment jointed to the core passes a hard hit straight into it, and the core parents every other limb
     const onCore = (seg: SegmentId): boolean => ep.rag.joints.some((j) => j.child === seg && j.parent === 'core');
     for (const [seg, v] of Object.entries(closing) as [SegmentId, number][])

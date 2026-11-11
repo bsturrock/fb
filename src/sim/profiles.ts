@@ -837,7 +837,20 @@ export interface FallResponseProfile {
    * `closingMPerS` within `lookaheadSubsteps`, or after a solve that gave it a contact impulse over `impulseNs`. A
    * segment jointed to the core (thigh, upper arm) closing faster than `bodyClosingMPerS` holds the whole body.
    */
-  impactGuard: { closingMPerS: number; bodyClosingMPerS: number; impulseNs: number; lookaheadSubsteps: number; predictionM: number; skinM: number };
+  impactGuard: {
+    closingMPerS: number;
+    bodyClosingMPerS: number;
+    impulseNs: number;
+    lookaheadSubsteps: number;
+    predictionM: number;
+    skinM: number;
+    /**
+     * A contact's closing speed also counts the parent joint's velocity residual along the contact normal: what the
+     * last solve left unsatisfied at the segment's own joint, which the next solve passes through the segment into what
+     * it rests on (absent: off).
+     */
+    jointResidual?: true;
+  };
   enable: { knee: boolean; hip: boolean; arms: boolean };
 }
 
@@ -853,8 +866,12 @@ export interface FallResponseProfile {
  * `L4-F9-defenderFalling` the runner's core met the defender's right thigh at 3.0 m/s; the guard held only that leg, and
  * the kick through the hip into the core drove the right shoulder to 44.6 W against its predicted 20.0, 171 W in all.
  */
+/**
+ * v4 (ladder rung 4a): a contact's closing speed counts its segment's joint residual (`impactGuard.jointResidual`): a
+ * joint the last solve left unsatisfied passes the rest through the segment into what it rests on in the next one.
+ */
 export const FALL_L4: FallResponseProfile = {
-  id: 'fall-response-l4-v3',
+  id: 'fall-response-l4-v4',
   timing: { delayS: 0.04, rampS: 0.08, fadeStartS: 0.8, fadeS: 0.2 },
   ceilingsNm: { shoulder: 15, elbow: 10, hip: 18, knee: 22 },
   gains: { shoulder: { kp: 60, kd: 6 }, elbow: { kp: 35, kd: 3 }, hip: { kp: 45, kd: 6 }, knee: { kp: 40, kd: 5 } },
@@ -874,7 +891,7 @@ export const FALL_L4: FallResponseProfile = {
     envelopeMarginDeg: 8,
   },
   power: { maxPositiveW: 150, maxPositiveWorkJ: 100, toleranceFraction: 0.05, planFraction: 0.9, impactOmegaRadPerS: 1 },
-  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002 },
+  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002, jointResidual: true },
   enable: { knee: true, hip: true, arms: true },
 };
 

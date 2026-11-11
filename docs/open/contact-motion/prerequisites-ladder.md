@@ -68,6 +68,12 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   the 13e blocked-home fault no longer moves a foot of L3-F6-hold, shown on the old tree's constructed planner hold
   instead; the limp-shoe hold catalogue gains HC-F1-low R.left and HC-F1-lowMirror D.right (plan 12's rule; the twin
   with the change off from 1.20 s, before either player converts, holds the same shoes for the same substeps).
+- **4a** (`r4a-joint-residual`) landed, `fall-response-l4-v4`: the parent joint's velocity residual counts toward a
+  segment's closing speed. Summaries changed: L4 28/75 only; no result or who-falls change; no L4-matrix row over the
+  power ceiling (highest peak L4-F9-contact R 142.0 to 151.1 W, under 157.5). Test: `tests/headplant.test.ts` on the
+  old tree's L4-F9-low seed (step 326), valid here unchanged: the same ragdoll profile id, the head touches with 9.75 N s
+  (under the impulse rule) and is at rest (0.004 m/s), closes at 1.08 m/s with its neck's residual, takes 54.4 N s; the
+  twin without the residual realizes 177.3 W (1 substep over), FALL_L4 holds the body and peaks at 129.7 W.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.

@@ -20,7 +20,7 @@ import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newL
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
+  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
   type RagdollCollider, type TransferAudit,
 } from './ragdoll';
 import {
@@ -641,7 +641,7 @@ export class Simulation {
         },
         gravity: Math.abs(def.solver.gravityY),
         emit: (type, id, data) => sim.emit(type, id, data),
-        closingSpeeds: (rag, lookaheadS, predictionM, skinM) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM),
+        closingSpeeds: (rag, lookaheadS, predictionM, skinM, jointResidual) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM, jointResidual),
         selfImpulses: (rag) => sim.selfImpulses(rag),
       });
       if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
@@ -1192,8 +1192,17 @@ export class Simulation {
    * Plan 09 impact guard: per segment of a ragdoll, the fastest closing speed of a contact its geometry meets within
    * `lookaheadS` (floor, obstacles, other players' active colliders), read before the solve. Observation only.
    */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number): Partial<Record<SegmentId, number>> {
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual = false): Partial<Record<SegmentId, number>> {
     const out: Partial<Record<SegmentId, number>> = {};
+    // `impactGuard.jointResidual`: per child segment, the parent's velocity at their joint pivot less the child's (zero
+    // for a solved joint). The next solve passes what the last one left unsatisfied into the child, and through a contact
+    // the child rests on into that contact, so the contact also closes at its own closing plus this residual
+    const residual = new Map<SegmentId, Vec3>();
+    if (jointResidual)
+      for (const j of rag.joints) {
+        const pivot = toWorld(poseOfRb(rag.bodies[j.child]), j.anchorChildLocal);
+        residual.set(j.child, sub(vc(rag.bodies[j.parent].velocityAtPoint(pivot)), vc(rag.bodies[j.child].velocityAtPoint(pivot))));
+      }
     const others: RAPIER.Collider[] = [this.physics.floorCollider, ...this.obstacleColliders];
     for (const o of this.players) if (o.id !== rag.playerId) others.push(...this.activeColliders(o));
     // plan 13a: a pair farther apart than the prediction returns nothing, so it is not queried; the query runs between the
@@ -1210,7 +1219,9 @@ export class Simulation {
         if (!r) continue;
         const other = c.parent();
         const vRel = sub(vc(body.velocityAtPoint(r.point2)), other ? vc(other.velocityAtPoint(r.point1)) : v3());
-        const closing = -dot(vRel, vc(r.normal1));
+        const ownClosing = -dot(vRel, vc(r.normal1));
+        const res = residual.get(rc.segment);
+        const closing = res ? Math.max(ownClosing, ownClosing - dot(res, vc(r.normal1))) : ownClosing;
         if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
       }
     }
