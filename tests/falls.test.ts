@@ -21,6 +21,7 @@ import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelop
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
 import { breathe, create, evs, FIX, nonEmpty, pace, rows, run, runSim, stepWhile, traceDiff } from './helpers';
+import { loadedLimbMonitor } from './loaded-limb';
 
 const ALL = fallFixtures();
 
@@ -323,25 +324,38 @@ describe('the limit torque follows a potential', () => {
   });
 
   // (the first test to read most falls: it runs them, with every observer, for the whole file)
+  // Ladder rung 7f (tests/loaded-limb.ts): the persistence clock counts the substeps a joint is past the tolerance while its
+  // envelope can correct it, not while the floor holds its limb (load-pinned); a pinned limb stays within the static
+  // deflection of the load it carries plus the envelope's overshoot, and once the floor lets go it is back inside within
+  // the envelope's free crossing time plus a tick. tests/loaded-limb.test.ts holds the rule's own cases and fault twins.
+  const limbs = watch(
+    (id) => !id.startsWith('L4-F1-'),
+    () => {
+      const m = loadedLimbMonitor();
+      return { data: m, substep: m.substep };
+    },
+  );
   it('in every fall, on or off, no joint stays past the tolerance longer than the persistence limit, and a limit returns less than it absorbs and launches nothing', async () => {
     await checks([
       [
-        'no joint stays past the tolerance longer than the persistence limit, in any fall, on or off',
+        'no joint stays past the tolerance longer than the persistence limit while its envelope can correct it, a pinned limb stays within its load, and an unloaded one returns, in any fall, on or off',
         async () => {
-          // plan 12 known limit (docs/handoff/plan12.md): the narrower shoulder holds the runner's right arm, pinned under its body
-          // in the oblique fall with the response off, past the tolerance for 0.32 s (the soft limit is capped at 500 N m)
-          // plan 13d known limit (user ruling): L4-F9-low's runner lies alone with its right shoulder 5-8 deg past the
-          // tolerance from 1.93 s to the fixture's end (0.47 s)
-          // contact motion M1 known limit (user ruling, scoped to this fixture): L4-F5-twoClamp-off's runner lands on its right
-          // forearm, which carries 16-37 % of its body weight on the floor from 2.08 s; the shoulder is held at 112 deg external
-          // twist (range 100, 10 deg past in the envelope's cos(swing/2) measure) for 0.496 s, the envelope pushing 70 N m
-          // (cap 500) the right way. Removing the forearm's friction does not free it (the weight does), and once the load
-          // leaves at 2.58 s the joint is back inside within 0.033 s. On joint-range-v1 the same landing reached 9.5 deg for 0.10 s
-          const known: Record<string, number> = { 'L4-F3-model-oblique-off R rightShoulder': 0.33, 'L4-F9-low R rightShoulder': 0.5, 'L4-F5-twoClamp-off R rightShoulder': 0.5 };
-          for (const d of ALL.filter((x) => !x.id.startsWith('L4-F1-'))) {
-            const s = await sim(d.id);
-            for (const p of s.players) for (const e of p.rag?.envelope ?? []) expect(e.maxOverRunS, `${d.id} ${p.id} ${e.jointId}`).toBeLessThan(known[`${d.id} ${p.id} ${e.jointId}`] ?? ENVELOPE_L4.persistS);
-          }
+          let pastOldClock = 0;
+          await rows(
+            ALL.filter((x) => !x.id.startsWith('L4-F1-')).map((d) => d.id),
+            (id) => id,
+            async (id) => {
+              for (const r of (await limbs(id)).records()) {
+                expect(r.freeRunS, `${r.key} free past the tolerance`).toBeLessThan(ENVELOPE_L4.persistS);
+                expect(r.overBoundDeg, `${r.key} pinned past its load's deflection (deg, at ${r.overBoundAt})`).toBeLessThanOrEqual(0);
+                expect(r.returnOverS, `${r.key} return after the unload at ${r.returnAt} (s over its bound ${r.returnBoundS})`).toBeLessThanOrEqual(0);
+                if (r.oldRunS >= ENVELOPE_L4.persistS) pastOldClock++;
+              }
+            },
+          );
+          // the class the rule is for occurs in the registered falls: L4-F3-model-oblique-off R's right shoulder (plan 12's
+          // known limit, 0.32 s on the envelope's own clock), pinned under its body throughout
+          expect(pastOldClock).toBeGreaterThan(0);
         },
       ],
       // the regression behind the cone: limits per quadrant fell under a limb sliding sideways, and paid 320 J to leave

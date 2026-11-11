@@ -185,6 +185,19 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   `legs=v1|v2|v3` (a leg-guard fixture under that profile; others as they are), shown in the title label, e.g.
   `?fixture=L3-F1-phase6&order=rev&legs=v3`. Test tests/lab-params.test.ts: that URL's run has the summary of the leg
   matrix's reversed row under V3; without the parameters it differs.
+- **7f** (`r7f-loaded-limb-rule`) landed: byte-identical, 292/292; tests only (`tests/loaded-limb.ts`). The envelope's
+  persistence check (falls) counts a joint's time past the tolerance only while the floor does not hold its limb
+  (load-pinned: the floor's solved normal load on the distal segments could exert, at its Coulomb cone and lever, the
+  envelope's moment at the tolerance, k |grad| 5 deg; own-trunk load does not pin). A pinned limb stays within
+  (1 + overshoot) x the largest load moment of the last half damped period / k (the load from the distal chain's angular
+  momentum balance, so friction counts; not judged in the load's first half period or at the cap); once the floor lets
+  go it is back inside within the envelope's free crossing time plus a tick. Known-limit entries retired:
+  L4-F3-model-oblique-off R (pinned throughout, 4.2 deg inside its bound); L4-F9-low R and L4-F5-twoClamp-off R no
+  longer occur at this tree (0.042 s and under 0.05 s on the old clock). Every fall passes under V1 and V3, both orders;
+  tightest: L4-F3-run-off D right hip under V3, back in 0.058 s against 0.061 (to watch at the flip). Test
+  tests/loaded-limb.test.ts on `L4-F3-run-on~v3@66`: old clock 0.2875 s, rule passes; twins: swing spring off while
+  pinned (8.8 deg over the bound, free clock under), off from the start (R's unloaded left arm 0.39 s free), the floor
+  letting go at 1.40 s (back in 0.013 s, bound 0.065) and the same with k/25 (0.158 s).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -216,10 +229,10 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 - Posed thigh held 1.0-1.45 cm inside a ragdoll pelvis for 15 substeps with every clearance loop capped
   (L4-F10-wrap-on D). At rung 7: 24 substeps over 1 cm (longest run 12, deepest 2.14 cm), reversed 29; under V3 none.
   Resolved by the flip.
-- Shoulder persistence under a loaded forearm (L4-F9-exit, L4-F3-run-on). Reached with V3 on: L4-F3-run-on R right
-  shoulder past the tolerance 0.2875 s (1.25-1.54 s, up to 7.6 deg) with R's right forearm and upper arm on the floor
-  throughout; from 1.10 s (`L4-F3-run-on~v3@66`) all twins give the same run. Tracked defect at the flip (scoped to the
-  fixture and the loaded forearm), or a fix rung first.
+- Resolved at 7f (the check, not the physics): shoulder persistence under a loaded forearm (L4-F9-exit, L4-F3-run-on).
+  Reached with V3 on: L4-F3-run-on R right shoulder past the tolerance 0.2875 s (1.25-1.54 s, up to 7.6 deg) with R's
+  right forearm and upper arm on the floor throughout; from 1.10 s (`L4-F3-run-on~v3@66`) all twins give the same run.
+  The excess is the load's static deflection (190 / 1500 N m/rad); the loaded-limb rule passes it (L4-F9-free R too).
 - Posed leg held inside another player's ragdoll, the conversion then rejected (tracked from rung 3, `LEG_IN_RAGDOLL`
   in tests/l3-pass.ts): D's posed legs 2-6.6 cm inside R's ragdoll core for 8-25 substeps before D's conversion,
   rejected for external penetration: L3-F4-oneArm and L3-F1-phase2 (right thigh in R's pelvis, 4.28 cm at 1.304 s),
