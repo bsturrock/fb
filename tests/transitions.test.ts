@@ -24,7 +24,7 @@ import { FOOTWORK_L3 } from '../src/sim/footwork';
 import { chestArm } from '../src/sim/run-clip';
 import { idleIntake } from '../scripts/model/idle-intake';
 import { pace, rows, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
-import { RULES_FOOTBALL, shoulderLocal, sideSignX } from '../src/sim/profiles';
+import { RULES_FOOTBALL, shoulderLocal, sideSignX, withSolvedImpulses } from '../src/sim/profiles';
 import { FIX } from './transitions-shared';
 
 // a long file of synchronous runs: let the runner's messages through between tests
@@ -34,7 +34,10 @@ describe('plan 08 opt-in', () => {
   it('asL3 keeps the source fixture and only adds the profiles', () => {
     const src = FIX('L2-F3-runStop');
     const d = asL3(src, 'L3-x');
-    expect({ ...d, id: src.id, milestone: src.milestone, footwork: src.footwork, locomotion: undefined, carry: undefined, selfClearance: undefined, jointRange: undefined, legGuard: undefined, ragdoll: src.ragdoll, rules: src.rules, notes: src.notes, runClips: src.runClips }).toEqual({ ...src, locomotion: undefined, carry: undefined });
+    expect({ ...d, id: src.id, milestone: src.milestone, solver: src.solver, footwork: src.footwork, locomotion: undefined, carry: undefined, selfClearance: undefined, jointRange: undefined, legGuard: undefined, ragdoll: src.ragdoll, rules: src.rules, notes: src.notes, runClips: src.runClips }).toEqual({ ...src, locomotion: undefined, carry: undefined });
+    // rung 7c: the solver reads contact impulses as solved, nothing else about it changes
+    expect(d.solver).toEqual(withSolvedImpulses(src.solver));
+    expect(d.solver.solvedImpulses).toBe(true);
     // contact motion M1: a source ragdoll takes the plan 10c pose guard
     if (src.ragdoll) expect(d.ragdoll!.poseGuard).toBeDefined();
     // the user's stance widths, chosen by eye: the base profile keeps none, so the committed fixtures do not move

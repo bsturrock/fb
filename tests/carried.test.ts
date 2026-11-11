@@ -17,6 +17,9 @@ import { loadState, resumeState } from './state';
 // The control (the narrow form: closing on the landing body): before that, R lands faster than the body speed three
 // times (1.096, 1.133 and 1.150 s) with D's left thigh resting on it (touching, not closing): no carried hold there, and
 // the runs with and without the flag are the same up to the first carried hit.
+// Rung 7c: the capture predates the solved impulse reading (`SolverProfile.solvedImpulses`); it is resumed under it
+// (the `solver` variant). The fixture run from the start under the solved reading no longer reaches this landing: D
+// stays under the ceiling without `carried` too (132.7 W), so the state is kept as captured.
 const CAPTURE = 'tests/data/state/L4-F9-defenderFalling~v3@65.json.gz';
 const ID = 'L4-F9-defenderFalling';
 const CEILING = FALL_L4.power.maxPositiveW * (1 + FALL_L4.power.toleranceFraction);
@@ -41,7 +44,7 @@ interface Row {
 async function resumed(carried: boolean): Promise<Row[]> {
   const v3: FixtureDef = { ...FIX(ID), legGuard: LEG_GUARD_V3 };
   const def = carried ? v3 : { ...v3, fallResponse: NO_CARRIED };
-  const sim = await resumeState(loadState(CAPTURE), { def, ...(carried ? {} : { variant: ['fallResponse'] }) });
+  const sim = await resumeState(loadState(CAPTURE), { def, variant: carried ? ['solver'] : ['solver', 'fallResponse'] });
   // (the private substep, wrapped to read the state before each solve and after it)
   const host = sim as unknown as { stepSubstep(i: number): void };
   const G = FALL_L4.impactGuard;

@@ -242,6 +242,11 @@ export interface SolverProfile {
   supportRegionTolM: number;
   /** A manifold point without solver impulse counts as contact only if penetrating at least this deep (negative). */
   touchDistM: number;
+  /**
+   * Contact impulses read as solved (`physics.ts` solvedImpulses): a manifold point outside the solve's contacts applied
+   * nothing, instead of reading the impulse it kept from the last solve that included it.
+   */
+  solvedImpulses?: true;
   linearDamping: number;
   angularDamping: number;
   /** Body sleeping, read by every dynamic body (physics proxies and ragdoll segments); always off. */
@@ -281,6 +286,12 @@ export const SOLVER_G1: SolverProfile = {
 export const SOLVER_G4: SolverProfile = { ...SOLVER_G1, id: 'solver-g4-4x60', substeps: 4 };
 /** Plan 09 L4-F8 only: a labelled zero-gravity diagnostic for the whole-body torque-pair audit. Gameplay gravity is unchanged. */
 export const SOLVER_G4_ZEROG: SolverProfile = { ...SOLVER_G4, id: 'solver-g4-4x60-zeroG-diagnostic', gravityY: 0 };
+
+/**
+ * Ladder rung 7c: a fixture's solver with contact impulses read as solved (`solvedImpulses`). On the L3, L4 and HC
+ * families (their constructors apply it); the older families keep the reading their evidence was made with.
+ */
+export const withSolvedImpulses = (s: SolverProfile): SolverProfile => (s.solvedImpulses ? s : { ...s, id: `${s.id}+solved`, solvedImpulses: true });
 
 // ---------------------------------------------------------------- support (plan 06a)
 /**

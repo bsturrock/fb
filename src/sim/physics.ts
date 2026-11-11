@@ -18,6 +18,53 @@ export const rapierVersion = (): string => RAPIER.version();
 
 const combine = (r: CombineRule): RAPIER.CoefficientCombineRule => RAPIER.CoefficientCombineRule[r];
 
+/**
+ * The normal impulse the last solve applied at each point of a manifold (`TempContactManifold.contactImpulse` order).
+ * Rapier solves at most four points of a manifold (its manifold reduction keeps the deepest point and the ones spanning
+ * the contact; a point past the prediction distance is left out too) and writes the solved impulse back to those only:
+ * a point left out keeps the impulse of the last solve that included it, and reads as if applied again (L3-F9-noProbe-prep
+ * under V3: D's shin on R's pelvis, 64.867 N s in three substeps while R's whole momentum changed by gravity alone).
+ * Each solver contact is matched to its point by world position (the solver point is the midpoint of the point's two
+ * collider-local points, exact to float rounding), nearest first, each point once, the lower index among equals (the
+ * reduction's own tie order: duplicated points are common on hull faces); every point it leaves unmatched applied none.
+ * `p1` and `p2` are the poses of the manifold's shape 1 and shape 2 colliders.
+ */
+export function solvedImpulses(m: RAPIER.TempContactManifold, p1: Pose, p2: Pose): number[] {
+  const n = m.numContacts();
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) out.push(m.contactImpulse(i));
+  const ns = m.numSolverContacts();
+  if (ns >= n) return out;
+  const mid: (Vec3 | null)[] = [];
+  for (let i = 0; i < n; i++) {
+    const l1 = m.localContactPoint1(i);
+    const l2 = m.localContactPoint2(i);
+    if (!l1 || !l2) {
+      mid.push(null);
+      continue;
+    }
+    const w1 = add(p1.p, qRot(p1.q, l1));
+    const w2 = add(p2.p, qRot(p2.q, l2));
+    mid.push(v3(0.5 * (w1.x + w2.x), 0.5 * (w1.y + w2.y), 0.5 * (w1.z + w2.z)));
+  }
+  const solved = new Array<boolean>(n).fill(false);
+  for (let j = 0; j < ns; j++) {
+    const sp = m.solverContactPoint(j);
+    if (!sp) continue;
+    let best = -1;
+    let bd = Infinity;
+    for (let i = 0; i < n; i++) {
+      const q = mid[i];
+      if (solved[i] || !q) continue;
+      const d = (q.x - sp.x) ** 2 + (q.y - sp.y) ** 2 + (q.z - sp.z) ** 2;
+      if (d < bd) [bd, best] = [d, i];
+    }
+    if (best >= 0) solved[best] = true;
+  }
+  for (let i = 0; i < n; i++) if (!solved[i]) out[i] = 0;
+  return out;
+}
+
 export interface ProxyBody {
   body: RAPIER.RigidBody;
   colliders: RAPIER.Collider[];
@@ -605,10 +652,11 @@ export class PhysicsWorld {
           const pts: ContactPointRec[] = [];
           const s1 = flipped ? cb : ca;
           const p1 = this.colliderPose(s1);
+          const J = this.solver.solvedImpulses ? solvedImpulses(m, p1, this.colliderPose(flipped ? ca : cb)) : null;
           let imp = 0;
           for (let i = 0; i < m.numContacts(); i++) {
             const d = m.contactDist(i);
-            const ji = m.contactImpulse(i);
+            const ji = J ? J[i] : m.contactImpulse(i);
             // Real contact = the solver applied a normal impulse, or clear penetration. Manifold distances are
             // narrow-phase values and can read slightly positive for resting contact, so they alone are not used.
             if (!(ji > 1e-7 || d <= touch)) continue;
@@ -682,9 +730,10 @@ export class PhysicsWorld {
         const lp0 = m.localContactPoint1(0);
         if (lp0 && dot(n, sub(playerCom, add(p1.p, qRot(p1.q, lp0)))) < 0) n = neg(n);
       }
+      const J = s.solvedImpulses ? solvedImpulses(m, p1, this.colliderPose(floorIsFirst ? support : this.floorCollider)) : null;
       for (let i = 0; i < m.numContacts(); i++) {
         const d = m.contactDist(i);
-        if (d > s.supportRegionTolM && !(m.contactImpulse(i) > 1e-7)) continue;
+        if (d > s.supportRegionTolM && !((J ? J[i] : m.contactImpulse(i)) > 1e-7)) continue;
         const lp = m.localContactPoint1(i);
         if (!lp) continue;
         const pw = add(p1.p, qRot(p1.q, lp));

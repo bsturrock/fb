@@ -16,7 +16,7 @@ import type { ArmSide } from '../src/sim/contracts';
 import { CARRY_ARM } from '../src/sim/carry';
 import { isGround } from '../src/sim/contracts';
 import { rotateToward } from '../src/sim/vec';
-import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, SOLVER_G4, SOLVER_G4_ZEROG, type JointEnvelope } from '../src/sim/profiles';
+import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, SOLVER_G4, SOLVER_G4_ZEROG, withSolvedImpulses, type JointEnvelope } from '../src/sim/profiles';
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, landmarkWorld, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
@@ -1132,7 +1132,8 @@ describe('L4-F8 airborne torque pairs', () => {
 
   it('joint actuation adds no external momentum, and energy change is explained by the work', async () => {
     const r = await sample('L4-F8-airborne');
-    expect(FIX('L4-F8-airborne').solver).toBe(SOLVER_G4_ZEROG);
+    // (rung 7c: the L4 family reads contact impulses as solved; the zero-gravity solver otherwise)
+    expect(FIX('L4-F8-airborne').solver).toEqual(withSolvedImpulses(SOLVER_G4_ZEROG));
     expect(SOLVER_G4.gravityY).toBeLessThan(-9);
     const f = report(r.s, 'R');
     expect(f.positiveWorkJ).toBeGreaterThan(5);

@@ -156,6 +156,22 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   the same mechanism on the primary: with the fix every ownership change of the three runs is under 0.72 cm, with the
   fault `PoseDebug.noHeldMetExit` they come back. Test: tests/planted-pose.test.ts on
   `L3-F4-gripOwner~v3-audit@96` (`capture-state.ts --audit`), fault twin 2.03 / 1.31 cm.
+- **7c** (`r7c-stale-impulse`) landed: G/L1/L2/RH byte-identical, 288/288; L3/L4/HC evidence changes (summary
+  regenerated). Rapier solves at most four points of a manifold and writes impulses back to those only; a point left
+  out keeps the impulse of the last solve that included it, and the contact records, the support contact, the leg
+  ledger and the self-trunk impulses read every point as applied. `solvedImpulses` (physics.ts) matches each solver
+  contact to its manifold point and reads the rest as 0, gated by `SolverProfile.solvedImpulses` (`+solved`) on
+  L3/L4/HC only (the ungated reading moved G, L2 and RH summaries). Stale share over the leg-guard runs, both orders, on
+  the old reading: V1 517.8 N s of 78,622 player-player (0.66%, 63 of 390 runs), V3 1055.4 of 81,886 (1.29%, 89 runs);
+  none on the floor. Worst: V1 HC-F5-strictTransfer 37.0 N s in one record, V3 L3-F9-noProbe-prep 134.4 N s in the run.
+  Changes: L4-F10-elbow-on D now falls (recovery envelope, 0.771 s, both orders): R's impact guard held one substep
+  more on a stale 10.7 N s shoe record at 0.113 s under the old reading, and the runs part there. L3-F1-phase6 reversed
+  D converts at 1.55 s: a stale 15.5 N s record of D's support on R's pelvis (a separated point kept only by its stale
+  impulse) kept D's locomotion in `contact`; solved, D leaves it 18 substeps sooner. Six more summaries move in peaks
+  only; no row over a ceiling, worst query tick 3423. Tests: tests/contact-impulse.test.ts (a five-point hull on a
+  frictionless slab: the solved reading equals the momentum the contact applied in 479/479 steps, the old one is off in
+  most), the gating per family. Captures regenerated; `L4-F9-defenderFalling~v3@65` kept as captured and resumed with
+  the `solver` variant (from the start under the solved reading D stays under the ceiling without `carried`, 132.7 W).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -209,8 +225,9 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   off are both under 1 cm. Fix before the flip (rung 7b, small): a leg leaving a plant at a knee pole keeps the pole
   candidates, bounded by continuity, until an ordinary one is reachable. Rung 7 off, V3 has its own owner-change
   breaches in the same family (L3-F4-gripTarget D 1.14 cm, L3-F4-gripOwner R 1.33 cm): to check against the fix.
-- Stale impulses in the contact records and the leg ledger: both read every manifold point's impulse; a point that
-  was not solved in a substep (apparently one outside the pair's solver contacts) keeps the last solve's value. L3-F9-noProbe-prep (V3) records
+- Resolved at 7c (L3/L4/HC; G/L1/L2/RH keep the old reading): stale impulses in the contact records and the leg
+  ledger: both read every manifold point's impulse; a point that was not solved in a substep (one outside the pair's
+  four solver contacts) keeps the last solve's value. L3-F9-noProbe-prep (V3) records
   D's shin on R's pelvis at 64.867 N s in three consecutive substeps while R's core changes speed by 2.02, 0.14 and
   0.05 m/s; repeated values add 181 N s to that run (V1: 11.4 N s), 47 N s to L3-F1-mirror4 (V1: none). Observation
   only, but the peaks and ledger totals used to judge contacts are inflated where it happens. A fix may move V1

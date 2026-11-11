@@ -9,7 +9,7 @@ import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleTarget, idleWeight, idleWidthAddM, sampleIdle, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
 import { colliderWorldPose, externalFromColliders, ragdollPose, SEGMENTS, type ExternalShape } from './ragdoll';
-import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
+import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, solvedImpulses, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
 import type { ArmSide } from './contracts';
 import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, type Quat } from './vec';
@@ -451,8 +451,9 @@ export function observePhysicalLegs(host: Pick<PoseHost, 'physics' | 'players' |
         W.contactPair(c, o, (m, flipped) => {
           const nw = vc(m.normal());
           const n = flipped ? scale(nw, -1) : nw;
+          const J = host.physics.solver.solvedImpulses ? solvedImpulses(m, host.physics.colliderPose(flipped ? o : c), host.physics.colliderPose(flipped ? c : o)) : null;
           for (let k = 0; k < m.numContacts(); k++) {
-            const ji = m.contactImpulse(k);
+            const ji = J ? J[k] : m.contactImpulse(k);
             const d = m.contactDist(k);
             if (ji <= 0 && d >= 0) continue;
             led!.maxDepthM = Math.max(led!.maxDepthM, -d);

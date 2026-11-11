@@ -6,7 +6,7 @@ import type {
 import type { Controller } from './controllers/base';
 import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
-import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, isSupportedLeg, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
+import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, isSupportedLeg, PhysicsWorld, RAPIER, solvedImpulses, type MassReport, type ProxyBody } from './physics';
 import {
   ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, sideSignX, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
@@ -1371,8 +1371,9 @@ export class Simulation {
     const W = this.physics.world;
     for (const rc of rag.self.arms)
       for (const t of rag.self.trunk)
-        W.contactPair(rc.collider, t, (m) => {
-          for (let i = 0; i < m.numContacts(); i++) out[rc.segment] = (out[rc.segment] ?? 0) + m.contactImpulse(i);
+        W.contactPair(rc.collider, t, (m, flipped) => {
+          const J = this.physics.solver.solvedImpulses ? solvedImpulses(m, this.physics.colliderPose(flipped ? t : rc.collider), this.physics.colliderPose(flipped ? rc.collider : t)) : null;
+          for (let i = 0; i < m.numContacts(); i++) out[rc.segment] = (out[rc.segment] ?? 0) + (J ? J[i] : m.contactImpulse(i));
         });
     return out;
   }
