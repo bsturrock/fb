@@ -305,16 +305,32 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     if (!g) geoms.set(e, (g = cullGeom(e.shape, e.pose.p, e.pose.q)));
     return g;
   };
+  // contact motion prerequisite (ladder rung 1), exact repeats: within one pose build the checks ask the same query more
+  // than once (a step's shapes are rebuilt by each check; the leg guard asks the plain externals and then them with the
+  // moved ones). A query is the pose shape (by value), the external shape (the object: its collider or its pose, fixed
+  // within the build, see liveExternals) and the prediction; the same query has the same answer, so each is asked once
+  // and its answer reused. The answers live with this clearance, built for one player's pose in one substep (the
+  // transition audit's replays of that pose read the same answers) and dropped with it: nothing is reused across substeps
+  const answers = new Map<ExternalShape, Map<string, RAPIER.ShapeContact | null>>();
+  const contact = (sk: string, q: { shape: RAPIER.Shape; pose: { p: Vec3; q: Quat } }, e: ExternalShape, prediction: number): RAPIER.ShapeContact | null => {
+    let m = answers.get(e);
+    if (!m) answers.set(e, (m = new Map()));
+    const k = `${prediction}|${sk}`;
+    let r = m.get(k);
+    if (r === undefined) m.set(k, (r = e.collider ? e.collider.contactShape(q.shape, q.pose.p, q.pose.q, prediction) : e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, prediction)));
+    return r;
+  };
   const depth = (shapes: PoseShape[], against: ExternalShape[]): number => {
     let d = 0;
     for (const s of shapes) {
       const b = poseCullGeom(s);
+      const sk = poseShapeKey(s);
       let q: ReturnType<typeof poseShapeToRapier> | undefined;
       for (const e of against) {
         if (!geomNear(geomOf(e), b, 0.02)) continue;
         if (q === undefined) q = poseShapeToRapier(s);
         if (!q) break;
-        const r = e.collider ? e.collider.contactShape(q.shape, q.pose.p, q.pose.q, 0.02) : e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, 0.02);
+        const r = contact(sk, q, e, 0.02);
         if (r) d = Math.max(d, -r.distance);
       }
     }
@@ -324,13 +340,14 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     const v = v3();
     for (const s of shapes) {
       const b = poseCullGeom(s);
+      const sk = poseShapeKey(s);
       let q: ReturnType<typeof poseShapeToRapier> | undefined;
       let best: { d: number; n: Vec3 } | null = null;
       for (const e of against) {
         if (!geomNear(geomOf(e), b, 0)) continue;
         if (q === undefined) q = poseShapeToRapier(s);
         if (!q) break;
-        const r = e.collider ? e.collider.contactShape(q.shape, q.pose.p, q.pose.q, 0) : e.shape.contactShape(e.pose.p, e.pose.q, q.shape, q.pose.p, q.pose.q, 0);
+        const r = contact(sk, q, e, 0);
         if (r && r.distance < 0 && (!best || -r.distance > best.d)) best = { d: -r.distance, n: vc(r.normal1) };
       }
       if (best) Object.assign(v, addScaled(v, best.n, Math.max(0, best.d - toleranceM)));
@@ -428,6 +445,17 @@ function poseCullGeom(s: PoseShape): CullGeom {
   if (s.kind === 'ball') return { c: s.c, r: s.r, seg: { a: s.c, b: s.c, r: s.r } };
   if (s.kind === 'box') return { c: s.c, r: len(s.he), seg: boxSeg(s.c, s.he, s.q), box: { c: s.c, he: s.he, q: s.q } };
   return { c: scale(add(s.a, s.b), 0.5), r: 0.5 * len(sub(s.b, s.a)) + s.r, seg: { a: s.a, b: s.b, r: s.r } };
+}
+
+/**
+ * A pose shape's query identity: its kind and every number its Rapier shape and pose are built from (poseShapeToRapier),
+ * exactly (-0 kept apart from 0).
+ */
+function poseShapeKey(s: PoseShape): string {
+  const n = (x: number): string => (Object.is(x, -0) ? '-0' : String(x));
+  if (s.kind === 'ball') return `b${n(s.c.x)},${n(s.c.y)},${n(s.c.z)},${n(s.r)}`;
+  if (s.kind === 'box') return `x${n(s.c.x)},${n(s.c.y)},${n(s.c.z)},${n(s.he.x)},${n(s.he.y)},${n(s.he.z)},${n(s.q.x)},${n(s.q.y)},${n(s.q.z)},${n(s.q.w)}`;
+  return `c${n(s.a.x)},${n(s.a.y)},${n(s.a.z)},${n(s.b.x)},${n(s.b.y)},${n(s.b.z)},${n(s.r)}`;
 }
 
 /** Bounding sphere of a pose shape. */
