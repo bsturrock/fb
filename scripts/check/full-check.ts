@@ -1,8 +1,9 @@
 // The full check (scripts/check/README.md): typecheck, build, the test suite, the fixture export, the leg matrix, the
-// L4 matrix and the passive-energy matrix of the current tree, written into one result directory.
+// L4 matrix, the passive-energy matrix and the visible-quality matrix of the current tree, written into one result
+// directory.
 //   npx vite-node scripts/check/full-check.ts <result dir>
 // Env: CHECK_JOBS (parallel workers after the suite, default 6), CHECK_SKIP (comma list of
-// typecheck,build,suite,fixtures,legmx,l4mx,energymx; a skipped part is recorded as skipped).
+// typecheck,build,suite,fixtures,legmx,l4mx,energymx,visiblemx; a skipped part is recorded as skipped).
 // The leg matrix's runs also write the shape-query budget (queries.jsonl).
 // The suite runs first and alone (no competing load, so no induced timeouts); the export and matrix shards then run in a
 // bounded pool. Every compared file is deterministic: no timestamps, stable order. Timings go to meta.json and logs/.
@@ -10,7 +11,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { familyOf } from './lib';
+import { familyOf, visibleHeadline, type VisRow } from './lib';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const outArg = process.argv[2];
@@ -23,7 +24,7 @@ const WORK = join(OUT, '.work');
 const LOGS = join(OUT, 'logs');
 const JOBS = Math.max(1, Number(process.env.CHECK_JOBS ?? 6));
 const SKIP = new Set((process.env.CHECK_SKIP ?? '').split(',').filter(Boolean));
-const SHARDS = { fixtures: 8, legmx: 8, l4mx: 4, energymx: 8 };
+const SHARDS = { fixtures: 8, legmx: 8, l4mx: 4, energymx: 8, visiblemx: 8 };
 const VITE_NODE = join(ROOT, 'node_modules/vite-node/vite-node.mjs');
 
 rmSync(WORK, { recursive: true, force: true });
@@ -159,6 +160,7 @@ const shard = (part: keyof typeof SHARDS, script: string): void => {
 };
 shard('legmx', join(ROOT, 'scripts/check/legmx.ts'));
 shard('energymx', join(ROOT, 'scripts/check/energymx.ts'));
+shard('visiblemx', join(ROOT, 'scripts/check/visiblemx.ts'));
 shard('fixtures', join(ROOT, 'scripts/check/fixtures-shard.ts'));
 shard('l4mx', join(ROOT, 'scripts/check/l4mx.ts'));
 const tp = Date.now();
@@ -217,7 +219,7 @@ else {
     sameAsCommittedSummary: existsSync(committed) && readFileSync(committed, 'utf8') === summary,
   };
 }
-for (const part of ['legmx', 'l4mx', 'energymx'] as const) {
+for (const part of ['legmx', 'l4mx', 'energymx', 'visiblemx'] as const) {
   if (SKIP.has(part)) {
     status[part] = 'skipped';
     continue;
@@ -227,7 +229,11 @@ for (const part of ['legmx', 'l4mx', 'energymx'] as const) {
     .map((l) => JSON.parse(l) as { k: number; rev: boolean });
   rows.sort((a, b) => a.k - b.k || Number(a.rev) - Number(b.rev));
   write(`${part}.jsonl`, rows.map(({ k: _k, ...r }) => JSON.stringify(r) + '\n').join(''));
-  status[part] = { rows: rows.length, ...(part === 'energymx' ? { byFamily: energyHeadline(rows as unknown as EnergyRow[]) } : {}) };
+  status[part] = {
+    rows: rows.length,
+    ...(part === 'energymx' ? { byFamily: energyHeadline(rows as unknown as EnergyRow[]) } : {}),
+    ...(part === 'visiblemx' ? { byFamily: visibleHeadline(rows as unknown as VisRow[]) } : {}),
+  };
 }
 // the shape-query budget (the leg matrix's runs): the most queries in one tick per fixture and order
 if (!SKIP.has('legmx')) {
@@ -252,6 +258,7 @@ console.log(
     suite ? `suite ${suite.passed}/${suite.total} passed, ${suite.failed} failed` : 'suite skipped',
     `fixtures ${JSON.stringify(status.fixtures)}`,
     `legmx ${JSON.stringify(status.legmx)}  l4mx ${JSON.stringify(status.l4mx)}  energymx ${JSON.stringify(status.energymx)}`,
+    `visiblemx ${typeof status.visiblemx === 'string' ? status.visiblemx : `${(status.visiblemx as { rows: number }).rows} rows`}`,
     shardFailed.length ? `SHARDS FAILED: ${shardFailed.join(', ')} (see logs/)` : 'all shards ok',
   ].join('\n'),
 );

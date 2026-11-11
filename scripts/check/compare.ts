@@ -4,7 +4,7 @@
 // or RH fixture summary. Everything else is reported for judgement. Env COMPARE_MAX: lines listed per section (default 60).
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ENERGY_FAMILIES, familyOf, FAMILIES, FROZEN_FAMILIES, SHAPE_QUERY_BUDGET } from './lib';
+import { ENERGY_FAMILIES, familyOf, FAMILIES, FROZEN_FAMILIES, SHAPE_QUERY_BUDGET, visibleColumns, visibleHeadline, visLabUrl, type VisColumn, type VisRow } from './lib';
 import { INJECTION_J } from '../../tests/passive-energy';
 
 const [A, B] = [process.argv[2], process.argv[3]].map((p) => (p ? resolve(p) : ''));
@@ -30,7 +30,7 @@ const ma = readJson<{ head: string; dirtyFiles: number }>(A, 'meta.json');
 const mb = readJson<{ head: string; dirtyFiles: number }>(B, 'meta.json');
 say(`A ${A}  (${ma?.head?.slice(0, 7) ?? '?'}${ma?.dirtyFiles ? `, ${ma.dirtyFiles} dirty` : ''})`);
 say(`B ${B}  (${mb?.head?.slice(0, 7) ?? '?'}${mb?.dirtyFiles ? `, ${mb.dirtyFiles} dirty` : ''})`);
-const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl', 'energymx.jsonl'];
+const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl', 'energymx.jsonl', 'visiblemx.jsonl'];
 const same = files.filter((f) => read(A, f) != null && read(A, f) === read(B, f));
 say(`files byte-identical: ${same.length}/${files.length}${same.length < files.length ? ` (differ or missing: ${files.filter((f) => !same.includes(f)).join(', ')})` : ''}`);
 
@@ -381,6 +381,92 @@ matrix('l4mx.jsonl', 'L4 matrix');
       }
       if (!fresh.length && !rose.length) say('  no new injecting run, no largest gain rose');
     }
+  }
+}
+
+// ------------------------------------------------------------------------------------------------ visible quality
+// informational (tests/visible.ts; definitions in scripts/check/README.md): what the drawn frames show
+{
+  const load = (dir: string): Map<string, VisRow> | null => {
+    const s = read(dir, 'visiblemx.jsonl');
+    return s == null
+      ? null
+      : new Map(
+          s
+            .split('\n')
+            .filter(Boolean)
+            .map((l) => JSON.parse(l) as VisRow)
+            .map((r) => [`${r.id} ${r.rev ? 'rev' : 'fwd'}`, r]),
+        );
+  };
+  const va = load(A);
+  const vb = load(B);
+  say();
+  if (!vb) say('visible quality: B has no visiblemx.jsonl (skipped)');
+  else {
+    // the headline columns (s), A -> B per family
+    const HEAD: VisColumn[] = ['ragImpS', 'ragImplS', 'supImpS', 'ragSelfLegAxS', 'ragSelfDeepS', 'supSelfLegAxS', 'crossLegSupSupS', 'crossLegSupRagS', 'crossLegRagRagS', 'ragSnap60', 'supSnap60', 'kneeStopS'];
+    const ha = va ? visibleHeadline([...va.values()]) : null;
+    const hb = visibleHeadline([...vb.values()]);
+    say(`visible quality (player-seconds; informational): rows ${va ? `A ${va.size}, ` : ''}B ${vb.size}`);
+    for (const f of ENERGY_FAMILIES) {
+      const b = hb[f];
+      if (!b) continue;
+      const a = ha?.[f];
+      const cell = (c: VisColumn): string => (a && a[c] !== b[c] ? `${c} ${a[c]} -> ${b[c]}` : `${c} ${b[c]}`);
+      say(`  ${f} (ragdoll ${b.ragS} s, supported ${b.supS} s): ${HEAD.map(cell).join(', ')}`);
+    }
+    // the ragdoll impossible time by joint and direction, family totals
+    const breakdown = (label: string, pick: (r: VisRow) => Record<string, number>): void => {
+      const tot = (m: Map<string, VisRow>): Record<string, number> => {
+        const o: Record<string, number> = {};
+        for (const r of m.values()) for (const [k, v] of Object.entries(pick(r))) o[k] = (o[k] ?? 0) + v;
+        return o;
+      };
+      const da = va ? tot(va) : {};
+      const db = tot(vb);
+      const keys = [...new Set([...Object.keys(da), ...Object.keys(db)])].sort((x, y) => (db[y] ?? 0) - (db[x] ?? 0));
+      if (keys.length) say(`  ${label} (s): ${keys.map((k) => `${k} ${va ? `${(da[k] ?? 0).toFixed(1)} -> ` : ''}${(db[k] ?? 0).toFixed(1)}`).join(', ')}`);
+    };
+    breakdown('ragdoll impossible by DOF', (r) => r.rag.imp);
+    breakdown('ragdoll deep own-body overlap by class', (r) => r.rag.selfDeep);
+    if (!va) say('  A has no visiblemx.jsonl: no comparison');
+    else {
+      // runs that got worse: a column up by more than 0.05 s (snaps: any)
+      const worse: [number, string][] = [];
+      for (const [k, b] of vb) {
+        const a = va.get(k);
+        if (!a) continue;
+        const ca = visibleColumns(a);
+        const cb = visibleColumns(b);
+        const up = HEAD.filter((c) => cb[c] - ca[c] > (c.includes('Snap') ? 0 : 0.05));
+        if (!up.length) continue;
+        const w = b.worst.ragImp ?? b.worst.ragSelfDeep ?? b.worst.supImp;
+        worse.push([
+          up.reduce((s, c) => s + cb[c] - ca[c], 0),
+          `${k}: ${up.map((c) => `${c} ${ca[c]} -> ${cb[c]}`).join(', ')}${w ? `  ${visLabUrl(b.id, b.rev, w[1], w[3])}` : ''}`,
+        ]);
+      }
+      worse.sort((x, y) => y[0] - x[0]);
+      say(`  runs that got worse (a column up > 0.05 s, or more snaps): ${worse.length}`);
+      list(worse.map(([, s]) => s), '    ');
+    }
+    // the worst events now: ragdoll impossible joints (deg s past the range) and deep own-body overlaps (cm s), one per fixture
+    const top = (col: string, unit: string): string[] => {
+      const best = new Map<string, [VisRow, [string, string, number, number, number, number, number]]>();
+      for (const r of vb.values()) {
+        const w = r.worst[col];
+        if (w && (!best.has(r.id) || best.get(r.id)![1][6] < w[6])) best.set(r.id, [r, w]);
+      }
+      return [...best.values()]
+        .sort((x, y) => y[1][6] - x[1][6])
+        .slice(0, 10)
+        .map(([r, w]) => `${r.id} ${r.rev ? 'rev' : 'fwd'} ${w[0]} ${w[1]}: peak ${w[2]} at ${w[3]} s (${w[4]}-${w[5]} s), ${w[6]} ${unit}  ${visLabUrl(r.id, r.rev, w[1], w[3])}`);
+    };
+    say('  top 10 worst ragdoll joints now (excess past the human range; one per fixture):');
+    list(top('ragImp', 'deg s'), '    ');
+    say('  top 10 worst ragdoll own-body overlaps now (cm past idle, events past 10 cm):');
+    list(top('ragSelfDeep', 'cm s'), '    ');
   }
 }
 
