@@ -7,6 +7,7 @@ import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry
 import type { PhysicsWorld } from './physics';
 import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { clampDirToEnvelope, swingExcess, swingExtentDeg } from './joint-cone';
+import { hipNeutralFrame, initHipStop, ratchetHipStop, type HipStopRuntime } from './joint-stops';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type JointRangeProfile, type RagdollProfile, type SelfClearanceProfile } from './profiles';
 import {
   add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qFromUnitVectors, qIdentity, qMul, qRot, round, rv, scale,
@@ -99,6 +100,8 @@ export interface Ragdoll {
   envelope?: EnvelopeRuntime[];
   /** Plan 11 arm self-clearance: the forearms' self shapes and the core's trunk pieces (absent: profile off). */
   self?: { arms: RagdollCollider[]; trunk: RAPIER.Collider[] };
+  /** Ladder rung 8d: the hips' hard stops since the build (absent: profile off). */
+  hipStops?: HipStopRuntime[];
 }
 
 /**
@@ -366,6 +369,12 @@ export function buildCandidate(
     landmarks[`${side}Shoe`] = { seg: `${side}Shin`, local: shoeLocal(side).p };
   }
   const rag: Ragdoll = { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false, ...(selfCols ? { self: selfCols } : {}) };
+  // ladder rung 8d: the hips' stops in their anatomical frame, widened to where the pose starts each hip
+  const HS = R.hipStops;
+  if (HS)
+    rag.hipStops = joints.flatMap((j, i) =>
+      j.kind === 'hip' && j.side ? [initHipStop(j.joint, j.id, i, bodies[j.parent].rotation(), bodies[j.child].rotation(), hipNeutralFrame(body, j.side), HS, j.sideSign ?? 1)] : [],
+    );
   if (pose.anklePitchDeg) rag.anklePitchDeg = { ...pose.anklePitchDeg };
   if (jointRange) {
     const F = jointRange.limpFoot;
@@ -424,6 +433,15 @@ export function easeLimpFeet(rag: Ragdoll, dt: number, blocked?: (c: RagdollColl
     c.local = local;
     rag.landmarks[`${side}Shoe`].local = local.p;
     rag.bodies[`${side}Shin`].recomputeMassPropertiesFromColliders();
+  }
+}
+
+/** Ladder rung 8d: one substep of the hips' stops, before the solve (`ratchetHipStop`); an enabled ragdoll only. */
+export function ratchetHipStops(rag: Ragdoll): void {
+  if (!rag.hipStops || !rag.enabled) return;
+  for (const h of rag.hipStops) {
+    const j = rag.joints[h.jointIndex];
+    ratchetHipStop(h, j.joint, rag.bodies[j.parent].rotation(), rag.bodies[j.child].rotation());
   }
 }
 

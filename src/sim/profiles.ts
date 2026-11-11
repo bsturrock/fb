@@ -647,7 +647,43 @@ export interface RagdollProfile {
    * self-trunk pinch: floor, forearm, its own trunk; tests/passive-energy.ts measures it). Absent: none (Rapier's one).
    */
   additionalPgsIterations?: number;
+  /**
+   * Ladder rung 8d: hard outer stops on the spherical hips (Rapier's angular limits, `src/sim/joint-stops.ts`), in the
+   * hip's anatomical frame. Absent: the hips have none (the L4 soft envelope, where there is one, is all).
+   */
+  hipStops?: HipStopProfile;
 }
+
+/**
+ * Ladder rung 8d: the hip's hard outer stops, deg from the anatomical neutral (the thigh parallel to the trunk axis, its
+ * knee axis on the core's X): flexion forward, extension behind, abduction away from the midline, adduction across it,
+ * internal and external rotation about the thigh. Each bounds one component of the joint's relative rotation (Rapier's
+ * box on the quaternion's vector part, sin of half the angle), so it is exact on its own axis and couples at corners
+ * (`src/sim/joint-stops.ts`). Outside the human active range (hip flexion 120, extension 30, abduction 45, adduction 30,
+ * rotation 45; AAOS) by a few degrees where a limp body lies (flexion, abduction), at it elsewhere. Engineering limits.
+ */
+export interface HipStopProfile {
+  id: string;
+  flexionDeg: number;
+  extensionDeg: number;
+  abductionDeg: number;
+  adductionDeg: number;
+  internalDeg: number;
+  externalDeg: number;
+  /**
+   * A conversion that starts a hip outside a stop widens that stop to the start and lets it close back with the joint (a
+   * ratchet: never outward, never past the stop), so no stop kicks at the switch; never wider than this from the neutral,
+   * short of the half turn where the quaternion's sign flips.
+   */
+  capDeg: number;
+  /** A fall-response hip target is held this far inside the stops (it would otherwise drive the thigh into one). */
+  driveMarginDeg: number;
+}
+
+export const HIP_STOPS_V1: HipStopProfile = { id: 'hip-stops-v1', flexionDeg: 125, extensionDeg: 30, abductionDeg: 50, adductionDeg: 30, internalDeg: 45, externalDeg: 45, capDeg: 172, driveMarginDeg: 3 };
+
+/** Ladder rung 8d: the ragdoll profile with hard hip stops, under an id that names them. */
+export const withHipStops = (r: RagdollProfile, h: HipStopProfile = HIP_STOPS_V1): RagdollProfile => ({ ...r, id: `${r.id}+${h.id}`, hipStops: h });
 
 export interface PoseGuard {
   id: string;
