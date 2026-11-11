@@ -770,9 +770,18 @@ export interface LegGuardProfile {
   id: string;
   /** Prediction time (s): one physics substep. */
   aheadS: number;
+  /**
+   * Contact motion prerequisite (thigh tangle, ladder rung 5): the supported legs' achieved step is judged, not only its
+   * target, against the physical bodies (where they stand and where the prediction puts them). A step still past the
+   * clearance tries the other leg placements (the knee poles of the primary placement, then the offsets), and a step that
+   * would pass through a body stops at its last clear point (absent: unchanged).
+   */
+  sweep?: true;
 }
 
 export const LEG_GUARD_V1: LegGuardProfile = { id: 'leg-guard-predictive-v1', aheadS: 1 / 240 };
+/** Contact motion prerequisite: plan 13f's prediction with the swept leg step (`sweep`). No fixture uses it yet. */
+export const LEG_GUARD_V2: LegGuardProfile = { ...LEG_GUARD_V1, id: 'leg-guard-sweep-v2', sweep: true };
 
 /**
  * Plan 12: the ragdoll under a joint-range profile. The envelope's shoulder is the profile's (an L4 envelope keeps its

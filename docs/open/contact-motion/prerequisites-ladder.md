@@ -92,6 +92,16 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   state graph at a tick boundary, resumed into a fresh build of the (possibly variant) definition; resumed runs
   reproduce the uninterrupted export byte for byte. The rule 7 tracked-defect tests (`LEG_IN_RAGDOLL`,
   `HOLD_CLEARANCE_REPLANT`) resume from captures 2 ticks before the defect (`tests/data/state/`, 166-232 KB each).
+- **5** (`r5-leg-sweep`) landed: byte-identical, shape-query counts unchanged. `LEG_GUARD_V2` (`sweep`, no fixture runs
+  it): the supported legs' shown step is judged against the physical bodies (`PoseClearance.legs.physical`), a leg
+  still past HARD_OK tries the primary's other knee poles, then the offsets, and the step is swept from the shown pose in
+  1 cm samples, stopping at the last clear one. Tests: the 13f thrown closing body under V2 (body-limits) and four
+  constructed pose cases (another placement, a stop at the last clear sample with the twin crossing, limb lengths and
+  hip kept, no jump on stop or resume); the harness profile row. With V2 on all fixtures (information,
+  `.scratch/ladder/r5-leg-sweep/v2-on/`): the leg matrix changes 8 of 390 rows, L3-F1-mirror4 reversed D falls (1.567
+  s); the L4 matrix changes 1 of 92 rows, none over the ceiling; `LEG_IN_RAGDOLL` stays (the L3 pair deeper, 5.54 cm new
+  penetration and 13 substeps instead of 4.28 and 12; L4-F10-wrap-off unchanged); the worst shape-query tick reaches 4889
+  (L3-F1-mirror4; 6 fixtures over 4000, 3 of them at 4030 with V2 off).
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.

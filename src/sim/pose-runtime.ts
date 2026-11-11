@@ -106,6 +106,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
         : undefined,
       dtS: dt,
       handoffPossible: !!host.def.ragdoll && !pl.rag && !pl.handoff,
+      ...(host.def.legGuard?.sweep ? { legSweep: true } : {}),
       ...(host.def.locomotion ? { loco: { profile: host.def.locomotion, brakeB: pl.sus?.brakeB ?? 0, swing: walkSwing(pl, host.def.locomotion, core, sp, dt), contactW: pl.loco?.braceW ?? 0, ...idleOf(host, pl, sp) } } : {}),
       ...(host.opts.debug?.pose ? { debug: host.opts.debug.pose } : {}),
       ...(host.opts.debug?.poseProbe ? { probe: host.opts.debug.poseProbe } : {}),
@@ -378,7 +379,17 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
     return ahead;
   };
   // the push from whichever is deeper, per shape: the plain and the moved colliders together
-  const legAhead = LG ? { external: (shapes: PoseShape[]) => Math.max(depth(shapes, ext), depth(shapes, aheadOf())), push: (shapes: PoseShape[], toleranceM = 0) => pushAgainst(shapes, toleranceM, [...ext, ...aheadOf()]) } : undefined;
+  // contact motion prerequisite (`LegGuardProfile.sweep`): the physical colliders alone (live colliders and obstacles;
+  // another supported player's published limbs carry none), what a conversion validates
+  let phys: ExternalShape[] | null = null;
+  const physOf = (): ExternalShape[] => (phys ??= ext.filter((e) => !!e.collider));
+  const legAhead = LG
+    ? {
+        external: (shapes: PoseShape[]) => Math.max(depth(shapes, ext), depth(shapes, aheadOf())),
+        push: (shapes: PoseShape[], toleranceM = 0) => pushAgainst(shapes, toleranceM, [...ext, ...aheadOf()]),
+        physical: (shapes: PoseShape[]) => Math.max(depth(shapes, physOf()), depth(shapes, aheadOf())),
+      }
+    : undefined;
   // arm self-clearance: depth beyond the profile tolerance (skin contact is clear) and the separating move from the trunk
   const trunkHits = (shapes: PoseShape[], prediction: number, each: (h: TrunkHit) => void): void => {
     for (const s of shapes) {

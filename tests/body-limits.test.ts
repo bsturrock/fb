@@ -19,14 +19,14 @@ import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import type { FixtureDef } from '../src/sim/fixture';
 import { MODEL_CALIBRATION as C } from '../src/sim/model/profiles';
-import { armSelfShapes, hingeChain, twoBone, type PoseShape } from '../src/sim/pose';
-import { RAPIER, trunkShapes } from '../src/sim/physics';
+import { armSelfShapes, buildProxyPose, CONT_LEG_MPS, HARD_OK, hingeChain, LEG_SWEEP_M, poseLimbShapes, twoBone, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from '../src/sim/pose';
+import { initPhysics, RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
-import { add, addScaled, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
+import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, rows, runSim } from './helpers';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -621,6 +621,249 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
       },
     );
   }, 120000);
+
+  // The same check on a constructed closing body, under the swept leg guard (LEG_GUARD_V2, rung 5; no fixture runs it):
+  // L3-F9-convert-free with D (running, free) converting by label at THROW.atS and R (converted by label at 0.15 s)
+  // thrown at D's leg two substeps before. R's ragdoll is moved rigidly so its head lies outside D's most protruding
+  // thigh, 60 % of the way to the knee, along the direction square to the thigh and to its motion, and given D's
+  // velocity plus THROW.mps toward it. The gap is one substep of travel plus 1 cm: after the first substep the head is
+  // 1 cm clear of the thigh, where only the prediction finds it in the leg, and the switch comes after the second, with
+  // the head in where the leg was. The target is taken from D's pose when R is thrown, so the case does not depend on
+  // where D's run puts its legs. The bounds are the rule's: the conversion's penetration tolerance and the guard's
+  // accepted depth, not measured values.
+  const THROW = { atS: 0.4, mps: 10, along: 0.6, clearM: 0.01 };
+  const vecOf = (v: { x: number; y: number; z: number }): Vec3 => v3(v.x, v.y, v.z);
+  type Sd = 'left' | 'right';
+  const thrownAt = async (def: FixtureDef, opts: SimOptions = {}) => {
+    const d: FixtureDef = { ...def, id: `${def.id}-thrown`, durationS: THROW.atS + 0.05, diagnostics: { conversions: [{ playerId: 'R', atS: 0.15 }, { playerId: 'D', atS: THROW.atS }] } };
+    let thrown = false;
+    let prev: Partial<Record<Sd, Vec3>> = {};
+    const segR = d.ragdoll!.radii.thigh;
+    const sim = await Simulation.create(d, {
+      ...opts,
+      onSubstep: (s) => {
+        const D = s.players.find((p) => p.id === 'D')!;
+        const R = s.players.find((p) => p.id === 'R')!;
+        if (!D.pose || D.rag || D.handoff) return;
+        const lm = D.pose.jointLandmarksWorld;
+        const root = vecOf(D.proxy.body.translation());
+        const at = (sd: Sd): Vec3 => add(lm[`${sd}Hip`], scale(sub(lm[`${sd}Knee`], lm[`${sd}Hip`]), THROW.along));
+        const now = { left: sub(at('left'), root), right: sub(at('right'), root) };
+        if (!thrown && R.rag && s.t >= THROW.atS - 2 * s.physics.dt - 1e-9) {
+          thrown = true;
+          const out = (sd: Sd): number => Math.hypot(now[sd].x, now[sd].z);
+          const sd: Sd = out('left') > out('right') ? 'left' : 'right';
+          let u = norm(cross(norm(sub(lm[`${sd}Knee`], lm[`${sd}Hip`])), sub(now[sd], prev[sd] ?? now[sd])));
+          if (u.x * now[sd].x + u.z * now[sd].z < 0) u = scale(u, -1);
+          const hc = R.rag.bodies.head.collider(0);
+          const head = vecOf(hc.translation());
+          const q = qFromUnitVectors(norm(sub(vecOf(R.rag.bodies.core.translation()), head)), u);
+          const to = add(at(sd), scale(u, (hc.shape as RAPIER.Ball).radius + segR + THROW.mps * s.physics.dt + THROW.clearM));
+          const v = add(vecOf(D.proxy.body.linvel()), scale(u, -THROW.mps));
+          for (const b of Object.values(R.rag.bodies)) {
+            b.setTranslation(add(to, qRot(q, sub(vecOf(b.translation()), head))), true);
+            b.setRotation(qMul(q, b.rotation()), true);
+            b.setLinvel(v, true);
+            b.setAngvel(v3(), true);
+          }
+        }
+        prev = now;
+      },
+    });
+    await runSim(sim);
+    const h = sim.players.find((p) => p.id === 'D')!.handoff!;
+    sim.dispose();
+    expect(thrown, 'R was thrown').toBe(true);
+    return { outcome: h.outcome, newM: h.report.maxNewExternalPenetrationM, reasons: h.report.reasons.join(','), worst: `${h.report.worstExternal?.own} in ${h.report.worstExternal?.other}` };
+  };
+
+  it('the swept guard (V2) converts beside a thrown closing body; without its prediction, and on the twin, the thrown head is in the thigh', async () => {
+    const base = FIX('L3-F9-convert-free');
+    // without the plan 10c deep push that contact motion M1 adds to L3 (it would clear the leg on its own)
+    const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
+    const tol = base.ragdoll!.validation.penetrationTolM;
+    const v2 = noDeep({ ...base, legGuard: LEG_GUARD_V2 });
+    await checks([
+      [
+        'V2 with its prediction converts beside the thrown body',
+        async () => {
+          const on = await thrownAt(v2);
+          expect(on.outcome, `${on.worst} ${on.newM}`).toBe('accepted');
+          expect(on.newM, on.worst).toBeLessThanOrEqual(tol);
+        },
+      ],
+      ...(
+        [
+          ['V2 measuring other bodies where they are now only (the fault put back) is rejected for external penetration', v2, { debug: { pose: { noLegAhead: true } } }],
+          ['the twin without the profile is rejected for external penetration', noDeep({ ...base, id: `${base.id}-noGuard`, legGuard: undefined }), {}],
+        ] as [string, FixtureDef, SimOptions][]
+      ).map(
+        ([name, d, o]): Check => [
+          name,
+          async () => {
+            const off = await thrownAt(d, o);
+            expect(off.outcome, off.worst).toBe('rejected');
+            expect(off.reasons).toContain('externalPenetration');
+            expect(off.newM).toBeGreaterThan(tol);
+            // the thrown head in the thigh it was thrown at
+            expect(off.worst).toMatch(/^(left|right)Thigh:thigh in R:head:head$/);
+          },
+        ],
+      ),
+    ]);
+  }, 240000);
+});
+
+// ------------------------------------------------------------------ rung 5: the swept leg step (LEG_GUARD_V2)
+// The swept guard (`LegGuardProfile.sweep`, the pose input `legSweep`; no fixture runs it yet) on constructed poses: one
+// standing L3 body (yaw 0, its left leg at +x), its left leg's continuity memory seeded where a test needs the shown leg
+// to start, and fixed balls as the physical bodies (the clearance's every query). Each case is the sweep off (V1's
+// guard, the fault twin) against on. Bounds are the guard's rule: HARD_OK, the departure rate, the sweep spacing.
+describe('rung 5: the swept leg step (constructed poses, the sweep on and off)', () => {
+  const def = FIX('L3-F9-convert-free');
+  const R = def.ragdoll!;
+  const I: Quat = { x: 0, y: 0, z: 0, w: 1 };
+  const toRapier = (s: PoseShape): { shape: RAPIER.Shape; p: Vec3; q: Quat } => (s.kind === 'box' ? { shape: new RAPIER.Cuboid(s.he.x, s.he.y, s.he.z), p: s.c, q: s.q } : (rapierShape(s) as { shape: RAPIER.Shape; p: Vec3; q: Quat }));
+  /** Fixed balls as the clearance: depth and push-out of pose shapes in them (the runtime's rule: deepest contact per shape). */
+  const ballsClearance = (bs: { c: Vec3; r: number }[]): PoseClearance => {
+    const hits = (s: PoseShape) => {
+      const q = toRapier(s);
+      return bs.map((b) => q.shape.contactShape(q.p, q.q, new RAPIER.Ball(b.r), b.c, I, 0.5)).filter((r) => !!r && r.distance < 0);
+    };
+    const depth = (shapes: PoseShape[]): number => Math.max(0, ...shapes.flatMap((s) => hits(s).map((r) => -r!.distance)));
+    const push = (shapes: PoseShape[], tol = 0): Vec3 => {
+      let v = v3();
+      for (const s of shapes) {
+        const best = hits(s).sort((a, b) => a!.distance - b!.distance)[0];
+        if (best) v = addScaled(v, vc(best.normal1), Math.max(0, -best.distance - tol));
+      }
+      return v;
+    };
+    return { external: depth, push, legs: { external: depth, push, physical: depth } };
+  };
+  const at = (z = 0): Pose => ({ p: v3(0, 0.95, z), q: qFromYaw(0) });
+  const input = (over: Partial<ProxyPoseInput>): ProxyPoseInput => ({ playerId: 'D', body: def.players[0].body, ragdoll: R, jointRange: def.jointRange, pose: at(), gait: { phase: 0 }, speed: 0, ground: { y: 0, staggerM: 0, fixedGait: true }, ...over });
+  const leftLeg = (p: PhysicalPose): PoseShape[] => poseLimbShapes(R, p).filter((s) => /^left(Thigh|Shin|Shoe)$/.test(s.key));
+  /** The standing pose's continuity memory, the left leg's shown departure (body frame) replaced by `d`. */
+  const seeded = (d: Vec3): PoseMemory => {
+    const m: PoseMemory = {};
+    buildProxyPose(input({ memory: m, dtS: 1 / 60 }));
+    buildProxyPose(input({ memory: m, dtS: 1 / 60 }));
+    Object.assign(m, { 'leftLeg:d:x': d.x, 'leftLeg:d:y': d.y, 'leftLeg:d:z': d.z });
+    return m;
+  };
+  const departure = (m: PoseMemory): Vec3 => v3(m['leftLeg:d:x'], m['leftLeg:d:y'], m['leftLeg:d:z']);
+
+  it('(i) a leg obstructed where it stands takes another placement that is clear, its foot kept on the ground where it was', async () => {
+    await initPhysics();
+    // a ball (8 cm) in front of the inside of the left thigh, at once: every one of the guard's placements and its
+    // rate-limited (and fast) steps toward the best of them leave the leg past HARD_OK
+    const cl = ballsClearance([{ c: v3(-0.06, 0.7, 0.16), r: 0.08 }]);
+    const free = buildProxyPose(input({ memory: seeded(v3()), dtS: 1 / 60 })).jointLandmarksWorld.leftAnkle;
+    const run = (legSweep: boolean) => {
+      const m = seeded(v3());
+      const p = buildProxyPose(input({ memory: m, dtS: 1 / 60, clearance: cl, legSweep }));
+      return { depth: cl.external(leftLeg(p)), ankle: p.jointLandmarksWorld.leftAnkle };
+    };
+    const off = run(false);
+    const on = run(true);
+    // the fault twin (no sweep): the shown leg in the ball past the conversion's tolerance
+    expect(off.depth).toBeGreaterThan(R.validation.penetrationTolM);
+    // swept: clear within HARD_OK, the ankle where the unobstructed leg stands (the knee turned outward about it)
+    expect(on.depth).toBeLessThanOrEqual(HARD_OK);
+    expect(dist(on.ankle, free)).toBeLessThan(1e-3);
+  });
+
+  it('(ii)-(iv) a step through a body stops at its last clear sample, keeps limb lengths and hip while the hip moves, and resumes without a jump', async () => {
+    await initPhysics();
+    // the shown left ankle 0.5 m outward of its standing request; one pose 0.2 s on (a departure step of
+    // CONT_LEG_MPS * 0.2 = 0.5 m, longer than a leg is thick) brings it back to the request, through a 2 cm ball between
+    // the two. Both ends are clear of the ball: a check of the step's start and end only does not see it
+    const D0 = v3(0.5, 0, 0);
+    const DT = 0.2;
+    const BALL = [{ c: v3(0.29, 0.1, 0), r: 0.02 }];
+    const cl = ballsClearance(BALL);
+    // the step's path, test side: the shown leg at fraction f of the way, no clearance (the departure held; the knee and
+    // reach not held to the standing leg's last ones, which a pose 0.2 s on is not)
+    const shownAt = (f: number): PhysicalPose => {
+      const m = seeded(scale(D0, 1 - f));
+      for (const k of Object.keys(m)) if (/^leftLeg:(e|r):|^leftLeg:reachLimited$/.test(k)) delete m[k];
+      return buildProxyPose(input({ memory: m, dtS: 1e-9, handoffPossible: false }));
+    };
+    const pathDepth = (f: number): number => cl.external(leftLeg(shownAt(f)));
+    const N = Math.round(len(D0) / LEG_SWEEP_M);
+    const path = Array.from({ length: N + 1 }, (_, i) => pathDepth(i / N));
+    expect(path[0], 'the start is clear').toBeLessThanOrEqual(HARD_OK);
+    expect(path[N], 'the end is clear').toBeLessThanOrEqual(HARD_OK);
+    const entry = path.findIndex((d) => d > HARD_OK);
+    expect(Math.max(...path), 'the path crosses the ball').toBeGreaterThan(R.validation.penetrationTolM);
+    // poses 0-4 with the ball, the body moving forward 3 cm a pose from pose 1; then the ball gone (poses 5-7)
+    const seq = (legSweep: boolean) => {
+      const m = seeded(D0);
+      const start = shownAt(0);
+      let prev = sub(start.jointLandmarksWorld.leftAnkle, at().p);
+      let prevRes = start.targetResidualM!.leftLeg;
+      const out: { depth: number; f: number; jump: number; bound: number; hip: number; thigh: number; shin: number }[] = [];
+      for (let i = 0; i < 8; i++) {
+        const pose = at(0.03 * Math.min(i, 4));
+        const p = buildProxyPose(input({ pose, memory: m, dtS: DT, clearance: ballsClearance(i < 5 ? BALL : []), legSweep }));
+        const lm = p.jointLandmarksWorld;
+        const hip = buildProxyPose(input({ pose, memory: {} })).jointLandmarksWorld.leftHip;
+        const res = p.targetResidualM!.leftLeg;
+        // body frame (yaw 0): the shown ankle's move from the last pose; the target moves at most the departure rate,
+        // the achieved ankle by that and the two poses' IK residuals
+        const bf = sub(lm.leftAnkle, pose.p);
+        out.push({ depth: cl.external(leftLeg(p)), f: 1 - departure(m).x / D0.x, jump: dist(bf, prev), bound: CONT_LEG_MPS * DT + res + prevRes + 1e-9, hip: dist(lm.leftHip, hip), thigh: Math.abs(dist(lm.leftHip, lm.leftKnee) - R.lengths.thigh), shin: Math.abs(dist(lm.leftKnee, lm.leftAnkle) - R.lengths.shin) });
+        prev = bf;
+        prevRes = res;
+      }
+      return out;
+    };
+    const off = seq(false);
+    const on = seq(true);
+    await checks([
+      [
+        '(ii) the fault twin (no sweep) shows only clear poses and goes through the ball between them',
+        () => {
+          expect(off[0].f).toBeCloseTo(1, 9);
+          for (const r of off) expect(r.depth).toBeLessThanOrEqual(HARD_OK);
+        },
+      ],
+      [
+        '(ii) swept: the first pose stops at the last clear sample before the ball, and holds there while the ball is in the way',
+        () => {
+          expect(on[0].depth).toBeLessThanOrEqual(HARD_OK);
+          // the stop is at or before the first deep sample of the path, at most one sweep spacing (and one sample of
+          // this test's path) short of it
+          expect(on[0].f).toBeLessThan(entry / N);
+          expect(on[0].f).toBeGreaterThanOrEqual(entry / N - (2 * LEG_SWEEP_M) / len(D0) - 1e-9);
+          for (const r of on.slice(1, 4)) {
+            expect(r.depth).toBeLessThanOrEqual(HARD_OK);
+            expect(r.f).toBeCloseTo(on[0].f, 9);
+          }
+        },
+      ],
+      [
+        '(iii) the stopped leg keeps its limb lengths and the hip where the moving body has it',
+        () => {
+          for (const r of on) {
+            expect(r.hip).toBeLessThan(1e-9);
+            expect(r.thigh).toBeLessThan(1e-6);
+            expect(r.shin).toBeLessThan(1e-6);
+          }
+        },
+      ],
+      [
+        '(iv) no pose moves the ankle (body frame) beyond the departure rate, as the sweep stops, holds and resumes',
+        () => {
+          for (const [i, r] of on.entries()) expect(r.jump, `pose ${i}`).toBeLessThanOrEqual(r.bound);
+          // it resumed: past the ball (pose 4, the body moved on) and at the request
+          expect(on[7].f).toBeCloseTo(1, 9);
+          expect(on.slice(4).some((r) => r.jump > 0.05), 'the resumed step moves').toBe(true);
+        },
+      ],
+    ]);
+  });
 });
 
 // ------------------------------------------------------------------ contact motion M1: upper-arm twist
