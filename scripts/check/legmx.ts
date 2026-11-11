@@ -4,10 +4,13 @@
 // and the leg ledger (largest one-substep leg impulse and when, substeps with an impulse while ungrounded, totals) --
 // reported as "absent" on a tree without one. JSON lines {k, id, rev, ...} to the output file (k = registry index, for
 // the merge's order). Env ONLY=<regex> limits the fixtures; LEGV2=1 runs them under LEG_GUARD_V2 (a tree that has it).
+// The same runs count Rapier shape queries per tick (tests/runs.ts shapeQueryCounter, the counting of the plan 13a budget
+// test; counting never changes a result): the most in one tick and when, one JSON line per row to `<output>.q`.
 import { writeFileSync } from 'node:fs';
 import { Simulation } from '../../src/sim/simulation';
 import { allFixtures } from '../../src/sim/fixtures/index';
 import * as profiles from '../../src/sim/profiles';
+import { shapeQueryCounter } from '../../tests/runs';
 import { LEG_REGIONS, round, shardArgs } from './lib';
 
 const { i, n, out } = shardArgs();
@@ -28,6 +31,8 @@ const bump = (p: Peak, ns: number, t: number): void => {
 
 const all = allFixtures();
 const lines: string[] = [];
+const qLines: string[] = [];
+const q = shapeQueryCounter();
 for (let k = 0; k < all.length; k++) {
   const d0 = all[k];
   if (!d0.legGuard || k % n !== i || (only && !only.test(d0.id))) continue;
@@ -71,7 +76,15 @@ for (let k = 0; k < all.length; k++) {
       }
     };
     const sim = await Simulation.create(d, { ...(rev ? { reverseOrder: true } : {}), onSubstep: sample });
-    while (!sim.done) sim.stepTick();
+    // the build's queries are not a tick's
+    q.take();
+    let worst = { n: 0, t: 0 };
+    while (!sim.done) {
+      sim.stepTick();
+      const nq = q.take();
+      if (nq > worst.n) worst = { n: nq, t: sim.t };
+    }
+    qLines.push(JSON.stringify({ k, id: d.id, rev, worstTickQueries: worst.n, at: round(worst.t) }));
     const S = sim as unknown as { legLedger?: Map<string, Record<string, unknown>> };
     const num = (x: unknown): number | string | null => (typeof x === 'number' ? round(x) : null);
     const pl: Record<string, unknown> = {};
@@ -103,4 +116,6 @@ for (let k = 0; k < all.length; k++) {
     sim.dispose();
   }
 }
+q.restore();
 writeFileSync(out, lines.map((l) => l + '\n').join(''));
+writeFileSync(`${out}.q`, qLines.map((l) => l + '\n').join(''));

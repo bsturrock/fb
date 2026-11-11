@@ -31,6 +31,7 @@ import { MODEL_CALIBRATION_ID } from '../src/sim/model/profiles';
 import * as L1 from '../src/sim/fixtures/locomotion';
 import { len, v3, type Vec3 } from '../src/sim/vec';
 import { assertUniqueIds, runFixtures } from '../scripts/fixture-runner';
+import { SHAPE_QUERY_BUDGET } from '../scripts/check/lib';
 import { g1f4, g1f8Cases, g1f9Fit } from '../src/sim/fixtures/gate1';
 import { asL3 } from '../src/sim/fixtures/transitions';
 import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
@@ -611,13 +612,111 @@ describe('plan 13a: contact-time shape queries', () => {
     expect(culledEmpty / empty, `${culledEmpty} of ${empty} empty pairs culled`).toBeGreaterThan(0.9);
   });
 
-  it('far pairs are culled: under 4,000 shape queries in every tick of the two worst contact fixtures', async () => {
+  // The pose clearance's push-outs read penetrating contacts only and ask at the depth checks' prediction, reusing the depth
+  // check's answer for the same shape (src/sim/pose-runtime.ts poseClearanceOf). Exact only if a returned penetrating
+  // contact is the same at any prediction: checked on random pairs of every shape kind the clearance meets (ball, capsule,
+  // box, convex hull: the measured trunk pieces), by both query paths (Shape.contactShape for poses, Collider.contactShape
+  // for live colliders and trunk pieces).
+  it('a penetrating contact does not depend on the query prediction: 20,000 random pairs, both query paths', async () => {
     await initPhysics();
-    // L4-F10-wrap-on is counted on the file's one direct run of it (the lab's real-fixture frames read the same run)
+    let seed = 0x5b;
+    const rnd = (): number => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const span = (a: number, b: number): number => a + (b - a) * rnd();
+    const rot = (): { x: number; y: number; z: number; w: number } => {
+      const [u, v, w] = [rnd(), rnd(), rnd()];
+      const a = Math.sqrt(1 - u);
+      const b = Math.sqrt(u);
+      return { x: a * Math.sin(2 * Math.PI * v), y: a * Math.cos(2 * Math.PI * v), z: b * Math.sin(2 * Math.PI * w), w: b * Math.cos(2 * Math.PI * w) };
+    };
+    const hull = (): Float32Array => {
+      const s = span(0.05, 0.2);
+      return new Float32Array(Array.from({ length: 3 * (8 + Math.floor(rnd() * 10)) }, () => span(-s, s)));
+    };
+    type Kind = 'ball' | 'box' | 'hull' | 'capsule';
+    const make = (): { kind: Kind; shape: RAPIER.Shape; desc: () => RAPIER.ColliderDesc } => {
+      const k = rnd();
+      if (k < 0.2) {
+        const r = span(0.02, 0.15);
+        return { kind: 'ball', shape: new RAPIER.Ball(r), desc: () => RAPIER.ColliderDesc.ball(r) };
+      }
+      if (k < 0.4) {
+        const [x, y, z] = [span(0.01, 0.2), span(0.01, 0.2), span(0.01, 0.2)];
+        return { kind: 'box', shape: new RAPIER.Cuboid(x, y, z), desc: () => RAPIER.ColliderDesc.cuboid(x, y, z) };
+      }
+      if (k < 0.6) {
+        const p = hull();
+        return { kind: 'hull', shape: new RAPIER.ConvexPolyhedron(p, null), desc: () => RAPIER.ColliderDesc.convexHull(p)! };
+      }
+      const [h, r] = [span(0, 0.35), span(0.02, 0.15)];
+      return { kind: 'capsule', shape: new RAPIER.Capsule(h, r), desc: () => RAPIER.ColliderDesc.capsule(h, r) };
+    };
+    const same = (a: RAPIER.ShapeContact, b: RAPIER.ShapeContact): boolean => {
+      const v = (p: { x: number; y: number; z: number }, q: { x: number; y: number; z: number }): boolean => Object.is(p.x, q.x) && Object.is(p.y, q.y) && Object.is(p.z, q.z);
+      return Object.is(a.distance, b.distance) && v(a.point1, b.point1) && v(a.point2, b.point2) && v(a.normal1, b.normal1) && v(a.normal2, b.normal2);
+    };
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+    const DEPTH = 0.02;
+    let penetrating = 0;
+    let differ = 0;
+    // the twin: a separated pair the larger prediction returns, which the plain query does not (an answer that does depend on
+    // the prediction, so the comparison above can see one)
+    let separatedOnlyAtDepth = 0;
+    const kinds = new Set<string>();
+    try {
+      for (let i = 0; i < 20000; i++) {
+        const a = make();
+        const b = make();
+        const pa = { x: span(-60, 60), y: span(0, 2), z: span(-30, 30) };
+        const qa = rot();
+        const qb = rot();
+        const dir = { x: span(-1, 1), y: span(-1, 1), z: span(-1, 1) };
+        const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+        const reach = span(0, 0.45);
+        const pb = { x: pa.x + (dir.x / dl) * reach, y: pa.y + (dir.y / dl) * reach, z: pa.z + (dir.z / dl) * reach };
+        const viaCollider = i % 2 === 1;
+        let ask: (prediction: number) => RAPIER.ShapeContact | null;
+        if (viaCollider) {
+          const c = world.createCollider(a.desc());
+          c.setTranslation(pa);
+          c.setRotation(qa);
+          ask = (p) => c.contactShape(b.shape, pb, qb, p);
+        } else ask = (p) => a.shape.contactShape(pa, qa, b.shape, pb, qb, p);
+        const r0 = ask(0);
+        const rD = ask(DEPTH);
+        const pen0 = r0 && r0.distance < 0 ? r0 : null;
+        const penD = rD && rD.distance < 0 ? rD : null;
+        if (pen0 || penD) {
+          penetrating++;
+          kinds.add(`${a.kind}-${b.kind}${viaCollider ? ' collider' : ''}`);
+          if (!pen0 || !penD || !same(pen0, penD)) differ++;
+        }
+        if (rD && rD.distance > 0.005 && !r0) separatedOnlyAtDepth++;
+      }
+    } finally {
+      world.free();
+    }
+    expect(differ, `${differ} of ${penetrating} penetrating contacts differ between predictions 0 and ${DEPTH}`).toBe(0);
+    expect(penetrating).toBeGreaterThan(5000);
+    // every pair of kinds on both paths
+    expect(kinds.size).toBe(32);
+    expect(separatedOnlyAtDepth, 'the twin: separated pairs answered at the larger prediction only').toBeGreaterThan(100);
+  });
+
+  it('far pairs are culled: under 4,000 shape queries in every tick of a representative set of contact fixtures', async () => {
+    await initPhysics();
+    // L4-F10-wrap-on is counted on the file's one direct run of it (the lab's real-fixture frames read the same run). The
+    // set: the two plan 13a cases, and the worst ticks of the leg matrix's runs (the full check counts every one,
+    // queries.jsonl): HC-F1-at0.9 at 0.867 s (R's held left arm's continuity push-outs in D's wrap, 4030 before the push
+    // reused the depth answers) and L3-F7-mirror50
     const counted = new Map<string, { n: number; t: number }>([['L4-F10-wrap-on', (await wrapOnDirect()).worst]]);
     const q = shapeQueryCounter();
     try {
-      for (const id of ['L4-F10-wrap-on', 'L3-F8-recontact']) {
+      for (const id of ['L4-F10-wrap-on', 'L3-F8-recontact', 'HC-F1-at0.9', 'L3-F7-mirror50']) {
         let worst = counted.get(id);
         if (!worst) {
           const sim = await create(FIX(id));
@@ -630,13 +729,13 @@ describe('plan 13a: contact-time shape queries', () => {
           sim.dispose();
           worst = w;
         }
-        expect(worst.n, `${id}: ${worst.n} queries in the tick ending ${worst.t.toFixed(3)} s`).toBeLessThan(4000);
+        expect(worst.n, `${id}: ${worst.n} queries in the tick ending ${worst.t.toFixed(3)} s`).toBeLessThan(SHAPE_QUERY_BUDGET);
         await breathe();
       }
     } finally {
       q.restore();
     }
-  }, 120000);
+  }, 180000);
 });
 
 // ------------------------------------------------------------------------------------------- plan 10f debug switches

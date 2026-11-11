@@ -4,7 +4,7 @@
 // or RH fixture summary. Everything else is reported for judgement. Env COMPARE_MAX: lines listed per section (default 60).
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { familyOf, FAMILIES, FROZEN_FAMILIES } from './lib';
+import { familyOf, FAMILIES, FROZEN_FAMILIES, SHAPE_QUERY_BUDGET } from './lib';
 
 const [A, B] = [process.argv[2], process.argv[3]].map((p) => (p ? resolve(p) : ''));
 if (!A || !B) {
@@ -29,7 +29,7 @@ const ma = readJson<{ head: string; dirtyFiles: number }>(A, 'meta.json');
 const mb = readJson<{ head: string; dirtyFiles: number }>(B, 'meta.json');
 say(`A ${A}  (${ma?.head?.slice(0, 7) ?? '?'}${ma?.dirtyFiles ? `, ${ma.dirtyFiles} dirty` : ''})`);
 say(`B ${B}  (${mb?.head?.slice(0, 7) ?? '?'}${mb?.dirtyFiles ? `, ${mb.dirtyFiles} dirty` : ''})`);
-const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'legmx.jsonl', 'l4mx.jsonl'];
+const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl'];
 const same = files.filter((f) => read(A, f) != null && read(A, f) === read(B, f));
 say(`files byte-identical: ${same.length}/${files.length}${same.length < files.length ? ` (differ or missing: ${files.filter((f) => !same.includes(f)).join(', ')})` : ''}`);
 
@@ -279,6 +279,48 @@ function matrix(file: string, label: string): void {
 }
 matrix('legmx.jsonl', 'leg matrix');
 matrix('l4mx.jsonl', 'L4 matrix');
+
+// ------------------------------------------------------------------------------------------------ shape queries
+{
+  type QRow = { id: string; rev: boolean; worstTickQueries: number; at: number };
+  const load = (dir: string): Map<string, QRow> | null => {
+    const s = read(dir, 'queries.jsonl');
+    return s == null
+      ? null
+      : new Map(
+          s
+            .split('\n')
+            .filter(Boolean)
+            .map((l) => JSON.parse(l) as QRow)
+            .map((r) => [`${r.id} ${r.rev ? 'rev' : 'fwd'}`, r]),
+        );
+  };
+  const qa = load(A);
+  const qb = load(B);
+  say();
+  if (!qb) say('shape queries: B has no queries.jsonl (skipped)');
+  else {
+    const over = (m: Map<string, QRow>): [string, QRow][] => [...m.entries()].filter(([, r]) => r.worstTickQueries >= SHAPE_QUERY_BUDGET);
+    const ob = over(qb);
+    const worst = [...qb.entries()].sort((x, y) => y[1].worstTickQueries - x[1].worstTickQueries)[0];
+    say(`shape queries: rows ${qb.size}; worst tick over ${SHAPE_QUERY_BUDGET} in B: ${ob.length}${worst ? ` (highest ${worst[1].worstTickQueries}, ${worst[0]} at ${worst[1].at} s)` : ''}`);
+    list(ob.map(([k, r]) => `${k}: ${r.worstTickQueries} at ${r.at} s${qa?.get(k) ? ` (A ${qa.get(k)!.worstTickQueries})` : ''}`), '    ');
+    if (!qa) say('  A has no queries.jsonl: no comparison');
+    else {
+      const rises = [...qb.entries()]
+        .filter(([k, r]) => qa.has(k) && r.worstTickQueries > qa.get(k)!.worstTickQueries)
+        .sort((x, y) => y[1].worstTickQueries - qa.get(y[0])!.worstTickQueries - (x[1].worstTickQueries - qa.get(x[0])!.worstTickQueries));
+      const fell = [...qb.entries()].filter(([k, r]) => qa.has(k) && r.worstTickQueries < qa.get(k)!.worstTickQueries).length;
+      const newOver = ob.filter(([k]) => !qa.has(k) || qa.get(k)!.worstTickQueries < SHAPE_QUERY_BUDGET);
+      if (newOver.length) {
+        say(`  NEW over ${SHAPE_QUERY_BUDGET}: ${newOver.length}`);
+        list(newOver.map(([k, r]) => `${k}: ${qa.get(k)?.worstTickQueries ?? '-'} -> ${r.worstTickQueries}`), '    ');
+      }
+      say(`  worst tick rises: ${rises.length}, falls: ${fell}`);
+      list(rises.map(([k, r]) => `${k}: ${qa.get(k)!.worstTickQueries} -> ${r.worstTickQueries}`), '    ');
+    }
+  }
+}
 
 say();
 say(hard.length ? `HARD INVARIANTS: FAIL (${hard.join('; ')})` : 'HARD INVARIANTS: PASS (no new suite failure; G/L1/L2/RH byte-identical)');

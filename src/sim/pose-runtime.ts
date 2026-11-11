@@ -260,6 +260,9 @@ export function emitFeet(host: PoseHost, pl: PlayerRuntime, ev: FootEvent[]): vo
   for (const e of ev) host.emit(e.type, pl.id, { side: e.side, ...e.data });
 }
 
+/** Prediction (m) of the clearance's depth queries: a pair within it reads its gap (or depth). */
+const DEPTH_PREDICTION_M = 0.02;
+
 /**
  * Supported-state limb constraints for the procedural pose: penetration of candidate limb shapes against other
  * players' active colliders, diagnostic obstacles and opponents' achieved query-arm segments (external), and of
@@ -328,15 +331,19 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
       const sk = poseShapeKey(s);
       let q: ReturnType<typeof poseShapeToRapier> | undefined;
       for (const e of against) {
-        if (!geomNear(geomOf(e), b, 0.02)) continue;
+        if (!geomNear(geomOf(e), b, DEPTH_PREDICTION_M)) continue;
         if (q === undefined) q = poseShapeToRapier(s);
         if (!q) break;
-        const r = contact(sk, q, e, 0.02);
+        const r = contact(sk, q, e, DEPTH_PREDICTION_M);
         if (r) d = Math.max(d, -r.distance);
       }
     }
     return d;
   };
+  // the push reads penetrating contacts only (distance < 0), and a returned penetrating contact does not depend on the
+  // query's prediction (the prediction only admits separated pairs; tests/harness.test.ts checks it on random pairs of every
+  // shape kind), so the push asks at the depth checks' prediction: the push of a shape the depth check measured (each
+  // push-out step's) reuses that answer. Only pairs that can penetrate are asked (the cull at 0)
   const pushAgainst = (shapes: PoseShape[], toleranceM: number, against: ExternalShape[]): Vec3 => {
     const v = v3();
     for (const s of shapes) {
@@ -348,7 +355,7 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
         if (!geomNear(geomOf(e), b, 0)) continue;
         if (q === undefined) q = poseShapeToRapier(s);
         if (!q) break;
-        const r = contact(sk, q, e, 0);
+        const r = contact(sk, q, e, DEPTH_PREDICTION_M);
         if (r && r.distance < 0 && (!best || -r.distance > best.d)) best = { d: -r.distance, n: vc(r.normal1) };
       }
       if (best) Object.assign(v, addScaled(v, best.n, Math.max(0, best.d - toleranceM)));
@@ -390,24 +397,33 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
         physical: (shapes: PoseShape[]) => Math.max(depth(shapes, physOf()), depth(shapes, aheadOf())),
       }
     : undefined;
-  // arm self-clearance: depth beyond the profile tolerance (skin contact is clear) and the separating move from the trunk
-  const trunkHits = (shapes: PoseShape[], prediction: number, each: (h: TrunkHit) => void): void => {
+  // arm self-clearance: depth beyond the profile tolerance (skin contact is clear) and the separating move from the trunk.
+  // The deepest trunk contact of a shape (the trunk at the player's pose, fixed within the build) is kept per shape like the
+  // other answers; the push reads penetrating hits only, so it asks at the depth's prediction and reuses its answer: the
+  // deepest hit, when it penetrates, is the same at either prediction (each piece's penetrating contact is, and a piece the
+  // larger prediction adds is separated), and when it does not, no piece penetrates
+  const trunkAnswers = new Map<string, TrunkHit | null>();
+  const trunkHits = (shapes: PoseShape[], each: (h: TrunkHit) => void): void => {
     for (const s of shapes) {
-      const q = poseShapeToRapier(s);
-      if (!q) continue;
-      const bd = poseShapeBound(s);
-      const h = trunkContact(trunk!, bodyPose, q.shape, q.pose.p, q.pose.q, bd.c, bd.r, prediction);
+      const sk = poseShapeKey(s);
+      let h = trunkAnswers.get(sk);
+      if (h === undefined) {
+        const q = poseShapeToRapier(s);
+        if (!q) continue;
+        const bd = poseShapeBound(s);
+        trunkAnswers.set(sk, (h = trunkContact(trunk!, bodyPose, q.shape, q.pose.p, q.pose.q, bd.c, bd.r, DEPTH_PREDICTION_M)));
+      }
       if (h) each(h);
     }
   };
   const body = (shapes: PoseShape[]): number => {
     let d = 0;
-    trunkHits(shapes, 0.02, (h) => (d = Math.max(d, -h.distance)));
+    trunkHits(shapes, (h) => (d = Math.max(d, -h.distance)));
     return Math.max(0, d - SC!.toleranceM);
   };
   const bodyPush = (shapes: PoseShape[]): Vec3 => {
     const v = v3();
-    trunkHits(shapes, 0, (h) => {
+    trunkHits(shapes, (h) => {
       if (h.distance < 0) Object.assign(v, addScaled(v, h.normal1, Math.max(0, -h.distance - SC!.toleranceM)));
     });
     return v;

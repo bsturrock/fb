@@ -18,6 +18,12 @@ export function round(x: number, d = 4): number | string {
   return r === 0 ? 0 : r;
 }
 
+/**
+ * Plan 13a's shape-query budget: Rapier shape queries one tick may ask (tests/harness.test.ts checks it on a representative
+ * set; the full check counts every leg-matrix run, `queries.jsonl`).
+ */
+export const SHAPE_QUERY_BUDGET = 4000;
+
 /** Ragdoll and physical-leg collider regions counted as legs. */
 export const LEG_REGIONS = new Set(['thigh', 'shin', 'shoe']);
 

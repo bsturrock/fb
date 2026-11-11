@@ -103,6 +103,17 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   penetration and 13 substeps instead of 4.28 and 12; L4-F10-wrap-off unchanged); the worst shape-query tick reaches 4889
   (L3-F1-mirror4; 6 fixtures over 4000, 3 of them at 4030 with V2 off).
 
+- **5b** (`r5b-query-budget`) landed: byte-identical. The 4030-query tick (HC-F1-at0.9, HC-F1-at1.6, HC-F5-invalidOne at
+  0.867 s) was R's held left arm in D's wrap: its swing-out bracket runs to its cap with nothing clear (15 builds, 17 cm
+  deep), then its continuity step bisects to the valid fraction with each step's push-out at its 4-iteration cap (40
+  builds a substep, depth converging on HARD_OK): a real search, not repeats. The push-outs (pose and trunk) read
+  penetrating contacts only and now ask at the depth checks' prediction, reusing their answers (a penetrating contact
+  is the same at any prediction: harness test on random pairs of every shape kind, both query paths); the trunk answers
+  are kept per shape like the others. Worst tick 4030 to 3242 there, every leg-matrix run under 4000 (highest
+  L3-F7-mirror50, 3423), 5% fewer queries over the export. The full check counts every leg-matrix run
+  (`queries.jsonl`, a compare line for ticks over the budget); the suite's budget test adds HC-F1-at0.9 and
+  L3-F7-mirror50.
+
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
 
@@ -136,5 +147,5 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
   keeps the cycle (L3-F6-hold 2 plants, holdMirror 3 R plants).
 - Shape-query budget exceeded outside the budget test's two fixtures at `a6d712f`: HC-F5-invalidOne asks 4412 queries in
-  one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. The budget test checks
-  only L4-F10-wrap-on and L3-F8-recontact.
+  one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. Resolved with the flags
+  off at rung 5b (every leg-matrix run under 4000, counted by the full check).

@@ -3,6 +3,7 @@
 //   npx vite-node scripts/check/full-check.ts <result dir>
 // Env: CHECK_JOBS (parallel workers after the suite, default 6), CHECK_SKIP (comma list of
 // typecheck,build,suite,fixtures,legmx,l4mx; a skipped part is recorded as skipped).
+// The leg matrix's runs also write the shape-query budget (queries.jsonl).
 // The suite runs first and alone (no competing load, so no induced timeouts); the export and matrix shards then run in a
 // bounded pool. Every compared file is deterministic: no timestamps, stable order. Timings go to meta.json and logs/.
 import { spawn, execFileSync } from 'node:child_process';
@@ -209,6 +210,16 @@ for (const part of ['legmx', 'l4mx'] as const) {
   rows.sort((a, b) => a.k - b.k || Number(a.rev) - Number(b.rev));
   write(`${part}.jsonl`, rows.map(({ k: _k, ...r }) => JSON.stringify(r) + '\n').join(''));
   status[part] = { rows: rows.length };
+}
+// the shape-query budget (the leg matrix's runs): the most queries in one tick per fixture and order
+if (!SKIP.has('legmx')) {
+  const rows = outputs('legmx')
+    .map((f) => `${f}.q`)
+    .filter((f) => existsSync(f))
+    .flatMap((f) => readFileSync(f, 'utf8').split('\n').filter(Boolean))
+    .map((l) => JSON.parse(l) as { k: number; rev: boolean });
+  rows.sort((a, b) => a.k - b.k || Number(a.rev) - Number(b.rev));
+  write('queries.jsonl', rows.map(({ k: _k, ...r }) => JSON.stringify(r) + '\n').join(''));
 }
 write('status.json', json(status));
 ms.total = Date.now() - t0;
