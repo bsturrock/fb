@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
  * Plan 14: the run lab (src/lab/run-lab.ts) reads and saves its Fast Run keyframe edits through the dev server: GET
@@ -59,5 +59,6 @@ export default defineConfig({
   publicDir: false,
   plugins: [clipEdits()],
   server: { port: 5197, strictPort: true },
-  test: { environment: 'node', testTimeout: 120000, setupFiles: ['tests/setup.ts'] },
+  // scratch work (git-ignored `.scratch/`, ladder rule 10) is never part of the suite, whatever test files it holds
+  test: { environment: 'node', testTimeout: 120000, setupFiles: ['tests/setup.ts'], exclude: [...configDefaults.exclude, '.scratch/**'] },
 });
