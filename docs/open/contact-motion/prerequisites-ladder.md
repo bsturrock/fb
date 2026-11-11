@@ -82,7 +82,7 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   `tests/corerock.test.ts` on the old tree's tipped-forward seed (step 105), valid here unchanged: same ragdoll profile
   id; in the third seeded solve the core's closest point reads no closing, the far corner 3.5 m/s, the solve takes 56 N s,
   nothing over the impulse rule before it; on the closest point alone 219 W, FALL_L4 133.5 W.
-- **4c** (carried impacts) parked, see Parked.
+- **4c** (carried impacts) landed as 6c, on the physical-legs base its case needs.
 - **4d** (`r4d-limp-rule`) landed: byte-identical. The limp-shoe hold catalogue in body-limits becomes a check of plan 12's
   rule on every hold decision of its four fixtures (held exactly when the turn would come closer to another player inside
   8 cm, recomputed unculled; a held shoe keeps its pitch, a turned one moves one rate step), with a positive sample and
@@ -131,6 +131,31 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   negative controls moved, 9 behaviour); 15 result or who-falls changes; one L4 row over the ceiling,
   L4-F9-defenderFalling D 172.0 W (rung 4c's case: R's core on D's thigh while R lands; the 4c flag clears it and leaves
   the matrix at 148.1 W); `LEG_IN_RAGDOLL` and the L4-F10-wrap-on stall gone; worst shape-query tick 3535.
+- **6b** (`r6b-filter`) landed: byte-identical (summaries, traces, both matrices, shape-query counts). The physical legs
+  meet another player's ragdoll segments only (`legMeets`, the contact hook for every leg pair), never a proxy; a leg
+  deeper than `PHYS_LEG_ON_M` in a new ragdoll leaves the solve at the switch (`legsOffInsideConverted`). With V3 on
+  every leg-guard fixture: who-falls changes 15 to 12, suite failures 21 to 17 (none new), no leg impulse on a proxy
+  (was 1519 N s over 31 runs), largest injected energy per substep 0.623 to 0.20 J.
+- **6c** (`r6c-carried`) landed, rung 4c re-expressed, `fall-response-l4-v6` with `impactGuard.carried`: a core-jointed
+  segment closing on another player's ragdoll that is about to land holds the whole body. Flag off (V3 off): summaries,
+  both matrices and query counts byte-identical; the 46 fall-response L4 traces change only in the profile id. Test
+  `tests/carried.test.ts`: L4-F9-defenderFalling under V3 from a capture at tick 65, 172 W without the flag (one
+  substep over 157.5), 136 W with it; three earlier landings with D's thigh resting on R hold nothing.
+- **7** (`r7-planted-pose`) landed: byte-identical, 285/285. Under `sweep` (V2, V3) a planted leg whose primary is
+  invalid (or, with `physicalLegs`, in a body the legs meet) takes the primary at a knee pole before any offset, held
+  at the plant tolerance and the continuity rate, and returns to the primary once that is clear at its own knee; with
+  no valid planted pose the leg is released as before. Fault `PoseDebug.noPlantedPole`. Tests
+  `tests/planted-pose.test.ts` and the hold captures under V2/V3 (l3-contracts). `HOLD_CLEARANCE_REPLANT` under V2/V3:
+  no clearance release and no plant after 3.5 s on either capture, the fault twin keeps the cycle. L3-F4-twoArm does not
+  reach it (D's left foot there is released by reach at 0.583 s, not a plant).
+- **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
+  `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
+  controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
+  controls' symptoms no longer show with the planted pose, both back with `noPlantedPole`), 6 behaviour; one L4 row over
+  the ceiling (the self-trunk pinch below); leg matrix none; worst query tick 3588. Before the flip: the knee-pole exit
+  at a swing start (below) fixed; the natural samples re-seeded or pinned to their V1 trajectories, the three rung 7
+  controls run with `noPlantedPole`, the twoPalm hold-effort row reading the applied effort (it reads the request; with
+  the grasps at the owner budget the applied effort is 0). Flip order HC, L4, L3, each with its own test repairs.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -141,30 +166,55 @@ order, not hunk-split.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
 - D4/D5 footwork: reverted (see the handoff's known issues).
-- Rung 4c, `impactGuard.carried` (the old tree's D3): no case at 4b needs it. With the flag on the L4 matrix (92 rows) is
-  identical; `carriedImpacts` fires in 5 runs for one substep each and changes nothing. The old tree's case
-  (L4-F9-defenderFalling, 179.8 W) was measured with the physical supported legs on. Patch and evidence:
-  `.scratch/ladder/parked/r4c-carried/`. Reconsider at the physical-legs rungs (6-8). Rung 6, V3 on every leg-guard
-  fixture: L4-F9-defenderFalling D 172.0 W (1 substep over) without it, 148.1 W highest with it (the case it needs).
 
 ## Open defects to test on the ladder
 
 To be reproduced on the first rung where they appear, then handled under rule 7:
 
 - Self-trunk pinch: a ragdoll forearm pressed into its own trunk by the floor gains 7.5 J in one solve
-  (L4-F9-contact reversed R; read by the audit as 172 W). Suspected solver energy injection.
+  (L4-F9-contact reversed R; read by the audit as 172 W). Suspected solver energy injection. Reached with V3 on at rung
+  7: the same run, R 172.4 W at 1.125 s, its right forearm on the floor (94.7 N s in one substep); from 1.05 s
+  (`r7-triage/captures/L4-F9-contact~v3-rev@63`) the twins with the legs, rung 7 or `carried` off give the same 172.4 W:
+  reached by the moved trajectory. Tracked defect with a seeded test at the flip.
 - Posed thigh held 1.0-1.45 cm inside a ragdoll pelvis for 15 substeps with every clearance loop capped
-  (L4-F10-wrap-on D).
-- Shoulder persistence under a loaded forearm (L4-F9-exit, L4-F3-run-on).
+  (L4-F10-wrap-on D). At rung 7: 24 substeps over 1 cm (longest run 12, deepest 2.14 cm), reversed 29; under V3 none.
+  Resolved by the flip.
+- Shoulder persistence under a loaded forearm (L4-F9-exit, L4-F3-run-on). Reached with V3 on: L4-F3-run-on R right
+  shoulder past the tolerance 0.2875 s (1.25-1.54 s, up to 7.6 deg) with R's right forearm and upper arm on the floor
+  throughout; from 1.10 s (`L4-F3-run-on~v3@66`) all twins give the same run. Tracked defect at the flip (scoped to the
+  fixture and the loaded forearm), or a fix rung first.
 - Posed leg held inside another player's ragdoll, the conversion then rejected (tracked from rung 3, `LEG_IN_RAGDOLL`
   in tests/l3-pass.ts): D's posed legs 2-6.6 cm inside R's ragdoll core for 8-25 substeps before D's conversion,
   rejected for external penetration: L3-F4-oneArm and L3-F1-phase2 (right thigh in R's pelvis, 4.28 cm at 1.304 s),
   L4-F10-wrap-off (right thigh in R's torso, 5.34 cm at 1.300 s). Controlled twin: rung 3's change off from 1.0 s (the
   same state) gives the same rejection to the last digit. Probably the deeper form of the L4-F10-wrap-on entry above.
+  Resolved under V3 (rung 6: the three captures convert); tracked under V1 until the flip.
 - A held player's planted foot released by its clearance solve (plant drift just over 1 cm on clearance variant 1) and
   planted again every 0.2-0.6 s in a stationary hold (tracked from rung 3, `HOLD_CLEARANCE_REPLANT`): L3-F6-hold R left
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
-  keeps the cycle (L3-F6-hold 2 plants, holdMirror 3 R plants).
+  keeps the cycle (L3-F6-hold 2 plants, holdMirror 3 R plants). Resolved under V2/V3 by rung 7; tracked under V1 until
+  the flip.
+- Knee-pole exit at a swing start (V3, rung 7): a planted leg held at a knee pole because its primary is in a body the
+  legs meet leaves it for clearance alternative 9 in the substep its swing starts (the planted pose applies to plants
+  only): the shown shoe moves 2.04 cm, over the transition audit's 1 cm (L3-F4-gripOwner R left 1.7125 s, right ankle
+  1.31 cm at 2.083 s). From 1.60 s (`L3-F4-gripOwner~v3-audit@96`) the twin with the legs off and the twin with rung 7
+  off are both under 1 cm. Fix before the flip (rung 7b, small): a leg leaving a plant at a knee pole keeps the pole
+  candidates, bounded by continuity, until an ordinary one is reachable. Rung 7 off, V3 has its own owner-change
+  breaches in the same family (L3-F4-gripTarget D 1.14 cm, L3-F4-gripOwner R 1.33 cm): to check against the fix.
+- Stale impulses in the contact records and the leg ledger: both read every manifold point's impulse; a point that
+  was not solved in a substep (apparently one outside the pair's solver contacts) keeps the last solve's value. L3-F9-noProbe-prep (V3) records
+  D's shin on R's pelvis at 64.867 N s in three consecutive substeps while R's core changes speed by 2.02, 0.14 and
+  0.05 m/s; repeated values add 181 N s to that run (V1: 11.4 N s), 47 N s to L3-F1-mirror4 (V1: none). Observation
+  only, but the peaks and ledger totals used to judge contacts are inflated where it happens. A fix may move V1
+  summaries that export contact impulses.
+- A physical leg starting a solve inside another player's ragdoll: HC-F2-bothFallL2 reversed A's right thigh 1.52 cm in
+  B's torso with load (0.979 s) and 3.19 cm in B's shin without (0.975 s), against `PHYS_LEG_OK` 1 mm. To read at the
+  flip.
+- An unsupported proxy over a refused surface (D2 keeps its legs live): L3-F9-noProbe-prep D, its probe refused on the
+  strip and ungrounded in 31 of its 37 leg-contact substeps, falls onto R's shoe with its own pelvis (123.8 N s at
+  0.754 s, not a leg), rebounds at 2.1 m/s, and its left shin meets R's pelvis while rising (one real 64.9 N s
+  substep, injected 0.11 J, loaded depth 1.1 mm). The leg contact is plausible momentum exchange; the ledger's
+  320.7 N s includes the stale repeats above. The rebound of a rigid proxy off a ragdoll shoe is the questionable part.
 - Shape-query budget exceeded outside the budget test's two fixtures at `a6d712f`: HC-F5-invalidOne asks 4412 queries in
   one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. Resolved with the flags
   off at rung 5b (every leg-matrix run under 4000, counted by the full check).
