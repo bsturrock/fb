@@ -224,7 +224,17 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   PGS +1 -6.6 / 3.1 J, +2 -6.6 / 1.3, +3 -5.9 / none over 0.5, +4 -7.8 / 1.0, +6 -15.6 / none; additional solver
   iterations instead: +1 -50.1 / none, +2 -76.9 / none, +3 +3.6 J (still injecting), +4 -2.3 / 1.0: not monotonic, so
   the field is the PGS one. Not flipped (coordinator): the iteration count is to be chosen and turned on together with
-  the hard hip stops and own-leg contact, which add closed loops.
+  the hard hip stops and own-leg contact, which add closed loops. Assessment, every L3/L4/HC ragdoll under N from its
+  build, registered leg guards (information, `.scratch/ladder/r8a-ragdoll-iterations/`, README there): injecting
+  solves / J over the matrix 882 / 5006 (N 0), 450 / 2423 (2), 409 / 2113 (3), 325 / 1594 (4); largest gain per family
+  L3 128 / 43 / 38 / 23 J, L4 122 / 71 / 45 / 37, HC 197 / 39 / 43 / 27. Rebound 689 / 403 / 369 / 292 solves: no N
+  removes it; the brace rebound in the run stays at N 2 (52.0 J) and 3 (44.8 J, the largest L4 gain), gone at 4.
+  Pinch 36 / 15 / 9 / 8 solves (85.7 / 99.9 / 14.1 / 28.2 J); contact-free gains up to 27 J at N 3 (L4-F9-low
+  reversed, the solve after a 478 J impact). Full check 250 s (N 0) against 233-236 s: no measurable cost (matrix
+  shards' CPU within 2%). G/L1/L2/RH byte-identical; L3 44, L4 69-70, HC 21 summaries change; 24-26 suite failures
+  (not classified); L4 power ceiling: N 3 one row (L4-F10-wrap-on D 157.8 W), N 4 two (167.4 W); D now converts in
+  L3-F1-phase2, L3-F4-oneArm, L3-F9-noProbe-free and L4-F10-wrap-off at every N (all but noProbe-free the
+  `LEG_IN_RAGDOLL` rejections).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
