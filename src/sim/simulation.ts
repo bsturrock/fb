@@ -20,7 +20,7 @@ import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newL
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
+  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
   type RagdollCollider, type TransferAudit,
 } from './ragdoll';
 import {
@@ -934,6 +934,8 @@ export class Simulation {
         applyEnvelope(pl.rag, this.physics.dt);
         // ladder rung 8d: a hip stop widened at the conversion closes with its joint
         if (pl.rag.hipStops) ratchetHipStops(pl.rag);
+        // ladder rung 8f: so does a knee stop
+        if (pl.rag.kneeStops) ratchetKneeStops(pl.rag);
       }
       if (pl.fall) this.fall!.request(pl.fall, this.contacts, this.arms);
     }

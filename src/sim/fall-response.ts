@@ -7,7 +7,7 @@ import { isGround, type ArmSide, type ContactRec, type PlayerId, type Role, type
 import type { FallResponseProfile, JointEnvelope } from './profiles';
 import { twoBone } from './pose';
 import { clampDirToEnvelope, hingeAngles, hingeAxisWorld, landmarkWorld, limbDirWorld, relativeOmega, type Ragdoll, type RagdollJoint } from './ragdoll';
-import { clampDirToHipStops } from './joint-stops';
+import { clampDirToHipStops, clampToKneeStop } from './joint-stops';
 import { add, addScaled, clamp, clampLen, cross, dist, dot, horiz, len, norm, qFromAxisAngle, qInvRot, qRot, rad, rotateToward, round, rv, scale, smooth, sub, v3, vc, type Quat, type Vec3 } from './vec';
 
 export type ArmTask = 'passive' | 'protect' | 'hold' | 'brace';
@@ -420,7 +420,8 @@ export class FallResponse {
     const j = this.joint(ep, `${side}Knee`);
     const th0 = ep.knee0[side];
     const goal = Math.max(th0, Math.min(th0 + rad(P.knee.flexDeg), rad(P.knee.maxDeg)));
-    const target = th0 + (goal - th0) * smooth((tS - P.timing.delayS) / P.knee.rampS);
+    // ladder rung 8f: never past the knee's stop in force (a knee accepted past the stop would be held pressed on it)
+    const target = clampToKneeStop(th0 + (goal - th0) * smooth((tS - P.timing.delayS) / P.knee.rampS), ep.rag.kneeStops?.find((k) => k.jointId === j.id));
     const theta = rad(hingeAngles(ep.rag)[j.id]);
     const rate = dot(relativeOmega(ep.rag, j), hingeAxisWorld(ep.rag, j));
     const G = P.gains.knee;

@@ -157,3 +157,47 @@ export function clampDirToHipStops(dir: Vec3, frame1: Quat, box: AngBox, marginR
   const s = Math.hypot(x, e.y, z, w);
   return qRot(qMul(frame1, { x: x / s, y: e.y / s, z: z / s, w: w / s }), REF);
 }
+
+// ---------------------------------------------------------------- ladder rung 8f: the knee's flexion stop
+/** Ladder rung 8f: one knee's flexion stop since the build (the hinge's upper Rapier limit; `RagdollProfile.kneeFlexionStopDeg`). */
+export interface KneeStopRuntime {
+  jointId: string;
+  /** The joint's index in `Ragdoll.joints`. */
+  jointIndex: number;
+  /** The profile's stop and the stop in force (rad): widened to where the knee started, closing with it. */
+  nominal: number;
+  current: number;
+  /** How far past the stop the knee started (deg). */
+  startOutsideDeg: number;
+}
+
+/**
+ * The hinge's angle as Rapier limits it (rad): the X component of the relative rotation, sign-normalised. The ragdoll's
+ * hinges are built on their local X in both bodies (`JointData.revolute(.., X)`), so the joint frames are the identity.
+ */
+export const hingeReading = (q1: Quat, q2: Quat): number => boxReading(jointRelative(q1, { x: 0, y: 0, z: 0, w: 1 }, q2))[0];
+
+/**
+ * At the build: the knee's upper limit at the stop, or at where the knee starts if that is past it (never past the
+ * hinge's own limit, which the candidate's validation reads, so the stop changes no conversion).
+ */
+export function initKneeStop(joint: RAPIER.RevoluteImpulseJoint, jointId: string, jointIndex: number, q1: Quat, q2: Quat, lowerRad: number, upperRad: number, stopDeg: number): KneeStopRuntime {
+  const nominal = Math.min(upperRad, stopDeg * RAD);
+  const v = hingeReading(q1, q2);
+  const current = Math.min(upperRad, Math.max(nominal, v));
+  joint.setLimits(lowerRad, current);
+  return { jointId, jointIndex, nominal, current, startOutsideDeg: Math.max(0, v - nominal) / RAD };
+}
+
+/** One substep, before the solve: a widened knee stop closes to where the knee is now, never past the stop or outward. */
+export function ratchetKneeStop(k: KneeStopRuntime, joint: RAPIER.RevoluteImpulseJoint, lowerRad: number, q1: Quat, q2: Quat): boolean {
+  if (k.current <= k.nominal) return false;
+  const next = Math.max(k.nominal, Math.min(k.current, hingeReading(q1, q2)));
+  if (next === k.current) return false;
+  k.current = next;
+  joint.setLimits(lowerRad, next);
+  return true;
+}
+
+/** A knee target (rad) held at the knee's stop in force (none: as it is). */
+export const clampToKneeStop = (target: number, k: KneeStopRuntime | undefined): number => (k ? Math.min(target, k.current) : target);

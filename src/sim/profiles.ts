@@ -652,6 +652,12 @@ export interface RagdollProfile {
    * hip's anatomical frame. Absent: the hips have none (the L4 soft envelope, where there is one, is all).
    */
   hipStops?: HipStopProfile;
+  /**
+   * Ladder rung 8f: a flexion stop on the knee hinges (deg), short of `limitsDeg.knee`'s upper limit, which the
+   * candidate's validation keeps reading, so the stop changes no conversion: a knee that converts past it starts against
+   * a stop widened to where it is, closing with it (`src/sim/joint-stops.ts`). Absent: the hinge's own limit.
+   */
+  kneeFlexionStopDeg?: number;
 }
 
 /**
@@ -684,6 +690,9 @@ export const HIP_STOPS_V1: HipStopProfile = { id: 'hip-stops-v1', flexionDeg: 12
 
 /** Ladder rung 8d: the ragdoll profile with hard hip stops, under an id that names them. */
 export const withHipStops = (r: RagdollProfile, h: HipStopProfile = HIP_STOPS_V1): RagdollProfile => ({ ...r, id: `${r.id}+${h.id}`, hipStops: h });
+
+/** Ladder rung 8f: the ragdoll profile with the knee flexion stop at `deg`, under an id that names it. */
+export const withKneeStop = (r: RagdollProfile, deg: number): RagdollProfile => ({ ...r, id: `${r.id}+knee${deg}`, kneeFlexionStopDeg: deg });
 /** The ragdoll profile without hip stops, under the id it had before them (the lab's `hips=off`). */
 export function withoutHipStops(r: RagdollProfile): RagdollProfile {
   if (!r.hipStops) return r;

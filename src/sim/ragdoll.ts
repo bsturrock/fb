@@ -7,7 +7,7 @@ import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry
 import type { PhysicsWorld } from './physics';
 import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { clampDirToEnvelope, swingExcess, swingExtentDeg } from './joint-cone';
-import { hipNeutralFrame, initHipStop, ratchetHipStop, type HipStopRuntime } from './joint-stops';
+import { hipNeutralFrame, initHipStop, initKneeStop, ratchetHipStop, ratchetKneeStop, type HipStopRuntime, type KneeStopRuntime } from './joint-stops';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type JointRangeProfile, type RagdollProfile, type SelfClearanceProfile } from './profiles';
 import {
   add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qFromUnitVectors, qIdentity, qMul, qRot, round, rv, scale,
@@ -102,6 +102,8 @@ export interface Ragdoll {
   self?: { arms: RagdollCollider[]; trunk: RAPIER.Collider[] };
   /** Ladder rung 8d: the hips' hard stops since the build (absent: profile off). */
   hipStops?: HipStopRuntime[];
+  /** Ladder rung 8f: the knees' flexion stops since the build (absent: profile off). */
+  kneeStops?: KneeStopRuntime[];
 }
 
 /**
@@ -375,6 +377,12 @@ export function buildCandidate(
     rag.hipStops = joints.flatMap((j, i) =>
       j.kind === 'hip' && j.side ? [initHipStop(j.joint, j.id, i, bodies[j.parent].rotation(), bodies[j.child].rotation(), hipNeutralFrame(body, j.side), HS, j.sideSign ?? 1)] : [],
     );
+  // ladder rung 8f: the knees' flexion stop, widened to where the pose starts each knee (the hinge's limit stays)
+  const KS = R.kneeFlexionStopDeg;
+  if (KS !== undefined)
+    rag.kneeStops = joints.flatMap((j, i) =>
+      j.kind === 'knee' && j.limitsRad ? [initKneeStop(j.joint as RAPIER.RevoluteImpulseJoint, j.id, i, bodies[j.parent].rotation(), bodies[j.child].rotation(), j.limitsRad[0], j.limitsRad[1], KS)] : [],
+    );
   if (pose.anklePitchDeg) rag.anklePitchDeg = { ...pose.anklePitchDeg };
   if (jointRange) {
     const F = jointRange.limpFoot;
@@ -442,6 +450,15 @@ export function ratchetHipStops(rag: Ragdoll): void {
   for (const h of rag.hipStops) {
     const j = rag.joints[h.jointIndex];
     ratchetHipStop(h, j.joint, rag.bodies[j.parent].rotation(), rag.bodies[j.child].rotation());
+  }
+}
+
+/** Ladder rung 8f: one substep of the knees' flexion stops, before the solve (`ratchetKneeStop`); an enabled ragdoll only. */
+export function ratchetKneeStops(rag: Ragdoll): void {
+  if (!rag.kneeStops || !rag.enabled) return;
+  for (const k of rag.kneeStops) {
+    const j = rag.joints[k.jointIndex];
+    ratchetKneeStop(k, j.joint as RAPIER.RevoluteImpulseJoint, j.limitsRad![0], rag.bodies[j.parent].rotation(), rag.bodies[j.child].rotation());
   }
 }
 
