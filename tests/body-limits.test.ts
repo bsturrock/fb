@@ -24,9 +24,9 @@ import { RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
 import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
-import { externalTwistRad, SEGMENTS, swingTwistOf } from '../src/sim/ragdoll';
-import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
-import { add, addScaled, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qMul, qRot, scale, sub, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
+import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
+import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
+import { add, addScaled, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, rows, runSim } from './helpers';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -191,6 +191,75 @@ function rangeObserver(): { out: Probe; tick: (s: Simulation) => void } {
   };
 }
 
+// ------------------------------------------------------------------ plan 12: the limp-shoe rule
+// The limp shoe's hold (Simulation.shoeDeeper, called by easeLimpFeet once per easing shoe per substep): a shoe waits
+// when its turn would bring it closer to another player inside LIMP_SHOE_CLEARANCE_M (that player's active colliders, or
+// the published limbs of a player that can still convert; floor and obstacles not counted). The recorder wraps the
+// decision on the run's Simulation and recomputes the condition itself, uncached and unculled (Rapier's contact query
+// between the shapes, beyond the clearance nothing), so the check reads the rule, not which fixture happens to reach it.
+type ShoeDecide = (pl: PlayerRuntime, c: RagdollCollider, from: Pose, to: Pose, limbs: Map<string, ExternalShape[]>) => boolean;
+interface LimpCall {
+  /** fixture-local shoe key `player.side` */
+  k: string;
+  step: number;
+  /** the shoe's pitch when asked (deg), its target and the step one substep allows (deg) */
+  pitch: number;
+  target: number;
+  stepDeg: number;
+  held: boolean;
+  /** the rule's condition, recomputed */
+  cond: boolean;
+}
+const LIMP = new Set<string>();
+const limpRule = (defs: FixtureDef[]): void => defs.forEach((d) => LIMP.add(d.id));
+
+/** Records every hold decision of `sim`; `fault` replaces the decision (given the simulation's own) for a fault control. */
+function recordLimp(sim: Simulation, fault?: (own: ShoeDecide) => ShoeDecide): LimpCall[] {
+  const calls: LimpCall[] = [];
+  const own = sim.shoeDeeper.bind(sim) as ShoeDecide;
+  const decide = fault ? fault(own) : own;
+  const M = LIMP_SHOE_CLEARANCE_M;
+  const gap = (e: { shape: RAPIER.Shape; pose: Pose }, shape: RAPIER.Shape, at: Pose): number =>
+    e.shape.contactShape(e.pose.p, e.pose.q, shape, at.p, at.q, M)?.distance ?? M;
+  sim.shoeDeeper = ((pl, c, from, to, limbs) => {
+    const F = pl.rag!.limpFoot!;
+    const side: Side = F.shoes.left === c ? 'left' : 'right';
+    let cond = false;
+    for (const o of sim.players) {
+      if (o === pl) continue;
+      const ext = sim.activeColliders(o).map((k) => ({ shape: k.shape, pose: { p: vc(k.translation()), q: { ...k.rotation() } } }));
+      if (!o.rag && !o.handoff) ext.push(...(limbs.get(o.id) ?? []));
+      for (const e of ext) {
+        const g = gap(e, c.collider.shape, to);
+        if (g < M && g < gap(e, c.collider.shape, from) - 1e-6) cond = true;
+      }
+    }
+    const held = decide(pl, c, from, to, limbs);
+    calls.push({ k: `${pl.id}.${side}`, step: sim.steps, pitch: pl.rag!.anklePitchDeg![side] ?? 0, target: F.targetDeg, stepDeg: F.rateDegPerS[side] * sim.physics.dt, held, cond });
+    return held;
+  }) as typeof sim.shoeDeeper;
+  return calls;
+}
+
+/**
+ * Every way the recorded calls break plan 12's rule: a shoe held without the condition or turned with it, a held shoe
+ * that moved, or a turned shoe that moved other than one rate step toward its target (the remainder on the last).
+ */
+function limpViolations(id: string, calls: LimpCall[]): string[] {
+  const bad: string[] = [];
+  const last = new Map<string, LimpCall>();
+  for (const c of calls) {
+    if (c.held !== c.cond) bad.push(`${id} ${c.k}@${c.step}: ${c.held ? 'held without' : 'turned with'} the condition`);
+    const p = last.get(c.k);
+    if (p && c.step === p.step + 1) {
+      const want = p.held ? p.pitch : Math.abs(p.target - p.pitch) <= p.stepDeg ? p.target : p.pitch + Math.sign(p.target - p.pitch) * p.stepDeg;
+      if (Math.abs(c.pitch - want) > 1e-9) bad.push(`${id} ${c.k}@${p.step}: ${p.held ? 'held' : 'turned'} ${p.pitch.toFixed(4)} -> ${c.pitch.toFixed(4)} deg, the rule gives ${want.toFixed(4)}`);
+    }
+    last.set(c.k, c);
+  }
+  return bad;
+}
+
 // ------------------------------------------------------------------ one run per fixture
 // Plan 13b: the self-clearance and joint-range checks read the same run (`Simulation.create(def)`, to its end), so each
 // fixture is simulated once, with the joint-range probe (cheap) on every run and the own-trunk depth (shape queries every
@@ -199,21 +268,23 @@ function rangeObserver(): { out: Probe; tick: (s: Simulation) => void } {
 const DEPTH = new Set<string>();
 const measureDepth = (defs: FixtureDef[]): void => defs.forEach((d) => DEPTH.add(d.id));
 
-const runs = new Map<string, Promise<{ depth?: Record<Src, { d: number; at: string }>; range: Probe }>>();
-const watched = (def: FixtureDef): Promise<{ depth?: Record<Src, { d: number; at: string }>; range: Probe }> => {
+type Watched = { depth?: Record<Src, { d: number; at: string }>; range: Probe; limp?: LimpCall[] };
+const runs = new Map<string, Promise<Watched>>();
+const watched = (def: FixtureDef): Promise<Watched> => {
   if (!runs.has(def.id)) runs.set(def.id, runWatched(def));
   return runs.get(def.id)!;
 };
-async function runWatched(def: FixtureDef): Promise<{ depth?: Record<Src, { d: number; at: string }>; range: Probe }> {
+async function runWatched(def: FixtureDef, fault?: (own: ShoeDecide) => ShoeDecide): Promise<Watched> {
   const sim = await Simulation.create(def, PULLED.has(def.id) ? { onSubstep: pullForearms() } : {});
   const depth = DEPTH.has(def.id) ? depthObserver(def) : null;
   const range = rangeObserver();
+  const limp = LIMP.has(def.id) || fault ? recordLimp(sim, fault) : undefined;
   await runSim(sim, Infinity, (s) => {
     depth?.tick(s);
     range.tick(s);
   });
   sim.dispose();
-  return { depth: depth?.out, range: range.out };
+  return { depth: depth?.out, range: range.out, limp };
 }
 
 /** Worst own-trunk depth per arm source over a whole run. */
@@ -466,32 +537,48 @@ describe('plan 12 joint range: ankles', () => {
     }
   }, 120000);
 
+  const LIMP_CASES = ['L4-F3-forward-on', 'L4-F8-passive', 'HC-F1-low', 'HC-F1-lowMirror'].map(FIX);
+  limpRule(LIMP_CASES);
   it('ragdoll feet: in range at conversion, relaxed to 15 deg within 1 deg 0.35 s later unless the limp shoe is held near another player', async () => {
-    // the held cases (Simulation.shoeDeeper, listed in docs/handoff/plan12.md): the shoe would turn within 8 cm of another player
-    const heldCases = new Set<string>();
-    for (const id of ['L4-F3-forward-on', 'L4-F8-passive', 'HC-F1-low', 'HC-F1-lowMirror']) {
-      const on = await probe(FIX(id));
+    // plan 12's hold (Simulation.shoeDeeper, docs/handoff/plan12.md): a shoe waits only while its turn would bring it
+    // closer to another player inside 8 cm, and then keeps its pitch; otherwise it turns one rate step toward its target.
+    // Checked on every substep's decision over these fixtures, whichever shoes the trajectories bring near another player
+    let held = 0;
+    let turned = 0;
+    let first: { def: FixtureDef; at: string } | undefined;
+    for (const def of LIMP_CASES) {
+      const id = def.id;
+      const w = await watched(def);
+      const on = w.range;
       expect(on.feet.size, id).toBeGreaterThan(0);
+      expect(w.limp!.length, `${id}: the limp feet ease`).toBeGreaterThan(0);
+      const bad = limpViolations(id, w.limp!);
+      expect(bad, `${id}: ${bad.length} breaches of the rule, first ${bad.slice(0, 4).join('; ')}`).toEqual([]);
+      for (const c of w.limp!) {
+        if (c.held) held++, (first ??= { def, at: `${id} ${c.k}@${c.step}` });
+        else turned++;
+      }
       for (const [pid, c] of on.feet) {
         expect(c.late, `${id} ${pid}`).toBeTruthy();
         for (const side of SIDES) {
           const p = c.conv[side]!;
           expect(p, `${id} ${pid} ${side}`).toBeGreaterThanOrEqual(-J.ankle.dorsiDeg);
           expect(p, `${id} ${pid} ${side}`).toBeLessThanOrEqual(J.ankle.plantarDeg);
-          if (c.held![side] > 0) heldCases.add(`${id} ${pid}.${side}`);
-          else expect(Math.abs(c.late![side]! - J.limpFoot.pitchDeg), `${id} ${pid} ${side}`).toBeLessThanOrEqual(1);
+          if (c.held![side] === 0) expect(Math.abs(c.late![side]! - J.limpFoot.pitchDeg), `${id} ${pid} ${side}`).toBeLessThanOrEqual(1);
         }
       }
     }
-    // (plan 13e: HC-F1-low D's right shoe is no longer held, on the L3 planner with the idle and walk clips: it relaxes
-    // within 1 deg like the others. Plan 13f: under the leg guard D's left shoe is held, within 8 cm of R)
-    // (contact motion M1: with the arms' twist in range HC-F1-low's shoes are no longer held, D's and R's left; its mirror's
-    // runner holds its right shoe, within 8 cm of D)
-    // (ladder rung 3, rule 7: with the arm-task twist anchored per substep the HC-F1 arms meet at another place and both
-    // players convert at 1.217 s in a new arrangement: HC-F1-low R's left shoe is held 13 substeps and the mirror's D right
-    // shoe 43, each within 8 cm of the other player. The hold is plan 12's rule reached by the moved conversion: the twin
-    // with the rung's change off from 1.20 s, before either converts, holds the same shoes for the same substeps)
-    expect([...heldCases].sort()).toEqual(['HC-F1-low R.left', 'HC-F1-lowMirror D.right', 'HC-F1-lowMirror R.right']);
+    // positive sample: the rule is exercised, at least one shoe held (at rung 4b: HC-F1-low R.left, HC-F1-lowMirror D.right
+    // and R.right, each within 8 cm of the other player) and at least one turned
+    expect(first, 'some limp shoe is held').toBeTruthy();
+    expect(held, 'held substeps').toBeGreaterThan(0);
+    expect(turned, 'turned substeps').toBeGreaterThan(0);
+    // fault controls on the first fixture that holds: the rule disabled (never held) and inverted (held exactly when the
+    // turn is clear) each break it
+    const never = await runWatched({ ...first!.def, id: `${first!.def.id}-noHold` }, () => () => false);
+    expect(limpViolations(first!.def.id, never.limp!).some((v) => v.includes('turned with the condition')), `${first!.at}: disabled`).toBe(true);
+    const inv = await runWatched({ ...first!.def, id: `${first!.def.id}-invHold` }, (own) => (...a) => !own(...a));
+    expect(limpViolations(first!.def.id, inv.limp!).some((v) => v.includes('held without the condition')), `${first!.at}: inverted`).toBe(true);
     // the twin keeps the supported pitch it converted with, past the range
     const off = await probe(twin(FIX('HC-F1-low')));
     for (const [pid, c] of off.feet) expect(Math.min(c.conv.left!, c.conv.right!), pid).toBeLessThan(-J.ankle.dorsiDeg);

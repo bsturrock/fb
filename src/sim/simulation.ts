@@ -335,7 +335,7 @@ export function checkLimbContract(A: ArmProfile, R: RagdollProfile): void {
  * L3-F9-noProbe-contact 1.5 cm inside R's turned shoe at D's conversion, 5 cm D's thigh in HC-F3-phase75 2.3 cm (both
  * rejected, D left a rigid falling proxy).
  */
-const LIMP_SHOE_CLEARANCE_M = 0.08;
+export const LIMP_SHOE_CLEARANCE_M = 0.08;
 /** Plan 13e: how fast the sway displacement the foot planner's home leaves out unwinds once the sway stops (m/s). */
 const IDLE_SWAY_UNWIND_MPS = 0.05;
 

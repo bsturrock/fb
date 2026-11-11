@@ -83,6 +83,10 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   id; in the third seeded solve the core's closest point reads no closing, the far corner 3.5 m/s, the solve takes 56 N s,
   nothing over the impulse rule before it; on the closest point alone 219 W, FALL_L4 133.5 W.
 - **4c** (carried impacts) parked, see Parked.
+- **4d** (`r4d-limp-rule`) landed: byte-identical. The limp-shoe hold catalogue in body-limits becomes a check of plan 12's
+  rule on every hold decision of its four fixtures (held exactly when the turn would come closer to another player inside
+  8 cm, recomputed unculled; a held shoe keeps its pitch, a turned one moves one rate step), with a positive sample and
+  the rule disabled and inverted as fault controls.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
