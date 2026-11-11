@@ -44,6 +44,21 @@ uncommitted diff), the untracked files, and the s17 patches (`b`, `query`, `arm`
 | 8 | Turn `LEG_GUARD_V3` on for L3, L4, HC (split by family if that isolates failures) | the judged rung |
 | 9 | Arm overhead-twist singularity and palm continuity (the sound parts of `arm.patch`) | L3/L4/HC change |
 
+## Primary measure: visible quality
+
+The full check's visible-quality matrix (rung 8c; `scripts/check/README.md`, Visible quality) is the ladder's primary
+measure: what the owner sees. Player-seconds over every L3/L4/HC fixture, both orders, at the registered tree (8f):
+
+| family | ragdoll s | ragImpS | ragImplS | supImpS | ragSelfLegAxS | ragSelfDeepS | kneeStopS | ragSnap60 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| L3 | 151.2 | 157.9 | 235.5 | 1.0 | 100.9 | 284.7 | 16.4 | 1 |
+| L4 | 380.4 | 0.9 | 188.0 | 0.5 | 254.2 | 416.3 | 103.3 | 4 |
+| HC | 93.5 | 99.9 | 157.7 | 4.4 | 63.2 | 184.3 | 7.8 | 0 |
+
+Ragdoll impossible time is almost all L3/HC hips with no limit; knee time past 150 is mostly L4. Measured, not landed:
+hip stops + knee stop 140 + PGS 4 read 5.9 impossible, 19.6 implausible or worse, deep own-body 461 (8e, 8f). The rest
+of own-body overlap needs ragdoll own-leg contact (next rung).
+
 ## Status
 
 Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each compared against the previous rung.
@@ -235,6 +250,45 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   (not classified); L4 power ceiling: N 3 one row (L4-F10-wrap-on D 157.8 W), N 4 two (167.4 W); D now converts in
   L3-F1-phase2, L3-F4-oneArm, L3-F9-noProbe-free and L4-F10-wrap-off at every N (all but noProbe-free the
   `LEG_IN_RAGDOLL` rejections).
+- **8b** (`r8b-vitest-exclude`) landed: byte-identical, 296/296. vitest excludes `.scratch/**` (scratch test files).
+- **8c** (`r8c-visible-checks`) landed: byte-identical, 301/301; tests and check only (`tests/visible.ts`,
+  `scripts/check/visiblemx.ts`, compare lines; definitions and the human range table in `scripts/check/README.md`). The
+  visible audit (`.scratch/ladder/visible-audit/`) as a matrix: every L3/L4/HC fixture, both orders, every drawn frame,
+  ragdoll and supported split, the worst event per column with a lab URL. Validated on constructed poses (both sides,
+  mirrored) and the screenshot run (tests/visible.test.ts); under V3 it reproduces the audit's headline (impossible
+  275.1, implausible or worse 583.3 player-s); the registered fixtures (V1) read 258.7 / 581.2 (V1 changes who falls
+  and when: L4 ragdoll time 380 s against 390). Full check 304 s against 248 s. The ladder's primary measure (above).
+- **8d** (`r8d-hip-stops`) landed off: byte-identical, 310/310. `RagdollProfile.hipStops` (HIP_STOPS_V1, `withHipStops`):
+  Rapier's per-axis angular limits on each spherical hip through one raw wrapper (`setAngularLimits`; the test fails
+  on a Rapier change), about an anatomical frame per side from the calibrated rest thigh. A conversion outside the box
+  starts against a stop widened to the start, closing with the joint (a ratchet, never reopening; cap 172); a
+  fall-response hip target is held 3 deg inside. Lab `hips=on|off` (28a808a, `r8e-lab-hips`, byte-identical,
+  311/311): e.g. `?fixture=L3-F9-convert-free&legs=v3&hips=on&cam=side&speed=0.25&t=0.40`.
+- **8e** (hip stops on L3/L4/HC): **not flipped** (assessment `.scratch/ladder/assess-8d/`, README there). Every L3/L4/HC
+  ragdoll under the stops: impossible ragdoll time 258.7 -> 7.3 player-s (L3 157.9 -> 3.2, HC 99.9 -> 2.6, L4 0.9 ->
+  1.5), implausible or worse 581 -> 191; none of the screenshot poses occurs. Blocked by: (1) passive energy: a thigh
+  swing arrested by a stop is an impact through the hip and the solves after it give part back (open defect below);
+  injecting solves 882 -> 2219, 9977 J against 5006; with 2 / 3 / 4 additional PGS iterations 1823 / 1570 / 1478 solves,
+  6604 / 5782 / 4370 J (largest 106 / 92 / 72 J against 197), against 325 solves / 1594 J for PGS 4 alone; the
+  passive-energy test fails at every count; (2) on L4 the box lies inside the soft hip envelope on every axis (envelope
+  129 / 61 / 39 / 45 / twist 50 against 125 / 50 / 30 / 30 / 45), so the envelope never takes a hip's load (L4-F1-hipTwist
+  settle test, the persistence rule's pinned sample empty): L4 needs stops outside the envelope or the envelope retired;
+  (3) 29 suite failures (14 by construction, 2 the envelope, 1 the energy, 12 natural samples or behaviour not yet
+  twinned) and 12 who-falls changes, listed in the README. Remaining impossible time under the stops: shoulder rotation
+  3.6 s, a stop overpowered by more than 3 deg 1.6 s (worst HC-F2-bothFall reversed A, 65 deg under two bodies), the
+  box's corners 1.4 s (twist admitted grows with swing), stops still widened from the conversion 0.6 s.
+- **8f** (`r8f-knee-stop`) landed off: byte-identical, 314/314. `RagdollProfile.kneeFlexionStopDeg` (`withKneeStop`):
+  the knee hinge's upper limit lowered to the stop (the hinge's 150 otherwise), widened to where a conversion starts the
+  knee and closing with it; a fall-response knee target is held at the stop in force. **Not flipped** (assessment
+  `.scratch/ladder/assess-8f/`, README there). Knee time past 150 127.5 -> 0 / 0.03 player-s at 140 / 145 (L4 103 s), but alone
+  the load moves to the unlimited hips: impossible 258.7 -> 297.1 (140; L3 51 runs up, 19 down) / 277.0 (145);
+  implausible or worse 581 -> 493 / 472; energy 145 837 solves 5318 J (largest 160), 140 917 / 5504 (107). The twinned
+  events are reached, not caused (the 145 L4 ceiling row L4-F10-wrap-on reversed D 162.1 W, a 78 J pinch rebound, a
+  61 J impact rebound with 54 J in the off twin): no knee-stop rebound. Fallout at 145: 22 suite failures (13 by
+  construction, 9 behaviour or natural samples not twinned), 4 who-falls changes. With the hip stops and PGS 4 the trade
+  is gone: hips + PGS 4 + knee 140 impossible 5.9, implausible or worse 19.6, deep own-body overlap 885 -> 461,
+  1268 solves / 3792 J (largest 60 J, against 197 registered), no L4 ceiling row, 14 who-falls changes; knee 145 there
+  8.4 / 25.7 / 1505 solves / 4720 J. The knee stop flips with the hips, at 140.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -253,6 +307,10 @@ order, not hunk-split.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
 - D4/D5 footwork: reverted (see the handoff's known issues).
+- 8e, the hip-stop flip (L3/L4/HC): blocked, see 8e; evidence `.scratch/ladder/assess-8d/`, patches
+  `.scratch/ladder/parked/hip-stops-flip/`.
+- The knee-stop flip (L3/L4/HC, 8f): alone it trades knee time for hip time; to flip with the hips at 140. Evidence
+  `.scratch/ladder/assess-8f/`, patches `.scratch/ladder/parked/knee-stop-flip/`.
 
 ## Open defects to test on the ladder
 
@@ -319,3 +377,15 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 - Shape-query budget exceeded outside the budget test's two fixtures at `a6d712f`: HC-F5-invalidOne asks 4412 queries in
   one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. Resolved with the flags
   off at rung 5b (every leg-matrix run under 4000, counted by the full check).
+- Hip-stop impact rebound (found at 8e; only under the 8d stops, which no fixture runs): a thigh swing arrested by a
+  stop is an impact through the hip, and the solves after it give part of the loss back. L4-F2-side-off R (response
+  off, alone): the right hip reaches adduction 30 at solve 69, the body loses 6.5 and 7.7 J (69, 70), solve 71 gains
+  4.19 J with no contact; the registered run never gains 0.2 J, and the same profile with every stop at 170 (set, never
+  reached) is byte-identical to it. Additional PGS iterations 1 / 3 / 4 / 8: 2.8 / 1.9 / 2.0 / 1.8 J. Rapier 0.21's JS
+  exposes no joint softness (only `contact_natural_frequency`). The brace rebound's class at a new trigger; to fix before
+  the stops can flip (candidates: a damped approach zone before each stop, the shaping the L4 envelope would give if it
+  sat inside the box; a Rapier upgrade that exposes joint softness).
+- Box reading against Rapier's stop at combined poses (found at 8e): exact on each axis alone (tests/joint-stops.test.ts),
+  but with flexion near 25 and rotation 20-30 Rapier's stop acts 1.3-1.9 deg before the box reading reaches it
+  (`.scratch/ladder/assess-8d/tools/probe2.ts`; L4-F2-side-off R's right hip halts at adduction 28.75 under a stop of 30).
+  Early, not late; a corner test before the flip.
