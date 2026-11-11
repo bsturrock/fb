@@ -640,6 +640,13 @@ export interface RagdollProfile {
    * only (historical profiles).
    */
   poseGuard?: PoseGuard;
+  /**
+   * Ladder rung 8a: Rapier's additional internal PGS iterations per solver substep, asked by every segment body. Rapier
+   * runs the largest request of an island's bodies for the whole island, so whatever the ragdoll touches in the same
+   * island solves with them too. For an under-converged solve on a closed contact loop that gives a ragdoll energy (the
+   * self-trunk pinch: floor, forearm, its own trunk; tests/passive-energy.ts measures it). Absent: none (Rapier's one).
+   */
+  additionalPgsIterations?: number;
 }
 
 export interface PoseGuard {
@@ -657,6 +664,9 @@ export const POSE_GUARD_C6: PoseGuard = { id: 'poseGuard-v1', deepPushIterations
 
 /** The ragdoll profile with the convertible-pose guard, under an id that names it. */
 export const withPoseGuard = (r: RagdollProfile, g: PoseGuard = POSE_GUARD_C6): RagdollProfile => ({ ...r, id: `${r.id}+${g.id}`, poseGuard: g });
+
+/** Ladder rung 8a: the ragdoll profile with `n` additional PGS iterations on its segments, under an id that names it. */
+export const withAdditionalPgsIterations = (r: RagdollProfile, n: number): RagdollProfile => ({ ...r, id: `${r.id}+pgs${n}`, additionalPgsIterations: n });
 
 /**
  * One spherical joint's anatomical range in the parent (core) frame. Swing is measured from the limb hanging along the

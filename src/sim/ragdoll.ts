@@ -207,17 +207,17 @@ export function buildCandidate(
     const sp: SegmentPose = pose.segments[id];
     let p = sp.originWorld;
     if (edit?.kind === 'jointMismatch' && edit.segment === id) p = add(p, edit.offsetWorld);
-    const rb = phys.world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(p.x, p.y, p.z)
-        .setRotation(sp.rotationWorld)
-        .setEnabled(false)
-        .setCanSleep(s.sleeping)
-        .setCcdEnabled(s.ccd)
-        .setSoftCcdPrediction(s.softCcdPredictionM)
-        .setLinearDamping(s.linearDamping)
-        .setAngularDamping(s.angularDamping),
-    );
+    const desc = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(p.x, p.y, p.z)
+      .setRotation(sp.rotationWorld)
+      .setEnabled(false)
+      .setCanSleep(s.sleeping)
+      .setCcdEnabled(s.ccd)
+      .setSoftCcdPrediction(s.softCcdPredictionM)
+      .setLinearDamping(s.linearDamping)
+      .setAngularDamping(s.angularDamping);
+    if (R.additionalPgsIterations) desc.setAdditionalPgsIterations(R.additionalPgsIterations);
+    const rb = phys.world.createRigidBody(desc);
     rb.userData = { playerId, segment: id };
     bodies[id] = rb;
   }

@@ -215,6 +215,16 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   689 solves 4590 J, pinch (a segment on the floor and its own shape) 36 / 85.7 J, contact-free 10 / 11.4 J, other
   147 / 318.8 J (largest L4-F9-crowded reversed R 122.5 J at 0.371 s inside a knee impact: -69 and -41 J before,
   -248 J after). Cost: full check 279 s against 253 s (8 shards of 32-46 s); nothing when off.
+- **8a** (`r8a-ragdoll-iterations`) landed off: byte-identical, 296/296 (every matrix too). `RagdollProfile.
+  additionalPgsIterations` (`withAdditionalPgsIterations`): every segment body asks Rapier for that many more internal
+  PGS iterations per solver substep (the island runs the largest request); no fixture uses it. Test
+  tests/ragdoll-iterations.test.ts: the field reaches every segment (none without it); the self-trunk pinch capture
+  `L4-F9-contact~v3-rev@63`, solve 270: +7.70 J as is, -5.87 J with 3 on R's segments from the capture; the brace
+  rebound capture (open defect below). At the pinch from the capture, solve 270 / the rest of the run's largest gain:
+  PGS +1 -6.6 / 3.1 J, +2 -6.6 / 1.3, +3 -5.9 / none over 0.5, +4 -7.8 / 1.0, +6 -15.6 / none; additional solver
+  iterations instead: +1 -50.1 / none, +2 -76.9 / none, +3 +3.6 J (still injecting), +4 -2.3 / 1.0: not monotonic, so
+  the field is the PGS one. Not flipped (coordinator): the iteration count is to be chosen and turned on together with
+  the hard hip stops and own-leg contact, which add closed loops.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -242,7 +252,15 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   (L4-F9-contact reversed R; read by the audit as 172 W). Suspected solver energy injection. Reached with V3 on at rung
   7: the same run, R 172.4 W at 1.125 s, its right forearm on the floor (94.7 N s in one substep); from 1.05 s
   (`r7-triage/captures/L4-F9-contact~v3-rev@63`) the twins with the legs, rung 7 or `carried` off give the same 172.4 W:
-  reached by the moved trajectory. Tracked defect with a seeded test at the flip.
+  reached by the moved trajectory. Tracked defect with a seeded test at the flip. At 8a: the seeded test
+  (tests/ragdoll-iterations.test.ts, `L4-F9-contact~v3-rev@63`) reads +7.70 J at solve 270, and -5.87 J with 3
+  additional PGS iterations on R's segments (the 8a field, off).
+- Brace rebound (tracked at 8a, not fixed): L4-F9-contact as registered (V1), R's left palm lands on the floor: solves
+  249 and 250 (1.0375, 1.0417 s) take 135 and 244 J out, solve 251 gives 73.0 J back with only that palm on the floor
+  (22.1 N s) and no other player touching; the solves after it are contact-free. The largest class of the 7g matrix
+  (rebound: 689 solves, 4590 J). Seeded test tests/ragdoll-iterations.test.ts on `L4-F9-contact@61` (1.017 s): the
+  rebound as is; one additional PGS iteration on R's segments from the capture and solve 251 loses 5.8 J (+3: -9.8,
+  +10: -12.0; the impact's two solves still take about 350 J out).
 - Posed thigh held 1.0-1.45 cm inside a ragdoll pelvis for 15 substeps with every clearance loop capped
   (L4-F10-wrap-on D). At rung 7: 24 substeps over 1 cm (longest run 12, deepest 2.14 cm), reversed 29; under V3 none.
   Resolved by the flip.
