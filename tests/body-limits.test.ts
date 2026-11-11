@@ -23,7 +23,7 @@ import { armSelfShapes, buildProxyPose, CONT_LEG_MPS, HARD_OK, hingeChain, LEG_S
 import { initPhysics, RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
@@ -120,6 +120,8 @@ const FALLS_PERSIST_S = ENVELOPE_L4.persistS;
 const J = JOINT_RANGE_V1;
 const D = Math.PI / 180;
 const twin = (d: FixtureDef): FixtureDef => ({ ...d, id: `${d.id}-noRange`, jointRange: undefined });
+/** Ladder rung 7d: `d` pinned to LEG_GUARD_V1, the guard a natural sample was taken under (its own id while it registers V1, the runs being cached by id). */
+const pinV1 = (d: FixtureDef): FixtureDef => (!d.legGuard || d.legGuard.id === LEG_GUARD_V1.id ? d : { ...d, id: `${d.id}~v1`, legGuard: LEG_GUARD_V1 });
 const SIDES = ['left', 'right'] as const;
 type Side = (typeof SIDES)[number];
 
@@ -491,10 +493,12 @@ describe('plan 12 joint range: shoulders', () => {
     // planner with the idle and walk clips HC-F3-falling's twin is 28.3 deg behind (the profile's 46.6, inside the cone by
     // 0.7 deg past it); HC-F3-phase50 loads it (twin 82.4, profile 50.4). Plan 13f: the twin keeps the leg guard, under
     // which HC-F3-phase50's twin is 63.2 deg behind (profile 50.7: margin 12.5); HC-F3-phase0 loads it again (twin 62.7,
-    // profile 37.8)
+    // profile 37.8). Ladder rung 7d: HC-F3-lowRunner pinned to LEG_GUARD_V1 (under the physical legs its profile arm is
+    // 49.99 deg behind against the twin's 64.2, inside the margin)
     for (const id of ['HC-F3-phase0', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
-      const on = await probe(FIX(id));
-      const off = await probe(twin(FIX(id)));
+      const d = id === 'HC-F3-lowRunner' ? pinV1(FIX(id)) : FIX(id);
+      const on = await probe(d);
+      const off = await probe(twin(d));
       expect(off.worst.ragdoll.behind, id).toBeGreaterThan(45);
       // plan 14: margin 15 (was 20): the profile's supported back swing now eases to 42 deg behind (the clip arm in the
       // ground frame), and L3-F1-low's runner ragdoll arm is 47.3 deg behind against its twin's 63.1
@@ -505,9 +509,11 @@ describe('plan 12 joint range: shoulders', () => {
     }
     // a standing pile: the twin's ragdoll arm goes past the cone, with the profile it is inside. Plan 13f: was HC-F1-low
     // (twin 13 deg past); under the leg guard, which the twin keeps, its twin stays 22.5 deg inside. L3-F10-bothMirror:
-    // the twin's R right arm 9.9 deg past, the profile's 24.6 deg inside
-    const on = await probe(FIX('L3-F10-bothMirror'));
-    const off = await probe(twin(FIX('L3-F10-bothMirror')));
+    // the twin's R right arm 9.9 deg past, the profile's 24.6 deg inside. Ladder rung 7d: pinned to LEG_GUARD_V1 (under the
+    // physical legs the twin's arm stays 3.6 deg inside the cone)
+    const pile = pinV1(FIX('L3-F10-bothMirror'));
+    const on = await probe(pile);
+    const off = await probe(twin(pile));
     expect(off.worst.ragdoll.ex).toBeGreaterThan(5);
     expect(on.worst.ragdoll.ex).toBeLessThanOrEqual(5);
   }, 240000);
@@ -600,20 +606,23 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
     // the reversed L3-F9-noProbe-contact D (13e): its left thigh in R's right shoe, 1.74 cm (1.64 before plan 14).
     // Tolerance 1.5 cm.
     // (HC-F3-phase75 D, 13e's other case, converts without the prediction too since plan 14 shows the clip arms as the
-    // clip has them, so it no longer tells the guard from the fault)
+    // clip has them, so it no longer tells the guard from the fault). Ladder rung 7d: pinned to LEG_GUARD_V1, the
+    // predictive guard this case is for (under the physical legs R's shoe is stopped by D's leg colliders, and the fault
+    // twin converts too)
     const CASES: [string, boolean, number][] = [['L3-F9-noProbe-contact', true, 0.01736]];
     await rows(
       CASES,
       ([id, rev]) => `${id}${rev ? ' reversed' : ''}`,
       async ([id, rev, beforeM]) => {
         const o = rev ? { reverseOrder: true } : {};
-        const on = await handoffOf(FIX(id), o);
+        const def = pinV1(FIX(id));
+        const on = await handoffOf(def, o);
         expect(on.outcome, id).toBe('accepted');
         expect(on.newM, id).toBeLessThan(0.012);
         // the fault put back: the guard measuring other bodies where they are now only, and the twin without the profile.
         // Both also without the plan 10c deep push that contact motion M1 adds to L3 (it clears this case on its own)
         const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
-        for (const off of [await handoffOf(noDeep(FIX(id)), { ...o, debug: { pose: { noLegAhead: true } } }), await handoffOf(noDeep({ ...FIX(id), id: `${id}-noGuard`, legGuard: undefined }), o)]) {
+        for (const off of [await handoffOf(noDeep(def), { ...o, debug: { pose: { noLegAhead: true } } }), await handoffOf(noDeep({ ...def, id: `${id}-noGuard`, legGuard: undefined }), o)]) {
           expect(off.outcome, id).toBe('rejected');
           expect(off.reasons, id).toContain('externalPenetration');
           expect(off.newM, id).toBeCloseTo(beforeM, 4);

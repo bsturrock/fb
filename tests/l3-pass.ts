@@ -158,7 +158,11 @@ const onDeltas =
   (f: (ds: TransitionDelta[], sim: Simulation) => void): Check['watch'] =>
   () => ({ finish: (sim) => f(sim.transitionDeltas, sim) });
 
-export const RESEED = check({
+/**
+ * Ladder rung 7d: not a pass check. Its sample is a clearance re-plant that the planted pose (rung 7, the swept leg guard)
+ * removes, so it runs on its own with that pose off (`noPlantedPole`; no change under V1), in tests/l3-contracts.test.ts.
+ */
+export const RESEED_SAMPLE: Check = {
   name: 'a reseed that keeps mode and source',
   fixtures: ['L3-F7-phase75'],
   // L3-F7-phase75: R's right foot, planted on the ball of the foot, is released by clearance and planted again in the next
@@ -175,7 +179,8 @@ export const RESEED = check({
       expect(dist(x!.legs.right.old.request, x!.legs.right.now.request), `${t}`).toBeGreaterThan(0);
     }
   }),
-});
+};
+export const RESEED = RESEED_SAMPLE.name;
 
 // A step that loses support (first L3-F1-low: D's step out of time). Before 10b the reference carried a timed-out step's
 // stored motion on (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is nothing

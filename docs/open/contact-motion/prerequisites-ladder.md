@@ -172,6 +172,15 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   frictionless slab: the solved reading equals the momentum the contact applied in 479/479 steps, the old one is off in
   most), the gating per family. Captures regenerated; `L4-F9-defenderFalling~v3@65` kept as captured and resumed with
   the `solver` variant (from the start under the solved reading D stays under the ceiling without `carried`, 132.7 W).
+- **7d** (`r7d-test-repairs`) landed: byte-identical, 289/289; tests only. The twoPalm hold-effort row reads the effort
+  the joints were given (the fall ledger), with a V3 row: D's left arm asks 0.76 N m with its grasp over its allocation
+  and gets none; fault twin, an arm with no room taking its request unscaled. The three rung 7 controls (10b crossing
+  negative control, the RESEED sample on L3-F7-phase75, now run on its own, 13e inherited foot on L3-F7-phase50) run
+  with `noPlantedPole`. Natural samples pinned to LEG_GUARD_V1: HC-F3-lowRunner and L3-F10-bothMirror shoulders,
+  L4-F5-onePalm-on 'left expired', gate4 E1, 13e gripOwner step home, 13f L3-F9-noProbe-contact reversed. Under the V3
+  map (`r7-triage/v3map.patch`): 8 failures, 6 by construction (harness profile table, physical-legs "no fixture runs
+  V3", state.test x2, l3-contracts tracked defects x2), L4-F3-run-on shoulder persistence (0.2875 s), and the twoPalm
+  hold's overload exposure 0.065 s against half the release threshold 0.05 s (behaviour, unmasked by the repair).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e

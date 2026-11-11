@@ -25,7 +25,7 @@ import type { ArmSide } from '../src/sim/contracts';
 import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
-import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
+import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
 import { breathe, FIX, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
@@ -88,6 +88,7 @@ import {
   RECONTACT,
   type Records,
   RESEED,
+  RESEED_SAMPLE,
   reseedCovered,
   RETAINED,
   RETENTION_BITES,
@@ -256,8 +257,19 @@ describe('plan 08 transition audit', () => {
 
   passTest(
     'the boundary records: a reseed that keeps mode and source is a boundary; a landing is compared with its old path as it is; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice',
-    [RESEED, RAW_KEPT, NOT_TWICE, LANDINGS],
+    [RAW_KEPT, NOT_TWICE, LANDINGS],
   );
+
+  it('the boundary records, natural sample: a reseed that keeps mode and source is a boundary (L3-F7-phase75, the planted pose off)', async () => {
+    // ladder rung 7d: R's right foot released by clearance and planted again in the next substep (tests/l3-pass.ts
+    // RESEED_SAMPLE). Under the swept leg guard the planted pose holds that plant and the run has no reseed, so the sample
+    // runs with `noPlantedPole` (the same run under V1)
+    const def = FIX('L3-F7-phase75');
+    const fails: string[] = [];
+    const rep = (m: string): void => void fails.push(m);
+    await runWatched(def, [{ w: RESEED_SAMPLE.watch(def, rep), fail: rep }], { transitionAudit: true, debug: { pose: { noPlantedPole: true } } });
+    expect(fails).toEqual([]);
+  }, 60000);
 
   it('the boundary records, controlled: a reseed that keeps mode and source is a boundary; a step that loses support is compared with its old path as it is', async () => {
     // the same two records on situations the test makes where its run shows them (tests/l3-pass.ts reseedCovered,
@@ -296,8 +308,10 @@ describe('plan 08 transition audit', () => {
     // the old owner keeps its heading. The audit has to report that boundary, with nothing set aside. (The plan 08 control,
     // the handover check switched off in L3-F7-phase25, no longer gives one: with 10b's bounded step paths no handover in
     // L3 departs by over 1 cm without it.) Plan 12: run without the joint-range profile; with it, D's run into the contact
-    // changes and the faulted crossing there stays under 1 cm
-    const sim = await run({ ...FIX('L3-F7-loadRelease'), jointRange: undefined }, { transitionAudit: true, debug: { foot: { crossingBodyHeading: true } } });
+    // changes and the faulted crossing there stays under 1 cm. Ladder rung 7d: with the planted pose off
+    // (`noPlantedPole`): under the swept leg guard (V2, V3) the knee-pole plant holds D's left leg there and the faulted
+    // crossing takes no clearance variant (no change under V1, which has no planted pose)
+    const sim = await run({ ...FIX('L3-F7-loadRelease'), jointRange: undefined }, { transitionAudit: true, debug: { foot: { crossingBodyHeading: true }, pose: { noPlantedPole: true } } });
     const ds = sim.transitionDeltas;
     sim.dispose();
     const x = ds.filter((b) => b.deltaM > 0.01);
@@ -587,15 +601,17 @@ describe('plan 13e faults put back', () => {
     // the 13e fix measures an inherited foot's settling over an arrival (C.arriveS), not one substep: before it, a shoe
     // still sliding passed the plant tolerance in one substep and planted. Plan 14 moved the case: with the clip arms
     // shown as the clip has them, L3-F1-phase4 no longer shows it; L3-F7-phase50 does, beside its own plant
-    // failure at 0.567 s (there with or without the fault, and before plan 14)
-    const fails = async (debug?: SimOptions['debug']): Promise<string[]> => {
-      const sim = await run(FIX('L3-F7-phase50'), debug ? { debug } : {});
+    // failure at 0.567 s (there with or without the fault, and before plan 14). Ladder rung 7d: with the planted pose off
+    // (`noPlantedPole`, no change under V1): under the swept leg guard the knee-pole plant takes D's left foot, and
+    // neither plant fails
+    const fails = async (foot?: NonNullable<SimOptions['debug']>['foot']): Promise<string[]> => {
+      const sim = await run(FIX('L3-F7-phase50'), { debug: { ...(foot ? { foot } : {}), pose: { noPlantedPole: true } } });
       const out = sim.events.filter((e) => e.type === 'footPlantFailed').map((e) => `${e.playerId} ${(e as { side?: string }).side ?? (e.data as { side?: string })?.side} ${e.t.toFixed(4)}`);
       sim.dispose();
       return out;
     };
     expect(await fails()).toEqual(['D left 0.5667']);
-    expect(await fails({ foot: { settleOneSubstep: true } })).toEqual(['D left 0.5667', 'D left 0.5750']);
+    expect(await fails({ settleOneSubstep: true })).toEqual(['D left 0.5667', 'D left 0.5750']);
   }, 60000);
 
   it('the idle sway in the planner home takes a late settle step at the end of a stop (L3-F16-stop2.9)', async () => {
@@ -616,8 +632,9 @@ describe('plan 13e faults put back', () => {
     expect(await failsOf(HOLD_SETTLES, def, {})).toEqual([]);
     // and lets it go once the body that held it moves off: L3-F4-gripOwner's runner plants its held-off left foot at
     // 1.325 s and steps home at 1.392 s (1.3875 s under the plan 13f leg guard), when the defender's core is 9 cm from
-    // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm)
-    const sim = await run(FIX('L3-F4-gripOwner'));
+    // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm). Ladder rung 7d:
+    // pinned to LEG_GUARD_V1; under the physical legs the defender's core no longer holds that foot off its home
+    const sim = await run({ ...FIX('L3-F4-gripOwner'), legGuard: LEG_GUARD_V1 });
     const steps = sim.events.filter((e) => e.type === 'footSwing' && e.playerId === 'R' && (e.data as { side?: string }).side === 'left' && (e.data as { reason?: string }).reason === 'step');
     sim.dispose();
     expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');

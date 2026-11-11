@@ -16,7 +16,7 @@ import type { ArmSide } from '../src/sim/contracts';
 import { CARRY_ARM } from '../src/sim/carry';
 import { isGround } from '../src/sim/contracts';
 import { rotateToward } from '../src/sim/vec';
-import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, SOLVER_G4, SOLVER_G4_ZEROG, withSolvedImpulses, type JointEnvelope } from '../src/sim/profiles';
+import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, LEG_GUARD_V1, LEG_GUARD_V3, SOLVER_G4, SOLVER_G4_ZEROG, withSolvedImpulses, type JointEnvelope } from '../src/sim/profiles';
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, landmarkWorld, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
@@ -920,6 +920,27 @@ describe('L4-F4 braces that fail stay failures', () => {
   }, 120000);
 });
 
+/** Ladder rung 7d: per `owner:step:arm`, the torque the fall response applied to that arm's shoulder and elbow (N m, after the arm budget and the power scale). */
+function appliedArmEffort(s: Simulation): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const e of s.fall!.ledger) {
+    const arm = /^(left|right)(Shoulder|Elbow)$/.exec(e.joint)?.[1];
+    if (!arm) continue;
+    const k = `${e.owner}:${e.step}:${arm}`;
+    m.set(k, (m.get(k) ?? 0) + e.appliedNm);
+  }
+  return m;
+}
+
+/** Ladder rung 7d: `id` pinned to LEG_GUARD_V1, the guard its natural samples were taken under (the shared run while the fixture registers it). */
+async function simV1(id: string): Promise<Simulation> {
+  const d = FIX(id);
+  if (!d.legGuard || d.legGuard.id === LEG_GUARD_V1.id) return sim(id);
+  const k = `${id}~v1`;
+  if (!ran.has(k)) ran.set(k, await runSim(await create({ ...d, legGuard: LEG_GUARD_V1 }), Infinity));
+  return ran.get(k)!;
+}
+
 describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
   it('holds take their arms from bracing, forearm clamps count as holds, and a hold ends on its load, never on a decision', async () => {
     await checks([
@@ -934,7 +955,8 @@ describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
       [
         'one palm hold: that arm holds, the free arm may brace',
         async () => {
-          const s = await sim('L4-F5-onePalm-on');
+          // (ladder rung 7d: pinned to LEG_GUARD_V1; under the physical legs the hold arm's brace no longer runs out of window)
+          const s = await simV1('L4-F5-onePalm-on');
           expect(tasksOf(s, 'D')).toEqual({ left: 'hold', right: 'brace' });
           // plan 12: the held runner leaves the hold at 1.846 s (its feet released at 0.996 s, the twin's at 1.17 s), so the hold
           // arm braces and runs out of window; the free arm lands where the twin's was late. No hold is lost on its load
@@ -1039,22 +1061,50 @@ describe('L4-F5 holds, L4-F6 the last hold breaks', () => {
           // then lasts 32 substeps in one episode instead of 24 in two: 0.031 s on, 0.020 off. So what is checked is the
           // response's part directly: in every substep a hold is over its allocation the held arm takes no response effort
           // (the overload is the grasp's load alone; the allocation row above checks the accounting), and the exposure stays
-          // within half the release threshold
-          const effort = new Map(on.arms!.effortLedger.map((e) => [`${e.owner}:${e.step}:${e.arm}`, e]));
+          // within half the release threshold. Ladder rung 7d: the effort the joints were given (the fall ledger), not the
+          // one the response asked for (see the row below)
+          const applied = appliedArmEffort(on);
           const over = holds(on).filter((e) => e.raw > e.allocated + 1e-9);
           expect(over.length).toBeGreaterThan(0);
-          for (const e of over) {
-            const f = effort.get(`${e.owner}:${e.step}:${e.arm}`);
-            expect(f ? Math.abs(f.shoulderNm) + Math.abs(f.elbowNm) : 0, `${e.owner} ${e.arm} step ${e.step}`).toBe(0);
-          }
+          // (to rounding: the room a grasp at its allocation leaves is the difference of two equal sums, 1e-14 N m under V3)
+          for (const e of over) expect(applied.get(`${e.owner}:${e.step}:${e.arm}`) ?? 0, `${e.owner} ${e.arm} step ${e.step}`).toBeLessThan(1e-9);
           expect(Math.max(...holds(on).map((e) => e.exposure))).toBeLessThanOrEqual(on.arms!.profile.hold.overloadThresholdS / 2);
           expect(evs(off, 'gripRelease').map((e) => `${e.data.arm} ${e.data.reason}`)).toEqual(['right separation', 'left separation']);
           // (plan 12: this run's effort no longer meets the shared budget, so nothing of it is scaled here; the allocation test
           // above still finds 29 scaled substeps across the L4 fixtures)
         },
       ],
+      [
+        'the held arm\'s effort read as applied: an arm may ask for effort while its grasp is over its allocation, the budget gives it none (L4-F5-twoPalm-on under LEG_GUARD_V3)',
+        async () => {
+          // Ladder rung 7d. Under the physical legs (V3, the flip after this rung) D's left arm asks for effort (0.76 N m at
+          // step 451) in substeps its grasp is over its allocation; the grasp leaves the arm no room, so the budget scales
+          // that request to 0 and the joints get none. Reading the request, the row above failed there. Fault twin: the same
+          // run with an arm the budget gives no room taking its request unscaled where the torque is applied (the same run up
+          // to that substep): the arm then takes effort while its grasp is over its allocation
+          const v3 = async (unscaled: boolean): Promise<{ requested: number; applied: number }> => {
+            const s = await create({ ...FIX('L4-F5-twoPalm-on'), legGuard: LEG_GUARD_V3 });
+            if (unscaled) {
+              type Scale = Record<ArmSide, number> | undefined;
+              const f = s.fall! as unknown as { apply(ep: unknown, scale: Scale): void };
+              const apply = f.apply.bind(f);
+              f.apply = (ep, sc) => apply(ep, sc && { left: sc.left > 0 ? sc.left : 1, right: sc.right > 0 ? sc.right : 1 });
+            }
+            await runSim(s, Infinity);
+            const asked = new Map(s.arms!.effortLedger.map((e) => [`${e.owner}:${e.step}:${e.arm}`, Math.abs(e.shoulderNm) + Math.abs(e.elbowNm)]));
+            const got = appliedArmEffort(s);
+            const over = s.arms!.ledger.filter((e) => (e.kind === 'hold' || e.kind === 'passive') && e.raw > e.allocated + 1e-9).map((e) => `${e.owner}:${e.step}:${e.arm}`);
+            s.dispose();
+            return { requested: Math.max(0, ...over.map((k) => asked.get(k) ?? 0)), applied: Math.max(0, ...over.map((k) => got.get(k) ?? 0)) };
+          };
+          const run3 = await v3(false);
+          expect(run3.requested).toBeGreaterThan(0.1);
+          expect(run3.applied).toBeLessThan(1e-9);
+          expect((await v3(true)).applied).toBeGreaterThan(0.1);
+        },
+      ],
     ]);
-  });
+  }, 180000);
 
   // the broken hold, every tick until its left arm first braces: the angle between the brace target and the upper arm
   const braceGap = watch(
