@@ -26,6 +26,7 @@ import { RUN_JOG } from '../sim/model/run-clips';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RunLab } from './run-lab';
 import { RUN_LAB_ID } from '../sim/fixtures/transitions';
+import { labRun } from './lab-params';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -155,8 +156,10 @@ async function load(id: string): Promise<void> {
   fillFixtureSelect();
   await initPhysics();
   // plan 14: the run lab runs its own copy of the fixture (the live speed, the edited clip, a long area)
-  const simDef = runLab.handles(def) ? await runLab.prepare(def) : def;
-  const next = await Simulation.create(simDef);
+  const prepared = runLab.handles(def) ? await runLab.prepare(def) : def;
+  // ladder: `order=rev` and `legs=v1|v2|v3` make the run the full check's matrices make (src/lab/lab-params.ts)
+  const { def: simDef, opts: runOpts, label: runLabel } = labRun(prepared, params);
+  const next = await Simulation.create(simDef, runOpts);
   let asset: ModelAsset | null = null;
   let error: string | null = null;
   if (usesModel(def))
@@ -197,7 +200,7 @@ async function load(id: string): Promise<void> {
     field = buildField(def.area);
     scene.add(field);
   }
-  $('title').textContent = `${def.id} [${def.milestone}] ${simDef.title}${simDef.notes ? ` — ${simDef.notes}` : ''}`;
+  $('title').textContent = `${def.id} [${def.milestone}]${runLabel ? ` [${runLabel}]` : ''} ${simDef.title}${simDef.notes ? ` — ${simDef.notes}` : ''}`;
   buildTune(def);
   buildJogTune(def);
   buildBrakeTune(def);

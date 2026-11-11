@@ -181,6 +181,10 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   map (`r7-triage/v3map.patch`): 8 failures, 6 by construction (harness profile table, physical-legs "no fixture runs
   V3", state.test x2, l3-contracts tracked defects x2), L4-F3-run-on shoulder persistence (0.2875 s), and the twoPalm
   hold's overload exposure 0.065 s against half the release threshold 0.05 s (behaviour, unmasked by the repair).
+- **7e** (`r7e-lab-params`) landed: byte-identical; lab only. URL parameters `order=rev` (SimOptions.reverseOrder) and
+  `legs=v1|v2|v3` (a leg-guard fixture under that profile; others as they are), shown in the title label, e.g.
+  `?fixture=L3-F1-phase6&order=rev&legs=v3`. Test tests/lab-params.test.ts: that URL's run has the summary of the leg
+  matrix's reversed row under V3; without the parameters it differs.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
