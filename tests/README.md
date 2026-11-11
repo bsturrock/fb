@@ -6,7 +6,8 @@ every JS object the Simulation reaches, at the end of tick `<tick>` of a registe
 (`tests/state.test.ts`). Use one for a regression test that must start from a fixed state shortly before a defect
 (ladder rule 7), so a later change that moves the fixture's trajectory before that point does not move the test, and
 for a controlled twin: `resumeState(cap, { def: variantDef, variant: ['legGuard'] })` resumes the same state under a
-profile variant (only the paths named in `variant` may differ from the capture's profile ids).
+profile variant (only the paths named in `variant` may differ from the capture's profile ids), and
+`resumeState(cap, { faults: { pose: { ... } } })` the same state with fault switches (`SimOptions.debug`) on from there.
 
 ## Capture
 

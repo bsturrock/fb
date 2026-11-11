@@ -902,7 +902,7 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
   for (const s of SIDES) {
     const f = plan.feet[s];
     if (f.mode === 'planted') {
-      out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX };
+      out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX, tolM: P.plantTolM };
       // (plan 12: a plant on the ball of the foot, its heel lifted, has its ankle where the leg holds it)
       f.target = plantedAnkle(f, inp.soleM, inp.heelLift);
       continue;
@@ -935,7 +935,7 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
       continue;
     }
-    if (advanceStep(plan, s, inp)) out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX };
+    if (advanceStep(plan, s, inp)) out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX, tolM: P.plantTolM };
     else out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
   }
   // stance eligibility (coverage): clip stance at the plant contact weight; reactive: supported, not in a planner step

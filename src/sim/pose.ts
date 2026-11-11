@@ -69,11 +69,12 @@ export function carriedBall(pose: PhysicalPose | null | undefined): Pose | null 
  * ankle pitch, floor lift, clearance alternatives):
  * - `plant`: a world-anchored contact feature. The sole point `toeZ * rollF` ahead of the heel (the sole point below the
  *   ankle) along the planted heading lies on the anchor; the ankle is solved for it with the shoe at its solved pitch.
+ *   `tolM`: the footwork's plant tolerance (`plantTolM`), within which a shown leg keeps the plant.
  * - `target`: a planner swing ankle target (world) with the foot heading (knee pole).
  * - `offset`: the ordinary procedural / clip request shifted by a world offset (a released foot rejoining it).
  */
 export type FootRequest =
-  | ({ kind: 'plant'; heelW: Vec3; headingRad: number; rollF: number; toeZ: number; edgeX?: number } & FootBlend)
+  | ({ kind: 'plant'; heelW: Vec3; headingRad: number; rollF: number; toeZ: number; edgeX?: number; tolM?: number } & FootBlend)
   | ({ kind: 'target'; ankleW: Vec3; headingRad: number } & FootBlend)
   | ({ kind: 'offset'; offsetW: Vec3; headingRad?: number } & FootBlend);
 
@@ -627,13 +628,13 @@ const CONT_ARM_MPS = 3.0;
 const CONT_POLE_RADPS = 8;
 /** Plan 08: a composed pose's departures and poles: within the transition limit (0.01 m) of one physics substep. */
 const CONT_L3_MPS = 2.1;
-const CONT_L3_PLANT_MPS = 1;
-const CONT_L3_RADPS = 3;
+export const CONT_L3_PLANT_MPS = 1;
+export const CONT_L3_RADPS = 3;
 /**
  * Plan 07a: fastest departure (m/s, body frame; the pole turns faster in proportion) a continuity step may take to
  * regain a valid pose when the held and rate-limited poses are not valid (the guard; plan 07 jumped instead).
  */
-const CONT_FAST_MPS = 6;
+export const CONT_FAST_MPS = 6;
 /**
  * Ordinary request speed (m/s, body frame) above which a request change is a jump (a mode change: ready hands, clip
  * arm, support lost), not motion: the shown target is then held and blends to the new request at the departure rate.
@@ -1180,6 +1181,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     else if (fr?.kind === 'offset') base = add(base, qInvRot(pose.q, fr.offsetW));
     const frHeading = fr?.headingRad;
     const frPole = fr && frHeading !== undefined && (fr.kind !== 'offset' || (fr.poleW ?? 0) > 0) ? v3(Math.sin(frHeading), 0.2, Math.cos(frHeading)) : null;
+    // an authored knee pole (x across, z along) in the foot heading frame: LEG_ALTS[0]'s pole there is frPole
+    const headingPole = (p: Vec3, h: number): Vec3 => v3(p.x * Math.cos(h) + p.z * Math.sin(h), p.y, -p.x * Math.sin(h) + p.z * Math.cos(h));
     const hip = W(hipL);
     // plan 07a (ground-relative legs): the previous shown knee keeps the bend plane when the pole degenerates
     const prevKneeL = gr ? memVec(mem, `${s}Leg:e`) : null;
@@ -1211,7 +1214,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       }
       return p;
     };
-    const legSolver = (pole: Vec3) => {
+    // `free`: the knee where the pole puts it, not turned from the shown knee by at most the continuity bound
+    const legSolver = (pole: Vec3, free = false) => {
       const hdir = norm(v3(pole.x, 0, pole.z), fwd);
       const a = R.lengths.thigh;
       const b = R.lengths.shin;
@@ -1226,7 +1230,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const solve = (t: Vec3): LegC => {
         const sr = stableReach(hip, soft(t), prevReach, kneeMin, CONT_FAST_MPS * (inp.dtS ?? 0), prevReachLimited);
         const st = sr.target;
-        const r = twoBone(hip, st, a, b, stablePole(hip, st, pole, prevKnee, CONT_LEG_MPS * (inp.dtS ?? 0), CONT_FAST_MPS * (inp.dtS ?? 0), !!inp.loco), reach, kneeMin);
+        const r = twoBone(hip, st, a, b, stablePole(hip, st, pole, free ? null : prevKnee, CONT_LEG_MPS * (inp.dtS ?? 0), CONT_FAST_MPS * (inp.dtS ?? 0), !!inp.loco), reach, kneeMin);
         const chain = hingeChain(hip, r.mid, [r.end], [neg(fwd), neg(upB)], straight);
         const ankle = chain.ends[0];
         // pitch about the shin hinge axis that gives the shoe the clip foot's sagittal angle (toe up positive)
@@ -1247,17 +1251,19 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       };
       return { solve, hdir };
     };
-    // `atPole` (`legSweep`): the primary placement (its ankle target, a plant's anchor) at the knee pole `poleL` in the body
-    // frame, in place of the foot heading's pole
-    const variant = (o: Vec3, poleL: Vec3, atPole = false) => (): LegC => {
+    // `atPole` (`legSweep`): the primary placement (its ankle target, a plant's anchor) at the knee pole `poleL`, in the
+    // foot heading frame where the foot has one (blended with the ordinary pole as the primary's is), else the body frame
+    // `free` (rung 7): solved with the knee where its pole puts it (legSolver)
+    const variant = (o: Vec3, poleL: Vec3, atPole = false, free = false) => (): LegC => {
       let target = W(add(base, o));
       const primary = len(o) < 1e-9;
       const ordinary = (): Vec3 => qRot(pose.q, sl ? towardDir(poleL, sl.poleLocal, smp!.weight) : poleL);
-      const pole = frPole && primary && !atPole ? (fr?.poleW === undefined ? frPole : towardDir(ordinary(), frPole, fr.poleW)) : ordinary();
+      const hp = atPole && frPole ? headingPole(poleL, frHeading!) : null;
+      const pole = hp ? (fr?.poleW === undefined ? hp : towardDir(ordinary(), hp, fr.poleW)) : frPole && primary && !atPole ? (fr?.poleW === undefined ? frPole : towardDir(ordinary(), frPole, fr.poleW)) : ordinary();
       if (sl || gr) {
         // Sampled legs, all continuous in the clip phase (no searches or switches): the solve above, stance foot IK, then
         // a fixed-point floor lift for what is left (a pitch at the ankle range limit, a blend toward the procedural gait).
-        const { solve, hdir } = legSolver(pole);
+        const { solve, hdir } = legSolver(pole, free);
         // stance foot IK (primary variant only; alternatives keep their clearance offset): the clip ankle is corrected
         // so the shoe's planted sole point lands on the clip's contact point (fixed point over the shoe frame); the
         // correction is added at the clip weight, so a partly blended request is not pulled to the clip's contact
@@ -1365,15 +1371,31 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const cands = alts.map((v) => (sweep ? once(variant(v.off, v.pole)) : variant(v.off, v.pole)));
     const kneePoles = sweep ? LEG_POLES(sx) : [];
     const poleCands = kneePoles.map((p) => once(variant(v3(), p, true)));
+    // rung 7: the primary placement with its knee where its pole puts it
+    const primaryOwn = once(variant(v3(), alts[0].pole, false, true));
     const candAt = (i: number): (() => LegC) => (i < alts.length ? cands[i] : poleCands[i - alts.length]);
     const prevV = rebased ? 0 : mem[k];
-    // a leg kept at a knee-pole placement re-picks from the primary
-    const r = pick(cands, prevV !== undefined && prevV >= alts.length ? 0 : prevV, !!sl || !!gr, !!gr);
-    // One leg step from the chosen placement `r`: the continuity blend toward it, its push-outs, and (`legSweep`) its
-    // judgement; `ok` says whether the shown leg is clear (no physical body past the larger of HARD_OK and its depth at
-    // the step's start). A later rung (the planted knee pole first) tries a step from another placement with it and keeps
-    // the step only when it is ok
-    const legStep = (r: { best: LegC; index: number }): { l: LegC; contDbg: Record<string, number> | null; ok: boolean } => {
+    // footwork's plant test on a shown leg (observeFoot): its contact feature on the anchor across the ground and the
+    // shoe's lowest corner on the ground, together within the plant tolerance
+    const plantKept = (x: LegC, p: FootRequest & { kind: 'plant' }): boolean => {
+      const rf = x.rollF ?? p.rollF;
+      const ex = x.edgeX ?? p.edgeX ?? 0;
+      const anchor = addScaled(addScaled(p.heelW, v3(Math.sin(p.headingRad), 0, Math.cos(p.headingRad)), p.toeZ * rf), v3(Math.cos(p.headingRad), 0, -Math.sin(p.headingRad)), ex);
+      const feat = add(x.ankle, qRot(pitchShin(x.chain.frameB, x.pitch), v3(ex, -soleUp, p.toeZ * rf)));
+      const shoe = x.shapes[2] as Extract<PoseShape, { kind: 'box' }>;
+      let low = Infinity;
+      for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) low = Math.min(low, shoe.c.y + qRot(shoe.q, v3(a * shoe.he.x, b * shoe.he.y, c * shoe.he.z)).y);
+      return Math.hypot(Math.hypot(feat.x - anchor.x, feat.z - anchor.z), low - p.heelW.y) <= (p.tolM ?? 0.01) + 1e-9;
+    };
+    // the ordinary choice: a leg kept at a knee-pole placement re-picks from the primary
+    const ordinaryR = pick(cands, prevV !== undefined && prevV >= alts.length ? 0 : prevV, !!sl || !!gr, !!gr);
+    // One leg step from the chosen placement `r` (index alts.length + j: the primary at knee pole LEG_POLES[j]): the
+    // continuity blend toward it, its push-outs, and (`legSweep`) its judgement; `ok` says whether the shown leg is clear
+    // (no physical body past the larger of HARD_OK and its depth at the step's start), `keptOn` whether a plant's shown leg
+    // keeps it (plantKept)
+    const legStep = (r: { best: LegC; index: number }): { r: { best: LegC; index: number }; l: LegC; contDbg: Record<string, number> | null; ok: boolean; keptOn: boolean } => {
+    // the primary placement, at the foot heading's pole or another knee pole
+    const primaryAt = r.index === 0 || r.index >= alts.length;
     mem[k] = r.index;
     let l = r.best;
     let ok = true;
@@ -1398,7 +1420,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const dp = rebased && dp0r && inp.debug?.ownerChangeJumpM ? add(dp0r, v3(0, inp.debug.ownerChangeJumpM, 0)) : dp0r;
       const pp = memVec(mem, `${k}:p`);
       const poleStep = pp && inp.loco ? dist(norm(pp), norm(pc)) : 0;
-      const exactPlant = fr?.kind === 'plant' && r.index === 0 && !!dp && dist(dp, dc) <= (rebased ? CONT_L3_PLANT_MPS * (inp.dtS ?? 0) : CONT_PLANT_EXACT_M) && poleStep <= CONT_L3_RADPS * (inp.dtS ?? 0);
+      const exactPlant = fr?.kind === 'plant' && primaryAt && !!dp && dist(dp, dc) <= (rebased ? CONT_L3_PLANT_MPS * (inp.dtS ?? 0) : CONT_PLANT_EXACT_M) && poleStep <= CONT_L3_RADPS * (inp.dtS ?? 0);
       if (dp && pp && dt > 0 && !exactPlant) {
         const chosen = l;
         // the blended target, pushed out along the contact normals (and up off the floor) while it penetrates
@@ -1406,7 +1428,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // point on the anchor at the blended pole. With the shoe at the ankle range limit the foot turns with the shin
         // about that point (the heel lifts as the shin leans past the range), and the ankle moves with it as fast as the
         // shin turns; blended at the plant rate it would drag the sole point off its anchor (L3-F1-mirror0: D's toe, 1.2 cm)
-        const pivot = !!inp.jointRange && fr?.kind === 'plant' && r.index === 0 && !rebased && chosen.rollF !== undefined && dist(dp, dc) <= CONT_PLANT_EXACT_M ? fr : null;
+        const pivot = !!inp.jointRange && fr?.kind === 'plant' && primaryAt && !rebased && chosen.rollF !== undefined && dist(dp, dc) <= CONT_PLANT_EXACT_M ? fr : null;
         // the step toward a placement (its departure `dcT`, pole `pcT`, candidate `ch`, plant pivot `pv`) at blend `al`: the
         // chosen one, or (`legSweep`) another placement tried for a step that is not clear
         const atTo = (dcT: Vec3, pcT: Vec3, ch: LegC, pv: typeof pivot, al: number, deep = false): LegC & { good: boolean; rank: number } => {
@@ -1566,9 +1588,48 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     // physical legs: the shown leg's ankle request (body frame), the next step's start; kept only while they are live
     if (kneePoles.length && physMet) setMemVec(mem, `${k}:q`, Lw(l.req ?? W(base)));
     else if (mem[`${k}:q:x`] !== undefined) for (const a of ['x', 'y', 'z']) delete mem[`${k}:q:${a}`];
-    return { l, contDbg, ok };
+    return { r, l, contDbg, ok, keptOn: fr?.kind === 'plant' ? plantKept(l, fr) : true };
     };
-    const { l, contDbg } = legStep(r);
+    // Rung 7 (`legSweep`): a plant whose ordinary choice gives up the primary placement (no valid primary: an offset
+    // leaves the anchor and footwork releases the plant) tries the primary at the other knee poles first, the foot kept
+    // on its anchor: the first valid one (sticky, as the ordinary choice). Physical legs: also a plant whose primary leg
+    // is in a body the legs meet past PHYS_LEG_OK, the first knee pole clear of the met bodies. That step is taken only
+    // when it is clear (`ok`) and keeps the plant within the footwork tolerance (`keptOn`); otherwise the pose memory is
+    // put back and the ordinary choice runs, offsets included (with no valid planted pose footwork releases the plant)
+    let res: ReturnType<typeof legStep> | null = null;
+    const metHit = physMet && kneePoles.length > 0 && fr?.kind === 'plant' && metL(cands[0]().shapes) > PHYS_LEG_OK;
+    const onPole = prevV !== undefined && prevV >= alts.length;
+    if (kneePoles.length && fr?.kind === 'plant' && !rebased && !inp.debug?.noPlantedPole && (ordinaryR.index !== 0 || metHit || onPole) && (prevV === undefined || prevV === 0 || onPole)) {
+      const keep = [cands[0], ...poleCands];
+      // A knee pole is kept while valid; the primary wins back once it is fully clear (and clear of the met bodies) at its
+      // own knee. Every placement is solved with its knee turned from the shown knee by at most the continuity bound, so
+      // at a knee pole the primary reads clear long before its knee is back where it is obstructed: judged that way it
+      // won back, its knee turned back into the body, and the leg went to and fro between the two at the pole rate
+      const own = onPole ? primaryOwn() : null;
+      const back = !!own && own.depth <= CLEAR_OK && own.soft <= CLEAR_OK && (!physMet || metL(own.shapes) <= PHYS_LEG_OK);
+      const prevK = prevV === undefined ? undefined : prevV === 0 || back ? 0 : prevV - alts.length + 1;
+      let rk: { best: LegC; index: number } | null = null;
+      if (ordinaryR.index !== 0 || (onPole && !metHit)) rk = pick(keep, prevK, !onPole || back, true);
+      else
+        for (const i of [...(prevK ? [prevK] : []), ...keep.keys()]) {
+          const c = keep[i]();
+          if (c.depth <= HARD_OK && metL(c.shapes) <= PHYS_LEG_OK) {
+            rk = { best: c, index: i };
+            break;
+          }
+        }
+      if (rk && rk.index !== 0 && rk.best.depth <= HARD_OK) {
+        const saved = { ...mem };
+        const tr = legStep({ best: rk.best, index: alts.length + rk.index - 1 });
+        if (tr.ok && tr.keptOn) res = tr;
+        else {
+          for (const key of Object.keys(mem)) if (!(key in saved)) delete mem[key];
+          Object.assign(mem, saved);
+        }
+      }
+    }
+    res ??= legStep(ordinaryR);
+    const { r, l, contDbg } = res;
     if (P?.trace) P.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, base, dc: l.req ? sub(Lw(r.best.req!), base) : null, shown: l.req ? sub(Lw(l.req), base) : null, ankle: Lw(l.ankle), knee: Lw(l.knee), poleC: r.best.pole ? qInvRot(pose.q, r.best.pole) : null, pole: l.pole ? qInvRot(pose.q, l.pole) : null, fb: l.chain.fallback, chosenAnkle: Lw(r.best.ankle), depth: l.depth, chosenDepth: r.best.depth });
     if (sl || gr) targetResidualM[k] = dist(l.ankle, l.req ?? W(base));
     lm[`${s}Hip`] = hip;
@@ -1587,7 +1648,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     if (l.chain.fallback) straightFallback.push(`${s}Knee`);
     limbClearance[`${s}Leg`] = l.depth;
     if (sl || gr) anklePitchDeg[s] = (l.pitch * 180) / Math.PI;
-    if (inp.feet) legInfo[s] = { variant: r.index, request: l.req ?? W(base), liftM: l.ik && l.req ? dist(l.req, l.ik) : 0, ...(JA && l.ik && l.req && l.pitch <= -dorsi + 1e-6 ? { rangeLiftM: Math.max(0, l.req.y - l.ik.y) } : {}), softM: l.softM, soleBase: sl ? (fr?.soleW ?? 1) * smp!.weight * sl.footPitch : 0, soleAngle: l.soleAngle, ...(l.rollF !== undefined ? { rollF: l.rollF, edgeX: l.edgeX ?? 0 } : {}) };
+    if (inp.feet) legInfo[s] = { variant: r.index >= alts.length ? 0 : r.index, request: l.req ?? W(base), liftM: l.ik && l.req ? dist(l.req, l.ik) : 0, ...(JA && l.ik && l.req && l.pitch <= -dorsi + 1e-6 ? { rangeLiftM: Math.max(0, l.req.y - l.ik.y) } : {}), softM: l.softM, soleBase: sl ? (fr?.soleW ?? 1) * smp!.weight * sl.footPitch : 0, soleAngle: l.soleAngle, ...(l.rollF !== undefined ? { rollF: l.rollF, edgeX: l.edgeX ?? 0 } : {}) };
   }
   const out: PhysicalPose = { playerId: inp.playerId, segments: segs, jointLandmarksWorld: lm, hingeDeg, straightFallback, limbClearance };
   if (seat) out.carry = seat;

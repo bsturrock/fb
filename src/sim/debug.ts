@@ -45,6 +45,11 @@ export interface PoseDebug {
    * prediction has them, never stopped (a body backed by the floor gives way to nothing).
    */
   noLegStop?: boolean;
+  /**
+   * Fault (rung 7, the swept guard): a plant whose primary placement gives up takes the ordinary choice (an offset, which
+   * footwork releases), never the primary at another knee pole.
+   */
+  noPlantedPole?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

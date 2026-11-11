@@ -209,6 +209,12 @@ export interface ResumeOptions {
   variant?: string[];
   /** Run options; callbacks are free, the state-shaping ones must equal the capture's. */
   opts?: SimOptions;
+  /**
+   * A fault twin's debug switches (`SimOptions.debug`), on from the capture's tick: the same state resumed with a
+   * change of behaviour off (ladder rule 7). Read live by the code they switch (a pose build reads its `debug` each
+   * time), never captured state; they replace the capture's debug options.
+   */
+  faults?: SimOptions['debug'];
 }
 
 class StaleCapture extends Error {}
@@ -221,7 +227,7 @@ export async function resumeState(cap: StateCapture, o: ResumeOptions = {}): Pro
   if (cap.format !== STATE_FORMAT) stale(cap, `format ${cap.format}, this tree reads ${STATE_FORMAT}`);
   const def = o.def ?? FIX(cap.fixture);
   const variant = o.variant ?? [];
-  const opts: SimOptions = { ...cap.opts, ...o.opts };
+  const opts: SimOptions = { ...cap.opts, ...o.opts, ...(o.faults ? { debug: o.faults } : {}) };
   for (const [k, v] of Object.entries(stateOpts(o.opts ?? {}))) if (JSON.stringify(cap.opts[k]) !== JSON.stringify(v)) throw new Error(`state resume: option ${k} differs from the capture's (${JSON.stringify(cap.opts[k])})`);
   // tracked (tests/runs.ts), so a test's leftover is freed with the file's other simulations
   const sim = await create(def, opts);

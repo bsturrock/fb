@@ -774,7 +774,10 @@ export interface LegGuardProfile {
    * Contact motion prerequisite (thigh tangle, ladder rung 5): the supported legs' achieved step is judged, not only its
    * target, against the physical bodies (where they stand and where the prediction puts them). A step still past the
    * clearance tries the other leg placements (the knee poles of the primary placement, then the offsets), and a step that
-   * would pass through a body stops at its last clear point (absent: unchanged).
+   * would pass through a body stops at its last clear point (absent: unchanged). Ladder rung 7: a planted foot's leg
+   * whose primary placement gives up (or, with `physicalLegs`, is in a body the legs meet) takes the primary at another
+   * knee pole first, the foot kept on its anchor within the footwork tolerance, before any offset (which footwork
+   * releases); it keeps that pole while valid and returns once the primary is clear at its own knee.
    */
   sweep?: true;
   /**

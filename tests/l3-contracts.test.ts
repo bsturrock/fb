@@ -23,9 +23,9 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { FOOTWORK_L2, FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, stepAccelLimits, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
 import type { ArmSide } from '../src/sim/contracts';
 import type { FootDebug } from '../src/sim/debug';
-import type { FootRequest, PhysicalPose } from '../src/sim/pose';
-import { add, v3, type Vec3 } from '../src/sim/vec';
-import { LEG_GUARD_V3 } from '../src/sim/profiles';
+import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
+import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
+import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
 import { breathe, FIX, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
@@ -863,6 +863,73 @@ describe('ladder tracked defects (rule 7)', () => {
       expect(Math.max(...tracked), id).toBeGreaterThan(1);
     });
   }, 120000);
+
+  it('under the swept guard (LEG_GUARD_V2, V3: resumed as a variant) rung 7 keeps the same holds\' plants: no clearance release, no re-plant; the twin without it keeps the cycle', async () => {
+    // Rung 7 (the planted primary pose, knee-pole first): the released foot's leg is obstructed where it stands (its
+    // primary placement past HARD_OK) and the ordinary choice takes an offset, which leaves the anchor. With rung 7 the
+    // leg turns its knee to another pole about the planted foot, its sole kept on the anchor, and back once the primary
+    // is clear at its own knee. The twin is the same state resumed with PoseDebug.noPlantedPole. Measured (rung 7): no
+    // release and no plant after 3.5 s; the knee at a knee pole for 56 (hold, R left) and 210 + 15 (holdMirror, R right and
+    // D left) substeps, the shown pole turning at most at the L3 rate, the planted feature within 0.2 mm; the twin as
+    // captured (3 releases and 2 plants; 4 and 4)
+    const caps = ['L3-F6-hold@216', 'L3-F6-holdMirror@210'];
+    await rows(caps.flatMap((c) => (['V2', 'V3'] as const).flatMap((g) => [false, true].map((fault) => ({ c, g, fault })))), (x) => `${x.c} ${x.g}${x.fault ? ' noPlantedPole' : ''}`, async ({ c, g, fault }) => {
+      const id = c.split('@')[0];
+      const def = { ...FIX(id), legGuard: g === 'V2' ? LEG_GUARD_V2 : LEG_GUARD_V3 };
+      // per planted leg and substep: at a knee pole (pose memory index >= 10), the shown pole's turn (body frame), the plant's feature error
+      let atPole = 0;
+      let maxTurn = 0;
+      let maxErr = 0;
+      const last = new Map<string, Vec3>();
+      const sim = await runSim(
+        await resumeState(loadState(`tests/data/state/${c}.json.gz`), {
+          def,
+          variant: ['legGuard'],
+          ...(fault ? { faults: { pose: { noPlantedPole: true } } } : {}),
+          opts: {
+            onSubstep: (s) => {
+              for (const p of s.players)
+                for (const side of ['left', 'right'] as const) {
+                  const m = p.poseMemory;
+                  const key = `${p.id}.${side}`;
+                  const k = `${side}Leg`;
+                  if (m[`${k}:p:x`] === undefined) continue;
+                  const pole = norm(v3(m[`${k}:p:x`], m[`${k}:p:y`], m[`${k}:p:z`]));
+                  const f = p.feet?.feet[side];
+                  if (f?.mode === 'planted' && !f.tentative) {
+                    if (m[k] >= 10) atPole++;
+                    maxErr = Math.max(maxErr, f.featureErrM);
+                    const q = last.get(key);
+                    if (q) maxTurn = Math.max(maxTurn, dist(q, pole));
+                  }
+                  last.set(key, pole);
+                }
+            },
+          },
+        }),
+      );
+      const ev = sim.events.filter((e) => e.t > 3.5);
+      const releases = ev.filter((e) => e.type === 'footRelease' && (e.data as { reason?: string }).reason === 'clearance').length;
+      const plants = ev.filter((e) => e.type === 'footPlant').length;
+      const tracked = ['R', 'D'].map((pid) => sim.events.filter((e) => e.type === 'footPlant' && e.playerId === pid && e.t > 3.5).length - HOLD_CLEARANCE_REPLANT.plants(sim, id, pid, 3.5).length);
+      const still = sim.players.every((p) => p.controlMode === 'supported');
+      const dt = sim.physics.dt;
+      sim.dispose();
+      expect(still, id).toBe(true);
+      if (fault) {
+        // the cycle, as captured
+        expect(releases, id).toBeGreaterThan(0);
+        expect(Math.max(...tracked), id).toBeGreaterThan(1);
+        expect(atPole, id).toBe(0);
+        return;
+      }
+      expect([releases, plants], id).toEqual([0, 0]);
+      expect(atPole, id).toBeGreaterThan(0);
+      // the planted feet on their anchors within the footwork tolerance; the knee pole turning within the L3 rate
+      expect(maxErr, id).toBeLessThanOrEqual(def.footwork!.plantTolM);
+      expect(maxTurn, id).toBeLessThanOrEqual(CONT_L3_RADPS * dt + 1e-9);
+    });
+  }, 240000);
 });
 
 describe('the carried ball over the L3 pass (plan 08a, plan 10d D1(a))', () => {
