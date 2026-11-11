@@ -16,7 +16,7 @@ import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
 import { armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
-import { cullGeom, geomNear, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
+import { cullGeom, geomNear, isSupportedLeg, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
   relPose, round, rv, scale, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
@@ -1254,6 +1254,9 @@ export class ArmSystem {
       for (const [own, other] of [[c.a, c.b], [c.b, c.a]] as const) {
         if (own.playerId !== pl.id || own.side !== side || (own.region !== 'forearm' && own.region !== 'palm')) continue;
         if (!other.playerId || other.playerId === pl.id) continue;
+        // contact motion: a supported proxy's physical leg is not a grip surface: a grip anchors on the proxy's body, which
+        // the shown leg moves across, so the hand would hold a point the leg has left
+        if (isSupportedLeg(other)) continue;
         if (c.impulse < minImp) continue;
         let pt = c.points[0].pointWorld;
         let bi = -1;

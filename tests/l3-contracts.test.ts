@@ -25,6 +25,7 @@ import type { ArmSide } from '../src/sim/contracts';
 import type { FootDebug } from '../src/sim/debug';
 import type { FootRequest, PhysicalPose } from '../src/sim/pose';
 import { add, v3, type Vec3 } from '../src/sim/vec';
+import { LEG_GUARD_V3 } from '../src/sim/profiles';
 import { breathe, FIX, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
@@ -802,6 +803,46 @@ describe('ladder tracked defects (rule 7)', () => {
       expect(R.representation, id).toBe('ragdoll');
       // held there, not met in the last tick: D's posed legs past the conversion tolerance for longer than one tick
       expect(longest, id).toBeGreaterThan(solver.substeps);
+    });
+  }, 120000);
+
+  it('under physical legs (LEG_GUARD_V3, resumed as a variant) the same states convert: the posed legs never held past the tolerance over a tick', async () => {
+    // Rung 6: what the physical supported legs do from the LEG_IN_RAGDOLL captures (the test above is the twin: the
+    // captured profile reproduces the rejection). D's legs meet R's ragdoll in the solve and the guard keeps the posed
+    // legs clear of it, so no run of D's posed legs past the conversion tolerance lasts a tick and D's conversion is
+    // accepted. Measured (rung 6): no substep past the tolerance at all, 1.20 / 1.20 / 1.02 cm at most.
+    await rows(['L3-F4-oneArm@70', 'L3-F1-phase2@70', 'L4-F10-wrap-off@74'], (c) => c, async (c) => {
+      const id = c.split('@')[0];
+      const def = { ...FIX(id), legGuard: LEG_GUARD_V3 };
+      const tol = def.ragdoll!.validation.penetrationTolM;
+      let run0 = 0;
+      let longest = 0;
+      const sim = await runSim(
+        await resumeState(loadState(`tests/data/state/${c}.json.gz`), {
+          def,
+          variant: ['legGuard'],
+          opts: {
+            onSubstep: (s) => {
+              const D = s.players.find((p) => p.id === 'D')!;
+              const R = s.players.find((p) => p.id === 'R')!;
+              if (!R.rag || D.rag || D.controlMode !== 'supported' || !D.pose) return;
+              const lc = D.pose.limbClearance;
+              run0 = Math.max(lc.leftLeg ?? 0, lc.rightLeg ?? 0) > tol ? run0 + 1 : 0;
+              longest = Math.max(longest, run0);
+            },
+          },
+        }),
+      );
+      const rej = sim.events.filter((e) => e.type === 'handoffRejected');
+      const D = sim.players.find((p) => p.id === 'D')!;
+      const legNs = sim.legLedger?.get('D')?.impulseNs ?? 0;
+      const solver = sim.def.solver;
+      sim.dispose();
+      expect(rej.map((e) => `${e.playerId} ${JSON.stringify(e.data?.worstExternal)}`), id).toEqual([]);
+      expect(D.handoff?.outcome, id).toBe('accepted');
+      expect(longest, id).toBeLessThanOrEqual(solver.substeps);
+      // D's legs met R in the solve
+      expect(legNs, id).toBeGreaterThan(0);
     });
   }, 120000);
 

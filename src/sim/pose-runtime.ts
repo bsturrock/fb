@@ -2,17 +2,17 @@
 // state (run-clip samples, walking arm swing, the foot plan's requests and observation, limb clearance against the
 // other players' published limbs, the carry arm).
 import RAPIER from '@dimforge/rapier3d-compat';
-import type { PlayerId } from './contracts';
+import type { PlayerId, SegmentId } from './contracts';
 import { ARM_G2, DEFAULT_POSE_PROFILE, hipLocal, sideSignX } from './profiles';
 import { buildProxyPose, legRequestLocal, poseLimbShapes, type PoseClearance, type PoseShape, type ProxyPoseInput } from './pose';
 import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleTarget, idleWeight, idleWidthAddM, sampleIdle, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
-import { externalFromColliders, ragdollPose, type ExternalShape } from './ragdoll';
-import { boxSeg, cullGeom, geomNear, trunkContact, trunkPieces, type CullGeom, type TrunkHit } from './physics';
+import { externalFromColliders, ragdollPose, SELF_ARM_KEY, SELF_TRUNK_KEY, type ExternalShape } from './ragdoll';
+import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, PHYS_LEG_KEY, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
 import type { ArmSide } from './contracts';
-import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, type Quat } from './vec';
+import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, type Quat } from './vec';
 import { auditInput, keepLandmarks, recordTransition, type AuditHost } from './transition-audit';
 import type { Simulation, PlayerRuntime } from './simulation';
 
@@ -123,6 +123,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
     }
     const oldIn = host.opts.transitionAudit && ftIn ? auditInput(host, pl, poseIn, ftIn) : null;
     pl.pose = buildProxyPose(poseIn);
+    if (host.def.legGuard?.physicalLegs) syncPhysicalLegs(host, pl);
     if (oldIn) recordTransition(host, pl, oldIn, poseIn, pl.pose);
     if (host.opts.transitionAudit) keepLandmarks(host, pl, poseIn, pl.pose);
     if (fp && ftIn) {
@@ -132,6 +133,325 @@ export function updatePoses(host: PoseHost, dt: number): void {
       const prev = host.auditPrev.get(pl.id);
       if (prev && host.opts.transitionAudit) prev.plan = structuredClone(fp);
     }
+  }
+}
+
+// ------------------------------------------------------------------ contact motion: physical supported legs (rung 6)
+/**
+ * Contact motion prerequisite (`LegGuardProfile.physicalLegs`): a supported proxy's physical legs, rigid parts of its
+ * body, so another body's contact on them is a contact on the proxy (the solver applies it once, equal and opposite).
+ */
+export interface PhysicalLegs {
+  colliders: RAPIER.Collider[];
+  /** Pose shape key per collider (`leftThigh`, `leftShin`, `leftShoe`, ...). */
+  keys: string[];
+  /**
+   * Each collider's placement on the body before and after the last pose (body frame): the animated move. The impact
+   * guard's closing speeds read it as a material-point move (legPointMove), the leg ledger as the capsule surface's advance
+   * (legSurfaceAdvance; a shoe's material-point move). A capsule (thigh, shin) keeps its last frame carried by the swing
+   * of its axis, without the twist about the axis that its placement from the world up axis takes (see syncPhysicalLegs).
+   */
+  prev: LegPlace[];
+  now: LegPlace[];
+  enabled: boolean;
+  /**
+   * Per collider: in the solve. A leg turns on only where it is clear of every body it meets (`legClear`), so the solve
+   * never starts from a leg placed inside a body; once on it stays on while the legs are live.
+   */
+  on: boolean[];
+}
+
+/**
+ * A physical leg's placement on its body (body frame): its frame, and for a capsule (along local Y) the half length of
+ * its segment, the hull's end centres at `p` -/+ `h` along the axis.
+ */
+export interface LegPlace {
+  p: Vec3;
+  q: Quat;
+  h?: number;
+}
+
+/**
+ * Whether a collider (by its tag) is one a physical leg of `owner` meets in the solve (`addLegCollider`'s filter): another
+ * player's, not its support capsule or support guard, not a ragdoll's self-clearance shapes, not another physical leg.
+ */
+export function legMeets(t: { playerId: PlayerId | null; key: string } | undefined, owner: PlayerId): boolean {
+  return !!t && t.playerId !== null && t.playerId !== owner && t.key !== 'support' && t.key !== 'supportGuard' && !t.key.startsWith(SELF_TRUNK_KEY) && !t.key.startsWith(SELF_ARM_KEY) && !t.key.startsWith(PHYS_LEG_KEY);
+}
+
+/** Depth (m) past which a leg coming on is not clear of a body it meets. */
+const PHYS_LEG_ON_M = 0.001;
+/** Prediction (m) of the coming-on query: the gap within which a closing body is read. */
+const PHYS_LEG_ON_PREDICTION_M = 0.05;
+/**
+ * Whether leg collider `c` (at its body's pose now) is clear of every body it meets within PHYS_LEG_ON_M, also over the
+ * coming substep: its gap less the closing at the contact over `aheadS`, the other body moving or stopped (the leg
+ * guard's prediction). A leg that would come on into a strike stays off.
+ */
+function legClear(host: PoseHost, pl: PlayerRuntime, c: RAPIER.Collider, aheadS: number): boolean {
+  const b = pl.proxy.body;
+  const bp = b.translation();
+  const bq = b.rotation();
+  for (const o of host.players) {
+    if (o === pl) continue;
+    for (const k of host.activeColliders(o)) {
+      if (!k.isEnabled() || !legMeets(host.physics.tags.get(k.handle), pl.id)) continue;
+      const r = c.shape.contactShape(bp, bq, k.shape, k.translation(), k.rotation(), PHYS_LEG_ON_PREDICTION_M);
+      if (!r) continue;
+      const n = vc(r.normal1);
+      const vSelf = dot(vc(b.velocityAtPoint(r.point1)), n);
+      const vOther = dot(vc(k.parent()!.velocityAtPoint(r.point2)), n);
+      if (r.distance - Math.max(0, vSelf - vOther, vSelf) * aheadS < -PHYS_LEG_ON_M) return false;
+    }
+  }
+  return true;
+}
+
+const LEG_KEYS = ['leftThigh', 'leftShin', 'leftShoe', 'rightThigh', 'rightShin', 'rightShoe'];
+
+/**
+ * A pose leg shape's convex hull in the body frame (`LegHull`): the collider's geometry, the collider itself at the body
+ * origin so that it adds nothing to the body's mass properties.
+ */
+export function legHull(s: PoseShape, bp: Vec3, bq: Quat): LegHull {
+  const E = LEG_HULL_EPS_M;
+  const pts: Vec3[] = [];
+  const toBody = (w: Vec3): Vec3 => qInvRot(bq, sub(w, bp));
+  if (s.kind === 'capsule') {
+    const a = toBody(s.a);
+    const b = toBody(s.b);
+    const d = norm(sub(b, a), v3(0, 1, 0));
+    const u = norm(cross(d, Math.abs(d.x) < 0.9 ? v3(1, 0, 0) : v3(0, 0, 1)), v3(0, 0, 1));
+    const w = cross(d, u);
+    for (const e of [a, b]) for (const su of [-1, 1]) for (const sw of [-1, 1]) pts.push(add(e, add(scale(u, su * E), scale(w, sw * E))));
+    return { points: new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z])), r: s.r - E };
+  }
+  if (s.kind === 'box') {
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) pts.push(toBody(add(s.c, qRot(s.q, v3(sx * s.he.x, sy * s.he.y, sz * s.he.z)))));
+    return { points: new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z])), r: 0 };
+  }
+  const c = toBody(s.c);
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) pts.push(add(c, v3(sx * E, sy * E, sz * E)));
+  return { points: new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z])), r: s.r - E };
+}
+
+/**
+ * The body-frame move, over the last pose step, of the leg material point now at `pBody` (body frame) on leg `i`: the
+ * point taken into the leg's own frame at its current placement and back out at its previous one.
+ */
+export function legPointMove(L: Pick<PhysicalLegs, 'prev' | 'now'>, i: number, pBody: Vec3): Vec3 {
+  const u = qInvRot(L.now[i].q, sub(pBody, L.now[i].p));
+  return sub(pBody, add(L.prev[i].p, qRot(L.prev[i].q, u)));
+}
+
+/** Distance of `p` from a capsule placement's segment (all body frame). */
+export function capsuleSegDist(p: Vec3, c: LegPlace): number {
+  const d = qRot(c.q, v3(0, 1, 0));
+  const r = sub(p, c.p);
+  return len(sub(r, scale(d, clamp(dot(r, d), -c.h!, c.h!))));
+}
+
+/**
+ * How far capsule leg `i`'s surface advanced, over the last pose step, at the point `pBody` (body frame): the point's
+ * distance from the previous segment less its distance from the current one (the radius, the same in both, cancels).
+ * Frame-free: it reads neither the frame's twist about the axis nor a material point carried by it (a material point
+ * on the surface moved by D misses the surface's advance along the normal by about |D| times the axis swing).
+ */
+export function legSurfaceAdvance(L: Pick<PhysicalLegs, 'prev' | 'now'>, i: number, pBody: Vec3): number {
+  return capsuleSegDist(pBody, L.prev[i]) - capsuleSegDist(pBody, L.now[i]);
+}
+
+/** The body-frame placement of a pose leg shape (a capsule along its local Y, or a box): the leg's own frame. */
+function legPlacement(s: PoseShape, bp: Vec3, bq: Quat): LegPlace {
+  if (s.kind === 'capsule') {
+    const d = sub(s.b, s.a);
+    const l = len(d);
+    const qw = l > 1e-9 ? qFromUnitVectors(v3(0, 1, 0), scale(d, 1 / l)) : { x: 0, y: 0, z: 0, w: 1 };
+    return { p: qInvRot(bq, sub(addScaled(s.a, d, 0.5), bp)), q: qNormalize(qMul(qConj(bq), qw)), h: 0.5 * l };
+  }
+  if (s.kind === 'box') return { p: qInvRot(bq, sub(s.c, bp)), q: qNormalize(qMul(qConj(bq), s.q)) };
+  return { p: qInvRot(bq, sub(s.c, bp)), q: { x: 0, y: 0, z: 0, w: 1 } };
+}
+
+/**
+ * Whether a player's legs are physical this substep: a supported proxy (no handoff) of a physical-legs profile, and
+ * (D2) only while it stands on static ground. Players are never ground. Under the suspension: while its support probe
+ * finds static ground (not a player: `obstructed`) within the suspension's travel under it (not `none`, not
+ * `beyondTravel`: up on another player or lifted), whether or not that ground is support-eligible (a refused surface or
+ * normal: the proxy still stands among the same bodies). Physical legs on a proxy over a player would stand it on
+ * whatever body they meet. Without the suspension there is no probe, and no suspension does not mean eligible: the
+ * legacy support stands on static ground only while its support capsule rests on the floor collider (`grounded`, from
+ * `supportContact`: the low region, an upward normal, the floor only, never a player).
+ */
+export function physicalLegsLive(host: Pick<PoseHost, 'def' | 'suspension'>, pl: PlayerRuntime): boolean {
+  if (!host.def.legGuard?.physicalLegs || pl.rag || pl.handoff || pl.controlMode !== 'supported' || !host.def.ragdoll) return false;
+  const S = host.suspension;
+  const pr = pl.sus?.probe;
+  if (!S || !pr) return pl.grounded;
+  return pr.status !== 'none' && pr.status !== 'obstructed' && pr.status !== 'beyondTravel' && pr.heightM <= S.probeMaxM;
+}
+
+/**
+ * The physical legs follow the achieved pose (built after this substep's solve, used by the next): created on the first
+ * live pose, placed on the body from the pose's leg shapes, disabled once they are not live (`physicalLegsLive`). A leg
+ * comes on only clear of every body it meets (`legClear`). The previous placement is kept for the animated move.
+ */
+export function syncPhysicalLegs(host: PoseHost, pl: PlayerRuntime): void {
+  if (!physicalLegsLive(host, pl) || !pl.pose) {
+    disablePhysicalLegs(pl);
+    return;
+  }
+  const b = pl.proxy.body;
+  const bp = vc(b.translation());
+  const bq = { ...b.rotation() };
+  const shapes = poseLimbShapes(host.def.ragdoll!, pl.pose).filter((x) => LEG_KEYS.includes(x.key));
+  const place = shapes.map((x) => legPlacement(x, bp, bq));
+  const hulls = shapes.map((x) => legHull(x, bp, bq));
+  if (!pl.legs) {
+    const cs = shapes.map((x, i) => {
+      const region = x.key.endsWith('Thigh') ? 'thigh' : x.key.endsWith('Shin') ? 'shin' : 'shoe';
+      return host.physics.addLegCollider(b, pl.id, (x.key.endsWith('Shoe') ? x.key.replace('Shoe', 'Shin') : x.key) as SegmentId, region, hulls[i], x.key);
+    });
+    for (const c of cs) c.setEnabled(false);
+    pl.legs = { colliders: cs, keys: shapes.map((x) => x.key), prev: place, now: place, enabled: false, on: cs.map(() => false) };
+  } else pl.legs.colliders.forEach((c, i) => host.physics.reshapeLeg(c, hulls[i]));
+  const L = pl.legs;
+  // The animated move's frames. A capsule (thigh, shin) is the same shape at any twist about its axis, and its placement
+  // frame from the world up axis (legPlacement) is singular for a leg pointing straight down: under its hip a thigh's frame
+  // turned 18-90 degrees about the axis in substeps its axis swung 0.5-2.3 degrees, and a move read through it took the
+  // twist for the leg surface moving into what it touched (the old tree: 1.03 J at 9.9 N s in one substep of
+  // L3-F1-phase6, a guard closing speed of 38.8 m/s in L4-F9-prep where the surface moved at 1.8). A continuing capsule
+  // keeps its last frame carried by the swing of its axis (no twist): the move is the surface's own.
+  const moved = shapes.map((x, i) => {
+    if (!L.enabled || x.kind !== 'capsule') return place[i];
+    const q0 = L.now[i].q;
+    return { p: place[i].p, q: qNormalize(qMul(qFromUnitVectors(qRot(q0, v3(0, 1, 0)), qRot(place[i].q, v3(0, 1, 0))), q0)), h: place[i].h };
+  });
+  L.prev = L.enabled ? L.now : moved;
+  L.now = moved;
+  L.enabled = true;
+  L.colliders.forEach((c, i) => {
+    if (L.on[i] || !legClear(host, pl, c, host.def.legGuard!.aheadS)) return;
+    c.setEnabled(true);
+    L.on[i] = true;
+    // a leg coming on has no animated move yet
+    L.prev[i] = L.now[i];
+  });
+}
+
+/** Physical legs off (kept on the body, out of the solve): not live, or the proxy leaves the supported mode. */
+export function disablePhysicalLegs(pl: PlayerRuntime): void {
+  if (!pl.legs?.enabled) return;
+  for (const c of pl.legs.colliders) c.setEnabled(false);
+  pl.legs.enabled = false;
+  pl.legs.on.fill(false);
+}
+
+/**
+ * The leg ledger (observation only), per player: what the physical legs' contacts did in the solves so far. `impulseNs`
+ * and `maxLoadN` are the solver's normal impulse on the leg colliders (the same impulse acts on the proxy, opposite on
+ * the other body). `injectedJ` is the work the legs' animated move (the pose placing them anew on the body between
+ * solves, which the solver sees as a teleport) did on the other bodies: per loaded contact point the normal impulse
+ * times how far the leg advanced there (a capsule: its surface, legSurfaceAdvance; a shoe: the material point's move
+ * along the normal), positive when the leg was placed into the other body; `absorbedJ` the negative part. `maxDepthM` is
+ * the deepest leg contact a solve started from, split by the solve's impulse at the point: loaded (> 0) and unloaded.
+ */
+export interface LegLedger {
+  /** Solves with a leg impulse. */
+  substeps: number;
+  impulseNs: number;
+  maxLoadN: number;
+  /** The largest one-solve leg impulse (N s) and its solve's time. */
+  maxStepNs: number;
+  maxStepAt: number | null;
+  injectedJ: number;
+  absorbedJ: number;
+  maxStepInjectedJ: number;
+  maxDepthM: number;
+  maxLoadedDepthM: number;
+  loadedAt: LegDepthAt | null;
+  maxUnloadedDepthM: number;
+  unloadedAt: LegDepthAt | null;
+  /** Solves with at least one unloaded leg contact point (negative distance, zero impulse). */
+  unloadedSubsteps: number;
+  /** Normal impulse per other collider (`player:key`, N s). */
+  byOther: Record<string, number>;
+}
+
+/** Where a leg ledger depth was read: the solve's time (s), the leg (pose key) and the other collider (`player:key`). */
+export interface LegDepthAt {
+  t: number;
+  leg: string;
+  other: string;
+}
+
+export function newLegLedger(): LegLedger {
+  return { substeps: 0, impulseNs: 0, maxLoadN: 0, maxStepNs: 0, maxStepAt: null, injectedJ: 0, absorbedJ: 0, maxStepInjectedJ: 0, maxDepthM: 0, maxLoadedDepthM: 0, loadedAt: null, maxUnloadedDepthM: 0, unloadedAt: null, unloadedSubsteps: 0, byOther: {} };
+}
+
+/**
+ * After each solve (a physical-legs profile only): the physical legs' contacts into each player's leg ledger
+ * (`Simulation.legLedger`, made on the first call). The solve's manifolds are read, never changed.
+ */
+export function observePhysicalLegs(host: Pick<PoseHost, 'physics' | 'players' | 't'> & { legLedger?: Map<PlayerId, LegLedger> }): void {
+  const W = host.physics.world;
+  const dt = host.physics.dt;
+  const ledgers = (host.legLedger ??= new Map());
+  for (const pl of host.players) {
+    const L = pl.legs;
+    if (!L?.enabled) continue;
+    const bq = { ...pl.proxy.body.rotation() };
+    let led = ledgers.get(pl.id);
+    if (!led) ledgers.set(pl.id, (led = newLegLedger()));
+    let stepImp = 0;
+    let stepInj = 0;
+    let stepUnloaded = false;
+    L.colliders.forEach((c, i) => {
+      W.contactPairsWith(c, (o) => {
+        const tag = host.physics.tags.get(o.handle);
+        const key = tag ? `${tag.playerId}:${tag.key}` : '?';
+        W.contactPair(c, o, (m, flipped) => {
+          const nw = vc(m.normal());
+          const n = flipped ? scale(nw, -1) : nw;
+          for (let k = 0; k < m.numContacts(); k++) {
+            const ji = m.contactImpulse(k);
+            const d = m.contactDist(k);
+            if (ji <= 0 && d >= 0) continue;
+            led!.maxDepthM = Math.max(led!.maxDepthM, -d);
+            stepImp += ji;
+            if (ji > 0) {
+              if (-d > led!.maxLoadedDepthM) {
+                led!.maxLoadedDepthM = -d;
+                led!.loadedAt = { t: host.t, leg: L.keys[i], other: key };
+              }
+            } else {
+              stepUnloaded = true;
+              if (-d > led!.maxUnloadedDepthM) {
+                led!.maxUnloadedDepthM = -d;
+                led!.unloadedAt = { t: host.t, leg: L.keys[i], other: key };
+              }
+            }
+            led!.byOther[key] = (led!.byOther[key] ?? 0) + ji;
+            // the contact point on the leg (its collider frame: the body frame) and how far the pose advanced the leg there
+            const lp = flipped ? m.localContactPoint2(k) : m.localContactPoint1(k);
+            if (!lp || ji <= 0) continue;
+            const w = ji * (L.now[i].h !== undefined ? legSurfaceAdvance(L, i, vc(lp)) : dot(n, qRot(bq, legPointMove(L, i, vc(lp)))));
+            if (w > 0) stepInj += w;
+            else led!.absorbedJ += -w;
+          }
+        });
+      });
+    });
+    if (stepImp > 0) led.substeps++;
+    if (stepUnloaded) led.unloadedSubsteps++;
+    led.impulseNs += stepImp;
+    led.maxLoadN = Math.max(led.maxLoadN, stepImp / dt);
+    if (stepImp > led.maxStepNs) {
+      led.maxStepNs = stepImp;
+      led.maxStepAt = host.t;
+    }
+    led.injectedJ += stepInj;
+    led.maxStepInjectedJ = Math.max(led.maxStepInjectedJ, stepInj);
   }
 }
 
@@ -344,7 +664,8 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
   // query's prediction (the prediction only admits separated pairs; tests/harness.test.ts checks it on random pairs of every
   // shape kind), so the push asks at the depth checks' prediction: the push of a shape the depth check measured (each
   // push-out step's) reuses that answer. Only pairs that can penetrate are asked (the cull at 0)
-  const pushAgainst = (shapes: PoseShape[], toleranceM: number, against: ExternalShape[]): Vec3 => {
+  // (a tolerance per external shape, `tolOf`: per shape the deepest excess over its own tolerance)
+  const pushAgainst = (shapes: PoseShape[], toleranceM: number, against: ExternalShape[], tolOf?: (e: ExternalShape) => number): Vec3 => {
     const v = v3();
     for (const s of shapes) {
       const b = poseCullGeom(s);
@@ -356,9 +677,13 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
         if (q === undefined) q = poseShapeToRapier(s);
         if (!q) break;
         const r = contact(sk, q, e, DEPTH_PREDICTION_M);
-        if (r && r.distance < 0 && (!best || -r.distance > best.d)) best = { d: -r.distance, n: vc(r.normal1) };
+        if (!r || !(r.distance < 0)) continue;
+        if (tolOf) {
+          const x = -r.distance - tolOf(e);
+          if (!best || x > best.d) best = { d: x, n: vc(r.normal1) };
+        } else if (!best || -r.distance > best.d) best = { d: -r.distance, n: vc(r.normal1) };
       }
-      if (best) Object.assign(v, addScaled(v, best.n, Math.max(0, best.d - toleranceM)));
+      if (best) Object.assign(v, addScaled(v, best.n, Math.max(0, tolOf ? best.d : best.d - toleranceM)));
     }
     return v;
   };
@@ -368,6 +693,16 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
   // its rotation by its body's angular velocity). Static colliders and published limbs (poses: no velocity) stay as they
   // are, so they are measured by the plain query. Built on the first leg query of the pose
   const LG = host.def.legGuard;
+  // contact motion (`physicalLegs`, live): the shapes the physical legs meet in the solve (`addLegCollider`'s filter,
+  // `legMeets`): another player's live colliders other than its support capsule and support guard (not the floor,
+  // obstacles or published limbs), with their predicted copies (`met`) and, for each on a moving body, the same body
+  // stopped (`stopped`): moved by the posing player's own motion only. The solve can stop the other body (a body on the
+  // floor stops on it, and gives way to nothing), so a physical leg clears it there as well (D1). Only the physical-leg
+  // target reads these; the HARD_OK checks keep the 13f prediction alone
+  const legsLive = physicalLegsLive(host, pl);
+  const meets = (e: ExternalShape): boolean => legsLive && !!e.collider && legMeets(host.physics.tags.get(e.collider.handle), pl.id);
+  const met = new Set<ExternalShape>();
+  const stopped: ExternalShape[] = [];
   let ahead: ExternalShape[] | null = null;
   const aheadOf = (): ExternalShape[] => {
     if (ahead) return ahead;
@@ -381,7 +716,13 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
       const w = vc(b.angvel());
       const wl = len(w);
       const q = wl > 1e-9 ? qNormalize(qMul(qFromAxisAngle(scale(w, 1 / wl), wl * LG!.aheadS), e.pose.q)) : e.pose.q;
-      ahead.push({ key: `${e.key}@ahead`, shape: e.shape, pose: { p: addScaled(e.pose.p, dv, LG!.aheadS), q } });
+      const a = { key: `${e.key}@ahead`, shape: e.shape, pose: { p: addScaled(e.pose.p, dv, LG!.aheadS), q } };
+      ahead.push(a);
+      if (meets(e)) {
+        met.add(a);
+        // fault (PoseDebug.noLegStop): the met bodies are taken to keep moving as the prediction has them
+        if (!host.opts.debug?.pose?.noLegStop) stopped.push({ key: `${e.key}@stopped`, shape: e.shape, pose: { p: addScaled(e.pose.p, vc(self.velocityAtPoint(e.pose.p)), -LG!.aheadS), q: e.pose.q } });
+      }
     }
     return ahead;
   };
@@ -390,11 +731,33 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
   // another supported player's published limbs carry none), what a conversion validates
   let phys: ExternalShape[] | null = null;
   const physOf = (): ExternalShape[] => (phys ??= ext.filter((e) => !!e.collider));
+  let metShapes: { here: ExternalShape[]; ahead: ExternalShape[]; all: Set<ExternalShape> } | null = null;
+  const metOf = (): NonNullable<typeof metShapes> => {
+    if (metShapes) return metShapes;
+    const A = aheadOf();
+    const here = ext.filter(meets);
+    const ah = A.filter((a) => met.has(a));
+    return (metShapes = { here, ahead: ah, all: new Set([...here, ...ah, ...stopped]) });
+  };
   const legAhead = LG
     ? {
         external: (shapes: PoseShape[]) => Math.max(depth(shapes, ext), depth(shapes, aheadOf())),
         push: (shapes: PoseShape[], toleranceM = 0) => pushAgainst(shapes, toleranceM, [...ext, ...aheadOf()]),
         physical: (shapes: PoseShape[]) => Math.max(depth(shapes, physOf()), depth(shapes, aheadOf())),
+        ...(legsLive
+          ? {
+              // the bodies the physical legs meet: where they stand, where the prediction puts them, and stopped
+              met: (shapes: PoseShape[]) => {
+                const M = metOf();
+                return Math.max(depth(shapes, M.here), depth(shapes, M.ahead), depth(shapes, stopped));
+              },
+              // the push to `metToleranceM` against those, to `toleranceM` against every other shape
+              pushMet: (shapes: PoseShape[], toleranceM: number, metToleranceM: number) => {
+                const M = metOf();
+                return pushAgainst(shapes, toleranceM, [...ext, ...aheadOf(), ...stopped], (e) => (M.all.has(e) ? metToleranceM : toleranceM));
+              },
+            }
+          : {}),
       }
     : undefined;
   // arm self-clearance: depth beyond the profile tolerance (skin contact is clear) and the separating move from the trunk.

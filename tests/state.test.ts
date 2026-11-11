@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
 import { create, FIX, runSim } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
+import { LEG_GUARD_V3 } from '../src/sim/profiles';
 
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace });
 const copy = (c: StateCapture): StateCapture => JSON.parse(JSON.stringify(c));
@@ -29,6 +30,24 @@ describe('full-state capture and resume', () => {
       back.dispose();
       expect(same, `${id} resumed at tick ${tick}`).toBe(true);
     }
+  }, 120000);
+
+  it('a run under physical legs (LEG_GUARD_V3: leg colliders on the proxies, round convex hulls) resumes byte for byte', async () => {
+    // L3-F4-oneArm at 1.167 s under the rung 6 profile: both players' physical legs made and reshaped every substep (their
+    // shapes cached on the colliders), R's removed with its proxy at its conversion; D's in the solve beside R's ragdoll
+    const def = { ...FIX('L3-F4-oneArm'), legGuard: LEG_GUARD_V3 };
+    const sim = await create(def);
+    await runSim(sim, 70);
+    expect(sim.players.find((p) => p.id === 'D')!.legs?.enabled, 'D\'s legs physical at the capture').toBe(true);
+    const cap = copy(captureState(sim));
+    await runSim(sim);
+    const whole = exportOf(sim);
+    sim.dispose();
+    const back = await resumeState(cap, { def });
+    await runSim(back);
+    const same = exportOf(back) === whole;
+    back.dispose();
+    expect(same).toBe(true);
   }, 120000);
 
   it('a capture written against other profiles, another state layout, format or engine is refused, naming why', async () => {

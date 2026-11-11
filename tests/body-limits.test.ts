@@ -23,7 +23,7 @@ import { armSelfShapes, buildProxyPose, CONT_LEG_MPS, HARD_OK, hingeChain, LEG_S
 import { initPhysics, RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
@@ -672,9 +672,11 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
     });
     await runSim(sim);
     const h = sim.players.find((p) => p.id === 'D')!.handoff!;
+    // rung 6: what D's physical legs took from the other bodies (N s; none without the profile's physical legs)
+    const leg = sim.legLedger?.get('D');
     sim.dispose();
     expect(thrown, 'R was thrown').toBe(true);
-    return { outcome: h.outcome, newM: h.report.maxNewExternalPenetrationM, reasons: h.report.reasons.join(','), worst: `${h.report.worstExternal?.own} in ${h.report.worstExternal?.other}` };
+    return { outcome: h.outcome, newM: h.report.maxNewExternalPenetrationM, reasons: h.report.reasons.join(','), worst: `${h.report.worstExternal?.own} in ${h.report.worstExternal?.other}`, legNs: leg?.impulseNs ?? 0, headNs: Object.entries(leg?.byOther ?? {}).reduce((a, [k, j]) => a + (k.startsWith('R:head') ? j : 0), 0) };
   };
 
   it('the swept guard (V2) converts beside a thrown closing body; without its prediction, and on the twin, the thrown head is in the thigh', async () => {
@@ -710,6 +712,44 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
           },
         ],
       ),
+    ]);
+  }, 240000);
+
+  // Rung 6 (LEG_GUARD_V3, physical supported legs; no fixture runs it): the same thrown body meets D's thigh in the solve
+  // and stops on it, so V3 converts with or without the 13f prediction. The no-physical-legs variant is V2 (V3 less
+  // `physicalLegs`), which without its prediction is rejected with the head in the thigh (the V2 case above).
+  it('under physical legs (V3) the thrown head stops on the thigh and D converts, with or without the prediction; without physical legs (V2) and without it, it is rejected', async () => {
+    const base = FIX('L3-F9-convert-free');
+    const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
+    const tol = base.ragdoll!.validation.penetrationTolM;
+    const v3d = noDeep({ ...base, legGuard: LEG_GUARD_V3 });
+    await checks([
+      ...(
+        [
+          ['V3 converts beside the thrown body, the head met by the thigh in the solve', {}],
+          ['V3 without the prediction (noLegAhead) converts too: the solve stops the head', { debug: { pose: { noLegAhead: true } } }],
+        ] as [string, SimOptions][]
+      ).map(
+        ([name, o]): Check => [
+          name,
+          async () => {
+            const on = await thrownAt(v3d, o);
+            expect(on.outcome, `${on.worst} ${on.newM}`).toBe('accepted');
+            expect(on.newM, on.worst).toBeLessThanOrEqual(HARD_OK);
+            expect(on.headNs, 'R:head on D\'s legs (N s)').toBeGreaterThan(0);
+          },
+        ],
+      ),
+      [
+        'the no-physical-legs variant (V2) without the prediction is rejected, the head in the thigh; no leg ledger',
+        async () => {
+          const off = await thrownAt(noDeep({ ...base, legGuard: LEG_GUARD_V2 }), { debug: { pose: { noLegAhead: true } } });
+          expect(off.outcome, off.worst).toBe('rejected');
+          expect(off.newM).toBeGreaterThan(tol);
+          expect(off.worst).toMatch(/^(left|right)Thigh:thigh in R:head:head$/);
+          expect(off.legNs).toBe(0);
+        },
+      ],
     ]);
   }, 240000);
 });

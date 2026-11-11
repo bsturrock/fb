@@ -113,6 +113,24 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   L3-F7-mirror50, 3423), 5% fewer queries over the export. The full check counts every leg-matrix run
   (`queries.jsonl`, a compare line for ticks over the budget); the suite's budget test adds HC-F1-at0.9 and
   L3-F7-mirror50.
+- **6** (`r6-physical-legs`) landed: byte-identical, shape-query counts unchanged. `LEG_GUARD_V3` (V2 with
+  `physicalLegs`, no fixture runs it): a supported proxy's six pose leg shapes are massless round-hull colliders on its
+  own body (contacts act on the proxy once; mass properties bitwise kept), placed from the achieved pose after each
+  solve with twist-free frames, live only while the proxy stands on static ground (D2: the suspension probe within
+  travel and not on a player; legacy support only while `grounded`), off at the conversion request and removed with the
+  proxy. Filter: groups (never static ground or another physical leg), the contact hook (never the floor, obstacles,
+  another proxy's support capsule or guard, self-clearance shapes), one body (never its own proxy). The guard clears
+  the posed legs to PHYS_LEG_OK (1 mm) of the bodies they meet, where they stand, predicted and stopped (D1), the sweep
+  starting from the last shown leg. Leg ledger (`Simulation.legLedger`, observation only). Contact records of the legs
+  are ordinary records (limb class) except for arm grips (skipped) and ground (never). `tests/state.ts` captures their
+  shapes (`RoundConvexPolyhedron`). Tests: `tests/physical-legs.test.ts` (exactly once, filter layers, D2 on real
+  states, ownership at conversion, D1 against `PoseDebug.noLegStop`, surface speeds against world-up frames), the 13f
+  thrown body under V3 (body-limits), the `LEG_IN_RAGDOLL` captures under V3 (l3-contracts: all three convert, nothing
+  past the tolerance), a V3 capture round trip (state). With V3 on every leg-guard fixture (information,
+  `.scratch/ladder/r6-physical-legs/v3-on/`, README there): 22 suite failures (7 by construction, 6 natural samples or
+  negative controls moved, 9 behaviour); 15 result or who-falls changes; one L4 row over the ceiling,
+  L4-F9-defenderFalling D 172.0 W (rung 4c's case: R's core on D's thigh while R lands; the 4c flag clears it and leaves
+  the matrix at 148.1 W); `LEG_IN_RAGDOLL` and the L4-F10-wrap-on stall gone; worst shape-query tick 3535.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -126,7 +144,8 @@ order, not hunk-split.
 - Rung 4c, `impactGuard.carried` (the old tree's D3): no case at 4b needs it. With the flag on the L4 matrix (92 rows) is
   identical; `carriedImpacts` fires in 5 runs for one substep each and changes nothing. The old tree's case
   (L4-F9-defenderFalling, 179.8 W) was measured with the physical supported legs on. Patch and evidence:
-  `.scratch/ladder/parked/r4c-carried/`. Reconsider at the physical-legs rungs (6-8).
+  `.scratch/ladder/parked/r4c-carried/`. Reconsider at the physical-legs rungs (6-8). Rung 6, V3 on every leg-guard
+  fixture: L4-F9-defenderFalling D 172.0 W (1 substep over) without it, 148.1 W highest with it (the case it needs).
 
 ## Open defects to test on the ladder
 

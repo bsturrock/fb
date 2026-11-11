@@ -40,6 +40,11 @@ export interface PoseDebug {
    * this far (m, body up) off the shown path, so the shown leg jumps at the ownership change.
    */
   ownerChangeJumpM?: number;
+  /**
+   * Fault (contact motion D1, physical legs): the bodies a physical leg meets are taken to keep moving as the 13f
+   * prediction has them, never stopped (a body backed by the floor gives way to nothing).
+   */
+  noLegStop?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

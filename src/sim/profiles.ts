@@ -777,11 +777,24 @@ export interface LegGuardProfile {
    * would pass through a body stops at its last clear point (absent: unchanged).
    */
   sweep?: true;
+  /**
+   * Contact motion prerequisite (ladder rung 6): the supported proxy's legs are physical. Massless thigh, shin and shoe
+   * colliders on the proxy's own body follow the achieved pose each substep, so another body's contact on a shown leg
+   * is a contact on the proxy (the solver applies it once, equal and opposite). They meet other players' proxy torso,
+   * pelvis and head and every ragdoll collider (ragdoll legs included); not another supported proxy's physical legs,
+   * support capsule or support guard, a ragdoll's self-clearance shapes, static ground (floor, obstacles) or their own
+   * body. Live only while the proxy stands on static ground (pose-runtime `physicalLegsLive`); removed with the proxy at
+   * a conversion. The pose leaves a physical leg at most PHYS_LEG_OK (pose.ts) in a body it meets, where that body
+   * stands, where the prediction puts it, and where it stands stopped (absent: unchanged).
+   */
+  physicalLegs?: true;
 }
 
 export const LEG_GUARD_V1: LegGuardProfile = { id: 'leg-guard-predictive-v1', aheadS: 1 / 240 };
 /** Contact motion prerequisite: plan 13f's prediction with the swept leg step (`sweep`). No fixture uses it yet. */
 export const LEG_GUARD_V2: LegGuardProfile = { ...LEG_GUARD_V1, id: 'leg-guard-sweep-v2', sweep: true };
+/** Contact motion prerequisite: `LEG_GUARD_V2` with physical supported legs (`physicalLegs`). No fixture uses it yet. */
+export const LEG_GUARD_V3: LegGuardProfile = { ...LEG_GUARD_V2, id: 'leg-guard-physical-v3', physicalLegs: true };
 
 /**
  * Plan 12: the ragdoll under a joint-range profile. The envelope's shoulder is the profile's (an L4 envelope keeps its

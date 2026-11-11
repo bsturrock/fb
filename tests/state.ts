@@ -48,8 +48,11 @@ export interface StateCapture {
 
 type Node = any;
 const RAPIER_NAME = new Map<unknown, string>(Object.entries(RAPIER).filter(([, v]) => typeof v === 'function').map(([k, v]) => [v, k]));
-/** Rapier classes that are plain JS values (shapes and math), written field by field. */
-const RAPIER_VALUES = new Set(['Ball', 'Capsule', 'Cuboid', 'RoundCuboid', 'Cylinder', 'Cone', 'ConvexPolyhedron', 'Segment', 'Triangle', 'Vector3', 'Quaternion']);
+/**
+ * Rapier classes that are plain JS values (shapes and math), written field by field. RoundConvexPolyhedron: the physical
+ * supported legs' shapes (LegGuardProfile.physicalLegs), cached on their colliders.
+ */
+const RAPIER_VALUES = new Set(['Ball', 'Capsule', 'Cuboid', 'RoundCuboid', 'Cylinder', 'Cone', 'ConvexPolyhedron', 'RoundConvexPolyhedron', 'Segment', 'Triangle', 'Vector3', 'Quaternion']);
 const TYPED: Record<string, new (a: number[]) => ArrayBufferView> = { Float32Array, Float64Array, Int32Array, Uint32Array, Uint8Array, Uint16Array, Int16Array, Int8Array };
 
 const num = (x: number): Node => (Number.isNaN(x) ? { $n: 'NaN' } : x === Infinity ? { $n: 'Inf' } : x === -Infinity ? { $n: '-Inf' } : Object.is(x, -0) ? { $n: '-0' } : x);
