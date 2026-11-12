@@ -25,13 +25,6 @@ import { loadedLimbMonitor } from './loaded-limb';
 
 const ALL = fallFixtures();
 
-// Ladder 9c, tracked defects (rule 7) reached by own-leg contact's moved trajectories, each with its capture test in
-// tests/fall-defects.test.ts and its own fix step: by fixture, player (and arm) and mechanism. L4-F9-free runs as
-// L4-F3-run-on does (their summaries the same but for the id).
-/** IMPACT_OVER_POWER: an impact through a falling body's legs while their fall effort acts realizes more than the
- * power cap in that substep (the audit tags it an impact; the guard did not hold the effort off). */
-const IMPACT_OVER_POWER: Record<string, string[]> = { 'L4-F3-run-on': ['D'], 'L4-F9-free': ['D'] };
-
 // ------------------------------------------------------------------ one run per fixture
 // Plan 13b: every fall fixture a test reads is simulated once, as `run(FIX(id))` gives it (the default options), and
 // shared. A test that watches a fall as it goes registers its observer for its fixtures with `watch` while the file is
@@ -512,6 +505,28 @@ describe('the limit torque follows a potential', () => {
 });
 
 // ------------------------------------------------------------------ every response, whatever the fixture
+/**
+ * The power and work audit of one run of a response fixture `d`, every player: the work and the predicted power within
+ * the cap, no substep over the power tolerance (an impact is no excuse: the impact tag only says why), and the same
+ * again from the ledger, each substep's realized positive power per player.
+ */
+function powerAudit(d: FixtureDef, s: Simulation): void {
+  const P = d.fallResponse!.power;
+  for (const [id, r] of Object.entries(exp(s).fallEffort ?? {}) as [string, any][]) {
+    const label = `${d.id} ${id}`;
+    expect(r.overWork, label).toBe(false);
+    expect(r.positiveWorkJ, label).toBeLessThanOrEqual(P.maxPositiveWorkJ * (1 + P.toleranceFraction));
+    expect(r.peakPredictedW, label).toBeLessThanOrEqual(P.maxPositiveW * P.planFraction * (1 + 1e-3));
+    expect(r.overPowerSubsteps, label).toBe(0);
+    expect(r.impactPowerSubsteps, label).toBe(0);
+    expect(r.peakImpactW, label).toBe(0);
+    expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === id).length, label).toBe(0);
+  }
+  const bySubstep = new Map<string, number>();
+  for (const e of s.fall!.ledger) bySubstep.set(`${e.owner}@${e.step}`, (bySubstep.get(`${e.owner}@${e.step}`) ?? 0) + Math.max(0, e.realizedW));
+  for (const [k, w] of bySubstep) expect(w, `${d.id} ${k}`).toBeLessThanOrEqual(P.maxPositiveW * (1 + P.toleranceFraction));
+}
+
 describe('L4 audits on every fixture', () => {
   const withResponse = (): FixtureDef[] => ALL.filter((d) => d.fallResponse);
 
@@ -540,41 +555,22 @@ describe('L4 audits on every fixture', () => {
       [
         'power and work: predicted before the solve, audited after it, within the 5% tolerance',
         async () => {
-          for (const d of withResponse()) {
-            const s = await sim(d.id);
-            const P = d.fallResponse!.power;
-            const impactOver = new Map<string, number>();
-            for (const [id, r] of Object.entries(exp(s).fallEffort ?? {}) as [string, any][]) {
-              const label = `${d.id} ${id}`;
-              expect(r.overWork, label).toBe(false);
-              expect(r.positiveWorkJ, label).toBeLessThanOrEqual(P.maxPositiveWorkJ * (1 + P.toleranceFraction));
-              expect(r.peakPredictedW, label).toBeLessThanOrEqual(P.maxPositiveW * P.planFraction * (1 + 1e-3));
-              if (IMPACT_OVER_POWER[d.id]?.includes(id)) {
-                // the tracked defect (tests/fall-defects.test.ts): every substep over the tolerance is an impact
-                // substep, none without one
-                expect(r.impactPowerSubsteps, label).toBe(r.overPowerSubsteps);
-                expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === id).every((e) => e.data.impact), label).toBe(true);
-                impactOver.set(id, r.overPowerSubsteps);
-                continue;
-              }
-              expect(r.overPowerSubsteps, label).toBe(0);
-              // an impact is no excuse: any substep over the tolerance counts, and the impact tag only says why
-              expect(r.impactPowerSubsteps, label).toBe(0);
-              expect(r.peakImpactW, label).toBe(0);
-              expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === id).length, label).toBe(0);
-            }
-            // the same audit, again from the ledger: every substep's realized positive power, each player apart (a
-            // tracked player's substeps over it are its impact substeps, as many as the audit counts)
-            const bySubstep = new Map<string, number>();
-            for (const e of s.fall!.ledger) bySubstep.set(`${e.owner}@${e.step}`, (bySubstep.get(`${e.owner}@${e.step}`) ?? 0) + Math.max(0, e.realizedW));
-            const over = new Map<string, number>();
-            for (const [k, w] of bySubstep) {
-              const owner = k.split('@')[0];
-              if (impactOver.has(owner) && w > P.maxPositiveW * (1 + P.toleranceFraction)) over.set(owner, (over.get(owner) ?? 0) + 1);
-              else expect(w, `${d.id} ${k}`).toBeLessThanOrEqual(P.maxPositiveW * (1 + P.toleranceFraction));
-            }
-            for (const [id, n] of impactOver) expect(over.get(id) ?? 0, `${d.id} ${id} ledger`).toBe(n);
-          }
+          for (const d of withResponse()) powerAudit(d, await sim(d.id));
+        },
+      ],
+      [
+        // ladder 10e: IMPACT_OVER_POWER's live exception (L4-F3-run-on D, L4-F9-free D) is retired: since the leg-guard
+        // flip no registered run shows it (the one instance left, L4-F9-low reversed R, is not a registered forward run;
+        // its capture test is in tests/fall-defects.test.ts). The fault twin puts back what the exception set aside: the
+        // landing of L4-F3-run-on D under the leg guard before the flip, one substep over the power cap, an impact
+        'fault twin: the audit fails on an impact through the legs over the power cap (L4-F3-run-on D under LEG_GUARD_V1, the IMPACT_OVER_POWER landing)',
+        async () => {
+          const d = FIX('L4-F3-run-on');
+          const s = await simV1(d.id);
+          expect(() => powerAudit(d, s)).toThrow(/^L4-F3-run-on D: expected 1 to be \+?0/);
+          expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === 'D').map((e) => e.data.impact)).toEqual([true]);
+          // the registered run (the leg guard as registered) passes the same audit
+          powerAudit(d, await sim(d.id));
         },
       ],
       [

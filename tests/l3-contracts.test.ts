@@ -641,6 +641,14 @@ describe('plan 13e faults put back', () => {
     expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');
   }, 60000);
 
+  it('the hold check counts every plant after 3.5 s: the registered holds pass it, and under the leg guard before the flip (V1) their clearance re-plants fail it (L3-F6-hold, L3-F6-holdMirror: HOLD_CLEARANCE_REPLANT, its exception retired at ladder 10e)', async () => {
+    // the fault twin of the retired exception: the cycle it set aside, put back by the leg guard it was found under
+    for (const id of ['L3-F6-hold', 'L3-F6-holdMirror']) {
+      expect(await failsOf(HOLD_SETTLES, FIX(id), {}), id).toEqual([]);
+      expect((await failsOf(HOLD_SETTLES, preV3(FIX(id)), {})).join(' '), id).toMatch(new RegExp(`^${id}: expected [2-9] to be less than or equal to 1`));
+    }
+  }, 120000);
+
   it('a foot held off its home by another body re-steps toward it in a stationary hold, and steps home once that body moves off (constructed hold)', async () => {
     // the 13e fix keeps the home the held-off step could not reach (FootState.blockedW): the planted foot takes no step or
     // settle step toward it while the home and the body that held it stay put, and lets it go when either moves more than
@@ -790,10 +798,10 @@ describe('ladder tracked defects (rule 7)', () => {
   // prerequisites-ladder.md, open defects). Each test resumes from a full-state capture of the fixture shortly before the
   // defect (tests/state.ts, tests/data/state; how to capture and when to regenerate: tests/README.md), so a later rung
   // that moves the fixture's trajectory before that point does not move the test, and a twin can resume the same state
-  // with a change off. Each fails once the defect is gone from that state, when the check that sets it aside on the live
-  // fixtures (tests/l3-pass.ts HOLD_CLEARANCE_REPLANT) is to lose the exception. LEG_IN_RAGDOLL (ladder 9g): no live run
-  // shows it since the 8m flip and its exception is retired; its captures' tests stay as the pre-flip record of the
-  // rejection and the twin, without the fix, of rung 6's physical legs converting the same states (below).
+  // with a change off. Each fails once the defect is gone from that state. Both are resolved and no live check sets
+  // either aside: LEG_IN_RAGDOLL since the 8m flip (exception retired at 9g), HOLD_CLEARANCE_REPLANT since the 10d
+  // leg-guard flip (retired at 10e). Their captures' tests stay as the pre-flip record of each defect and the twin,
+  // without the fix, of rungs 6 and 7 resolving the same states (below).
   // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile they ran under)
   const resumed = async (capture: string, opts: SimOptions = {}) =>
     runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preV3(preFlip(FIX(capture.split('@')[0]))), opts }));
@@ -874,8 +882,7 @@ describe('ladder tracked defects (rule 7)', () => {
     await rows(['L3-F6-hold@216', 'L3-F6-holdMirror@210'], (c) => c, async (c) => {
       const id = c.split('@')[0];
       const sim = await resumed(c);
-      const all = (pid: string) => sim.events.filter((e) => e.type === 'footPlant' && e.playerId === pid && e.t > 3.5).length;
-      const tracked = ['R', 'D'].map((pid) => all(pid) - HOLD_CLEARANCE_REPLANT.plants(sim, id, pid, 3.5).length);
+      const tracked = ['R', 'D'].map((pid) => HOLD_CLEARANCE_REPLANT.replants(sim, pid, 3.5).length);
       const releases = sim.events.filter((e) => e.type === 'footRelease' && e.t > 3.5 && (e.data as { reason?: string }).reason === 'clearance');
       const still = sim.players.every((p) => p.controlMode === 'supported');
       sim.dispose();
@@ -933,7 +940,7 @@ describe('ladder tracked defects (rule 7)', () => {
       const ev = sim.events.filter((e) => e.t > 3.5);
       const releases = ev.filter((e) => e.type === 'footRelease' && (e.data as { reason?: string }).reason === 'clearance').length;
       const plants = ev.filter((e) => e.type === 'footPlant').length;
-      const tracked = ['R', 'D'].map((pid) => sim.events.filter((e) => e.type === 'footPlant' && e.playerId === pid && e.t > 3.5).length - HOLD_CLEARANCE_REPLANT.plants(sim, id, pid, 3.5).length);
+      const tracked = ['R', 'D'].map((pid) => HOLD_CLEARANCE_REPLANT.replants(sim, pid, 3.5).length);
       const still = sim.players.every((p) => p.controlMode === 'supported');
       const dt = sim.physics.dt;
       sim.dispose();

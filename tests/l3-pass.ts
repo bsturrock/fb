@@ -1467,17 +1467,17 @@ export const LEG_IN_RAGDOLL = {
 };
 export const HOLD_CLEARANCE_REPLANT = {
   // a held player's planted foot released by its clearance solve (the plant drifts over the tolerance on a clearance
-  // variant) and planted again, repeatedly, in a stationary hold
-  fixtures: ['L3-F6-hold', 'L3-F6-holdMirror'],
-  /** The plants of `id` after `fromS`; on a listed fixture without those that follow the same foot's clearance release. */
-  plants: (sim: Simulation, defId: string, id: string, fromS: number) => {
+  // variant) and planted again, repeatedly, in a stationary hold. Resolved by rung 7's planted pose under V2/V3,
+  // registered since the ladder 10d leg-guard flip; no live fixture is set aside for it since 10e, and the predicate
+  // reads the pre-flip captures (l3-contracts).
+  /** The plants of `id` after `fromS` that follow the same foot's clearance release: the defect's re-plants. */
+  replants: (sim: Simulation, id: string, fromS: number) => {
     const ev = sim.events.filter((e) => e.playerId === id);
     const side = (e: { data?: Record<string, unknown> }) => (e.data as { side?: string } | undefined)?.side;
     return ev.filter((e) => {
       if (e.type !== 'footPlant' || e.t <= fromS) return false;
-      if (!HOLD_CLEARANCE_REPLANT.fixtures.includes(defId)) return true;
       const rel = ev.filter((r) => r.type === 'footRelease' && side(r) === side(e) && r.t < e.t).pop();
-      return (rel?.data as { reason?: string } | undefined)?.reason !== 'clearance';
+      return (rel?.data as { reason?: string } | undefined)?.reason === 'clearance';
     });
   },
 };
@@ -1488,9 +1488,9 @@ export const HOLD_SETTLES = check({
   watch: (d) => ({
     finish(sim) {
       expect(sim.players.every((p) => p.representation !== 'ragdoll' && p.controlMode === 'supported'), d.id).toBe(true);
-      // (ladder rule 7, tracked defect HOLD_CLEARANCE_REPLANT: on a listed fixture a plant after its foot's clearance
-      // release is the defect, pinned by its own test; a re-step for any other reason still counts)
-      for (const id of ['R', 'D']) expect(HOLD_CLEARANCE_REPLANT.plants(sim, d.id, id, 3.5).length, d.id).toBeLessThanOrEqual(1);
+      // every plant after 3.5 s counts (ladder 10e: HOLD_CLEARANCE_REPLANT's exception, a plant after its foot's
+      // clearance release on L3-F6-hold and -holdMirror, is retired; no registered run shows it since the leg-guard flip)
+      for (const id of ['R', 'D']) expect(sim.events.filter((e) => e.type === 'footPlant' && e.playerId === id && e.t > 3.5).length, d.id).toBeLessThanOrEqual(1);
       // plan 13e known limit (user ruling, bounded): with the supplied walk clips D's start ramp takes its run-in to 1.51 m/s, over the
       // 1.5 m/s prep threshold (1.46 m/s without clips), so both enter prep at 0.31 s; the arrival brake takes the closing
       // speed back under it and prep unwinds 37 ms before the wrap is retained. Held here: one prep, a free gap under 50 ms

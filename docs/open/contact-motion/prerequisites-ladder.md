@@ -718,6 +718,13 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   twin (the leg guard stays V3); every L3/L4/HC fixture's before-views run as the earlier registrations
   (`r10d-v3-flip/lab-views.txt`: `legs=v1` as 10b, `legs=v1&selfleg=off` as 9b, with `hips=off&pgs=0&knees=off&retry=off`
   too as 8k, 195/195 each).
+- **10e** (`r10e-exceptions`) landed: byte-identical (every summary, trace and matrix), 349/349; tests only. The two
+  live exceptions that set nothing aside since 10d are retired, each with a fault twin that puts back what it excluded.
+  `IMPACT_OVER_POWER` (falls.test, L4-F3-run-on D and L4-F9-free D): the power audit is one function (`powerAudit`) with
+  no exception; on L4-F3-run-on under LEG_GUARD_V1 it fails at D's landing (one substep over the cap, an impact), and
+  the registered run passes it. `HOLD_CLEARANCE_REPLANT` (l3-pass, L3-F6-hold and -holdMirror): the hold check counts
+  every plant after 3.5 s; under V1 the clearance re-plants fail it (2 and 3, l3-contracts), the registered holds pass;
+  the predicate (`replants`) reads the pre-flip captures only.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -740,14 +747,14 @@ order, not hunk-split.
 To be reproduced on the first rung where they appear, then handled under rule 7:
 
 - Found at 9c, registered with the own-leg flip at 9d (capture tests in tests/fall-defects.test.ts), each reached by a
-  moved trajectory, the same from the state just before with own-leg contact off. `IMPACT_OVER_POWER` (open; exception
-  by fixture, player and mechanism in tests/falls.test.ts): L4-F3-run-on D (and L4-F9-free, the same run) lands at 1.625
+  moved trajectory, the same from the state just before with own-leg contact off. `IMPACT_OVER_POWER` (open; its live
+  exception in tests/falls.test.ts retired at 10e): L4-F3-run-on D (and L4-F9-free, the same run) lands at 1.625
   s with its hip and knee effort acting, one substep over the power cap (183 W; off from 1.60 s 169 W), tagged an
   impact; held off in that substep, nothing is over. The forearm's own-trunk hit is held as the arm's only; 9f's
   `selfTrunkBody` (off) fixes that landing, but registered the run reaches the same hit one substep later, read before
   the solve at 1.62 m/s against 49.8 N s taken (parked). Next: read an own-trunk hit from the pair's penetration or
-  pinning, not only its closing. Under the V3 flip (10c) L4-F3-run-on no longer reaches it; the one instance is
-  L4-F9-low reversed R (161.5 W at 1.0875 s, its right forearm's own-trunk hit; the same under V1 from 0.833 s,
+  pinning, not only its closing. Under the V3 flip (registered at 10d) L4-F3-run-on no longer reaches it; the one
+  instance is L4-F9-low reversed R (161.5 W at 1.0875 s, its right forearm's own-trunk hit; the same under V1 from 0.833 s,
   `selfTrunkBody` fixes it), the flip patch's capture test. `BRACE_EXPIRED_OBSTRUCTED` (resolved at 9e):
   L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the end-of-window
   path did not read the obstruction the core-down path reads. Query peak (resolved at 9g): L3-F1-phase4 reversed, 4036
@@ -791,8 +798,8 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 - A held player's planted foot released by its clearance solve (plant drift just over 1 cm on clearance variant 1) and
   planted again every 0.2-0.6 s in a stationary hold (tracked from rung 3, `HOLD_CLEARANCE_REPLANT`): L3-F6-hold R left
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
-  keeps the cycle (L3-F6-hold 2 plants, holdMirror 3 R plants). Resolved under V2/V3 by rung 7; tracked under V1 until
-  the flip.
+  keeps the cycle (L3-F6-hold 2 plants, holdMirror 3 R plants). Resolved by rung 7 (V2/V3), registered at 10d; the
+  live exception retired at 10e (its captures' tests kept as the pre-flip record).
 - Resolved at 7b: knee-pole exit at a swing start (V3, rung 7): a planted leg held at a knee pole because its primary is in a body the
   legs meet leaves it for clearance alternative 9 in the substep its swing starts (the planted pose applies to plants
   only): the shown shoe moves 2.04 cm, over the transition audit's 1 cm (L3-F4-gripOwner R left 1.7125 s, right ankle
