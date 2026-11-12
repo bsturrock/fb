@@ -71,9 +71,20 @@ export interface SelfClearanceProfile {
   toleranceM: number;
   /** Ragdoll: each forearm body also collides with massless copies of the trunk pieces on its own core. */
   ragdoll: boolean;
+  /**
+   * Ladder 11d (absent: false): a supported arm's continuity step is pushed out of its own trunk with that share halved
+   * each time it turns against the share before it. The step's target is pushed up to four times; a forearm lying across
+   * the seam between two trunk pieces was pushed fully into the other piece's normal each time, so the side the last
+   * push left it on followed where the step started, and the pushed target is the next step's start: the palm went to
+   * and fro 1.2 to 1.5 cm every substep (L3-F9-convert-contact D's left arm from 0.63 to 0.78 s). Halved, the pushes
+   * settle in the seam. Another body's share is taken in full, as before.
+   */
+  seamSettle?: true;
 }
 
 export const SELF_CLEARANCE_V1: SelfClearanceProfile = { id: 'self-clearance-v1', toleranceM: 0.01, ragdoll: true };
+/** Ladder 11d: V1 with the continuity push settling between own trunk pieces (`seamSettle`). */
+export const SELF_CLEARANCE_V2: SelfClearanceProfile = { ...SELF_CLEARANCE_V1, id: 'self-clearance-seam-v2', seamSettle: true };
 
 const baseCompound: CompoundGeometry = {
   support: { radius: 0.16, halfHeight: 0.65, center: v3(0, -0.14, 0) },

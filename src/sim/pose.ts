@@ -491,6 +491,8 @@ export interface ProxyPoseInput {
   legSweep?: boolean;
   /** Ladder 11c (`LegGuardProfile.ownLegs`, with `legSweep`): a knee-pole placement kept off the other leg. Absent: not read. */
   legOwn?: OwnLegProfile;
+  /** Ladder 11d (`SelfClearanceProfile.seamSettle`): an arm's continuity push settles between own trunk pieces. Absent: false. */
+  selfSeam?: boolean;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
   loco?: {
     profile: LocomotionProfile;
@@ -1121,10 +1123,18 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
             let t = t0;
             const pole = towardDir(pp, pc, al);
             let c = procedural(t, pole)();
+            // ladder 11d (`selfSeam`): the own trunk's share of a move, halved each time it turns against the one before
+            let lastSelf: Vec3 | null = null;
+            let selfGain = 1;
             // pushed toward validity (HARD_OK), also when no candidate is valid (tangled with another body)
             for (let i = 0; i < CONT_PUSH_IT && c.depth > HARD_OK && inp.clearance?.push; i++) {
               const pw = inp.clearance.push(c.shapes);
-              const pv = qInvRot(pose.q, c.selfShapes && inp.clearance.bodyPush ? add(pw, inp.clearance.bodyPush(c.selfShapes)) : pw);
+              const bw = c.selfShapes && inp.clearance.bodyPush ? inp.clearance.bodyPush(c.selfShapes) : null;
+              if (bw && inp.selfSeam) {
+                if (lastSelf && dot(bw, lastSelf) < 0) selfGain *= 0.5;
+                lastSelf = bw;
+              }
+              const pv = qInvRot(pose.q, bw ? (selfGain === 1 ? add(pw, bw) : addScaled(pw, bw, selfGain)) : pw);
               const m = len(pv);
               if (m < 1e-6) break;
               t = add(t0, clampLen(sub(addScaled(t, pv, 1 + 0.001 / m), t0), CONT_PUSH_MAX_M));
