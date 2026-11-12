@@ -766,6 +766,18 @@ export function withoutHipStops(r: RagdollProfile): RagdollProfile {
   const { hipStops, ...rest } = r;
   return { ...rest, id: r.id.replace(`+${hipStops.id}`, '') };
 }
+/** Ladder rung 8h: the ragdoll profile without the knee stop, under the id it had before it (the lab's `knees=off`). */
+export function withoutKneeStop(r: RagdollProfile): RagdollProfile {
+  if (r.kneeFlexionStopDeg === undefined) return r;
+  const { kneeFlexionStopDeg, ...rest } = r;
+  return { ...rest, id: r.id.replace(`+knee${kneeFlexionStopDeg}`, '') };
+}
+/** Ladder rung 8h: the ragdoll profile without additional PGS iterations, under the id it had before them (the lab's `pgs=0`). */
+export function withoutPgsIterations(r: RagdollProfile): RagdollProfile {
+  if (r.additionalPgsIterations === undefined) return r;
+  const { additionalPgsIterations, ...rest } = r;
+  return { ...rest, id: r.id.replace(`+pgs${additionalPgsIterations}`, '') };
+}
 
 export interface PoseGuard {
   id: string;

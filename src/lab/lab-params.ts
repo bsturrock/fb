@@ -1,16 +1,29 @@
 // Ladder: lab URL parameters for watching a run the full check's matrices make (scripts/check/legmx.ts, l4mx.ts):
-//   order=rev        the players created in reverse order (SimOptions.reverseOrder), the matrices' reversed rows;
-//   legs=v1|v2|v3    a fixture with a leg guard run under LEG_GUARD_V1 / V2 / V3 in place of its own (the triage's map);
-//                    a fixture without one is run as it is;
-//   hips=on|off      a ragdoll fixture run with the hard hip stops (HIP_STOPS_V1, ladder rung 8d) or without any, for a
-//                    before / after view; a fixture without a ragdoll profile, or already so, is run as it is.
+//   order=rev          the players created in reverse order (SimOptions.reverseOrder), the matrices' reversed rows;
+//   legs=v1|v2|v3      a fixture with a leg guard run under LEG_GUARD_V1 / V2 / V3 in place of its own (the triage's map);
+//                      a fixture without one is run as it is;
+//   hips=on|v1|off     a ragdoll fixture run with the hip stops as they would flip (`hipStopsFor`: the 8d box with the
+//                      approach zone, ladder rung 8g, or on L4 the backstop outside the soft envelope), the 8d box alone
+//                      (HIP_STOPS_V1, rung 8d), or without any;
+//   pgs=<n>            n additional PGS iterations on the ragdoll's segments (rung 8a; 0: none; up to 16);
+//   knees=off|140|145  the knee flexion stop at 140 or 145 (rung 8f), or none.
+// The ragdoll parameters compose in that order (hips, then pgs, then knees), so `hips=on&pgs=4&knees=140` is the
+// assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
+// run as it is.
 // Lab only: a parameter changes the run on screen and its label, never a registered fixture. No DOM or renderer here, so
 // a test can build the same run headless (tests/lab-params.test.ts).
 import type { FixtureDef } from '../sim/fixture';
-import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, withHipStops, withoutHipStops } from '../sim/profiles';
+import {
+  HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, withAdditionalPgsIterations, withHipStops, withKneeStop,
+  withoutHipStops, withoutKneeStop, withoutPgsIterations, type RagdollProfile,
+} from '../sim/profiles';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
+const HIPS = ['on', 'v1', 'off'];
+const KNEES = ['off', '140', '145'];
+/** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
+const PGS_MAX = 16;
 
 export interface LabRun {
   def: FixtureDef;
@@ -19,7 +32,23 @@ export interface LabRun {
   label: string;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`); unknown values are named in the label and ignored. */
+/**
+ * One ragdoll parameter `key`=`raw`, a value it takes when `valid`: `next` the profile it asks for, named in the label as
+ * `name`, with '(registered)' when the profile is already so.
+ */
+function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean, parts: string[], name: string, next: (r: RagdollProfile) => RagdollProfile): FixtureDef {
+  const r = out.ragdoll;
+  if (!valid) parts.push(`${key}=${raw} ignored`);
+  else if (!r) parts.push(`${key} ${raw} n/a (no ragdoll profile)`);
+  else {
+    const n = next(r);
+    parts.push(n.id === r.id ? `${name} (registered)` : name);
+    if (n.id !== r.id) return { ...out, ragdoll: n };
+  }
+  return out;
+}
+
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -42,14 +71,28 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const hips = params.get('hips');
   if (hips !== null && hips !== '') {
     const h = hips.toLowerCase();
-    const r = out.ragdoll;
-    if (h !== 'on' && h !== 'off') parts.push(`hips=${hips} ignored`);
-    else if (!r) parts.push(`hips ${h} n/a (no ragdoll profile)`);
-    else if ((h === 'on') === !!r.hipStops) parts.push(`hip stops ${h} (registered)`);
-    else {
-      out = { ...out, ragdoll: h === 'on' ? withHipStops(r) : withoutHipStops(r) };
-      parts.push(`hip stops ${h}`);
-    }
+    out = ragdollParam(out, 'hips', hips, HIPS.includes(h), parts, `hip stops ${h}`, (r) => {
+      if (h === 'off') return withoutHipStops(r);
+      const S = h === 'on' ? hipStopsFor(r) : HIP_STOPS_V1;
+      return r.hipStops?.id === S.id ? r : withHipStops(withoutHipStops(r), S);
+    });
+  }
+  const pgs = params.get('pgs');
+  if (pgs !== null && pgs !== '') {
+    const n = /^\d+$/.test(pgs) ? Number(pgs) : NaN;
+    out = ragdollParam(out, 'pgs', pgs, n >= 0 && n <= PGS_MAX, parts, `pgs +${n}`, (r) => {
+      if ((r.additionalPgsIterations ?? 0) === n) return r;
+      const base = withoutPgsIterations(r);
+      return n === 0 ? base : withAdditionalPgsIterations(base, n);
+    });
+  }
+  const knees = params.get('knees');
+  if (knees !== null && knees !== '') {
+    const k = knees.toLowerCase();
+    out = ragdollParam(out, 'knees', knees, KNEES.includes(k), parts, `knee stop ${k}`, (r) => {
+      if (k === 'off') return withoutKneeStop(r);
+      return r.kneeFlexionStopDeg === Number(k) ? r : withKneeStop(withoutKneeStop(r), Number(k));
+    });
   }
   return { def: out, opts, label: parts.join(' · ') };
 }

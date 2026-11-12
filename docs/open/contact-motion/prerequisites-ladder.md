@@ -263,7 +263,7 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   on a Rapier change), about an anatomical frame per side from the calibrated rest thigh. A conversion outside the box
   starts against a stop widened to the start, closing with the joint (a ratchet, never reopening; cap 172); a
   fall-response hip target is held 3 deg inside. Lab `hips=on|off` (28a808a, `r8e-lab-hips`, byte-identical,
-  311/311): e.g. `?fixture=L3-F9-convert-free&legs=v3&hips=on&cam=side&speed=0.25&t=0.40`.
+  311/311; the 8d box is `hips=v1` since 8h): e.g. `?fixture=L3-F9-convert-free&legs=v3&hips=v1&cam=side&speed=0.25&t=0.40`.
 - **8e** (hip stops on L3/L4/HC): **not flipped** (assessment `.scratch/ladder/assess-8d/`, README there). Every L3/L4/HC
   ragdoll under the stops: impossible ragdoll time 258.7 -> 7.3 player-s (L3 157.9 -> 3.2, HC 99.9 -> 2.6, L4 0.9 ->
   1.5), implausible or worse 581 -> 191; none of the screenshot poses occurs. Blocked by: (1) passive energy: a thigh
@@ -306,6 +306,10 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   The rebound twin from `L4-F2-side-off~hipsv2@12` (0.200 s): stops alone 4 injecting solves, 10.7 J (solve 71
   +4.19 J with no contact, the hip on adduction 30 after losing 6.5 and 7.7 J); with the zone none over 0.5 J (largest
   0.001 J), the hip 8.2 deg short of the stop.
+- **8h** (`r8h-lab-params`) landed: byte-identical, 325/325; lab only. `hips=on|v1|off` (on is now `hipStopsFor`, the
+  stops as they would flip; v1 the 8d box alone), `pgs=<n>` (0-16, 0 none) and `knees=off|140|145`, composed in that
+  order and named in the label: `?fixture=L3-F9-convert-free&hips=on&pgs=4&knees=140` is the 8i variant to the profile
+  id (tests/lab-params.test.ts).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
