@@ -791,7 +791,9 @@ describe('ladder tracked defects (rule 7)', () => {
   // defect (tests/state.ts, tests/data/state; how to capture and when to regenerate: tests/README.md), so a later rung
   // that moves the fixture's trajectory before that point does not move the test, and a twin can resume the same state
   // with a change off. Each fails once the defect is gone from that state, when the check that sets it aside on the live
-  // fixtures (tests/l3-pass.ts LEG_IN_RAGDOLL, HOLD_CLEARANCE_REPLANT) is to lose the exception.
+  // fixtures (tests/l3-pass.ts HOLD_CLEARANCE_REPLANT) is to lose the exception. LEG_IN_RAGDOLL (ladder 9g): no live run
+  // shows it since the 8m flip and its exception is retired; its captures' tests stay as the pre-flip record of the
+  // rejection and the twin, without the fix, of rung 6's physical legs converting the same states (below).
   // (captured before the visible flip: resumed under the profile they ran under)
   const resumed = async (capture: string, opts: SimOptions = {}) =>
     runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preFlip(FIX(capture.split('@')[0])), opts }));

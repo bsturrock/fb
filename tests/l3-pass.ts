@@ -1444,9 +1444,8 @@ export const KEEP_STEPPING = check({
       // a step lands or starts after the contact entry (L3-F4-twoArm: D's steps start in contact, and under plan 11's arm
       // self-clearance D falls 8 ms before the plant that used to land in exit mode)
       expect(sim.events.some((e) => (e.type === 'footPlant' || (e.type === 'footSwing' && e.data?.source === 'step')) && e.t > entry.t), d.id).toBe(true);
-      // (ladder rule 7, tracked defect LEG_IN_RAGDOLL: a rejection of that kind on a listed fixture is the defect, pinned by
-      // its own test in l3-contracts, not a stepping failure; any other rejection fails here)
-      const rejected = sim.events.filter((e) => e.type === 'handoffRejected' && !(LEG_IN_RAGDOLL.fixtures.includes(d.id) && LEG_IN_RAGDOLL.is(e.data)));
+      // (ladder 9g: no rejection at all; LEG_IN_RAGDOLL's exception, empty since the 8m flip, is retired)
+      const rejected = sim.events.filter((e) => e.type === 'handoffRejected');
       expect(rejected.length, d.id).toBe(0);
     },
   }),
@@ -1458,8 +1457,9 @@ export const KEEP_STEPPING = check({
  * and set aside only where a listed fixture shows exactly that mechanism.
  */
 export const LEG_IN_RAGDOLL = {
-  // a posed leg held inside another player's ragdoll for many substeps, the defender's conversion then rejected for it
-  fixtures: ['L3-F4-oneArm'],
+  // a posed leg held inside another player's ragdoll for many substeps, the defender's conversion then rejected for it.
+  // Resolved by the 8j deferred conversion and the 8l visible flip; no live fixture is set aside for it since 9g, and
+  // the predicate reads the pre-flip captures (l3-contracts).
   is: (data: Record<string, unknown> | undefined): boolean => {
     const w = data?.worstExternal as { own?: string; other?: string } | undefined;
     return data?.reasons === 'externalPenetration' && /^(left|right)(Thigh|Shin):/.test(w?.own ?? '') && /^R:core:/.test(w?.other ?? '');
