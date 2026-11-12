@@ -1054,6 +1054,23 @@ export interface LegGuardProfile {
    * puts it, and where it stands stopped (absent: unchanged).
    */
   physicalLegs?: true;
+  /** Ladder 11c (with `sweep`; absent: a knee-pole placement does not read the other leg). */
+  ownLegs?: OwnLegProfile;
+}
+
+/**
+ * Ladder 11c: the supported legs' knee-pole placements and the other leg. Rung 7's planted pose (and rung 5's other
+ * placements) take the primary placement at another knee pole when the primary gives up; the first of those poles turns
+ * the knee in, so a held runner's planted leg crossed its other thigh (L3-F6-hold R's left knee pole from 3.90 s: the
+ * distal thighs' axes 22.7 -> 13.5 cm apart, to 5.0 s). A knee-pole placement whose bone axes (the distal half thigh,
+ * the shin, ankle to shoe: radii `thighRadiusM`, `shinRadiusM`, `footRadiusM`, the visible meter's slim radii) come
+ * nearer the other leg's (as last shown) than the radii's sum, and nearer than the primary placement brings them, is not
+ * taken. Engineering settings, not measured ranges.
+ */
+export interface OwnLegProfile {
+  thighRadiusM: number;
+  shinRadiusM: number;
+  footRadiusM: number;
 }
 
 /** Plan 13f's predictive guard: registered on every L3, L4 and HC fixture until the ladder 10 flip (now the lab's `legs=v1`). */
@@ -1065,6 +1082,9 @@ export const LEG_GUARD_V2: LegGuardProfile = { ...LEG_GUARD_V1, id: 'leg-guard-s
  * with a leg guard since the ladder 10 flip (fixtures/index.ts `legFlip`).
  */
 export const LEG_GUARD_V3: LegGuardProfile = { ...LEG_GUARD_V2, id: 'leg-guard-physical-v3', physicalLegs: true };
+
+/** Ladder 11c: V3 with the knee-pole placements kept off the other leg (`ownLegs`). */
+export const LEG_GUARD_V4: LegGuardProfile = { ...LEG_GUARD_V3, id: 'leg-guard-own-v4', ownLegs: { thighRadiusM: 0.075, shinRadiusM: 0.05, footRadiusM: 0.04 } };
 
 /**
  * Plan 12: the ragdoll under a joint-range profile. The envelope's shoulder is the profile's (an L4 envelope keeps its

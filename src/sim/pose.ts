@@ -9,7 +9,8 @@ import type { ArmSide, SegmentId } from './contracts';
 import { CARRY_ARM, carryRequest, seatBallCapsule, seatBallLocal, seatBallWorld, seatOn, seatPalmLocal, stepHandW, type CarryProfile, type CarrySeat } from './carry';
 import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type IdleSample, type LocomotionProfile } from './locomotion';
-import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangeProfile, type RagdollProfile } from './profiles';
+import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangeProfile, type OwnLegProfile, type RagdollProfile } from './profiles';
+import { segmentDistanceSq } from './physics';
 import { armTwistRad, behindDeg, clampDirToEnvelope, fitElbowTwist, fitThighTwist, turnForearmTwist, twistWindow } from './joint-cone';
 import type { PoseDebug, PoseProbe } from './debug';
 import {
@@ -488,6 +489,8 @@ export interface ProxyPoseInput {
    * judged against the physical bodies, may take another placement, and is swept from the shown pose. Absent: false.
    */
   legSweep?: boolean;
+  /** Ladder 11c (`LegGuardProfile.ownLegs`, with `legSweep`): a knee-pole placement kept off the other leg. Absent: not read. */
+  legOwn?: OwnLegProfile;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
   loco?: {
     profile: LocomotionProfile;
@@ -671,6 +674,21 @@ const CONT_PLANT_EXACT_M = 0.05;
 const CLEAR_OK = 0.004;
 /** Physical depth a candidate may have and still count as valid for the handoff (margin under 0.015 m). */
 export const HARD_OK = 0.012;
+
+/** Ladder 11c: a leg's bone axes (the distal half thigh, the shin, ankle to shoe) with their slim radii. */
+function legAxes(P: OwnLegProfile, hip: Vec3, knee: Vec3, ankle: Vec3, shoe: Vec3): [Vec3, Vec3, number][] {
+  return [
+    [addScaled(hip, sub(knee, hip), 0.5), knee, P.thighRadiusM],
+    [knee, ankle, P.shinRadiusM],
+    [ankle, shoe, P.footRadiusM],
+  ];
+}
+/** Ladder 11c: how far (m) two legs' bone axes come inside their radii's sum, the largest over the axis pairs (negative: apart). */
+function ownLegNear(a: [Vec3, Vec3, number][], b: [Vec3, Vec3, number][]): number {
+  let m = -Infinity;
+  for (const [p, q, r] of a) for (const [u, w, t] of b) m = Math.max(m, r + t - Math.sqrt(segmentDistanceSq(p, q, u, w)));
+  return m;
+}
 
 /**
  * Choose a limb variant (sticky: the previous choice is tried first). Physical depth (`depth`) ranks first: a variant
@@ -1387,6 +1405,14 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     // rung 7: the primary placement with its knee where its pole puts it
     const primaryOwn = once(variant(v3(), alts[0].pole, false, true));
     const candAt = (i: number): (() => LegC) => (i < alts.length ? cands[i] : poleCands[i - alts.length]);
+    // ladder 11c (`legOwn`): the other leg as last shown, this pose's for the right leg (solved after the left), the
+    // previous pose's for the left; a knee-pole placement crossing it (`ownCross`) is not taken
+    const OL = sweep ? inp.legOwn : undefined;
+    const ol = s === 'left' ? 'right' : 'left';
+    const otherL = !OL ? null : s === 'right' ? { k: lm.leftKnee, a: lm.leftAnkle, f: lm.leftShoe } : ((kk, aa, ff) => (kk && aa && ff ? { k: W(kk), a: W(aa), f: W(ff) } : null))(memVec(mem, `${ol}Leg:e`), memVec(mem, `${ol}Leg:an`), memVec(mem, `${ol}Leg:sf`));
+    const otherAx = OL && otherL ? legAxes(OL, W(hipLocal(body, ol)), otherL.k, otherL.a, otherL.f) : null;
+    const ownNear = (x: LegC): number => (otherAx ? ownLegNear(legAxes(OL!, hip, x.knee, x.ankle, (x.shapes[2] as Extract<PoseShape, { kind: 'box' }>).c), otherAx) : -Infinity);
+    const ownCross = (x: LegC): boolean => !!otherAx && ownNear(x) > Math.max(0, ownNear(cands[0]())) + 1e-4;
     const prevV = rebased ? 0 : mem[k];
     // footwork's plant test on a shown leg (observeFoot): its contact feature on the anchor across the ground and the
     // shoe's lowest corner on the ground, together within the plant tolerance
@@ -1561,7 +1587,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
               if (!bad(l)) break;
               if (j === r.index) continue;
               const cj = candAt(j)();
-              if (!cj.req || !cj.pole || cj.depth > HARD_OK || bad(cj)) continue;
+              if (!cj.req || !cj.pole || cj.depth > HARD_OK || bad(cj) || (j >= alts.length && ownCross(cj))) continue;
               const dcj = sub(Lw(cj.req), base);
               const pcj = qInvRot(pose.q, cj.pole);
               // a knee-pole placement of a continuing plant keeps its sole point on the anchor, as the primary does
@@ -1636,7 +1662,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const metHit = physMet && kneePoles.length > 0 && fr?.kind === 'plant' && metL(cands[0]().shapes) > PHYS_LEG_OK;
     const onPole = prevV !== undefined && prevV >= alts.length;
     if (kneePoles.length && fr?.kind === 'plant' && !rebased && !inp.debug?.noPlantedPole && (ordinaryR.index !== 0 || metHit || onPole) && (prevV === undefined || prevV === 0 || onPole)) {
-      const keep = [cands[0], ...poleCands];
+      // ladder 11c: a knee pole crossing the other leg reads as no valid placement (never taken)
+      const keep = [cands[0], ...poleCands.map((f) => (otherAx ? once((): LegC => (ownCross(f()) ? { ...f(), depth: Infinity } : f())) : f))];
       // A knee pole is kept while valid; the primary wins back once it is fully clear (and clear of the met bodies) at its
       // own knee. Every placement is solved with its knee turned from the shown knee by at most the continuity bound, so
       // at a knee pole the primary reads clear long before its knee is back where it is obstructed: judged that way it
@@ -1674,6 +1701,11 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       setMemVec(mem, `${s}Leg:e`, qInvRot(pose.q, sub(l.knee, pose.p)));
       setMemVec(mem, `${s}Leg:r`, qInvRot(pose.q, l.held ?? norm(sub(l.ankle, hip))));
       mem[`${s}Leg:reachLimited`] = l.reachLimited ? 1 : 0;
+      // ladder 11c: the shown ankle and shoe, for the other leg's next pose
+      if (inp.legOwn && sweep) {
+        setMemVec(mem, `${s}Leg:an`, qInvRot(pose.q, sub(l.ankle, pose.p)));
+        setMemVec(mem, `${s}Leg:sf`, qInvRot(pose.q, sub((l.shapes[2] as Extract<PoseShape, { kind: 'box' }>).c, pose.p)));
+      }
       // ladder 11b: the shown thigh rotation is the next pose's start
       if (HT) {
         const hr = armTwistRad(HT.envelope, pose.q, hip, l.knee, l.ankle, sx);
