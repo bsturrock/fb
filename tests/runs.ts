@@ -7,7 +7,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { withoutHoldStill } from '../src/sim/footwork';
 import { RAPIER } from '../src/sim/physics';
 import {
-  HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
+  HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
   withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
@@ -57,6 +57,71 @@ export const flip8i = (d: FixtureDef): FixtureDef => {
   const r = unflipped(d.ragdoll);
   return { ...d, ragdoll: withKneeStop(withAdditionalPgsIterations(withHipStops(r, hipStops8i(r)), 4), 140) };
 };
+
+/** Every object reachable from `root` (own data fields, arrays, map and set members), with its first path. */
+export function pathsOf(root: object, skip?: Set<object>): Map<object, string> {
+  const out = new Map<object, string>();
+  const walk = (o: unknown, p: string): void => {
+    if (!o || typeof o !== 'object' || out.has(o) || skip?.has(o)) return;
+    out.set(o, p);
+    if (o instanceof Map) for (const [k, v] of o) walk(v, `${p}[${String(k)}]`);
+    else if (o instanceof Set) [...o].forEach((v, i) => walk(v, `${p}{${i}}`));
+    else if (!ArrayBuffer.isView(o)) for (const k of Object.keys(o)) walk((o as Record<string, unknown>)[k], `${p}.${k}`);
+  };
+  walk(root, '');
+  return out;
+}
+
+/** Every profile id in a definition, by path (`ragdoll`, `legGuard`, `footwork.holdStill`, ...), and the fixture's at `.`. */
+export function profileIds(def: FixtureDef): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [o, p] of pathsOf(def)) {
+    const id = (o as { id?: unknown }).id;
+    if (typeof id === 'string' && p !== '') out[p.slice(1)] = id;
+  }
+  out['.'] = def.id;
+  return out;
+}
+
+/**
+ * The definition as `Simulation.create` builds it, whose profile ids a state capture records (plan 12: under a
+ * joint-range profile the ragdoll's shoulder envelope is the profile's). Kept equal to `create` by every capture test:
+ * `asCaptured` finds nothing, or the resume refuses, if the two part.
+ */
+const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ...d, ragdoll: withJointRange(d.ragdoll, d.jointRange) } : d);
+
+/**
+ * The flips registered on L3, L4 and HC since the first state capture, the latest first: each gives a definition as
+ * before its flip (14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip adds its `pre*`
+ * helper at the head, and every capture taken before it then resumes under the definition it ran under (`asCaptured`).
+ */
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preHoldStill, preV3, preOwnLegs, preFlip];
+
+/**
+ * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before
+ * each flip in turn (BEFORE_FLIPS applied one after another), the first whose profile ids, as built, are the capture's.
+ * `as` maps each one to the variant a capture was taken under (scripts/capture-state.ts `--v3`, `--flip8i`, `--hips`,
+ * `--joints`): the definition returned is `as` of it. `variant`: paths the test resumes as a variant of the capture
+ * (resumeState's `variant`), not compared; no flip in the chain may change one, so the chain cannot stop early on it.
+ * Throws when no definition matches.
+ */
+export function asCaptured(cap: { fixture: string; tick: number; profiles: Record<string, string> }, as: (d: FixtureDef) => FixtureDef = (d) => d, variant: string[] = []): FixtureDef {
+  const skip = (p: string): boolean => variant.some((v) => p === v || p.startsWith(`${v}.`));
+  const mismatch = (ids: Record<string, string>): string[] =>
+    [...new Set([...Object.keys(ids), ...Object.keys(cap.profiles)])].filter((p) => !skip(p) && ids[p] !== cap.profiles[p]).map((p) => `${p} ${ids[p] ?? 'absent'}`);
+  const chain = [FIX(cap.fixture)];
+  for (const f of BEFORE_FLIPS) chain.push(f(chain[chain.length - 1]));
+  const defs = chain.map(as);
+  const ids = defs.map((v) => profileIds(asBuilt(v)));
+  for (const p of new Set(ids.flatMap((x) => Object.keys(x)))) if (skip(p) && ids.some((x) => x[p] !== ids[0][p])) throw new Error(`asCaptured(${cap.fixture}@${cap.tick}): the flip chain changes ${p}, which the test resumes as a variant`);
+  const tried: string[] = [];
+  for (let i = 0; i < defs.length; i++) {
+    const off = mismatch(ids[i]);
+    if (!off.length) return defs[i];
+    tried.push(off.join(', '));
+  }
+  throw new Error(`asCaptured(${cap.fixture}@${cap.tick}): no definition in the flip chain ran the capture's profiles (differing, from the registered on: ${tried.map((t) => `[${t}]`).join(' ')})`);
+}
 
 /** An event with its data read loosely (tests read event-specific fields). */
 export type TestEvent = Omit<SimEvent, 'data'> & { data: any };

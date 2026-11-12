@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { breathe, FIX, preFlip, preHoldStill, preV3, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preFlip, preHoldStill, preV3, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -908,9 +908,11 @@ describe('ladder tracked defects (rule 7)', () => {
   // either aside: LEG_IN_RAGDOLL since the 8m flip (exception retired at 9g), HOLD_CLEARANCE_REPLANT since the 10d
   // leg-guard flip (retired at 10e). Their captures' tests stay as the pre-flip record of each defect and the twin,
   // without the fix, of rungs 6 and 7 resolving the same states (below).
-  // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile they ran under)
-  const resumed = async (capture: string, opts: SimOptions = {}) =>
-    runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preHoldStill(preV3(preFlip(FIX(capture.split('@')[0])))), opts }));
+  // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the definition they ran under)
+  const resumed = async (capture: string, opts: SimOptions = {}) => {
+    const cap = loadState(`tests/data/state/${capture}.json.gz`);
+    return runSim(await resumeState(cap, { def: asCaptured(cap), opts }));
+  };
   it('a posed leg held inside the runner\'s ragdoll, the defender\'s conversion rejected for it (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off)', async () => {
     // captured with R a ragdoll and D supported beside it, 2 ticks before D's posed legs pass the conversion tolerance
     // (12 substeps from 1.200 s on the L3 fixtures, 8 from 1.271 s on L4-F10-wrap-off at rung 4b), D converting at 1.30 s
@@ -949,12 +951,13 @@ describe('ladder tracked defects (rule 7)', () => {
     // accepted. Measured (rung 6): no substep past the tolerance at all, 1.20 / 1.20 / 1.02 cm at most.
     await rows(['L3-F4-oneArm@70', 'L3-F1-phase2@70', 'L4-F10-wrap-off@74'], (c) => c, async (c) => {
       const id = c.split('@')[0];
-      const def = { ...preHoldStill(preFlip(FIX(id))), legGuard: LEG_GUARD_V3 };
+      const cap = loadState(`tests/data/state/${c}.json.gz`);
+      const def = { ...asCaptured(cap), legGuard: LEG_GUARD_V3 };
       const tol = def.ragdoll!.validation.penetrationTolM;
       let run0 = 0;
       let longest = 0;
       const sim = await runSim(
-        await resumeState(loadState(`tests/data/state/${c}.json.gz`), {
+        await resumeState(cap, {
           def,
           variant: ['legGuard'],
           opts: {
@@ -1010,14 +1013,15 @@ describe('ladder tracked defects (rule 7)', () => {
     const caps = ['L3-F6-hold@216', 'L3-F6-holdMirror@210'];
     await rows(caps.flatMap((c) => (['V2', 'V3'] as const).flatMap((g) => [false, true].map((fault) => ({ c, g, fault })))), (x) => `${x.c} ${x.g}${x.fault ? ' noPlantedPole' : ''}`, async ({ c, g, fault }) => {
       const id = c.split('@')[0];
-      const def = { ...preHoldStill(preFlip(FIX(id))), legGuard: g === 'V2' ? LEG_GUARD_V2 : LEG_GUARD_V3 };
+      const cap = loadState(`tests/data/state/${c}.json.gz`);
+      const def = { ...asCaptured(cap), legGuard: g === 'V2' ? LEG_GUARD_V2 : LEG_GUARD_V3 };
       // per planted leg and substep: at a knee pole (pose memory index >= 10), the shown pole's turn (body frame), the plant's feature error
       let atPole = 0;
       let maxTurn = 0;
       let maxErr = 0;
       const last = new Map<string, Vec3>();
       const sim = await runSim(
-        await resumeState(loadState(`tests/data/state/${c}.json.gz`), {
+        await resumeState(cap, {
           def,
           variant: ['legGuard'],
           ...(fault ? { faults: { pose: { noPlantedPole: true } } } : {}),

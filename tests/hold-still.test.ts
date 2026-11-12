@@ -4,7 +4,7 @@ import { FOOTWORK_L3, HOLD_STILL_V1, holdStillAt, initFeet, newFootPlan, observe
 import type { FootRequest, PhysicalPose } from '../src/sim/pose';
 import type { Simulation } from '../src/sim/simulation';
 import { add, qFromAxisAngle, v3, type Vec3 } from '../src/sim/vec';
-import { FIX, preHoldStill } from './runs';
+import { asCaptured, FIX } from './runs';
 import { loadState, resumeState } from './state';
 
 // Ladder 13b: a stationary hold keeps its feet planted (FootworkProfile.holdStill, HOLD_STILL_V1). The rule, as the
@@ -144,7 +144,7 @@ describe('ladder 13b: a stationary hold keeps its feet planted (HOLD_STILL_V1)',
 
   it('L3-F6-hold from 2.10 s: before the flip (the fault twin) the defender steps in the stationary hold at 2.15 s, its step held off its home sweeps the runner\'s planted left leg off at 3.18 s and that foot plants by the midline at 3.70 s; with the still feet neither player steps home, settles or turns in the hold to the end and the defender\'s left foot keeps its plant', async () => {
     const cap = loadState('tests/data/state/L3-F6-hold@126.json.gz');
-    const d = preHoldStill(FIX('L3-F6-hold'));
+    const d = asCaptured(cap);
     const off = await resumeState(cap, { def: d });
     const before = await feet(off);
     off.dispose();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { LEG_GUARD_V3, withAdditionalPgsIterations } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
-import { create, FIX, preFlip, preHoldStill, preV3, stepWhile } from './helpers';
+import { asCaptured, create, FIX, preFlip, stepWhile } from './helpers';
 import { INJECTION_J, passiveEnergyMeter, type SolveEnergy } from './passive-energy';
 import { loadState, resumeState } from './state';
 
@@ -16,10 +16,10 @@ import { loadState, resumeState } from './state';
 // - the brace rebound (tracked defect, not fixed here): L4-F9-contact as registered, captured at the end of tick 61
 //   (1.017 s). R's left palm lands on the floor; the impact's two solves take 135 and 244 J out (249, 250) and the next
 //   (251, 1.046 s) gives 73 J back with only that palm on the floor. One more PGS iteration and the same solve loses.
-const ID = 'L4-F9-contact';
 
-async function solve(capture: string, def: FixtureDef, at: number, iterations: number): Promise<SolveEnergy[]> {
-  const sim = await resumeState(loadState(capture), { def });
+async function solve(capture: string, as: (d: FixtureDef) => FixtureDef, at: number, iterations: number): Promise<SolveEnergy[]> {
+  const cap = loadState(capture);
+  const sim = await resumeState(cap, { def: asCaptured(cap, as) });
   const R = sim.players.find((p) => p.id === 'R')!;
   for (const s of SEGMENTS) R.rag!.bodies[s].setAdditionalPgsIterations(iterations);
   const got: SolveEnergy[] = [];
@@ -32,9 +32,9 @@ async function solve(capture: string, def: FixtureDef, at: number, iterations: n
   expect(got.map((e) => e.step)).toEqual([at - 2, at - 1, at]);
   return got;
 }
-// (both captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile they ran under)
-const pinch = (n: number) => solve('tests/data/state/L4-F9-contact~v3-rev@63.json.gz', { ...preHoldStill(preFlip(FIX(ID))), legGuard: LEG_GUARD_V3 }, 270, n);
-const brace = (n: number) => solve('tests/data/state/L4-F9-contact@61.json.gz', preV3(preHoldStill(preFlip(FIX(ID)))), 251, n);
+// (both captured before the visible flip, the pinch under LEG_GUARD_V3: resumed under the definition they ran under)
+const pinch = (n: number) => solve('tests/data/state/L4-F9-contact~v3-rev@63.json.gz', (d) => ({ ...d, legGuard: LEG_GUARD_V3 }), 270, n);
+const brace = (n: number) => solve('tests/data/state/L4-F9-contact@61.json.gz', (d) => d, 251, n);
 
 describe('ladder rung 8a: additional PGS iterations on ragdoll segments', () => {
   it('a ragdoll built under the field asks them on every segment, and none without it', async () => {

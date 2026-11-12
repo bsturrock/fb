@@ -4,9 +4,11 @@
 // captures are in tests/l3-contracts.test.ts ("ladder tracked defects").
 import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
-import { create, FIX, preFlip, preHoldStill, preV3, runSim } from './helpers';
+import { readdirSync } from 'node:fs';
+import type { FixtureDef } from '../src/sim/fixture';
+import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preFlip, preHoldStill, preV3, runSim } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
-import { ARM_G2, LEG_GUARD_V3 } from '../src/sim/profiles';
+import { ARM_G2, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace });
 const copy = (c: StateCapture): StateCapture => JSON.parse(JSON.stringify(c));
@@ -89,7 +91,7 @@ describe('full-state capture and resume', () => {
   it('a capture written against other profiles, another state layout, format or engine is refused, naming why', async () => {
     const cap = loadState('tests/data/state/L3-F4-oneArm@70.json.gz');
     // (captured before the visible flip, the ladder 10 leg-guard flip and the 14a still feet: resumed under the profiles it ran under)
-    const def = preHoldStill(preV3(preFlip(FIX('L3-F4-oneArm'))));
+    const def = asCaptured(cap);
     const refused = async (c: StateCapture, why: RegExp): Promise<void> => {
       await expect(resumeState(c, { def })).rejects.toThrow(/stale state capture \(L3-F4-oneArm at tick 70\)/);
       await expect(resumeState(c, { def })).rejects.toThrow(why);
@@ -111,7 +113,7 @@ describe('full-state capture and resume', () => {
   it('one capture resumes under a profile variant named by the test (the controlled twin), and only when it is named', async () => {
     const cap = loadState('tests/data/state/L3-F4-oneArm@70.json.gz');
     // (captured before the visible flip, the ladder 10 leg-guard flip and the 14a still feet: resumed under the profiles it ran under)
-    const def = preHoldStill(preV3(preFlip(FIX('L3-F4-oneArm'))));
+    const def = asCaptured(cap);
     const noGuard = { ...def, legGuard: undefined };
     await expect(resumeState(cap, { def: noGuard })).rejects.toThrow(/profile at legGuard is absent/);
     const on = await resumeState(cap, { def });
@@ -128,4 +130,54 @@ describe('full-state capture and resume', () => {
     on.dispose();
     off.dispose();
   }, 60000);
+});
+
+// Ladder 16a: the definition a capture ran under, from the capture's own profile ids (tests/runs.ts `asCaptured`): the
+// registered fixture, then the definitions as before each flip (BEFORE_FLIPS) in turn, the first whose ids as built are
+// the capture's. A flip adds one `pre*` helper at the head of the chain; every capture taken before it then resumes under
+// the definition it ran under, with no test re-written by hand.
+describe('asCaptured: a capture\'s definition out of the flip chain', () => {
+  /** How each stored capture was taken (scripts/capture-state.ts flags, read from its file name). */
+  const takenAs = (file: string): { as?: (d: FixtureDef) => FixtureDef; variant?: string[] } => {
+    if (/~flip8i/.test(file)) return { as: flip8i };
+    if (/~hipsv2/.test(file)) return { as: (d) => ({ ...d, ragdoll: withHipStops(d.ragdoll!, HIP_STOPS_V2) }) };
+    if (/~jrv4/.test(file)) return { as: (d) => ({ ...d, jointRange: JOINT_RANGE_V4 }) };
+    // (before the solved impulse reading of rung 7c: tests/carried.test.ts resumes it under the solved reading)
+    if (/^L4-F9-defenderFalling~v3@/.test(file)) return { as: (d) => ({ ...d, legGuard: LEG_GUARD_V3 }), variant: ['solver'] };
+    if (/~v3/.test(file)) return { as: (d) => ({ ...d, legGuard: LEG_GUARD_V3 }) };
+    return {};
+  };
+
+  it('every stored capture resolves; a pre-flip capture comes out as the composed definition the tests built by hand (key order and all), a later one stops at its own flip', () => {
+    const files = readdirSync('tests/data/state').filter((f) => f.endsWith('.json.gz'));
+    expect(files.length).toBeGreaterThanOrEqual(30);
+    for (const f of files) {
+      const t = takenAs(f);
+      expect(() => asCaptured(loadState(`tests/data/state/${f}`), t.as, t.variant), f).not.toThrow();
+    }
+    const S = (f: string): StateCapture => loadState(`tests/data/state/${f}.json.gz`);
+    const same = (a: FixtureDef, b: FixtureDef): boolean => JSON.stringify(a) === JSON.stringify(b);
+    // before the visible flip, own-leg contact, the leg-guard flip and the still feet: all four helpers composed
+    expect(same(asCaptured(S('L3-F4-oneArm@70')), preHoldStill(preV3(preFlip(FIX('L3-F4-oneArm')))))).toBe(true);
+    // a variant taken before the flips
+    expect(same(asCaptured(S('L3-F1-phase4~flip8i-rev@72'), flip8i), flip8i(preV3(preHoldStill(FIX('L3-F1-phase4')))))).toBe(true);
+    expect(same(asCaptured(S('L4-F3-run-on~v3@66'), (d) => ({ ...d, legGuard: LEG_GUARD_V3 })), { ...preHoldStill(preFlip(FIX('L4-F3-run-on'))), legGuard: LEG_GUARD_V3 })).toBe(true);
+    // after the leg-guard flip, before the still feet: the first helper only; after all of them: the registered fixture
+    expect(same(asCaptured(S('L3-F6-hold@126')), preHoldStill(FIX('L3-F6-hold')))).toBe(true);
+    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(FIX('L3-F16-contactStop'));
+    expect(BEFORE_FLIPS[0]).toBe(preHoldStill);
+  });
+
+  it('fault twins: a capture no definition of the chain ran (a flip not added to it) is refused, naming the differing paths; a variant path the chain changes is refused', () => {
+    const cap = loadState('tests/data/state/L3-F4-oneArm@70.json.gz');
+    const other = copy(cap);
+    other.profiles['selfClearance'] = `${other.profiles['selfClearance']}+next-flip`;
+    expect(() => asCaptured(other)).toThrow(/asCaptured\(L3-F4-oneArm@70\): no definition in the flip chain ran the capture's profiles .*selfClearance self-clearance-v1/);
+    // the chain without its last helper cannot reach a capture from before the visible flip
+    const flipless = copy(cap);
+    flipless.profiles['ragdoll.hipStops'] = 'hip-stops-v2';
+    expect(() => asCaptured(flipless)).toThrow(/no definition in the flip chain/);
+    // a variant at `ragdoll` would stop the chain at the first leg-guard match, with the registered ragdoll
+    expect(() => asCaptured(cap, undefined, ['ragdoll'])).toThrow(/the flip chain changes ragdoll, which the test resumes as a variant/);
+  });
 });

@@ -10,7 +10,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { poseProbe } from '../src/sim/debug';
 import { LEG_GUARD_V3, LEG_GUARD_V4, type LegGuardProfile } from '../src/sim/profiles';
 import { addScaled, sub, type Vec3 } from '../src/sim/vec';
-import { FIX, preHoldStill } from './runs';
+import { asCaptured } from './runs';
 import { loadState, resumeState } from './state';
 import { segDist } from './visible';
 
@@ -44,7 +44,7 @@ describe('ladder 11c: knee poles kept off the other leg', () => {
       const trace = (key: string, r: Record<string, unknown>) => {
         if (typeof r.v === 'number') v[key] = r.v;
       };
-      const sim = await resumeState(cap, { def: { ...preHoldStill(FIX('L3-F6-hold')), legGuard }, variant: ['legGuard'], faults: { poseProbe: poseProbe({ trace }) } });
+      const sim = await resumeState(cap, { def: { ...asCaptured(cap), legGuard }, variant: ['legGuard'], faults: { poseProbe: poseProbe({ trace }) } });
       let frames = 0;
       let poleFrames = 0;
       let poleCross = 0;

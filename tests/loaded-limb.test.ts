@@ -3,7 +3,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { GROUP_STATIC, interactionGroups } from '../src/sim/physics';
 import { ENVELOPE_L4, LEG_GUARD_V3, type RagdollEnvelope, type RagdollProfile } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
-import { FIX, preFlip, preHoldStill, runSim } from './helpers';
+import { asCaptured, FIX, runSim } from './helpers';
 import { loadedLimbMonitor, type LimbRecord } from './loaded-limb';
 import { loadState, resumeState } from './state';
 import { holdArmBehind, JOINT_PAST_DEG, JOINT_PAST_S } from './visible-bar';
@@ -17,15 +17,15 @@ import { holdArmBehind, JOINT_PAST_DEG, JOINT_PAST_S } from './visible-bar';
 // deflection. The twins change R's running envelope or its arm's contact from a chosen time; the rule judges them
 // against the declared envelope.
 const CAPTURE = 'tests/data/state/L4-F3-run-on~v3@66.json.gz';
-const ID = 'L4-F3-run-on';
 const PERSIST = ENVELOPE_L4.persistS;
 type Twin = (s: Simulation) => void;
 
 /** The capture to its end, with `twin` applied to the state after the first substep at or past `at`. */
 async function resumed(twin?: Twin, at = 0): Promise<Record<string, LimbRecord>> {
-  // (captured before the visible flip: resumed under the profile it ran under)
-  const def: FixtureDef = { ...preHoldStill(preFlip(FIX(ID))), legGuard: LEG_GUARD_V3 };
-  const sim = await resumeState(loadState(CAPTURE), { def });
+  // (captured under LEG_GUARD_V3 before the visible flip: resumed under the definition it ran under)
+  const cap = loadState(CAPTURE);
+  const def: FixtureDef = asCaptured(cap, (d) => ({ ...d, legGuard: LEG_GUARD_V3 }));
+  const sim = await resumeState(cap, { def });
   const declared = new Map<string, RagdollEnvelope>();
   for (const p of sim.players) if (p.rag?.profile.envelope) declared.set(p.id, p.rag.profile.envelope);
   const mon = loadedLimbMonitor((pid) => declared.get(pid)!);

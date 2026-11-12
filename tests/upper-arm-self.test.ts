@@ -14,7 +14,7 @@ import { RAPIER, trunkContact, trunkPieces } from '../src/sim/physics';
 import { SELF_CLEARANCE_V1, shoulderLocal, UPPER_ARM_SELF_ID, withoutUpperArmClearance, withUpperArmClearance } from '../src/sim/profiles';
 import type { ArmSide } from '../src/sim/contracts';
 import { add, addScaled, dist, len, lerp, norm, qFromUnitVectors, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { FIX, preHoldStill } from './runs';
+import { asCaptured } from './runs';
 import { loadState, resumeState } from './state';
 
 describe('ladder 13c: the upper arm in the arms\' self-clearance', () => {
@@ -45,7 +45,7 @@ describe('ladder 13c: the upper arm in the arms\' self-clearance', () => {
   /** One arm from a capture to `untilS`: its upper arm self shape's depth past the tolerance in the own trunk per tick, and its continuity target's farthest distance from the shoulder. */
   async function upperArm(path: string, pid: string, side: ArmSide, untilS: number, on: boolean, faults: SimDebug = {}): Promise<{ depths: { t: number; d: number }[]; targetM: number; reachM: number; taskTicks: number }> {
     const cap = loadState(path);
-    const d = preHoldStill(FIX(cap.fixture));
+    const d = asCaptured(cap);
     let tr: { palm0?: Vec3; shown?: Vec3 | null } | null = null;
     const sim = await resumeState(cap, {
       def: on ? { ...d, selfClearance: withUpperArmClearance(d.selfClearance!) } : d,

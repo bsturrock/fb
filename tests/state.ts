@@ -27,7 +27,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { RAPIER, trunkPieces } from '../src/sim/physics';
 import * as PROFILES from '../src/sim/profiles';
 import { SIM_DEFAULTS, Simulation, type SimOptions } from '../src/sim/simulation';
-import { create, FIX } from './runs';
+import { create, FIX, pathsOf, profileIds } from './runs';
 
 /** Bumped whenever the encoding changes; a capture of another format is refused. */
 export const STATE_FORMAT = 1;
@@ -61,30 +61,6 @@ const TYPED: Record<string, new (a: number[]) => ArrayBufferView> = { Float32Arr
 
 const num = (x: number): Node => (Number.isNaN(x) ? { $n: 'NaN' } : x === Infinity ? { $n: 'Inf' } : x === -Infinity ? { $n: '-Inf' } : Object.is(x, -0) ? { $n: '-0' } : x);
 const unnum = (n: { $n: string }): number => ({ NaN: NaN, Inf: Infinity, '-Inf': -Infinity, '-0': -0 })[n.$n]!;
-
-/** Every object reachable from `root` (own data fields, arrays, map and set members), with its first path. */
-function pathsOf(root: object, skip?: Set<object>): Map<object, string> {
-  const out = new Map<object, string>();
-  const walk = (o: unknown, p: string): void => {
-    if (!o || typeof o !== 'object' || out.has(o) || skip?.has(o)) return;
-    out.set(o, p);
-    if (o instanceof Map) for (const [k, v] of o) walk(v, `${p}[${String(k)}]`);
-    else if (o instanceof Set) [...o].forEach((v, i) => walk(v, `${p}{${i}}`));
-    else if (!ArrayBuffer.isView(o)) for (const k of Object.keys(o)) walk((o as Record<string, unknown>)[k], `${p}.${k}`);
-  };
-  walk(root, '');
-  return out;
-}
-
-function profileIds(def: FixtureDef): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [o, p] of pathsOf(def)) {
-    const id = (o as { id?: unknown }).id;
-    if (typeof id === 'string' && p !== '') out[p.slice(1)] = id;
-  }
-  out['.'] = def.id;
-  return out;
-}
 
 /**
  * The frozen objects src/sim/profiles exports or reaches, by their first path in export order (`.ARM_G2`,

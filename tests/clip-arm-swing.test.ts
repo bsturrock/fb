@@ -4,7 +4,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { DEFAULT_POSE_PROFILE, withClipArmSwing } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { len, lerp, sub, type Vec3 } from '../src/sim/vec';
-import { FIX } from './runs';
+import { asCaptured, FIX } from './runs';
 import { loadState, resumeState } from './state';
 import { DEEP_M, depth, drawnShapes, idleBaseline, jointQuats, qAngle, selfPairs, SNAP_RADPS } from './visible';
 
@@ -104,12 +104,13 @@ async function watch(sim: Simulation, seen: Record<string, { v: number; shown: {
   return { arms, firstContact, snap };
 }
 
-/** L3-F16-contactStop resumed from 0.30 s (before D's left arm meets the runner's carry arm and ball at 0.35 s). */
-async function contactStop(def: FixtureDef, pose?: PoseDebug): Promise<Watched> {
+/** L3-F16-contactStop resumed from 0.30 s (before D's left arm meets the runner's carry arm and ball at 0.35 s), as captured or with `variant` applied to its self-clearance. */
+async function contactStop(variant?: (d: FixtureDef) => FixtureDef, pose?: PoseDebug): Promise<Watched> {
   const seen: Record<string, { v: number; shown: { x: number; y: number; z: number } | null }> = {};
   const probe = poseProbe({ trace: (k, r) => void (seen[k] = r as unknown as (typeof seen)[string]) });
-  const d0 = FIX('L3-F16-contactStop');
-  const sim = await resumeState(loadState('tests/data/state/L3-F16-contactStop@18.json.gz'), { def, ...(def !== d0 ? { variant: ['selfClearance'] } : {}), faults: { poseProbe: probe, ...(pose ? { pose } : {}) } });
+  const cap = loadState('tests/data/state/L3-F16-contactStop@18.json.gz');
+  const d0 = asCaptured(cap);
+  const sim = await resumeState(cap, { def: variant ? variant(d0) : d0, ...(variant ? { variant: ['selfClearance'] } : {}), faults: { poseProbe: probe, ...(pose ? { pose } : {}) } });
   const w = await watch(sim, seen);
   sim.dispose();
   return w;
@@ -145,7 +146,7 @@ async function firstDifference(a: FixtureDef, b: FixtureDef, pose?: PoseDebug): 
 
 describe('ladder 14b: a composed arm another body has met keeps its swing (clipArmSwing)', () => {
   it('L3-F16-contactStop from 0.30 s, the user\'s screenshot (0.55 s): as registered (the fault twin) the defender\'s left forearm, in a body-fixed alternative 0.67 m off its clip target, passes 10 cm into its own trunk at 0.567 s (4 ms before the first contact), its bone axis inside the trunk; with clipArmSwing no forearm or palm of either player passes through its own trunk (none past DEEP_M, no forearm or hand axis inside it), the defender\'s left not past 2 cm', async () => {
-    const reg = await contactStop(FIX('L3-F16-contactStop'));
+    const reg = await contactStop();
     expect(reg.firstContact).toBeCloseTo(0.5708, 3);
     const dl = reg.arms['D:left'];
     expect(dl.peak).toBeGreaterThan(DEEP_M);
@@ -154,7 +155,7 @@ describe('ladder 14b: a composed arm another body has met keeps its swing (clipA
     expect(dl.variant).toBeGreaterThan(0);
     expect(dl.departure).toBeGreaterThan(0.5);
     expect(dl.axis).toBeGreaterThan(0.03);
-    const on = await contactStop(withSwing(FIX('L3-F16-contactStop')));
+    const on = await contactStop(withSwing);
     for (const a of Object.values(on.arms)) {
       expect(a.peak).toBeLessThan(DEEP_M);
       expect(a.axis).toBeLessThanOrEqual(0.01);

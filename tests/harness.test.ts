@@ -40,7 +40,7 @@ import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
 import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
-import { breathe, create, FIX, pace, preHoldStill, preV3, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
+import { asCaptured, breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 import { loadState, resumeState } from './state';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -765,9 +765,10 @@ describe('plan 13a: contact-time shape queries', () => {
     // per tick: the shape queries, and the substeps in it with D's conversion deferred while R is a ragdoll
     const ticks: { tick: number; n: number; deferred: number }[] = [];
     let deferred = 0;
-    // (captured before the ladder 10 leg-guard flip: resumed under the leg guard it ran under)
-    const sim = await resumeState(loadState('tests/data/state/L3-F1-phase4~rev@76.json.gz'), {
-      def: preV3(preHoldStill(FIX('L3-F1-phase4'))),
+    // (captured before the ladder 10 leg-guard flip: resumed under the definition it ran under)
+    const cap = loadState('tests/data/state/L3-F1-phase4~rev@76.json.gz');
+    const sim = await resumeState(cap, {
+      def: asCaptured(cap),
       opts: {
         onSubstep: (s) => {
           const D = s.byId.get('D')!;

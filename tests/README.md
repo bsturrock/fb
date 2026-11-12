@@ -9,6 +9,14 @@ for a controlled twin: `resumeState(cap, { def: variantDef, variant: ['legGuard'
 profile variant (only the paths named in `variant` may differ from the capture's profile ids), and
 `resumeState(cap, { faults: { pose: { ... } } })` the same state with fault switches (`SimOptions.debug`) on from there.
 
+The definition a capture ran under is `asCaptured(cap)` (tests/runs.ts), never built by hand: of the registered fixture
+and the definitions as before each flip in turn (`BEFORE_FLIPS`: `preHoldStill`, `preV3`, `preOwnLegs`, `preFlip`,
+applied one after another), the first whose profile ids are the capture's. A capture taken under a variant names it,
+`asCaptured(cap, (d) => ({ ...d, legGuard: LEG_GUARD_V3 }))` for `--v3` (`flip8i` for `--flip8i`, and so on); a path the
+test resumes as a variant of the capture (resumeState's `variant`) is passed third, and no flip may change it. A twin is
+built from what it returns: `{ ...asCaptured(cap), legGuard }`. A new flip adds its `pre*` helper at the head of
+`BEFORE_FLIPS`, and every capture taken before it resumes as before, with no test re-pinned.
+
 ## Capture
 
 ```sh
@@ -18,17 +26,16 @@ npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3]
 Runs the fixture with the fixture export's defaults (ledgers off; `--ledgers` for a test that reads them, about twice
 the size), writes `tests/data/state/<fixture>@<tick>.json.gz` and checks that the resumed run reproduces the
 uninterrupted one to the end (exits 1 otherwise). `--v3` runs it under `LEG_GUARD_V3` (the physical supported legs, which
-every L3, L4 and HC fixture registers since the ladder 10 flip) and writes `<fixture>~v3@<tick>.json.gz`; a test resumes
-that one with the same definition, `{ def: { ...FIX(id), legGuard: LEG_GUARD_V3 } }`. A capture without `~v3` of an
-L3, L4 or HC fixture taken before the flip ran under `LEG_GUARD_V1`: a test resumes it with `preV3(FIX(id))`
-(tests/runs.ts), composed with `preOwnLegs`, `preFlip` or `flip8i` for a capture older than those flips. `--audit` runs it with the transition audit on (`transitionAudit`,
+every L3, L4 and HC fixture registers since the ladder 10 flip) and writes `<fixture>~v3@<tick>.json.gz`; a capture
+without `~v3` of an L3, L4 or HC fixture taken before the flip ran under `LEG_GUARD_V1` (`asCaptured` finds either).
+`--audit` runs it with the transition audit on (`transitionAudit`,
 kept in the capture's options, so the resumed run audits too) and adds `-audit` to the suffix (`<fixture>~v3-audit@<tick>`). `--rev`
 runs the reversed body order (suffix `rev`). `--hips=v1|v2` runs the fixture's ragdoll under the hip stops `HIP_STOPS_V1`
-(ladder 8d) or `HIP_STOPS_V2` (8g, with the approach zone), suffix `hipsv1` / `hipsv2`; a test resumes it with
-`{ def: { ...FIX(id), ragdoll: withHipStops(FIX(id).ragdoll!, HIP_STOPS_V2) } }`. `--flip8i` runs it under the ladder 8i
-visible flip (`flip8i` in `tests/runs.ts`: the hip stops, PGS 4, knee stop 140), suffix `flip8i`; a test resumes it with
-`{ def: flip8i(FIX(id)) }`. `--joints=v4` runs it under `JOINT_RANGE_V4` (ladder 11d, the anatomical twist window), suffix
-`jrv4`; a test resumes it with `{ def: { ...FIX(id), jointRange: JOINT_RANGE_V4 } }`. A profile constant the build holds outside the definition (ARM_G2 for a fixture with no
+(ladder 8d) or `HIP_STOPS_V2` (8g, with the approach zone), suffix `hipsv1` / `hipsv2`; its definition is
+`asCaptured(cap, (d) => ({ ...d, ragdoll: withHipStops(d.ragdoll!, HIP_STOPS_V2) }))`. `--flip8i` runs it under the
+ladder 8i visible flip (`flip8i` in `tests/runs.ts`: the hip stops, PGS 4, knee stop 140), suffix `flip8i`:
+`asCaptured(cap, flip8i)`. `--joints=v4` runs it under `JOINT_RANGE_V4` (ladder 11d, the anatomical twist window), suffix
+`jrv4`: `asCaptured(cap, (d) => ({ ...d, jointRange: JOINT_RANGE_V4 }))`. A profile constant the build holds outside the definition (ARM_G2 for a fixture with no
 `armProfile`, frozen by the fixture registry) is written by its export name in src/sim/profiles with its id, and the
 resume refuses the capture when that constant's id changed. Captures are between ticks (a tick is the fixture's
 `solver.substeps` physics substeps). They are 170-230 KB; a later tick is larger (the trace and events so far are part

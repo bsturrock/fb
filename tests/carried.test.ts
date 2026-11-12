@@ -3,7 +3,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { FALL_L4, LEG_GUARD_V3, type FallResponseProfile } from '../src/sim/profiles';
 import type { SegmentId } from '../src/sim/contracts';
 import { dot, sub, vc } from '../src/sim/vec';
-import { FIX, preFlip, preHoldStill } from './helpers';
+import { asCaptured } from './helpers';
 import { loadState, resumeState } from './state';
 
 // Ladder rung 6c (fall response v6, `impactGuard.carried`). L4-F9-defenderFalling under the physical supported legs
@@ -21,7 +21,6 @@ import { loadState, resumeState } from './state';
 // (the `solver` variant). The fixture run from the start under the solved reading no longer reaches this landing: D
 // stays under the ceiling without `carried` too (132.7 W), so the state is kept as captured.
 const CAPTURE = 'tests/data/state/L4-F9-defenderFalling~v3@65.json.gz';
-const ID = 'L4-F9-defenderFalling';
 const CEILING = FALL_L4.power.maxPositiveW * (1 + FALL_L4.power.toleranceFraction);
 const UNTIL = 292;
 const NO_CARRIED: FallResponseProfile = { ...FALL_L4, id: `${FALL_L4.id}-noCarried`, impactGuard: { ...FALL_L4.impactGuard, carried: undefined } };
@@ -42,10 +41,11 @@ interface Row {
 }
 
 async function resumed(carried: boolean): Promise<Row[]> {
-  // (captured before the visible flip: resumed under the profile it ran under)
-  const v3: FixtureDef = { ...preHoldStill(preFlip(FIX(ID))), legGuard: LEG_GUARD_V3 };
+  // (captured under LEG_GUARD_V3 before the visible flip: resumed under the definition it ran under, the solver aside)
+  const cap = loadState(CAPTURE);
+  const v3: FixtureDef = asCaptured(cap, (d) => ({ ...d, legGuard: LEG_GUARD_V3 }), ['solver']);
   const def = carried ? v3 : { ...v3, fallResponse: NO_CARRIED };
-  const sim = await resumeState(loadState(CAPTURE), { def, variant: carried ? ['solver'] : ['solver', 'fallResponse'] });
+  const sim = await resumeState(cap, { def, variant: carried ? ['solver'] : ['solver', 'fallResponse'] });
   // (the private substep, wrapped to read the state before each solve and after it)
   const host = sim as unknown as { stepSubstep(i: number): void };
   const G = FALL_L4.impactGuard;

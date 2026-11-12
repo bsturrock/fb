@@ -10,7 +10,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { armAnatomicalTwistRad, fitElbowTwist } from '../src/sim/joint-cone';
 import { JOINT_RANGE_V2, JOINT_RANGE_V4, JOINT_RANGE_V5, type JointRangeProfile } from '../src/sim/profiles';
 import { add, cross, dist, norm, qAngleBetween, qConj, qInvRot, qMul, scale, sub, v3, vc, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preHoldStill } from './runs';
+import { asCaptured } from './runs';
 import { loadState, resumeState } from './state';
 
 const E = JOINT_RANGE_V2.shoulder;
@@ -66,7 +66,7 @@ describe('ladder 12b: the elbow fit at a bounded speed', () => {
       let pe: Vec3 | null = null;
       let elbowM = 0;
       const sim = await resumeState(cap, {
-        def: { ...preHoldStill(FIX('L3-F1-phase3')), jointRange },
+        def: { ...asCaptured(cap, (d) => ({ ...d, jointRange: JOINT_RANGE_V4 })), jointRange },
         variant: ['jointRange', 'ragdoll'],
         opts: {
           onSubstep: (s) => {

@@ -17,7 +17,7 @@ import { legHull, legMeets, legPointMove, legSurfaceAdvance, observePhysicalLegs
 import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromUnitVectors, qFromYaw, qInvRot, qMul, qRot, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preHoldStill, rows } from './helpers';
+import { asCaptured, FIX, rows } from './helpers';
 import { loadState, resumeState } from './state';
 import { SEGMENTS } from '../src/sim/ragdoll';
 
@@ -376,8 +376,10 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
       let prev = 0;
       let syncedRefused = false;
       const r = { refused: 0, live: 0, legNs: 0, kick: 0 };
-      const sim = await resumeState(loadState('tests/data/state/L3-F9-noProbe-prep~v3@33.json.gz'), {
-        def: { ...preHoldStill(FIX('L3-F9-noProbe-prep')), legGuard: LEG_GUARD_V3 },
+      // (captured under LEG_GUARD_V3 before the 14a still feet: resumed under the definition it ran under)
+      const cap = loadState('tests/data/state/L3-F9-noProbe-prep~v3@33.json.gz');
+      const sim = await resumeState(cap, {
+        def: asCaptured(cap),
         ...(fault ? { faults: { pose: { legsOnRefused: true } } } : {}),
         opts: {
           onSubstep: (s) => {
