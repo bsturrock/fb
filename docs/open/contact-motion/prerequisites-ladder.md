@@ -573,7 +573,11 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   the body held 3 substeps more. Tests: the capture test (fall-defects) adds the flag's row and reads the hit (the
   forearm's own-trunk closing over the body speed, the hips and knees commanded without it, nothing with it); the
   self-legs guard rig: with only the trunk pairs in the solve the legs' closings are the own-trunk map's, with only the
-  leg-on-leg pairs it is empty (fault twin, leg on leg written there: 12 readings).
+  leg-on-leg pairs it is empty (fault twin, leg on leg written there: 12 readings). The flip (the hold on every L4 fall
+  response) is parked, not clean (`r9f-impact-power/flip`): only L4 moves, no who-falls change, but L4-F3-run-on D is
+  still one substep over the cap (187.6 W). The hold first acts at 1.471 s, which moves the run; at 1.625 s it holds the
+  body as intended, and the forearm's hit lands in the next solve, read at 1.62 m/s (under the body speed) while the
+  solve takes 49.8 N s. From that state the hold off gives 180.5 W there: the same mechanism, reached.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -592,6 +596,9 @@ order, not hunk-split.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
 - D4/D5 footwork: reverted (see the handoff's known issues).
+- 9f's flip, the own-trunk hold on every L4 fall response: fixes the captured landing but not the mechanism (an
+  own-trunk hit read before the solve far under what the solve takes); the run reaches it one substep later. Patch,
+  twins and README `.scratch/ladder/parked/self-trunk-flip/`.
 - 8k's other option, the L4 hip envelope narrowed to the human ab/adduction (cone across 60 -> 42, its own backstop):
   removes the hip implausible time as the box does but not the own-body overlap; not taken. Patch and README
   `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
@@ -602,9 +609,12 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 
 - Found at 9c, registered with the own-leg flip at 9d (exceptions by fixture, player and mechanism in
   tests/falls.test.ts, capture tests in tests/fall-defects.test.ts), each reached by a moved trajectory, the same from
-  the state just before with own-leg contact off; each wants its own fix step. `IMPACT_OVER_POWER`: L4-F3-run-on D (and
-  L4-F9-free, the same run) lands at 1.625 s with its hip and knee effort acting, one substep over the power cap (183
-  W; off from 1.60 s 169 W), tagged an impact; held off in that substep, nothing is over. `BRACE_EXPIRED_OBSTRUCTED`
+  the state just before with own-leg contact off. `IMPACT_OVER_POWER` (open): L4-F3-run-on D (and L4-F9-free, the
+  same run) lands at 1.625 s with its hip and knee effort acting, one substep over the power cap (183 W; off from 1.60 s
+  169 W), tagged an impact; held off in that substep, nothing is over. The forearm's own-trunk hit is held as the arm's
+  only; 9f's `selfTrunkBody` (off) fixes that landing, but registered the run reaches the same hit one substep later,
+  read before the solve at 1.62 m/s against 49.8 N s taken (parked). Next: read an own-trunk hit from the pair's
+  penetration or pinning, not only its closing. `BRACE_EXPIRED_OBSTRUCTED`
   (resolved at 9e): L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the
   end-of-window path did not read the obstruction the core-down path reads. Query peak: L3-F1-phase4 reversed, 4036 in the tick at 1.317 s (8m 3749), 2324 of them
   D's supported pose contact queries against R's ragdoll, none own-leg; off from 1.267 s the same 4036 (from 1.167 s
