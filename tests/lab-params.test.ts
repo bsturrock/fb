@@ -3,13 +3,13 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import {
-  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop,
-  withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preFlip, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees` and `retry` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry` and `selfleg` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -20,7 +20,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees, retry and selfleg', () => {
   it('order=rev&legs=v3 runs the matrices\' reversed V3 row of the fixture (L3-F1-phase6), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v3'));
@@ -168,5 +168,41 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
       expect(after.def, id).toBe(d);
       expect(after.label, id).toBe('hip stops on (registered) · pgs +4 (registered) · knee stop 140 (registered) · conversion retry on (registered)');
     }
+  }, 120000);
+
+  // ladder rung 9a: selfleg=on|off, composed after the others (no fixture registers own-leg contact yet)
+  it('selfleg=on runs the fixture with own-leg contact (HC-F1-at0.9: every ragdoll gets its own-leg shapes), named in the label and composed last; selfleg=off takes it off again; without it the run differs; unknown values change nothing', async () => {
+    const id = 'HC-F1-at0.9';
+    const d = FIX(id);
+    expect(d.ragdoll!.selfLegs).toBeUndefined();
+    const want = withSelfLegs(d.ragdoll!);
+    expect(want.id).toBe(`${d.ragdoll!.id}+${SELF_LEGS_V1.id}`);
+    const lab = labRun(d, new URLSearchParams(`fixture=${id}&selfleg=on`));
+    expect(lab.label).toBe('own-leg contact on');
+    expect(lab.def).toEqual({ ...d, ragdoll: want });
+    const s = await create(lab.def, lab.opts);
+    await runSim(s);
+    const rags = s.players.filter((p) => p.rag);
+    expect(rags.length).toBeGreaterThan(0);
+    for (const p of rags) expect(p.rag!.selfLegs?.legs.length, p.id).toBe(6);
+    const run = JSON.stringify(s.summary());
+    s.dispose();
+    expect(run).toBe(await summaryOf({ ...d, ragdoll: want }, {}));
+    // the twin: the registered run, without it, is another
+    expect(await summaryOf(d, {})).not.toBe(run);
+    // off undoes on, id and all; a value already registered is named so
+    const off = labRun(lab.def, new URLSearchParams('selfleg=off'));
+    expect(off.label).toBe('own-leg contact off');
+    expect(off.def).toEqual(d);
+    expect(labRun(d, new URLSearchParams('selfleg=off'))).toEqual({ def: d, opts: {}, label: 'own-leg contact off (registered)' });
+    expect(labRun(lab.def, new URLSearchParams('selfleg=ON')).label).toBe('own-leg contact on (registered)');
+    // composed after the others: with the view before the flip, its id is named last
+    const pre = labRun(d, new URLSearchParams('selfleg=on&hips=off&pgs=0&knees=off&retry=off'));
+    expect(pre.label).toBe('hip stops off · pgs +0 · knee stop off · conversion retry off · own-leg contact on');
+    expect(pre.def).toEqual({ ...preFlip(d), ragdoll: withSelfLegs(preFlip(d).ragdoll!) });
+    // a fixture without a ragdoll profile and an unknown value change nothing
+    const g = allFixtures().find((x) => !x.ragdoll)!;
+    expect(labRun(g, new URLSearchParams('selfleg=on'))).toEqual({ def: g, opts: {}, label: 'selfleg on n/a (no ragdoll profile)' });
+    expect(labRun(d, new URLSearchParams('selfleg=maybe'))).toEqual({ def: d, opts: {}, label: 'selfleg=maybe ignored' });
   }, 120000);
 });

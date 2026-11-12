@@ -480,6 +480,9 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   capture. With the flag on every L3/L4/HC ragdoll (exploration, matrices only; 9c measures it): deep own-body 326 ->
   169 player-s, own-leg axes 108 -> 23, injecting solves 494 -> 458 (2243 -> 2032 J); highest query tick 4036
   (L3-F1-phase4 reversed: the supported player's pose queries against the moved ragdoll).
+- **9b** (`r9b-lab-selfleg`) landed: byte-identical, 343/343; lab only. `selfleg=on|off` (own-leg contact,
+  SELF_LEGS_V1), composed after `retry` and named last in the label and the id: `?fixture=HC-F1-at0.9&selfleg=on` is
+  the 9c variant (tests/lab-params.test.ts).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e

@@ -8,16 +8,17 @@
 //                      8d), or without any;
 //   pgs=<n>            n additional PGS iterations on the ragdoll's segments (rung 8a; 0: none; up to 16);
 //   knees=off|140|145  the knee flexion stop at 140 or 145 (rung 8f), or none;
-//   retry=on|off       a conversion rejected on an overlap deferred and tried again (CONVERSION_RETRY_V1, rung 8j), or not.
-// The ragdoll parameters compose in that order (hips, pgs, knees, then retry), so `hips=on&pgs=4&knees=140` is the
+//   retry=on|off       a conversion rejected on an overlap deferred and tried again (CONVERSION_RETRY_V1, rung 8j), or not;
+//   selfleg=on|off     the ragdoll's legs meeting each other and its trunk (own-leg contact, SELF_LEGS_V1, rung 9a), or not.
+// The ragdoll parameters compose in that order (hips, pgs, knees, retry, then selfleg), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
 // Lab only: a parameter changes the run on screen and its label, never a registered fixture. No DOM or renderer here, so
 // a test can build the same run headless (tests/lab-params.test.ts).
 import type { FixtureDef } from '../sim/fixture';
 import {
-  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, type RagdollProfile,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, withAdditionalPgsIterations, withConversionRetry,
+  withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withSelfLegs, type RagdollProfile,
 } from '../sim/profiles';
 import type { SimOptions } from '../sim/simulation';
 
@@ -25,6 +26,7 @@ const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
 const HIPS = ['on', 'l4', 'v1', 'off'];
 const KNEES = ['off', '140', '145'];
 const RETRY = ['on', 'off'];
+const SELFLEG = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -51,7 +53,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -103,6 +105,14 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     out = ragdollParam(out, 'retry', retry, RETRY.includes(v), parts, `conversion retry ${v}`, (r) => {
       if (v === 'off') return withoutConversionRetry(r);
       return r.conversionRetry?.id === CONVERSION_RETRY_V1.id ? r : withConversionRetry(withoutConversionRetry(r));
+    });
+  }
+  const selfleg = params.get('selfleg');
+  if (selfleg !== null && selfleg !== '') {
+    const v = selfleg.toLowerCase();
+    out = ragdollParam(out, 'selfleg', selfleg, SELFLEG.includes(v), parts, `own-leg contact ${v}`, (r) => {
+      if (v === 'off') return withoutSelfLegs(r);
+      return r.selfLegs?.id === SELF_LEGS_V1.id ? r : withSelfLegs(withoutSelfLegs(r));
     });
   }
   return { def: out, opts, label: parts.join(' · ') };
