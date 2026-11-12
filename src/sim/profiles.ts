@@ -80,11 +80,29 @@ export interface SelfClearanceProfile {
    * settle in the seam. Another body's share is taken in full, as before.
    */
   seamSettle?: true;
+  /**
+   * Ladder 13c (absent: false): the supported arms' self shapes take the upper arm's distal half too (`armSelfShapes`
+   * `upper`: from the bone's middle to the elbow, as the visible meter's upperArmD, at the forearm's radius, the elbow's
+   * thickness), so clip, procedural and arm-task arms keep the upper arm and elbow out of the own trunk as they keep the
+   * forearm: in each candidate's depth, the arm task's validity and the continuity push, whose pushed target is then kept
+   * within the arm's reach of its shoulder. The ragdoll's self colliders are unchanged (forearms only).
+   */
+  upperArm?: true;
 }
 
 export const SELF_CLEARANCE_V1: SelfClearanceProfile = { id: 'self-clearance-v1', toleranceM: 0.01, ragdoll: true };
 /** Ladder 11d: V1 with the continuity push settling between own trunk pieces (`seamSettle`). */
 export const SELF_CLEARANCE_V2: SelfClearanceProfile = { ...SELF_CLEARANCE_V1, id: 'self-clearance-seam-v2', seamSettle: true };
+/** Ladder 13c: the id part `withUpperArmClearance` adds. */
+export const UPPER_ARM_SELF_ID = 'upper-arm-v1';
+/** Ladder 13c: `s` with the upper arm in the supported arms' self shapes (`upperArm`). */
+export const withUpperArmClearance = (s: SelfClearanceProfile): SelfClearanceProfile => (s.upperArm ? s : { ...s, id: `${s.id}+${UPPER_ARM_SELF_ID}`, upperArm: true });
+/** Ladder 13c: `s` without it, under the id it had before. */
+export const withoutUpperArmClearance = (s: SelfClearanceProfile): SelfClearanceProfile => {
+  if (!s.upperArm) return s;
+  const { upperArm: _u, ...rest } = s;
+  return { ...rest, id: s.id.replace(`+${UPPER_ARM_SELF_ID}`, '') };
+};
 
 const baseCompound: CompoundGeometry = {
   support: { radius: 0.16, halfHeight: 0.65, center: v3(0, -0.14, 0) },

@@ -467,7 +467,7 @@ export class ArmSystem {
       const up = this.segmentHit(sW, r.mid, P.upperArmRadiusM, obstacles, tol + 0.01, poses);
       const fa = this.segmentHit(r.mid, wrist, P.forearmRadiusM, obstacles, tol + 0.01, poses);
       const pc = this.query(this.palmBall, this.palmCenter(r.end, wrist), { x: 0, y: 0, z: 0, w: 1 }, obstacles, tol + 0.01, poses);
-      const self = this.selfHit(pl, ownerPose, r.mid, wrist, r.end);
+      const self = this.selfHit(pl, ownerPose, sW, r.mid, wrist, r.end);
       let worst: Hit | null = null;
       for (const h of [up, fa, pc, self]) if (h && (!worst || h.distance < worst.distance)) worst = h;
       // plan 12: an upper arm past the shoulder cone (owner core frame) is invalid, as a hit is
@@ -489,17 +489,19 @@ export class ArmSystem {
   }
 
   /**
-   * Arm self-clearance: the deepest contact of the arm's self shapes (forearm over its joint extent, palm, fingers) with
-   * the owner's trunk at `ownerPose`, its distance shifted so the shared validity rule (>= -surfaceTolM) accepts exactly
-   * the profile's skin-contact tolerance. Null when the profile is off or nothing is near.
+   * Arm self-clearance: the deepest contact of the arm's self shapes (forearm over its joint extent, palm, fingers; under
+   * ladder 13c's `upperArm` the upper arm's distal half first) with the owner's trunk at `ownerPose`, its distance shifted
+   * so the shared validity rule (>= -surfaceTolM) accepts exactly the profile's skin-contact tolerance. Null when the
+   * profile is off or nothing is near.
    */
-  private selfHit(pl: ArmHostPlayer, ownerPose: Pose, elbow: Vec3, wrist: Vec3, palm: Vec3): Hit | null {
+  private selfHit(pl: ArmHostPlayer, ownerPose: Pose, shoulder: Vec3, elbow: Vec3, wrist: Vec3, palm: Vec3): Hit | null {
     const T = this.trunk.get(pl.id);
     if (!T || !this.selfClearance) return null;
     const P = this.profile;
     const I = { x: 0, y: 0, z: 0, w: 1 };
     let best: Hit | null = null;
-    for (const s of armSelfShapes({ forearm: P.forearmRadiusM, palm: P.palmRadiusM }, pl.body.measured!.handTipM!, 'arm', elbow, wrist, palm)) {
+    const upper = this.selfClearance.upperArm ? { shoulder, r: P.forearmRadiusM } : undefined;
+    for (const s of armSelfShapes({ forearm: P.forearmRadiusM, palm: P.palmRadiusM }, pl.body.measured!.handTipM!, 'arm', elbow, wrist, palm, upper)) {
       let h: TrunkHit | null = null;
       if (s.kind === 'ball') h = trunkContact(T.pieces, ownerPose, new RAPIER.Ball(s.r), s.c, I, s.c, s.r, P.surfaceTolM + 0.01);
       else if (s.kind === 'capsule') {

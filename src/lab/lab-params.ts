@@ -13,7 +13,10 @@
 //   armtwist=on|off    the ragdoll shoulder's twist limit in the anatomical measure, holding with the arm overhead
 //                      (SHOULDER_TWIST_ANAT_V1, rung 13a), or plan 09's, which fades out there;
 //   holdstill=on|off   a stationary hold keeping its feet planted (the footwork's HOLD_STILL_V1, rung 13b), or stepping
-//                      home, settling and turning its feet as any stance; a fixture without footwork is run as it is.
+//                      home, settling and turning its feet as any stance; a fixture without footwork is run as it is;
+//   upperarm=on|off    the supported arms keeping the upper arm and elbow out of their own trunk too (the self-clearance
+//                      profile's `upperArm`, rung 13c), or only the forearm and palm; a fixture without self-clearance is
+//                      run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, then armtwist), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -22,7 +25,8 @@
 import type { FixtureDef } from '../sim/fixture';
 import {
   CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry,
-  withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withSelfLegs, withShoulderTwistLimit, type RagdollProfile,
+  withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
+  withUpperArmClearance, type RagdollProfile,
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import type { SimOptions } from '../sim/simulation';
@@ -34,6 +38,7 @@ const RETRY = ['on', 'off'];
 const SELFLEG = ['on', 'off'];
 const ARMTWIST = ['on', 'off'];
 const HOLDSTILL = ['on', 'off'];
+const UPPERARM = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -60,7 +65,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `holdstill`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `holdstill`, `upperarm`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -139,6 +144,17 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
       const f = v === 'off' ? withoutHoldStill(out.footwork) : out.footwork.holdStill?.id === HOLD_STILL_V1.id ? out.footwork : withHoldStill(withoutHoldStill(out.footwork));
       parts.push(`hold still ${v}${f === out.footwork ? ' (registered)' : ''}`);
       if (f !== out.footwork) out = { ...out, footwork: f };
+    }
+  }
+  const upperarm = params.get('upperarm');
+  if (upperarm !== null && upperarm !== '') {
+    const v = upperarm.toLowerCase();
+    if (!UPPERARM.includes(v)) parts.push(`upperarm=${upperarm} ignored`);
+    else if (!out.selfClearance) parts.push('upperarm n/a (no self-clearance)');
+    else {
+      const sc = v === 'off' ? withoutUpperArmClearance(out.selfClearance) : withUpperArmClearance(out.selfClearance);
+      parts.push(`upper arm self-clearance ${v}${sc === out.selfClearance ? ' (registered)' : ''}`);
+      if (sc !== out.selfClearance) out = { ...out, selfClearance: sc };
     }
   }
   return { def: out, opts, label: parts.join(' · ') };

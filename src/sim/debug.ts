@@ -60,6 +60,11 @@ export interface PoseDebug {
    * its physical legs live (the D2 rule before 10b), though it has no support.
    */
   legsOnRefused?: boolean;
+  /**
+   * Fault (ladder 13c, `SelfClearanceProfile.upperArm`): an arm's continuity push may take its target past the arm's reach
+   * of its shoulder (the bound off).
+   */
+  noArmReachBound?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

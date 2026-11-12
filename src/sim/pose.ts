@@ -380,16 +380,24 @@ const HAND_SELF_R = 0.03;
  * Arm self-clearance shapes (plan 11): what the drawn arm puts against its own trunk. The forearm over its full joint
  * extent (the elbow cap included: `armShapes` fits its capsule inside the joints), the palm ball, and the fingers from the
  * palm centre to the glove tip (`tipAlongM` from the wrist). Used only against the player's own measured trunk.
+ * Ladder 13c (`upper`, `SelfClearanceProfile.upperArm`): first the upper arm's distal half, from the bone's middle to the
+ * elbow (fitted inside the elbow, as the visible meter's upperArmD), at radius `upper.r`: the callers pass the forearm's,
+ * the elbow's thickness. The drawn upper arm's radius is the mesh fit's largest (the deltoid's, 9.9 cm on bew-v6), and at
+ * it the fitted idle arm already reads 1.7 to 3.8 cm into its waist; at the forearm's 6.0 cm it reads clear. The proximal
+ * half meets the trunk at the shoulder by construction.
  */
-export function armSelfShapes(radii: { forearm: number; palm: number }, tipAlongM: number, s: string, elbow: Vec3, wrist: Vec3, palm: Vec3): PoseShape[] {
+export function armSelfShapes(radii: { forearm: number; palm: number }, tipAlongM: number, s: string, elbow: Vec3, wrist: Vec3, palm: Vec3, upper?: { shoulder: Vec3; r: number }): PoseShape[] {
   const dir = norm(sub(palm, wrist), v3(0, -1, 0));
   const pc = addScaled(palm, dir, -radii.palm);
   const tip = addScaled(wrist, dir, Math.max(dist(pc, wrist), tipAlongM - HAND_SELF_R));
-  return [
+  const out: PoseShape[] = [];
+  if (upper) out.push({ kind: 'capsule', a: lerp(upper.shoulder, elbow, 0.5), b: addScaled(elbow, norm(sub(elbow, upper.shoulder), v3(0, -1, 0)), -upper.r), r: upper.r, key: `${s}UpperArmSelf` });
+  out.push(
     { kind: 'capsule', a: elbow, b: wrist, r: radii.forearm, key: `${s}ForearmSelf` },
     { kind: 'ball', c: pc, r: radii.palm, key: `${s}PalmSelf` },
     { kind: 'capsule', a: pc, b: tip, r: HAND_SELF_R, key: `${s}HandSelf` },
-  ];
+  );
+  return out;
 }
 
 export function legShapes(R: RagdollProfile, s: string, hip: Vec3, knee: Vec3, ankle: Vec3, shinFrame: Quat, footQ: Quat = shinFrame): PoseShape[] {
@@ -493,6 +501,8 @@ export interface ProxyPoseInput {
   legOwn?: OwnLegProfile;
   /** Ladder 11d (`SelfClearanceProfile.seamSettle`): an arm's continuity push settles between own trunk pieces. Absent: false. */
   selfSeam?: boolean;
+  /** Ladder 13c (`SelfClearanceProfile.upperArm`): an arm's self shapes take its upper arm's distal half. Absent: false. */
+  selfUpperArm?: boolean;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
   loco?: {
     profile: LocomotionProfile;
@@ -926,7 +936,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const selfD = inp.clearance?.self ? inp.clearance.self(shapes.slice(1)) : 0;
       let depth = Math.max(ext(shapes), floorDepth(shapes));
       // arm self-clearance (opt-in): the arm's self shapes in the player's own measured trunk count as physical depth
-      const selfShapes = inp.clearance?.body && tipAlong !== undefined ? armSelfShapes(R.radii, tipAlong, s, elbow, wrist, palmS) : undefined;
+      const selfShapes = inp.clearance?.body && tipAlong !== undefined ? armSelfShapes(R.radii, tipAlong, s, elbow, wrist, palmS, inp.selfUpperArm ? { shoulder: sh, r: R.radii.forearm } : undefined) : undefined;
       const bodyD = selfShapes ? inp.clearance!.body!(selfShapes) : undefined;
       if (bodyD !== undefined) depth = Math.max(depth, bodyD);
       let ball: ArmC['ball'];
@@ -1150,6 +1160,16 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
               const m = len(pv);
               if (m < 1e-6) break;
               t = add(t0, clampLen(sub(addScaled(t, pv, 1 + 0.001 / m), t0), CONT_PUSH_MAX_M));
+              // ladder 13c (`selfUpperArm`): within the arm's reach of its shoulder. The pushed target is the next step's
+              // start, and a push the arm cannot follow (an upper arm the shoulder cone and twist window hold in the chest)
+              // otherwise walks the target away every substep (L3-F16-contactStop R's right palm target 2.1 m below its
+              // request at 0.93 s), then takes as long to come back at the continuity rate
+              if (inp.selfUpperArm && !inp.debug?.noArmReachBound) {
+                const shL = shoulderLocal(body, s);
+                const reachM = R.lengths.upperArm + R.lengths.forearm + R.lengths.palmExtension;
+                const d = sub(t, shL);
+                if (len(d) > reachM) t = addScaled(shL, d, reachM / len(d));
+              }
               c = procedural(t, pole)();
             }
             return c;
