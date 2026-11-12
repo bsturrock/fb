@@ -3,12 +3,14 @@
 // one call here (`setAngularLimits`) reaches the raw joint set it wraps. tests/joint-stops.test.ts pins that call, its
 // readback and what it enforces, so a Rapier change fails loudly.
 //
-// What Rapier enforces (rapier 0.21 joint_constraint_builder: `limit_angular`): the joint's relative rotation
-// e = frame1^-1 * frame2 (each body's rotation times its local frame), sign-normalised to w >= 0, has each vector-part
-// component kept within sin(limit / 2). On its own axis that is the rotation angle itself; combined, the components are
-// those of the quaternion, so a stop is exact alone and couples at corners: with twist t about the thigh and swing s,
-// the twist component is cos(s/2) sin(t/2) (the twist the box admits grows with swing) and the swing components turn by
-// half the twist (`hipStopReading` gives the box's reading of any pose; the test tabulates it).
+// What Rapier enforces, as measured (tests/joint-stops.test.ts drives a thigh into each stop at combined poses and finds
+// where it halts): of the joint's relative rotation e = frame1^-1 * frame2 (each body's rotation times its local frame),
+// sign-normalised to w >= 0, each axis's angle 2 atan2(e_i, w), the angle of the rotation's twist about that axis (its
+// swing-twist split), is kept within the limit. On its own axis that is the rotation angle itself; combined it reads
+// more than the half-sine of the component, 2 asin(e_i), which 8d took it for (at flexion 75 the adduction stop of 30
+// holds at a half-sine reading of 24, at flexion 110 at 19.5). A rotation t about the thigh after a flexion f reads
+// exactly f and t on X and Y and adds 2 atan(tan(f/2) tan(t/2)) on Z, so at flexion 90 a rotation toward adduction is
+// held at 30 by the Z stop (`hipStopReading` gives the box's reading of any pose; the test tabulates it).
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide } from './contracts';
 import { MODEL_CALIBRATION, MODEL_CALIBRATION_ID } from './model/profiles';
@@ -77,8 +79,8 @@ export function jointRelative(q1: Quat, f1: Quat, q2: Quat, f2: Quat = { x: 0, y
   return e.w < 0 ? { x: -e.x, y: -e.y, z: -e.z, w: -e.w } : e;
 }
 
-/** The box's reading of a relative rotation: per axis the angle whose half-sine is that component (rad). */
-export const boxReading = (e: Quat): [number, number, number] => [e.x, e.y, e.z].map((c) => 2 * Math.asin(Math.max(-1, Math.min(1, c)))) as [number, number, number];
+/** The box's reading of a relative rotation (w >= 0), as Rapier limits it: per axis 2 atan2(e_i, w) (rad). */
+export const boxReading = (e: Quat): [number, number, number] => [e.x, e.y, e.z].map((c) => 2 * Math.atan2(c, e.w)) as [number, number, number];
 
 /** The box reading of a core-to-thigh rotation `rel` (core frame) of a hip with neutral frame `neutral`. */
 export const hipStopReading = (rel: Quat, neutral: Quat): [number, number, number] => boxReading(jointRelative({ x: 0, y: 0, z: 0, w: 1 }, neutral, rel));
@@ -143,19 +145,19 @@ export function ratchetHipStop(h: HipStopRuntime, joint: RAPIER.ImpulseJoint, q1
 
 /**
  * A limb direction (core frame) held inside the hip's stops less `marginRad`: the twist-free swing to it, its flexion
- * and ab/adduction components clamped, recomposed. A fall-response hip target (L4) would otherwise ask the thigh past a
- * stop and hold it pressed there.
+ * and ab/adduction readings clamped, recomposed (each reading fixes its component's ratio to w, tan of half of it; the
+ * twist's ratio kept). A fall-response hip target (L4) would otherwise ask the thigh past a stop and hold it pressed there.
  */
 export function clampDirToHipStops(dir: Vec3, frame1: Quat, box: AngBox, marginRad: number): Vec3 {
-  const e = qMul(qConj(frame1), qFromUnitVectors(REF, dir));
+  const e = jointRelative({ x: 0, y: 0, z: 0, w: 1 }, frame1, qFromUnitVectors(REF, dir));
   const v = boxReading(e);
   const cl = (i: number): number => Math.max(box[i][0] + marginRad, Math.min(box[i][1] - marginRad, v[i]));
   if (cl(0) === v[0] && cl(2) === v[2]) return dir;
-  const x = Math.sin(cl(0) / 2);
-  const z = Math.sin(cl(2) / 2);
-  const w = Math.sqrt(Math.max(0, 1 - x * x - e.y * e.y - z * z));
-  const s = Math.hypot(x, e.y, z, w);
-  return qRot(qMul(frame1, { x: x / s, y: e.y / s, z: z / s, w: w / s }), REF);
+  const x = Math.tan(cl(0) / 2);
+  const y = e.y / e.w;
+  const z = Math.tan(cl(2) / 2);
+  const s = Math.hypot(x, y, z, 1);
+  return qRot(qMul(frame1, { x: x / s, y: y / s, z: z / s, w: 1 / s }), REF);
 }
 
 // ---------------------------------------------------------------- ladder rung 8f: the knee's flexion stop
@@ -172,8 +174,9 @@ export interface KneeStopRuntime {
 }
 
 /**
- * The hinge's angle as Rapier limits it (rad): the X component of the relative rotation, sign-normalised. The ragdoll's
- * hinges are built on their local X in both bodies (`JointData.revolute(.., X)`), so the joint frames are the identity.
+ * The hinge's angle as Rapier limits it (rad): the X reading of the relative rotation (`boxReading`), sign-normalised.
+ * The ragdoll's hinges are built on their local X in both bodies (`JointData.revolute(.., X)`), so the joint frames are
+ * the identity.
  */
 export const hingeReading = (q1: Quat, q2: Quat): number => boxReading(jointRelative(q1, { x: 0, y: 0, z: 0, w: 1 }, q2))[0];
 

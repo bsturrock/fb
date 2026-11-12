@@ -6,7 +6,7 @@ import { MODEL_CALIBRATION } from '../src/sim/model/profiles';
 import { modelBody } from '../src/sim/model/profiles';
 import { initPhysics } from '../src/sim/physics';
 import { HIP_STOPS_V1, sideSignX, upperBodyCompound, withHipStops, type BodyProfile } from '../src/sim/profiles';
-import { qFromAxisAngle, qFromUnitVectors, qMul, qRot, v3, type Quat, type Vec3 } from '../src/sim/vec';
+import { m3Inverse, m3Vec, qFromAxisAngle, qFromUnitVectors, qMul, qRot, v3, type Mat3, type Quat, type Vec3 } from '../src/sim/vec';
 import { create, FIX, stepWhile } from './helpers';
 import { hipAngles } from './visible';
 
@@ -114,6 +114,62 @@ describe('ladder rung 8d: Rapier\'s per-axis angular limits on a spherical joint
     expect(rows.length).toBe(24);
   });
 
+  it('what Rapier enforces at combined poses: a thigh turned steadily so that one reading rises and the others hold halts where that reading meets its stop, within 0.3 deg, on each axis at flexions to 110 with rotation and ab/adduction; the half-sine reading 2 asin(e_i) (fault twin) reads the adduction stop of 30 as 24 at flexion 75 and 17.5 at flexion 110', async () => {
+    const box = hipStopBox(HIP_STOPS_V1, 1);
+    /** The relative rotation with box readings `r` (deg): tan of each half-angle is its component's ratio to w. */
+    const fromReadings = (r: number[]): Quat => {
+      const [x, y, z] = r.map((a) => Math.tan((a * RAD) / 2));
+      const n = Math.hypot(x, y, z, 1);
+      return { x: x / n, y: y / n, z: z / n, w: 1 / n };
+    };
+    // [axis, direction, start readings]: Z toward adduction (-30), Y toward external (+45) and internal (-45), X toward
+    // flexion (-125), Z out (+50). Where it halts is the stop; how it holds there is Rapier's own: its correction is not
+    // along the reading's gradient and turns the others (at flexion 110 the Y stop's mostly turns Z, so Y overruns 45 by
+    // 11 deg until the Z stop holds too: not a case here)
+    const CASES: [number, number, number[]][] = [
+      [2, -1, [0, 0, -20]], [2, -1, [-30, 0, -20]], [2, -1, [-75, 0, -20]], [2, -1, [-75, 30, -20]], [2, -1, [-110, 10, -20]], [2, -1, [0, 30, -20]],
+      [1, 1, [-30, 30, 0]], [1, 1, [-75, 30, 0]], [1, 1, [-75, 30, -10]], [1, -1, [-75, -30, 10]], [1, 1, [20, 30, 20]],
+      [0, -1, [-110, 30, 0]], [0, -1, [-110, 0, 25]], [0, -1, [-110, -30, -20]],
+      [2, 1, [-75, 20, 35]],
+    ];
+    const halts: string[] = [];
+    const halfSineAt: number[] = [];
+    for (const [i, dir, start] of CASES) {
+      const rig = await hipRig(ID, fromReadings(start));
+      box.forEach(([lo, hi], k) => setAngularLimits(rig.joint, ANG_AXES[k], lo, hi));
+      // (Rapier keeps rotations in single precision)
+      expect(rig.reading().map((a) => a * DEG)).toEqual(start.map((a) => expect.closeTo(a, 4)));
+      let halt: number[] | null = null;
+      for (let k = 0; k < 600 && !halt; k++) {
+        // the turn (frame coordinates, here the world's) that raises reading i at 1 rad/s and holds the others: the
+        // readings' Jacobian (central differences) inverted
+        const q = rig.thigh.rotation();
+        const J: number[] = [];
+        for (let a = 0; a < 3; a++)
+          for (let b = 0; b < 3; b++) {
+            const ax = [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)][b];
+            const at = (h: number): number => boxReading(jointRelative(ID, ID, qMul(qFromAxisAngle(ax, h), q)))[a];
+            J.push((at(1e-6) - at(-1e-6)) / 2e-6);
+          }
+        const w = m3Vec(m3Inverse(J as Mat3)!, v3(i === 0 ? dir : 0, i === 1 ? dir : 0, i === 2 ? dir : 0));
+        const c = rig.thigh.worldCom();
+        rig.thigh.setAngvel(w, true);
+        rig.thigh.setLinvel({ x: w.y * c.z - w.z * c.y, y: w.z * c.x - w.x * c.z, z: w.x * c.y - w.y * c.x }, true);
+        const before = rig.reading()[i];
+        rig.world.step();
+        if ((rig.reading()[i] - before) * dir < 0.3 / 240) halt = rig.reading().map((a) => a * DEG);
+      }
+      rig.world.free();
+      expect(halt, `${'XYZ'[i]} from ${start}`).not.toBeNull();
+      const stop = (dir < 0 ? box[i][0] : box[i][1]) * DEG;
+      halts.push(`${'XYZ'[i]}${dir > 0 ? '+' : '-'} from ${start.join('/')}: halted at ${halt!.map((a) => a.toFixed(2)).join('/')}`);
+      expect(Math.abs(halt![i] - stop), halts.at(-1)).toBeLessThan(0.3);
+      if (i === 2 && dir < 0 && ((start[0] === -75 && start[1] === 0) || start[0] === -110)) halfSineAt.push(2 * Math.asin(fromReadings(halt!).z) * DEG);
+    }
+    // fault twin: the half-sine reading of the same halts, 6 and 12.5 deg short of the stop
+    expect(halfSineAt).toEqual([-24, -17.5].map((a) => expect.closeTo(a, 0)));
+  });
+
   it('Rapier reads the relative rotation sign-normalised (w >= 0): a thigh body given -q, the same orientation, flexed 100 deg, is held at the same flexion stop', async () => {
     const frame = ID;
     const box = hipStopBox(HIP_STOPS_V1, 1);
@@ -161,29 +217,29 @@ describe('ladder rung 8d: the hip\'s anatomical frame and the box\'s reading of 
     }
   });
 
-  it('on its own axis the box reads the anatomical angle exactly, both sides; combined it couples (the known corners, tabulated): the twist it admits grows with flexion, and rotation at 90 flexion reads as ab/adduction', () => {
+  it('on its own axis the box reads the anatomical angle exactly, both sides; combined (the known corners, tabulated): a rotation after a flexion reads exactly on Y at every flexion and adds 2 atan(tan(f/2) tan(t/2)) on Z, so at 90 flexion a rotation of 45 reads 45 on Z; the half-sine reading (8d\'s, fault twin) reads that pose as flexion 81.6, rotation 31.4, adduction 31.4', () => {
     for (const ss of [1, -1]) {
       expect(deg3(hipStopReading(thighRel(110, 0, 0, ss), ID))).toEqual([-110, 0, 0]);
       expect(deg3(hipStopReading(thighRel(-30, 0, 0, ss), ID))).toEqual([30, 0, 0]);
       expect(deg3(hipStopReading(thighRel(0, 40, 0, ss), ID))).toEqual([0, 0, ss * 40]);
       expect(deg3(hipStopReading(thighRel(0, 0, 40, ss), ID))).toEqual([0, ss * 40, 0]);
     }
-    // the largest external rotation the Y stop (45) admits at each flexion: 2 asin(sin 22.5 / cos(flex / 2))
-    const admitted = [0, 30, 60, 90, 110, 125].map((flex) => {
-      let lo = 0;
-      let hi = 179;
-      for (let k = 0; k < 50; k++) {
-        const mid = (lo + hi) / 2;
-        if (hipStopReading(thighRel(flex, 0, mid, 1), ID)[1] <= 45 * RAD) lo = mid;
-        else hi = mid;
+    const halfSine = (rel: Quat): number[] => [rel.x, rel.y, rel.z].map((c) => 2 * Math.asin(c));
+    for (const flex of [0, 30, 60, 90, 110, 125])
+      for (const rot of [-40, 25, 45]) {
+        const [x, y, z] = hipStopReading(thighRel(flex, 0, rot, 1), ID).map((v) => v * DEG);
+        expect(x).toBeCloseTo(-flex, 9);
+        expect(y).toBeCloseTo(rot, 9);
+        expect(z).toBeCloseTo(-2 * Math.atan(Math.tan((flex * RAD) / 2) * Math.tan((rot * RAD) / 2)) * DEG, 9);
       }
-      return Math.round(lo);
-    });
-    expect(admitted).toEqual([45, 47, 52, 66, 84, 112]);
-    // flexion 90 with rotation 45 either way: ab/adduction components of 31.4, past the adduction stop (30) one way
+    // flexion 90 with rotation 45 either way: ab/adduction readings of 45, past the adduction stop (30) one way
     const [, , zExt] = hipStopReading(thighRel(90, 0, 45, 1), ID);
     const [, , zInt] = hipStopReading(thighRel(90, 0, -45, 1), ID);
-    expect([zExt * DEG, zInt * DEG].map((v) => Number(v.toFixed(1)))).toEqual([-31.4, 31.4]);
+    expect([zExt * DEG, zInt * DEG].map((v) => Number(v.toFixed(1)))).toEqual([-45, 45]);
+    // fault twin: the half-sine of each component reads that pose as flexion 81.6, rotation 31.4 and adduction 31.4
+    // (the Y stop of 45 would admit 66 deg of rotation there)
+    const hs = halfSine(thighRel(90, 0, 45, 1)).map((v) => Number((v * DEG).toFixed(1)));
+    expect(hs).toEqual([-81.6, 31.4, -31.4]);
   });
 
   it('a fall-response hip target is held inside the stops less the margin: 129 deg forward (the L4 cone) reads 122 after; one inside is the same vector', () => {

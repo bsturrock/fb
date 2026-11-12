@@ -44,7 +44,8 @@ async function kneeRig(deg0: number) {
 describe('ladder rung 8f: the knee flexion stop', () => {
   it('the hinge reading is the flexion Rapier limits: a knee driven hard into a 140 stop stops within 2 deg of it and settles on it; the hinge\'s own 150 without it (fault twin)', async () => {
     const rig = await kneeRig(60);
-    expect(rig.reading()).toBeCloseTo(60, 6);
+    // (Rapier keeps rotations in single precision: the reading is 60 to its rounding)
+    expect(rig.reading()).toBeCloseTo(60, 5);
     const k = initKneeStop(rig.joint, 'leftKnee', 0, rig.thigh.rotation(), rig.shin.rotation(), HINGE[0], HINGE[1], 140);
     expect(rig.joint.limitsMax()).toBeCloseTo(140 * RAD, 6);
     expect(k.startOutsideDeg).toBe(0);
