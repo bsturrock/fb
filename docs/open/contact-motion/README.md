@@ -6,6 +6,11 @@ Requested 2026-11-10. Implementation brief for Opus 5.5. Planning only; no simul
 
 A carrier sees contact coming, lowers and pitches forward while covering the ball, then carries that posture and momentum into a controlled fall. A defender approaches with open arms, closes firmly on real contact, and commits their own body to taking the carrier down. Free hands and bent knees absorb the landing. Shoulders and elbows remain anatomically coherent throughout.
 
+Status (2026-11-12): M1 is done ([handoff](../../handoff/contact-motion.md)). The prerequisites the user ruled must
+land before M2 (hard ragdoll joint stops, own-leg contact, physical supported legs) are on branch `prereq-ladder`
+([handoff](../../handoff/contact-motion-prerequisites.md); what is still open, with the user's review list:
+[prerequisites ladder](prerequisites-ladder.md)). M2 starts from that branch after the user's review.
+
 Implement in this order, one reviewable milestone at a time:
 
 1. [Anatomical limb rotation](01-limb-rotation.md): establish valid joints and continuous poses before tuning force.
