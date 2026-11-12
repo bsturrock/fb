@@ -20,7 +20,7 @@ import { stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { POSE_GUARD_C6 } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { breathe, create, FIX, pace, rows, run, runSim, stepWhile, traceDiff } from './helpers';
+import { breathe, create, FIX, pace, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
 
 const HC = (): FixtureDef[] => allFixtures().filter((d) => d.id.startsWith('HC-'));
 /** Unchanged boundary tolerances (RagdollProfile validation): landmark 0.01 m, new external penetration 0.015 m. */
@@ -142,9 +142,11 @@ function supportCounters(sim: Simulation): { tick: () => void; result: () => { f
 }
 
 /** The required cases checked over the first solved steps after acceptance (24 substeps). */
-/** Plan 13e: the substep after A's acceptance at which HC-F2-bothFall's A first touches B again (pinned below; 18 at 13e,
- * 19 under the plan 13f leg guard). */
-const HC_F2_IMPACT_K = 19;
+/** Plan 13e: the substep after A's acceptance at which HC-F2-bothFall's A first touches B again, and A's part that does
+ * (pinned below; 18 at 13e, 19 under the plan 13f leg guard, the right upper arm; 17 under the visible flip, the right
+ * forearm). */
+const HC_F2_IMPACT = { k: 17, part: 'rightForearm' } as const;
+const HC_F2_IMPACT_K = HC_F2_IMPACT.k;
 const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror', 'L3-F4-twoArm', 'L3-F9-convert-contact', 'L3-F9-noProbe-contact', 'L3-F9-defenderRising', 'L3-F10-both', 'L3-F10-defender'];
 /**
  * Substeps observed after acceptance, per fixture: 24, or only the very first solve for HC-F2-lift1.4 (plan 13e: before,
@@ -154,7 +156,7 @@ const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFe
  * Plan 13e (user ruling): HC-F2-bothFall's window ends at A's first new contact (pinned below): on the L3 locomotion A's
  * falling right upper arm meets B's head, a fall impact, not the switch. Plan 13f: the window is the substeps before
  * that contact, 18 (at 13e the contact substep, +18, was itself clean and the impact came on the next solve; under the
- * leg guard the contact comes at +19 and its own solve takes the impact).
+ * leg guard the contact comes at +19 and its own solve takes the impact; 16 under the visible flip, contact at +17).
  */
 const POST_N: Record<string, number> = { ...Object.fromEntries(POST_SWITCH.map((id) => [id, 24])), 'HC-F2-lift1.4': 1, 'HC-F2-bothFall': HC_F2_IMPACT_K - 1 };
 /** Limb-snap bounds of the required cases (the HC variants: 0.3 m, or a known case's bound). */
@@ -276,11 +278,13 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
     });
   });
 
-  it('HC-F2-bothFall: the post-switch window ends where A first touches B again, its right upper arm closing on B\'s head', async () => {
+  it('HC-F2-bothFall: the post-switch window ends where A first touches B again, its right arm closing on B\'s head', async () => {
     // plan 13e (user ruling): A's switch is clean until its first new contact with B (checked above). Plan 13f: at +19
     // its right upper arm comes into contact with B's head, closing on it at 3.6 m/s along the contact normal before
     // that solve, which takes the impact (5.4 mm at the elbow, 13.1 body weights; through +18: 0.66 mm, 3.7). Pinned
-    // here, so the window is re-measured when the fall changes
+    // here, so the window is re-measured when the fall changes. Re-measured at the visible flip (ladder 8l): its right
+    // forearm meets B's head first, at +17, closing at 3.65 m/s (the hip stops, PGS and the knee stop each move it:
+    // +15, +18 and +20 with one of them off)
     const sim = await create(FIX('HC-F2-bothFall'));
     const S = sim as unknown as { stepSubstep: (i: number) => void };
     const orig = S.stepSubstep.bind(sim);
@@ -295,7 +299,7 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
       const B = sim.byId.get('B')!;
       if (!A.rag || A.handoff?.outcome !== 'accepted' || !B.rag) return;
       const before = rel;
-      rel = sub(A.rag.bodies.rightUpperArm.linvel(), B.rag.bodies.head.linvel());
+      rel = sub(A.rag.bodies[HC_F2_IMPACT.part].linvel(), B.rag.bodies.head.linvel());
       if (step0 < 0) step0 = A.handoff.step;
       const k = sim.steps - step0;
       if (k > 24) return;
@@ -305,13 +309,13 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
           const pair = `${m.part}:${m.side ?? ''}>${o.part}`;
           firstWith[pair] ??= k;
           // closing speed along the contact normal (from A's part to B's)
-          if (k === HC_F2_IMPACT_K && pair === 'rightUpperArm:right>head' && before) closing = dot(before, n);
+          if (k === HC_F2_IMPACT_K && pair === `${HC_F2_IMPACT.part}:right>head` && before) closing = dot(before, n);
         }
     };
     while (!sim.done) sim.stepTick();
     sim.dispose();
     const late = Object.entries(firstWith).filter(([, k]) => k > 1);
-    expect(late.map(([pair, k]) => `${pair} +${k}`)).toEqual([`rightUpperArm:right>head +${HC_F2_IMPACT_K}`]);
+    expect(late.map(([pair, k]) => `${pair} +${k}`)).toEqual([`${HC_F2_IMPACT.part}:right>head +${HC_F2_IMPACT_K}`]);
     expect(closing).toBeGreaterThan(2);
   });
 
@@ -348,7 +352,8 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
           expect(guarded.length).toBeGreaterThan(20);
           expect(guarded.filter((d) => !ON(d)).map((d) => d.id)).toEqual([]);
           expect(allFixtures().filter((d) => ON(d) && d.ragdoll && !d.ragdoll.poseGuard).map((d) => d.id)).toEqual([]);
-          for (const d of HC()) if (d.ragdoll) expect(d.ragdoll.id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
+          // (the profile before the visible flip, which adds its parts after the guard)
+          for (const d of HC()) if (d.ragdoll) expect(unflipped(d.ragdoll).id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
         },
       ],
     ];

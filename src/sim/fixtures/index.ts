@@ -10,6 +10,20 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
+import { hipStopsFor, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop } from '../profiles';
+
+/**
+ * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
+ * approach zone, HIP_STOPS_V2; on L4 too since rung 8k), 4 additional PGS iterations, the knee flexion stop at 140 deg
+ * and the deferred conversion (rung 8j). G, L1, L2 and RH keep their profiles. The lab's
+ * `hips=on&pgs=4&knees=140&retry=on` is the same profile on a fixture registered without it; tests/runs.ts `preFlip`
+ * gives a definition as before the flip.
+ */
+const VISIBLE_FLIP = /^(L3|L4|HC)-/;
+function visibleFlip(d: FixtureDef): FixtureDef {
+  if (!d.ragdoll || !VISIBLE_FLIP.test(d.id)) return d;
+  return { ...d, ragdoll: withConversionRetry(withKneeStop(withAdditionalPgsIterations(withHipStops(d.ragdoll, hipStopsFor(d.ragdoll)), 4), 140)) };
+}
 
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
@@ -39,6 +53,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ]);
+  ].map(visibleFlip));
   return registry.slice();
 }

@@ -23,11 +23,11 @@ import { armSelfShapes, buildProxyPose, CONT_LEG_MPS, HARD_OK, hingeChain, LEG_S
 import { initPhysics, RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX, withoutConversionRetry } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, rows, runSim } from './helpers';
+import { FIX, preFlip, rows, runSim } from './helpers';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
 type Check = [string, () => void | Promise<void>];
@@ -510,8 +510,10 @@ describe('plan 12 joint range: shoulders', () => {
     // a standing pile: the twin's ragdoll arm goes past the cone, with the profile it is inside. Plan 13f: was HC-F1-low
     // (twin 13 deg past); under the leg guard, which the twin keeps, its twin stays 22.5 deg inside. L3-F10-bothMirror:
     // the twin's R right arm 9.9 deg past, the profile's 24.6 deg inside. Ladder rung 7d: pinned to LEG_GUARD_V1 (under the
-    // physical legs the twin's arm stays 3.6 deg inside the cone)
-    const pile = pinV1(FIX('L3-F10-bothMirror'));
+    // physical legs the twin's arm stays 3.6 deg inside the cone). Ladder 8l: and to the profile before the visible flip
+    // (under it the twin's arm stays inside the cone, 0.01 deg past at most; with any one of its hip stops, PGS and knee
+    // stop off, 47-64 deg past)
+    const pile = pinV1(preFlip(FIX('L3-F10-bothMirror')));
     const on = await probe(pile);
     const off = await probe(twin(pile));
     expect(off.worst.ragdoll.ex).toBeGreaterThan(5);
@@ -615,7 +617,9 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
       ([id, rev]) => `${id}${rev ? ' reversed' : ''}`,
       async ([id, rev, beforeM]) => {
         const o = rev ? { reverseOrder: true } : {};
-        const def = pinV1(FIX(id));
+        // (ladder 8l: the sample as measured before the visible flip; under it R's shoe is moved and the fault twins
+        // convert, 1.46 cm, with the deferred conversion off too)
+        const def = pinV1(preFlip(FIX(id)));
         const on = await handoffOf(def, o);
         expect(on.outcome, id).toBe('accepted');
         expect(on.newM, id).toBeLessThan(0.012);
@@ -641,6 +645,10 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
   // where D's run puts its legs. The bounds are the rule's: the conversion's penetration tolerance and the guard's
   // accepted depth, not measured values.
   const THROW = { atS: 0.4, mps: 10, along: 0.6, clearM: 0.01 };
+  // The case is the conversion's validation at the switch. Since the visible flip L3 carries the deferred conversion
+  // (ladder rung 8j), which retries a conversion rejected for external penetration and takes it once the thrown head has
+  // passed (7 tries later, at 0.429 s); the case runs without it (tests/conversion-retry.test.ts holds the retry's own)
+  const atSwitch = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withoutConversionRetry(d.ragdoll!) });
   const vecOf = (v: { x: number; y: number; z: number }): Vec3 => v3(v.x, v.y, v.z);
   type Sd = 'left' | 'right';
   const thrownAt = async (def: FixtureDef, opts: SimOptions = {}) => {
@@ -689,7 +697,7 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
   };
 
   it('the swept guard (V2) converts beside a thrown closing body; without its prediction, and on the twin, the thrown head is in the thigh', async () => {
-    const base = FIX('L3-F9-convert-free');
+    const base = atSwitch(FIX('L3-F9-convert-free'));
     // without the plan 10c deep push that contact motion M1 adds to L3 (it would clear the leg on its own)
     const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
     const tol = base.ragdoll!.validation.penetrationTolM;
@@ -728,7 +736,7 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
   // and stops on it, so V3 converts with or without the 13f prediction. The no-physical-legs variant is V2 (V3 less
   // `physicalLegs`), which without its prediction is rejected with the head in the thigh (the V2 case above).
   it('under physical legs (V3) the thrown head stops on the thigh and D converts, with or without the prediction; without physical legs (V2) and without it, it is rejected', async () => {
-    const base = FIX('L3-F9-convert-free');
+    const base = atSwitch(FIX('L3-F9-convert-free'));
     const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
     const tol = base.ragdoll!.validation.penetrationTolM;
     const v3d = noDeep({ ...base, legGuard: LEG_GUARD_V3 });

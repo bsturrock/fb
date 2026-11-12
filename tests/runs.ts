@@ -22,6 +22,11 @@ export const FIX = (id: string): FixtureDef => {
  * without the deferred conversion (8j), under the id it had before them.
  */
 export const unflipped = (r: RagdollProfile): RagdollProfile => withoutConversionRetry(withoutKneeStop(withoutPgsIterations(withoutHipStops(r))));
+/**
+ * Ladder 8l: `d` with its ragdoll profile as before the visible flip: the profile a state capture taken before it, a
+ * case "without the field" or a natural sample was taken under (as LEG_GUARD_V1 pins those of ladder rung 7d).
+ */
+export const preFlip = (d: FixtureDef): FixtureDef => (d.ragdoll ? { ...d, ragdoll: unflipped(d.ragdoll) } : d);
 /** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */
 export const hipStops8i = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
 /**

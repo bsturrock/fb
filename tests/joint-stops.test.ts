@@ -7,7 +7,7 @@ import { modelBody } from '../src/sim/model/profiles';
 import { initPhysics } from '../src/sim/physics';
 import { HIP_STOPS_V1, sideSignX, upperBodyCompound, withHipStops, type BodyProfile } from '../src/sim/profiles';
 import { m3Inverse, m3Vec, qFromAxisAngle, qFromUnitVectors, qMul, qRot, v3, type Mat3, type Quat, type Vec3 } from '../src/sim/vec';
-import { create, FIX, stepWhile } from './helpers';
+import { create, FIX, preFlip, stepWhile } from './helpers';
 import { hipAngles } from './visible';
 
 // Ladder rung 8d: hard outer stops on the ragdoll's spherical hips (src/sim/joint-stops.ts), opt-in
@@ -310,7 +310,8 @@ describe('ladder rung 8d: a conversion outside the stops', () => {
 describe('ladder rung 8d: a ragdoll built under the field', () => {
   it('has on each hip its anatomical frame and the stops (Rapier\'s readback), widened to its start where it starts outside; none without the field', async () => {
     const read = async (on: boolean) => {
-      const d = FIX('L4-F2-model-side-off');
+      // (the profile without the visible flip's stops)
+      const d = preFlip(FIX('L4-F2-model-side-off'));
       const sim = await create(on ? { ...d, ragdoll: withHipStops(d.ragdoll!) } : d);
       await stepWhile(sim, () => !sim.players.some((p) => p.rag?.enabled));
       const p = sim.players.find((x) => x.rag?.enabled)!;

@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { breathe, FIX, rows, run, runSim } from './helpers';
+import { breathe, FIX, preFlip, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -633,8 +633,9 @@ describe('plan 13e faults put back', () => {
     // and lets it go once the body that held it moves off: L3-F4-gripOwner's runner plants its held-off left foot at
     // 1.325 s and steps home at 1.392 s (1.3875 s under the plan 13f leg guard), when the defender's core is 9 cm from
     // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm). Ladder rung 7d:
-    // pinned to LEG_GUARD_V1; under the physical legs the defender's core no longer holds that foot off its home
-    const sim = await run({ ...FIX('L3-F4-gripOwner'), legGuard: LEG_GUARD_V1 });
+    // pinned to LEG_GUARD_V1; under the physical legs the defender's core no longer holds that foot off its home. Ladder
+    // 8l: and to the profile before the visible flip (under it the step home comes at 1.4000 s, each of its parts moving it)
+    const sim = await run({ ...preFlip(FIX('L3-F4-gripOwner')), legGuard: LEG_GUARD_V1 });
     const steps = sim.events.filter((e) => e.type === 'footSwing' && e.playerId === 'R' && (e.data as { side?: string }).side === 'left' && (e.data as { reason?: string }).reason === 'step');
     sim.dispose();
     expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');
@@ -791,7 +792,9 @@ describe('ladder tracked defects (rule 7)', () => {
   // that moves the fixture's trajectory before that point does not move the test, and a twin can resume the same state
   // with a change off. Each fails once the defect is gone from that state, when the check that sets it aside on the live
   // fixtures (tests/l3-pass.ts LEG_IN_RAGDOLL, HOLD_CLEARANCE_REPLANT) is to lose the exception.
-  const resumed = async (capture: string, opts: SimOptions = {}) => runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { opts }));
+  // (captured before the visible flip: resumed under the profile they ran under)
+  const resumed = async (capture: string, opts: SimOptions = {}) =>
+    runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preFlip(FIX(capture.split('@')[0])), opts }));
   it('a posed leg held inside the runner\'s ragdoll, the defender\'s conversion rejected for it (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off)', async () => {
     // captured with R a ragdoll and D supported beside it, 2 ticks before D's posed legs pass the conversion tolerance
     // (12 substeps from 1.200 s on the L3 fixtures, 8 from 1.271 s on L4-F10-wrap-off at rung 4b), D converting at 1.30 s
@@ -830,7 +833,7 @@ describe('ladder tracked defects (rule 7)', () => {
     // accepted. Measured (rung 6): no substep past the tolerance at all, 1.20 / 1.20 / 1.02 cm at most.
     await rows(['L3-F4-oneArm@70', 'L3-F1-phase2@70', 'L4-F10-wrap-off@74'], (c) => c, async (c) => {
       const id = c.split('@')[0];
-      const def = { ...FIX(id), legGuard: LEG_GUARD_V3 };
+      const def = { ...preFlip(FIX(id)), legGuard: LEG_GUARD_V3 };
       const tol = def.ragdoll!.validation.penetrationTolM;
       let run0 = 0;
       let longest = 0;
@@ -892,7 +895,7 @@ describe('ladder tracked defects (rule 7)', () => {
     const caps = ['L3-F6-hold@216', 'L3-F6-holdMirror@210'];
     await rows(caps.flatMap((c) => (['V2', 'V3'] as const).flatMap((g) => [false, true].map((fault) => ({ c, g, fault })))), (x) => `${x.c} ${x.g}${x.fault ? ' noPlantedPole' : ''}`, async ({ c, g, fault }) => {
       const id = c.split('@')[0];
-      const def = { ...FIX(id), legGuard: g === 'V2' ? LEG_GUARD_V2 : LEG_GUARD_V3 };
+      const def = { ...preFlip(FIX(id)), legGuard: g === 'V2' ? LEG_GUARD_V2 : LEG_GUARD_V3 };
       // per planted leg and substep: at a knee pole (pose memory index >= 10), the shown pole's turn (body frame), the plant's feature error
       let atPole = 0;
       let maxTurn = 0;

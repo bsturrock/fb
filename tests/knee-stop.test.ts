@@ -4,7 +4,7 @@ import { clampToKneeStop, hingeReading, initKneeStop, ratchetKneeStop } from '..
 import { initPhysics } from '../src/sim/physics';
 import { withKneeStop } from '../src/sim/profiles';
 import { qFromAxisAngle, v3 } from '../src/sim/vec';
-import { create, FIX, stepWhile } from './helpers';
+import { create, FIX, preFlip, stepWhile } from './helpers';
 
 // Ladder rung 8f: the ragdoll knee's flexion stop (`RagdollProfile.kneeFlexionStopDeg`; no fixture uses it). The knee is
 // a Rapier revolute hinge about its local X with limits [0, 150] deg (`limitsDeg.knee`, which the conversion's candidate
@@ -87,7 +87,8 @@ describe('ladder rung 8f: the knee flexion stop', () => {
 
   it('a ragdoll built under the field has the stop on both knees (Rapier\'s readback) and the hinge\'s own limit without it', async () => {
     const read = async (deg?: number) => {
-      const d = FIX('L4-F2-side-off');
+      // (the profile without the visible flip's stop)
+      const d = preFlip(FIX('L4-F2-side-off'));
       const sim = await create(deg === undefined ? d : { ...d, ragdoll: withKneeStop(d.ragdoll!, deg) });
       await stepWhile(sim, () => !sim.players.some((p) => p.rag?.enabled));
       const rag = sim.players.find((p) => p.rag?.enabled)!.rag!;

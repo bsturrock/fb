@@ -60,6 +60,71 @@ the 8i variant (hip stops with the approach zone, L4 backstop, knee stop 140, PG
 implausible or worse (64.8 of it L4 hip adduction the L4 envelope admits), deep own-body 504; the 8d box with the same
 read 5.9 / 19.6 / 461 (8e, 8f). The rest of own-body overlap needs ragdoll own-leg contact (next rung).
 
+## Morning review for the user
+
+What each step changed that is worth watching, newest last. Every link is a lab URL (`npm run dev` on this branch). The
+link as given is the view after the step (the default); add the step's "before" parameters to see the same moment as it
+was. Speed 0.25 in all of them.
+
+### 8m: the joint stops on every falling player
+
+Before: add `&hips=off&pgs=0&knees=off&retry=off` to any link below.
+
+What visibly changes. A falling player's hips no longer twist round or swing to where a body cannot go, its knees no
+longer fold flat, and its legs pass through its own body much less. On the falls with a muscle response the hips no
+longer splay wide.
+
+- `?fixture=HC-F2-bothFall&cam=side&speed=0.25&t=1.40`: player A's right thigh was turned round on itself.
+- `?fixture=L3-F10-bothLow&order=rev&cam=side&speed=0.25&t=1.75`: the defender's right thigh swung far behind it.
+- `?fixture=L4-F11-settle&cam=side&speed=0.25&t=1.00`: the runner's right knee folded flat as it settled.
+- `?fixture=L4-F12-base&cam=front&speed=0.25&t=0.55`: the runner's legs splayed wide while falling.
+
+Who falls (t is just before the moment). The first two lists are the ones you saw and accepted at the lab review of
+these stops; the third is new since then, from the retried conversion added after it. The four players that review
+showed turning into stiff figures (`HC-F3-falling` reversed, `HC-F5-strictTransfer` both orders, `L3-F1-phase4`
+reversed) go limp again as they did before the step.
+
+Now stays up:
+
+- `?fixture=HC-F3-phase0&cam=front&speed=0.25&t=1.05`: the defender (both orders).
+- `?fixture=L3-F1-phase0&cam=front&speed=0.25&t=1.10`: the defender (reversed it still falls, 0.1 s later).
+- `?fixture=L3-F4-gripTarget&cam=front&speed=0.25&t=1.65`: the defender (reversed it still falls, 0.15 s later).
+- `?fixture=L4-F10-knee-off&cam=front&speed=0.25&t=0.65`: the defender (both orders).
+- `?fixture=L4-F5-twoPalm-on&cam=front&speed=0.25&t=2.00`: the runner (both orders).
+
+Now falls:
+
+- `?fixture=HC-F3-phase75&order=rev&cam=front&speed=0.25&t=1.20`: the defender.
+- `?fixture=L3-F1-mirror0&cam=front&speed=0.25&t=1.25`: the defender (both orders).
+- `?fixture=L3-F1-mirror4&order=rev&cam=front&speed=0.25&t=1.35`: the defender.
+- `?fixture=L3-F9-noProbe-free&cam=front&speed=0.25&t=0.70`: the defender (both orders).
+
+The statue now goes limp (new since the review): the defender stayed a stiff, unbending figure to the end of the fall;
+now it goes limp as it falls.
+
+- `?fixture=L3-F1-phase2&cam=front&speed=0.25&t=1.20`
+- `?fixture=L3-F4-oneArm&cam=front&speed=0.25&t=1.20`
+- `?fixture=L4-F10-wrap-off&cam=front&speed=0.25&t=1.15`
+
+Bracing hands that changed:
+
+- `?fixture=L4-F12-base&cam=front&speed=0.25&t=0.25` and `?fixture=L4-F12-mirror&cam=front&speed=0.25&t=0.25`:
+  the landing hand now reaches the floor; before, both arms were late.
+- `?fixture=L4-F3-oblique-on&cam=front&speed=0.25&t=0.25`: the free hand now lands; before, it was late.
+- `?fixture=L4-F3-side-on&cam=front&speed=0.25&t=0.25`: the free hand now gives up as too far; before, it was late.
+- `?fixture=L4-F5-onePalm-on&cam=front&speed=0.25&t=1.50`: the free hand's brace no longer lands (you accepted this).
+
+To look at and decide:
+
+- `?fixture=HC-F5-strictTransfer&cam=side&speed=0.25&t=2.80`: the runner ends lying with its right arm straight overhead
+  on the floor, and the joint measure reads that shoulder as twisted well past what a shoulder can do, from about 3 s to
+  the end. Straight overhead the measure is unreliable (a small move of the arm swings the reading a long way), and the
+  shoulder's twist limit is built to fade out there, so nothing turns the arm back. This step does not cause it: from
+  the same moment with the new stops taken off, the arm stays the same. The "before" view ends differently (the whole
+  fall changes from the conversion on), so judge this one view. Question: does the arm look twisted? If it does, a twist
+  limit that holds overhead becomes a later step; if it looks natural, the measure stops reading shoulder twist
+  overhead, as it already does not for the hip.
+
 ## Status
 
 Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each compared against the previous rung.
@@ -373,6 +438,27 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   to the variant. Who falls against 8k: 17 player-runs over 12 fixtures, against 8i only the seven rejections now
   converting. Brace outcomes moved by the box on L4: L4-F12 base and mirror and L4-F3-oblique-on land a palm,
   L4-F3-side-on misses tooFar (each late before).
+- **8m** (`r8m-visible-flip`) landed: the visible flip registered on every L3/L4/HC ragdoll (`visibleFlip` in
+  src/sim/fixtures: `hipStopsFor`, PGS 4, knee 140, the conversion retry; `preFlip` in tests/runs.ts is the profile
+  before it). 332/332. Against the 8l assessment run (`assess-8l/flip-patch/`) every summary, trace and matrix is
+  byte-identical; only the suite count differs (two tests added). Against 8k: G/L1/L2/RH byte-identical, 135 summaries
+  changed (L3 44, L4 70, HC 21), 10 end-representation changes (the 8l who-falls list), no matrix row over the ceiling,
+  highest query tick 3749. Per family, player-s impossible / implausible or worse / own-leg axes / deep own-body: L3
+  1.00 / 4.10 / 21.9 / 110.5, L4 1.13 / 3.69 / 62.7 / 134.2, HC 6.58 / 9.87 / 23.6 / 81.5 (by DOF: shoulder rotation
+  5.7, hip rotation 3.0 impossible); knee stop 0 everywhere; injecting solves / J / largest L3 217 / 1083 / 80.8, L4
+  152 / 649 / 52.4, HC 125 / 511 / 51.8. Two changes over the 8l patch, from its review: (1) the allocation row in
+  falls.test.ts no longer counts scaled substeps against a floor (50 at 10c, 20 since plan 12; 29 before the flip, 13
+  under it, the onePalm free arm's brace gone): it computes the pre-10c joint allocation from each substep's own
+  demands as its fault twin, which must differ from grasp first somewhere in the sample and only where the budget
+  scaled the effort (under the flip it differs at 13 substeps, all L4-F6-break, by up to 31% of the hold's tension;
+  with arms.ts reverted to the joint rule the row fails at L4-F6-break D 269 left, 210.04 against 212.99 N). (2) The
+  HC-F5-strictTransfer shoulder reading is `SHOULDER_POLE_TWIST` (open defects, test tests/shoulder-pole.test.ts on the
+  capture `HC-F5-strictTransfer@165`), not the loaded-limb class: the arm is at rest overhead with only the floor on it,
+  so 7f's rule (which reads the envelope's faded excess) does not apply. Lab test: `hips=off&pgs=0&knees=off&retry=off`
+  on a registered fixture is `preFlip` and runs as it; `hips=on&pgs=4&knees=140&retry=on` is the registered profile.
+  The parked hip-stop, knee-stop and visible flips are applied (their scratch dirs kept). The 8l same-state twins ran
+  L3/HC ragdolls without the shoulder envelope (the twin script's profile reset, fixed at 8m, see
+  `assess-8l/tools/worktree-scratch/README.txt`); its whole-run twins and every repair's reading stand.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -391,13 +477,6 @@ order, not hunk-split.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
 - D4/D5 footwork: reverted (see the handoff's known issues).
-- 8e, the hip-stop flip (L3/L4/HC): blocked, see 8e; evidence `.scratch/ladder/assess-8d/`, patches
-  `.scratch/ladder/parked/hip-stops-flip/`.
-- The knee-stop flip (L3/L4/HC, 8f): alone it trades knee time for hip time; to flip with the hips at 140. Evidence
-  `.scratch/ladder/assess-8f/`, patches `.scratch/ladder/parked/knee-stop-flip/`.
-- The visible flip (hip stops with the zone, PGS 4, knee 140, the deferred conversion on L3/L4/HC): ready since 8l,
-  applied as its own step; patch `.scratch/ladder/parked/visible-flip/flip.patch` (on 44dbab1; the 8i one beside it,
-  superseded), evidence `.scratch/ladder/assess-8l/` (8i: `assess-8i/`).
 - 8k's other option, the L4 hip envelope narrowed to the human ab/adduction (cone across 60 -> 42, its own backstop):
   removes the hip implausible time as the box does but not the own-body overlap; not taken. Patch and README
   `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
@@ -439,7 +518,9 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   HC-F5-strictTransfer reversed D (left shin in R's right thigh, 13 substeps, 3.42 cm at 1.246 s; V3 transferFailed as
   registered), HC-F5-strictTransfer D (right thigh in R's pelvis, 3 substeps, 3.37 cm at 1.288 s; V3 rejects too).
   The 8j deferred conversion converts all of them (registered captures and 8i captures), and under the 8l flip every
-  one converts in its run; the tracked captures stay the pre-flip state (`preFlip`).
+  one converts in its run; the tracked captures stay the pre-flip state (`preFlip`). Since 8m (the flip registered) no
+  registered run is rejected so, and the live exception (`LEG_IN_RAGDOLL` in tests/l3-pass.ts) excludes nothing: to
+  retire in its own step, with the captures' tests kept as the pre-flip record.
 - A held player's planted foot released by its clearance solve (plant drift just over 1 cm on clearance variant 1) and
   planted again every 0.2-0.6 s in a stationary hold (tracked from rung 3, `HOLD_CLEARANCE_REPLANT`): L3-F6-hold R left
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
@@ -475,7 +556,7 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 - Shape-query budget exceeded outside the budget test's two fixtures at `a6d712f`: HC-F5-invalidOne asks 4412 queries in
   one tick (unchanged by the rung 1 memo), L3-F7-mirror50 4028 before the memo and 3943 after. Resolved with the flags
   off at rung 5b (every leg-matrix run under 4000, counted by the full check).
-- Hip-stop impact rebound (found at 8e; only under the 8d stops, which no fixture runs): a thigh swing arrested by a
+- Hip-stop impact rebound (found at 8e under the 8d stops; the stops with the zone registered on L3/L4/HC since 8m): a thigh swing arrested by a
   stop is an impact through the hip, and the solves after it give part of the loss back. L4-F2-side-off R (response
   off, alone): the right hip reaches adduction 30 at solve 69, the body loses 6.5 and 7.7 J (69, 70), solve 71 gains
   4.19 J with no contact; the registered run never gains 0.2 J, and the same profile with every stop at 170 (set, never
@@ -495,7 +576,7 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
 - The L4 envelope admits more hip than a person (8i): adduction 45 and abduction 61.25 plus tolerance 5, past the
   implausible margins (45, 60). With the backstop outside it, L4 implausible time is 64.8 player-s at 8i (hip
   adduction 50.3, abduction 11.6; e.g. L4-F12-base R left hip at 0.70 s); the 8d box on L4 read 2.95. Resolved at 8k
-  (off): the box with the zone on L4 too.
+  (off): the box with the zone on L4 too, registered since 8m.
 - A posed thigh met by another player's ragdoll in the substep before the conversion, the conversion rejected and the
   player left a rigid falling proxy (the 13f known-limit class, gone at plan 14; tracked defect
   `THIGH_MET_AT_CONVERSION` in the parked 8i patch). Reached by the 8i flip: HC-F3-falling reversed D at 1.171 s, right
@@ -504,9 +585,26 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   1.100 s the registered profile and the flip without PGS 4 convert. The patch's regression test resumes that capture.
   Mechanism and fix at 8j (the deferred conversion, off): in the 8l flip, under which the case converts (1.183 s), so
   the patch no longer carries the tracked defect.
-- A shoulder held twisted under another body (seen at 8l, to read in the lab): HC-F5-strictTransfer under the flip, D
-  converts and lands on R, and R's right shoulder stays 42 deg past its rotation range from 2.9 s to the end (3.1
-  player-s, half the flip's HC impossible time). Not twinned yet; likely the loaded-limb class (the floor and D holding
-  the arm), which the persistence rule passes.
+- A ragdoll arm at rest at its swing pole keeps its twist (tracked defect `SHOULDER_POLE_TWIST`, found at 8l, twinned
+  at 8m): HC-F5-strictTransfer forward under the flip, R's right shoulder 41-42 deg past its rotation range (plan 09's
+  twist) from 2.95 s to the end (3.1 player-s, half the flip's HC impossible time). Not the loaded-limb class and not
+  under D: R lies with its right arm straight overhead on the floor (swing 177 deg from hanging), only the floor touching
+  the arm, at about its own weight (0.13 N s a substep). The envelope's twist limit is scaled by cos(swing / 2) so that
+  it fades at the pole (plan 09: passivity around closed paths), so there it reads 1.0 deg (under its 5 deg tolerance)
+  and acts on nothing; its persistence clock and the 7f loaded-limb rule read that faded excess, so neither sees it.
+  The twist drifts from 11 deg past at 2.75 s to 41 deg past with nothing turning it back; the reading itself is
+  ill-conditioned there (2.40 to 2.50 s it turns from 23 to 177 deg while the swing moves 172 to 177). Twins
+  (`.scratch/ladder/assess-8l/tools/worktree-scratch/r8m/`): from the flip's state at 2.75 s and at 2.40 s, the flip's
+  hip stops, PGS and knee stop taken off (and each alone) keep the arm there as long (3.13 and 3.32 s against 3.07
+  and 3.12); from 2.00 s and 1.40 s whether the fall ends with the arm at the pole varies part by part (from 2.00 s: all off 0.18 s,
+  hips off 0.30, PGS off 2.92, knee off 3.10): reached by the moved trajectory, not introduced or worsened. Whole runs:
+  before the flip 0, the flip 3.12 s, any one part off 0-0.07 s. Before the flip the fixtures read 4.2 player-s of
+  shoulder rotation past the impossible margin in short events, none at rest. Test tests/shoulder-pole.test.ts on
+  `HC-F5-strictTransfer@165` (2.750 s, the flip registered): past the impossible margin 3.07 s, only at the pole, the
+  envelope never past its tolerance; fault twin, the same arm and twist moved off the pole to swing 120: never past the
+  impossible margin, inside the tolerance after the persistence limit. Fix rung to choose after the lab review (the
+  user: does the overhead arm look twisted?): if it does, a twist limit that holds at the pole (rung 9's overhead-twist
+  singularity, for the ragdoll); if not, the visible meter stops reading shoulder twist at the pole, as it already does
+  not read hip rotation past 150 deg of swing.
 - Rapier's correction at a combined pose is not along the reading's gradient: at flexion 110 the Y stop's correction
   turns mostly Z, so Y overruns by 11 deg until the Z stop also holds (seen in the 8g probes, not in a fixture).

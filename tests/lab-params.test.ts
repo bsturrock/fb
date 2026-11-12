@@ -7,7 +7,7 @@ import {
   withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, runSim } from './helpers';
+import { create, FIX, flip8i, preFlip, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees` and `retry` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -55,7 +55,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
   // 8h: hips=on is the stops as they would flip (below)
   it('hips=v1 runs the fixture with the 8d hip stops (L4-F2-side-off), named in the label; hips=off takes them off again; without it the run differs', async () => {
     const id = 'L4-F2-side-off';
-    const d = FIX(id);
+    // (the profile before the visible flip, which registers the stops)
+    const d = preFlip(FIX(id));
     expect(d.ragdoll!.hipStops).toBeUndefined();
     const on = labRun(d, new URLSearchParams(`fixture=${id}&hips=v1`));
     expect(on.label).toBe('hip stops v1');
@@ -80,7 +81,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
   // ladder rung 8h: pgs=<n> and knees=off|140|145 with hips, composed in that order: the assessments' variant (8i)
   it('hips=on&pgs=4&knees=140 runs the fixture as the 8i variant (L3-F9-convert-free: the 8d box with the approach zone, PGS +4, knee stop 140), its profile to the id, named in the label; on L4 hips=on takes the same box (rung 8k), hips=l4 the 8i backstop; without them the run differs', async () => {
     const id = 'L3-F9-convert-free';
-    const d = FIX(id);
+    // (the profile before the visible flip, which registers this variant with the deferred conversion)
+    const d = preFlip(FIX(id));
     const r = d.ragdoll!;
     const variant = withKneeStop(withAdditionalPgsIterations(withHipStops(r, hipStopsFor(r)), 4), 140);
     expect(variant.id).toBe(`${r.id}+hip-stops-v2+pgs4+knee140`);
@@ -93,7 +95,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
     expect(await summaryOf(d, {})).not.toBe(run);
     // on L4 the stops as they would flip are the same box (rung 8k); hips=l4 the 8g backstop outside the soft envelope
     // (the 8i assessment's L4 stops); hips=v1 the 8d box alone
-    const l4 = FIX('L4-F2-side-off');
+    const l4 = preFlip(FIX('L4-F2-side-off'));
     expect(labRun(l4, new URLSearchParams('hips=on')).def.ragdoll!.hipStops).toBe(HIP_STOPS_V2);
     expect(labRun(l4, new URLSearchParams('hips=l4')).def).toEqual({ ...l4, ragdoll: withHipStops(l4.ragdoll!, HIP_STOPS_L4_V1) });
     expect(labRun(l4, new URLSearchParams('hips=l4')).label).toBe('hip stops l4');
@@ -102,7 +104,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
   }, 120000);
 
   it('knees=off, pgs=0 and hips=off undo their parameter to the profile it had, id and all; a value already registered, a fixture without a ragdoll profile and unknown values are named in the label and change nothing', () => {
-    const d = FIX('L3-F9-convert-free');
+    // (the profile before the visible flip)
+    const d = preFlip(FIX('L3-F9-convert-free'));
     const on = labRun(d, new URLSearchParams('hips=on&pgs=4&knees=145'));
     const back = labRun(on.def, new URLSearchParams('hips=off&pgs=0&knees=off'));
     expect(back.label).toBe('hip stops off · pgs +0 · knee stop off');
@@ -124,7 +127,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
   // ladder rung 8j: retry=on|off, composed after the others
   it('hips=on&pgs=4&knees=140&retry=on runs the 8i variant with the deferred conversion (HC-F3-falling reversed: D converts where the variant alone leaves it a falling proxy), named in the label; retry=off takes it off again; unknown values change nothing', async () => {
     const id = 'HC-F3-falling';
-    const d = FIX(id);
+    // (the profile before the visible flip, which registers this variant)
+    const d = preFlip(FIX(id));
     const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
     expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
     const want = withConversionRetry(flip8i(d).ragdoll!);
@@ -146,5 +150,23 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
     expect(withoutConversionRetry(d.ragdoll!)).toBe(d.ragdoll);
     expect(labRun(d, new URLSearchParams('retry=off'))).toEqual({ def: d, opts: {}, label: 'conversion retry off (registered)' });
     expect(labRun(d, new URLSearchParams('retry=maybe'))).toEqual({ def: d, opts: {}, label: 'retry=maybe ignored' });
+  }, 120000);
+
+  // ladder 8m: the visible flip registered on L3, L4 and HC; the owner compares the two views in the lab
+  it('on a fixture registered with the visible flip, hips=off&pgs=0&knees=off&retry=off is the view before it: the definition before the flip, id and all, and its run (an L3, L4 and HC fixture the flip changes); the flip\'s own values are the registered run', async () => {
+    for (const id of ['L3-F1-phase2', 'L4-F12-base', 'HC-F5-strictTransfer']) {
+      const d = FIX(id);
+      const before = labRun(d, new URLSearchParams(`fixture=${id}&hips=off&pgs=0&knees=off&retry=off`));
+      expect(before.label, id).toBe('hip stops off · pgs +0 · knee stop off · conversion retry off');
+      expect(before.def, id).toEqual(preFlip(d));
+      expect(before.def.ragdoll!.id, id).toBe(preFlip(d).ragdoll!.id);
+      const run = await summaryOf(before.def, before.opts);
+      expect(run, id).toBe(await summaryOf(preFlip(d), {}));
+      // the twin: the registered run, which the flip changes
+      expect(await summaryOf(d, {}), id).not.toBe(run);
+      const after = labRun(d, new URLSearchParams(`fixture=${id}&hips=on&pgs=4&knees=140&retry=on`));
+      expect(after.def, id).toBe(d);
+      expect(after.label, id).toBe('hip stops on (registered) · pgs +4 (registered) · knee stop 140 (registered) · conversion retry on (registered)');
+    }
   }, 120000);
 });

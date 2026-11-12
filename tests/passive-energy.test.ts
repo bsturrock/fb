@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { FixtureDef } from '../src/sim/fixture';
 import { create, FIX, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter, type EnergyRun, type SolveEnergy } from './passive-energy';
 
@@ -7,11 +8,16 @@ import { INJECTION_J, passiveEnergyMeter, type EnergyRun, type SolveEnergy } fro
 // in any solve, and its largest contact-free gain (the bookkeeping's floor) is a fraction of it. The twin adds a known
 // 2 J of kinetic energy to its core inside one solve (between the meter's two readings): the meter reads that solve 2 J
 // higher, to rounding, and counts it as an injection.
+// Ladder 8l: dropped from DROP_M above the fixture's start, so the contact-free solves are the fall before it lands (0.35
+// s, about 100 solves) rather than its bounces: tipped from the floor it had 20, and 3 under the visible flip (7 with
+// its hip stops or its PGS 4 alone).
 const ID = 'L4-F2-side-off';
 const ADD_J = 2;
+const DROP_M = 0.5;
+const dropped = (d: FixtureDef): FixtureDef => ({ ...d, id: `${d.id}-drop${DROP_M}`, players: d.players.map((p) => ({ ...p, initial: { ...p.initial, lift: DROP_M } })) });
 
 async function metered(addAt?: number): Promise<{ solves: Map<number, SolveEnergy>; run: EnergyRun }> {
-  const sim = await create(FIX(ID));
+  const sim = await create(dropped(FIX(ID)));
   if (addAt !== undefined) {
     // inside the solve: after the engine's step, before the meter's second reading
     const phys = sim.physics;
