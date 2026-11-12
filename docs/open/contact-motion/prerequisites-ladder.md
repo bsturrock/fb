@@ -1,6 +1,6 @@
 # Contact-motion prerequisites: ladder re-land
 
-Status: active (2026-11-11). Replaces the stacked "s10..s17" candidate.
+Status: active (2026-11-12). Replaces the stacked "s10..s17" candidate.
 
 ## Why
 
@@ -165,8 +165,8 @@ To look at and decide:
   Question: is a crossing that lasts until the legs part acceptable, or should crossed legs be pushed apart (a later
   step)?
 
-Since 9d nothing visible has changed: 9e changes a recorded reason only, 9f's fix is off (its flip parked), 9g is
-byte-identical.
+Since 9d nothing visible has changed: 9e changes a recorded reason only, 9f's fix is off (its flip parked), 9g and
+10b are byte-identical.
 
 ## Status
 
@@ -589,14 +589,28 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   Every row's worst tick falls or stays (69 fall), none over 4000 (highest 3423, L3-F7-mirror50). Guard: a capture test
   (harness, `L3-F1-phase4~rev@76`) runs D's deferred conversion beside R's ragdoll (ticks 78-81) and needs every tick
   under the budget: 2771 at the old peak; fault twin, the cull removed, 4036.
-- **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
-  `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
-  controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
-  controls' symptoms no longer show with the planted pose, both back with `noPlantedPole`), 6 behaviour; one L4 row over
-  the ceiling (the self-trunk pinch below); leg matrix none; worst query tick 3588. Before the flip: the knee-pole exit
-  at a swing start (below) fixed; the natural samples re-seeded or pinned to their V1 trajectories, the three rung 7
-  controls run with `noPlantedPole`, the twoPalm hold-effort row reading the applied effort (it reads the request; with
-  the grasps at the owner budget the applied effort is 0). Flip order HC, L4, L3, each with its own test repairs.
+- **10a** (`assess-10a`, README there; not applied): `LEG_GUARD_V3` on every fixture with a leg guard (L3/L4/HC) at
+  9g. Suite 322/346: 22 by construction (V1 captures, registration, a V1 natural sample in lab-params), 2 natural
+  samples reached (falls.test L4-F4-occupied's brace row, the twoPalm hold exposure; V1 from the state just before
+  gives the same). G/L1/L2/RH byte-identical; 88 summaries changed; leg matrix none over; L4 matrix 4 -> 1 over
+  (L4-F9-low reversed R, `IMPACT_OVER_POWER` reached, below); worst query tick 3588; CPU +10%. Supported leg inside a
+  ragdoll L3 1.83 -> 0.38, L4 2.12 -> 0, HC 0.67 -> 0.2 player-s (what is left at most 2.3 cm for 0.15 s); wedges and
+  leg reversals in contact fall; chatter at most 3 substeps. supSelfLegAxS L3 8.91 -> 12.54 is V2's (the same under V2
+  with the proxies' paths equal to V1's, e.g. L3-F6-hold R's thighs 4.0-5.0 s). Passive energy L3 1013 -> 808 J, L4
+  552 -> 531, HC 467 -> 423; every new or larger gain the same from a state just before it under V1. Who falls: 17
+  player-runs, all D, each from a real contact on its physical leg (list and links in the README). One mechanism
+  introduced: a proxy over a refused surface kicked up 28.7 cm by its own leg (fixed at 10b). Split by family isolates
+  nothing (every family has who-falls changes): one step.
+- **10b** (`r10b-d2-refused`) landed: D2 (`physicalLegsLive`) needs probe status `ok` within travel; over a refused
+  surface or normal the legs are off. Off everywhere (only V3 has physical legs): byte-identical, 347/347. Capture test
+  (physical-legs, `L3-F9-noProbe-prep~v3@33`): 134 refused substeps, none live, no leg impulse; fault twin
+  (`PoseDebug.legsOnRefused`, the rule before): live in all 142, 170.8 N s, D rises 28.7 cm against 13.9.
+- **10c** (`.scratch/ladder/parked/v3-flip/`, README there): the flip patch, parked for the owner's review. 348/348;
+  its full check (`assess-10a/flip-patch/`) equals the assessed variant except where 10b acts (L3-F9-noProbe-prep,
+  -contact, -exit); who falls the same 17. `preV3` (tests/runs.ts) pins V1 captures and natural samples;
+  `IMPACT_OVER_POWER` on L4-F9-low reversed R becomes a capture test. After it: retire the two live exceptions that
+  exclude nothing under V3 (`IMPACT_OVER_POWER` in falls.test, `HOLD_CLEARANCE_REPLANT` in l3-pass), re-assess 9f's
+  self-trunk flip.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -610,6 +624,8 @@ order, not hunk-split.
 - 9f's flip, the own-trunk hold on every L4 fall response: fixes the captured landing but not the mechanism (an
   own-trunk hit read before the solve far under what the solve takes); the run reaches it one substep later. Patch,
   twins and README `.scratch/ladder/parked/self-trunk-flip/`.
+- The leg-guard flip (10c), ready, awaiting the owner's review: `.scratch/ladder/parked/v3-flip/` (patch on `978f9be`,
+  README with the morning-review text).
 - 8k's other option, the L4 hip envelope narrowed to the human ab/adduction (cone across 60 -> 42, its own backstop):
   removes the hip implausible time as the box does but not the own-body overlap; not taken. Patch and README
   `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
@@ -625,10 +641,12 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   impact; held off in that substep, nothing is over. The forearm's own-trunk hit is held as the arm's only; 9f's
   `selfTrunkBody` (off) fixes that landing, but registered the run reaches the same hit one substep later, read before
   the solve at 1.62 m/s against 49.8 N s taken (parked). Next: read an own-trunk hit from the pair's penetration or
-  pinning, not only its closing. `BRACE_EXPIRED_OBSTRUCTED` (resolved at 9e): L4-F5-twoClamp-on D right (and L4-F9-both)
-  missed `expired` at 2.2 s while pressed on R's shin; the end-of-window path did not read the obstruction the core-down
-  path reads. Query peak (resolved at 9g): L3-F1-phase4 reversed, 4036 in the tick at 1.317 s (8m 3749), D's deferred
-  conversion validated unculled beside R's ragdoll.
+  pinning, not only its closing. Under the V3 flip (10c) L4-F3-run-on no longer reaches it; the one instance is
+  L4-F9-low reversed R (161.5 W at 1.0875 s, its right forearm's own-trunk hit; the same under V1 from 0.833 s,
+  `selfTrunkBody` fixes it), the flip patch's capture test. `BRACE_EXPIRED_OBSTRUCTED` (resolved at 9e):
+  L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the end-of-window
+  path did not read the obstruction the core-down path reads. Query peak (resolved at 9g): L3-F1-phase4 reversed, 4036
+  in the tick at 1.317 s (8m 3749), D's deferred conversion validated unculled beside R's ragdoll.
 
 - Self-trunk pinch: a ragdoll forearm pressed into its own trunk by the floor gains 7.5 J in one solve
   (L4-F9-contact reversed R; read by the audit as 172 W). Suspected solver energy injection. Reached with V3 on at rung
@@ -685,13 +703,13 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   only, but the peaks and ledger totals used to judge contacts are inflated where it happens. A fix may move V1
   summaries that export contact impulses.
 - A physical leg starting a solve inside another player's ragdoll: HC-F2-bothFallL2 reversed A's right thigh 1.52 cm in
-  B's torso with load (0.979 s) and 3.19 cm in B's shin without (0.975 s), against `PHYS_LEG_OK` 1 mm. To read at the
-  flip.
-- An unsupported proxy over a refused surface (D2 keeps its legs live): L3-F9-noProbe-prep D, its probe refused on the
-  strip and ungrounded in 31 of its 37 leg-contact substeps, falls onto R's shoe with its own pelvis (123.8 N s at
-  0.754 s, not a leg), rebounds at 2.1 m/s, and its left shin meets R's pelvis while rising (one real 64.9 N s
-  substep, injected 0.11 J, loaded depth 1.1 mm). The leg contact is plausible momentum exchange; the ledger's
-  320.7 N s includes the stale repeats above. The rebound of a rigid proxy off a ragdoll shoe is the questionable part.
+  B's torso with load (0.979 s) and 3.19 cm in B's shin without (0.975 s), against `PHYS_LEG_OK` 1 mm. Read at 10a:
+  the worst supported leg in a ragdoll under V3 is 1.85 cm (this run, A's right shoe in B's trunk at 0.683 s) and
+  2.3 cm for 0.05 s (L3-F1-phase2 / L3-F4-oneArm D's left shin in R's shoe, 1.233 s); open, small.
+- An unsupported proxy over a refused surface. Its legs: resolved at 10b (D2 needs an `ok` probe); under V3 before
+  it, L3-F9-noProbe-prep D's shin kicked it up through R's pelvis, 28.7 cm. Open: the proxy's own rebound, D's pelvis
+  falling onto R's shoe and bouncing 13.9 cm (0.917 s), the same from 0.750 s under V1 (12.85 cm); L3-F9-noProbe-free
+  D (V3) bounces 24.2 cm at 1.1 s, the same from 0.667 s under V1. A rigid proxy rebounding off a ragdoll.
 - Solved-impulse reading misses a solved contact among coincident manifold points (found at 7g; rung 7c's reading):
   L3-F1-phase6 reversed, solve 266, R's pelvis on D's support capsule: points 2-4 at one position (2.8 mm deep), one
   solver contact; Rapier wrote 15.53 N s to point 4, the nearest-point match gives the solver contact to point 2
