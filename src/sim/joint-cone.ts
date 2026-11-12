@@ -169,7 +169,7 @@ export function twistWindow(E: JointEnvelope, T: ShoulderTwistProfile, prevRad: 
 /** Contact motion M1: `fitElbowTwist` stops once the fitted twist is this close to its window (rad). */
 export const TWIST_FIT_TOL_RAD = 1e-5;
 
-export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, win: { mid: number; lo: number; hi: number }, measure: ArmTwistMeasure = armTwistRad): { elbow: Vec3; twistRad: number | null; turned: boolean } {
+export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, win: { mid: number; lo: number; hi: number }, measure: ArmTwistMeasure = armTwistRad, maxMoveM = Infinity): { elbow: Vec3; twistRad: number | null; turned: boolean } {
   const t0 = measure(E, coreQ, sh, elbow, end, sideSign);
   if (t0 === null) return { elbow, twistRad: null, turned: false };
   const u0 = wrapPi(t0 - win.mid);
@@ -199,7 +199,11 @@ export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Ve
     if (Math.abs(fp) < best.err) best = { phi, err: Math.abs(fp) };
   }
   if (best.phi === 0) return { elbow, twistRad: t0, turned: false };
-  const e = at(best.phi);
+  // ladder 12b: the elbow moves at most `maxMoveM` about the line (a folded arm's short line: the twist hardly follows
+  // the turn there, and the fit swung the elbow 38 cm in one substep, HC-F3-lowRunner)
+  const hM = len(sub(off, scale(axis, dot(off, axis))));
+  const lim = maxMoveM / Math.max(hM, 0.02);
+  const e = at(clamp(best.phi, -lim, lim));
   return { elbow: e, twistRad: measure(E, coreQ, sh, e, end, sideSign), turned: true };
 }
 

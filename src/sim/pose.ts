@@ -982,7 +982,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // that turn moves the upper arm, so the cone is applied again after each turn: the cone is the hard limit, the
         // twist after the last clamp is within a fraction of a degree of the window
         for (let it = 0; it < 2 && twWin; it++) {
-          const f = fitElbowTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin, twM);
+          const f = fitElbowTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin, twM, TW!.fitMaxMps && inp.dtS ? TW!.fitMaxMps * inp.dtS : Infinity);
           if (!f.turned) break;
           mid = f.elbow;
           dc = cone();

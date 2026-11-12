@@ -1024,6 +1024,14 @@ export interface ShoulderTwistProfile {
    * a rate window near vertical held the twist number while the arm itself turned over.
    */
   anatomical?: true;
+  /**
+   * Ladder 12b (the supported pose's fit only; absent: the fit turns the elbow as far as it needs): the elbow fit's turn
+   * about the shoulder-to-palm line moves the elbow at most this fast (m/s, per pose step), the twist left outside the
+   * window by what it could not reach. On a folded arm that line is short and the twist hardly follows the turn, so the
+   * fit swung the elbow round it: 38 cm in one substep on HC-F3-lowRunner D's left arm, and every one-frame turn of a
+   * raised clip arm coming down under the anatomical window (L3-F1, HC-F3).
+   */
+  fitMaxMps?: number;
 }
 
 export const JOINT_RANGE_V1: JointRangeProfile = {
@@ -1042,6 +1050,9 @@ export const JOINT_RANGE_V3: JointRangeProfile = { ...JOINT_RANGE_V2, id: 'joint
 
 /** Ladder 11d: V2 with the shoulder's M1 twist in the anatomical measure (`anatomical`); not V3's thigh rotation. */
 export const JOINT_RANGE_V4: JointRangeProfile = { ...JOINT_RANGE_V2, id: 'joint-range-anat-v4', shoulderTwist: { ...JOINT_RANGE_V2.shoulderTwist!, anatomical: true } };
+
+/** Ladder 12b: V4 with the supported pose's elbow fit moving the elbow at most 6 m/s (`fitMaxMps`, the fast continuity rate). */
+export const JOINT_RANGE_V5: JointRangeProfile = { ...JOINT_RANGE_V4, id: 'joint-range-anat-fit-v5', shoulderTwist: { ...JOINT_RANGE_V4.shoulderTwist!, fitMaxMps: 6 } };
 
 /**
  * Plan 13f leg guard (absent = the guard measures other bodies where they stand): the supported pose's leg guard also
