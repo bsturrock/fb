@@ -321,7 +321,7 @@ describe('ladder rung 8g: the hip-stop rebound, from a capture', () => {
     // the arrest before it: two solves losing 6 J and more
     expect(hard.solves.get(69)!.passiveJ).toBeLessThan(-6);
     expect(hard.solves.get(70)!.passiveJ).toBeLessThan(-6);
-    // the hip on its stop (Rapier's stop acts 1.2 deg early at this corner: plan doc, box reading)
+    // the hip on its stop (0.28 deg past it at solve 71 on the box reading, Rapier's own measure since 7062264)
     expect(at.addDeg).toBeGreaterThan(-1.5);
   }, 120000);
 });

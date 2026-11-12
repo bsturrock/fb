@@ -56,8 +56,9 @@ measure: what the owner sees. Player-seconds over every L3/L4/HC fixture, both o
 | HC | 93.5 | 99.9 | 157.7 | 4.4 | 63.2 | 184.3 | 7.8 | 0 |
 
 Ragdoll impossible time is almost all L3/HC hips with no limit; knee time past 150 is mostly L4. Measured, not landed:
-hip stops + knee stop 140 + PGS 4 read 5.9 impossible, 19.6 implausible or worse, deep own-body 461 (8e, 8f). The rest
-of own-body overlap needs ragdoll own-leg contact (next rung).
+the 8i variant (hip stops with the approach zone, L4 backstop, knee stop 140, PGS 4) reads 5.4 impossible, 75.6
+implausible or worse (64.8 of it L4 hip adduction the L4 envelope admits), deep own-body 504; the 8d box with the same
+read 5.9 / 19.6 / 461 (8e, 8f). The rest of own-body overlap needs ragdoll own-leg contact (next rung).
 
 ## Status
 
@@ -310,6 +311,22 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   stops as they would flip; v1 the 8d box alone), `pgs=<n>` (0-16, 0 none) and `knees=off|140|145`, composed in that
   order and named in the label: `?fixture=L3-F9-convert-free&hips=on&pgs=4&knees=140` is the 8i variant to the profile
   id (tests/lab-params.test.ts).
+- **8i** (the visible flip: hip stops via `hipStopsFor`, PGS 4, knee 140 on every L3/L4/HC ragdoll): **not flipped**,
+  waits for the user's lab review (assessment `.scratch/ladder/assess-8i/`, README there; patch
+  `.scratch/ladder/parked/visible-flip/`). Impossible ragdoll time 258.7 -> 5.4 player-s (L3 1.0, L4 0.9, HC 3.6),
+  implausible or worse 581 -> 75.6 (L3 4.1, HC 6.7, L4 64.8: hip adduction and abduction the L4 envelope admits, past
+  the implausible margin), knee past 150 127.5 -> 0, deep own-body 885 -> 504; injecting solves 882 -> 470, 5006 ->
+  1955 J, largest 197 -> 80.8 J (a pre-existing impact rebound reached, L3-F1-phase2 reversed D: 97 J off from the same
+  state). G/L1/L2/RH byte-identical, 134 summaries changed, no leg or L4 matrix row over the ceiling. The passive-energy
+  test's assertions hold (largest 0.001 J); its contact-free sample falls to 7 under its floor of 10 (PGS 4). Suite: 29
+  failures, 19 by construction (re-pinned in the patch with `preFlip`, tests/runs.ts), one pre-existing mechanism
+  reached (HC-F3-falling reversed D, below: a tracked defect in the patch), 9 tests moved or changed by the variant,
+  each twinned (README): natural samples to pin to `preFlip` as at 7d, the passive-energy sample, and one behaviour
+  change for the user (L4-F5-onePalm-on loses its right palm hold to the knee stop, and the allocation floor with it).
+  Who falls: 18 runs over 13 fixtures change (README), 4 of them a conversion now rejected, the player left a rigid
+  falling proxy (HC-F3-falling reversed D, HC-F5-strictTransfer D both orders, L3-F1-phase4 reversed D), each a posed
+  leg in R's ragdoll at D's conversion and each rejected the same by the registered profile from the same state. Open for the user: the L4 envelope's
+  range against the human one (keep it with the backstop, narrow it, or the box on L4).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -332,6 +349,9 @@ order, not hunk-split.
   `.scratch/ladder/parked/hip-stops-flip/`.
 - The knee-stop flip (L3/L4/HC, 8f): alone it trades knee time for hip time; to flip with the hips at 140. Evidence
   `.scratch/ladder/assess-8f/`, patches `.scratch/ladder/parked/knee-stop-flip/`.
+- 8i, the visible flip (hip stops with the zone, PGS 4, knee 140 on L3/L4/HC): waits for the user's lab review and the
+  rulings on its 9 moved tests; patch `.scratch/ladder/parked/visible-flip/flip.patch` (on 10dee91), evidence
+  `.scratch/ladder/assess-8i/`.
 
 ## Open defects to test on the ladder
 
@@ -362,7 +382,13 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   rejected for external penetration: L3-F4-oneArm and L3-F1-phase2 (right thigh in R's pelvis, 4.28 cm at 1.304 s),
   L4-F10-wrap-off (right thigh in R's torso, 5.34 cm at 1.300 s). Controlled twin: rung 3's change off from 1.0 s (the
   same state) gives the same rejection to the last digit. Probably the deeper form of the L4-F10-wrap-on entry above.
-  Resolved under V3 (rung 6: the three captures convert); tracked under V1 until the flip.
+  Resolved under V3 (rung 6: the three captures convert); tracked under V1 until the flip. Under the 8i visible flip
+  (no test fails): L3-F4-oneArm and L3-F1-phase2 still rejected (2.59 cm), but from the flipped state at 1.167 s the
+  run is 3 substeps, and V3 from it rejects too (right thigh 3.26 cm in R's pelvis at 1.333 s), so the captures stay
+  the pre-flip state (`preFlip` in the patch). Newly reached, the registered profile rejecting the same from the same
+  state: L3-F1-phase4 reversed D (right thigh in R's pelvis, 6 substeps, 2.71 cm at 1.300 s; V3 converts),
+  HC-F5-strictTransfer reversed D (left shin in R's right thigh, 13 substeps, 3.42 cm at 1.246 s; V3 transferFailed as
+  registered), HC-F5-strictTransfer D (right thigh in R's pelvis, 3 substeps, 3.37 cm at 1.288 s; V3 rejects too).
 - A held player's planted foot released by its clearance solve (plant drift just over 1 cm on clearance variant 1) and
   planted again every 0.2-0.6 s in a stationary hold (tracked from rung 3, `HOLD_CLEARANCE_REPLANT`): L3-F6-hold R left
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
@@ -404,12 +430,24 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   4.19 J with no contact; the registered run never gains 0.2 J, and the same profile with every stop at 170 (set, never
   reached) is byte-identical to it. Additional PGS iterations 1 / 3 / 4 / 8: 2.8 / 1.9 / 2.0 / 1.8 J. Rapier 0.21's JS
   exposes no joint softness (only `contact_natural_frequency`). Resolved on the sample by the 8g approach zone (the
-  capture regression test in tests/hip-approach.test.ts); over the matrix see 8i.
+  capture regression test in tests/hip-approach.test.ts). Over the 8i matrix 65 injecting solves (174 J) have a hip at
+  a stop and 207 (981 J) one in a zone, most of them rebounds after an impact (52 and 137); the largest gain (80.8 J,
+  L3-F1-phase2 reversed D at 1.625 s) is 97 J with the variant off from the same state: impact rebounds reached.
 - Resolved at 8g (7062264): box reading against Rapier's stop at combined poses. Rapier keeps 2 atan2(e_i, w) within
   each limit; 8d read 2 asin(e_i), which is smaller off a single axis, so the stop seemed to act early (L4-F2-side-off
   R's right hip at adduction 28.75 under 30).
 - The L4 backstop cannot hold the envelope's corners: a twist t after a flexion f reads 2 atan(tan(f/2) tan(t/2)) on Z,
   59 at flexion 129 with twist 30, so there the Z stop (65, its zone from 55) meets a pose inside the envelope. Not met
-  in the three L4 hip fixtures; to read at the flip (the L4 rows of 8i).
+  in the three L4 hip fixtures; not read separately at 8i (L4 impossible 0.89 player-s against 0.90 registered).
+- The L4 envelope admits more hip than a person (8i): adduction 45 and abduction 61.25 plus tolerance 5, past the
+  implausible margins (45, 60). With the backstop outside it, L4 implausible time is 64.8 player-s at 8i (hip
+  adduction 50.3, abduction 11.6; e.g. L4-F12-base R left hip at 0.70 s); the 8d box on L4 read 2.95. A design call
+  for the user: keep it, narrow the envelope, or the box with the zone on L4.
+- A posed thigh met by another player's ragdoll in the substep before the conversion, the conversion rejected and the
+  player left a rigid falling proxy (the 13f known-limit class, gone at plan 14; tracked defect
+  `THIGH_MET_AT_CONVERSION` in the parked 8i patch). Reached by the 8i flip: HC-F3-falling reversed D at 1.171 s, right
+  thigh 1.57 cm in R's left forearm (palm), past the tolerance in one substep only. From 1.150 s
+  (`HC-F3-falling~rev@69`, in the patch) the registered profile rejects the same (1.58 cm) and V3 converts; from
+  1.100 s the registered profile and the flip without PGS 4 convert. The patch's regression test resumes that capture.
 - Rapier's correction at a combined pose is not along the reading's gradient: at flexion 110 the Y stop's correction
   turns mostly Z, so Y overruns by 11 deg until the Z stop also holds (seen in the 8g probes, not in a fixture).
