@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
+import { HOLD_STILL_V1, withHoldStill } from '../src/sim/footwork';
 import {
   CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit,
@@ -9,7 +10,7 @@ import {
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preFlip, preOwnLegs, preV3, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg` and `armtwist` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist` and `holdstill` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -20,7 +21,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg and armtwist', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist and holdstill', () => {
   it('order=rev&legs=v1 runs the matrices\' reversed V1 row of the fixture (L3-F1-phase6, the guard before the ladder 10 flip), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v1'));
@@ -241,5 +242,27 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg and 
     const g = allFixtures().find((x) => !x.ragdoll)!;
     expect(labRun(g, new URLSearchParams('armtwist=on'))).toEqual({ def: g, opts: {}, label: 'armtwist on n/a (no ragdoll profile)' });
     expect(labRun(d, new URLSearchParams('armtwist=maybe'))).toEqual({ def: d, opts: {}, label: 'armtwist=maybe ignored' });
+  }, 120000);
+
+  // ladder rung 13b: holdstill=on|off on the fixture's footwork; no fixture registers the stationary hold's still feet yet
+  it('holdstill=on runs the fixture with the stationary hold keeping its feet (HOLD_STILL_V1 on its footwork, id and all: L3-F6-hold, another run); holdstill=off takes it off again and on the registered fixture is the registered run; a fixture without footwork and unknown values change nothing', async () => {
+    const id = 'L3-F6-hold';
+    const d = FIX(id);
+    expect(d.footwork!.holdStill).toBeUndefined();
+    const on = labRun(d, new URLSearchParams(`fixture=${id}&holdstill=on`));
+    expect(on.label).toBe('hold still on');
+    expect(on.def).toEqual({ ...d, footwork: withHoldStill(d.footwork!) });
+    expect(on.def.footwork!.holdStill).toBe(HOLD_STILL_V1);
+    expect(on.def.footwork!.id).toBe(`${d.footwork!.id}+${HOLD_STILL_V1.id}`);
+    // the twin: the still feet change the run
+    expect(await summaryOf(on.def, on.opts)).not.toBe(await summaryOf(d, {}));
+    const back = labRun(on.def, new URLSearchParams('holdstill=OFF'));
+    expect(back.label).toBe('hold still off');
+    expect(back.def).toEqual(d);
+    expect(labRun(d, new URLSearchParams('holdstill=off'))).toEqual({ def: d, opts: {}, label: 'hold still off (registered)' });
+    expect(labRun(on.def, new URLSearchParams('holdstill=on'))).toEqual({ def: on.def, opts: {}, label: 'hold still on (registered)' });
+    const g = allFixtures().find((x) => !x.footwork)!;
+    expect(labRun(g, new URLSearchParams('holdstill=on'))).toEqual({ def: g, opts: {}, label: 'holdstill n/a (no footwork)' });
+    expect(labRun(d, new URLSearchParams('holdstill=maybe'))).toEqual({ def: d, opts: {}, label: 'holdstill=maybe ignored' });
   }, 120000);
 });

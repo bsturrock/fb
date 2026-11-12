@@ -72,6 +72,8 @@ export interface FootworkProfile {
   leadLateralFrac: number;
   /** Plan 08 transition composition (absent: the plan 07 planner, bit-identical). */
   compose?: FootComposeProfile;
+  /** Ladder 13b: a stationary hold keeps its feet planted (`HoldStillProfile`); absent, a hold steps like any stance. */
+  holdStill?: HoldStillProfile;
 }
 
 /**
@@ -165,6 +167,43 @@ export const FOOTWORK_L3: FootworkProfile = {
   id: 'footwork-l3-v4',
   settleTriggerM: 0.09,
   compose: { followRadPerS: 18, liftRadPerS: 24, brakeEnterB: 0.6, brakeExitB: 0.25, brakeEnterMps: 5, arriveS: 0.05, landOffsetM: 0.12, stepAheadS: 0.25, landWithinS: 0.12, landGapS: FOOTWORK_L2.swing.minS / 2, ...stepAccelLimits(FOOTWORK_L2.swing) },
+};
+
+/**
+ * Ladder 13b: a stationary hold, a player holding or held (a grip or clamp by or on it) whose body travels under
+ * `speedMps`, keeps its planted feet: it takes no step toward its home and no settle step (each re-plant moved a
+ * leg of a hold that stood still: L3-F6-hold's defender stepped at 2.15 s, its step held off its home by the runner
+ * swept that runner's planted leg off its plant, and the runner's foot stepped in and planted by the midline at 3.70 s),
+ * and no step to turn its feet under a body turned past `yawTriggerDeg`. A foot that cannot keep its plant (near its
+ * reach, a body turned past `yawReleaseDeg`, a leg that cannot stay clear) still steps, and a step under way goes on.
+ */
+export interface HoldStillProfile {
+  id: string;
+  /** The hold is stationary while the body travels slower than this (m/s, horizontal). */
+  speedMps: number;
+  /** A hold counts as engaged until this long after its last engaged substep (s): a clamp dropped and taken again. */
+  lingerS: number;
+}
+/**
+ * Ladder 13b: twice `settleSpeedMps`: a hold standing still sways (the holder's idle yaw cycle, about 10 deg at 1.5 Hz,
+ * carries its body to 0.16 m/s on L3-F6-holdMirror), and at the settle speed a step started on each sway's peak.
+ */
+export const HOLD_STILL_V1: HoldStillProfile = { id: 'hold-still-v1', speedMps: 0.3, lingerS: 0.25 };
+
+/**
+ * Ladder 13b: the stationary-hold rule, as the planner reads it and a test can: a hold engaged within `lingerS` of `t`
+ * (`heldAtS` the last engaged time) and the body's horizontal speed under `speedMps`. (A defender's forearm clamp on
+ * L3-F6-hold drops for single substeps from 1.76 s and is taken again the next.)
+ */
+export const holdStillAt = (H: HoldStillProfile, heldAtS: number | undefined, t: number, speedMps: number): boolean => heldAtS !== undefined && t - heldAtS <= H.lingerS + 1e-9 && speedMps < H.speedMps;
+
+/** Ladder 13b: the footwork profile with the stationary hold's still feet, under an id that names them. */
+export const withHoldStill = (f: FootworkProfile, h: HoldStillProfile = HOLD_STILL_V1): FootworkProfile => ({ ...f, id: `${f.id}+${h.id}`, holdStill: h });
+/** Ladder 13b: the footwork profile without them. */
+export const withoutHoldStill = (f: FootworkProfile): FootworkProfile => {
+  if (!f.holdStill) return f;
+  const { holdStill: h, ...rest } = f;
+  return { ...rest, id: f.id.replace(`+${h.id}`, '') };
 };
 
 export type FootMode = 'planted' | 'swing' | 'airborne';
@@ -353,6 +392,8 @@ export interface FootPlan {
   clipLast: boolean;
   /** Plan 08: the planner holds the legs while the clip still plays (braking: profile compose). */
   brakeHeld: boolean;
+  /** Ladder 13b (`FootworkProfile.holdStill`): the last substep a hold was engaged (s); absent before the first. */
+  heldAtS?: number;
   /** Plan 08: the planner holds the legs against a playing clip; they just came back and the clip phase should rejoin the feet. */
   legsHeld: boolean;
   /** Plan 08 composed: the support state the last request was built on. */
@@ -549,7 +590,10 @@ export interface FootPlanInput {
    */
   heelLift?: boolean;
   /** Plan 13e: the other players' cores (world, horizontal: y 0), what can hold a leg off its home. */
-  others?: Vec3[];  /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
+  others?: Vec3[];
+  /** Ladder 13b (`FootworkProfile.holdStill`): a grip or clamp by or on this player is held. */
+  held?: boolean;
+  /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
   debug?: FootDebug;
 }
 
@@ -613,6 +657,8 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
   const bodyHeading = headingOf(qRot(inp.core.q, v3(0, 0, 1)));
   const speed = len(hz(inp.vel));
   plan.dtS = inp.dt;
+  // ladder 13b: the last substep a hold was engaged (the stationary hold's rule, `holdStillAt`)
+  if (P.holdStill && inp.held) plan.heldAtS = inp.t;
   takeRequests(plan, inp, `${inp.supported}:${inp.falling}`);
   // ---------------- no support: no anchors, no new plants (airborne feet follow the request with a decaying offset)
   if (!inp.supported || inp.ragdoll) {
@@ -769,6 +815,8 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
   } else {
     // ---------------- reactive steps (no clip weight)
     const still = speed < P.settleSpeedMps && Math.abs(inp.yawRate) < 0.3;
+    // ladder 13b: a stationary hold takes no step home, no settle step and no step to turn the feet
+    const holdStill = !!P.holdStill && holdStillAt(P.holdStill, plan.heldAtS, inp.t, speed);
     // clip-to-procedural crossing: every following foot is inherited, with its clip phase, achieved foot and contacts
     // (plants carry over unchanged and stay only while valid, below)
     const crossing = plan.clipLast;
@@ -860,11 +908,11 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
         f.blockerW = null;
       }
       const blocked = !!C && f.blockedW !== null && !inp.debug?.noBlockedMemory;
-      if (sideErr > P.stepTriggerM && !blocked) want.push({ s, why: 'step', urgency: sideErr - P.stepTriggerM });
+      if (sideErr > P.stepTriggerM && !blocked && !holdStill) want.push({ s, why: 'step', urgency: sideErr - P.stepTriggerM });
       else if (leaving) want.push({ s, why: 'reach', urgency: 0.5 * (C!.stepAheadS - reachTimeLeft(plan, f, inp.hips[s], hz(inp.vel), inp.soleM, inp.heelLift)) });
-      else if (yawErr > rad(P.yawTriggerDeg)) want.push({ s, why: 'yaw', urgency: yawErr - rad(P.yawTriggerDeg) });
+      else if (yawErr > rad(P.yawTriggerDeg) && !holdStill) want.push({ s, why: 'yaw', urgency: yawErr - rad(P.yawTriggerDeg) });
       else if (reach > plan.reachM - P.reachMarginM) want.push({ s, why: 'reach', urgency: reach - plan.reachM + P.reachMarginM });
-      else if (still && !f.settled && !blocked && err > P.settleTriggerM) want.push({ s, why: 'settle', urgency: (err - P.settleTriggerM) * 0.1 });
+      else if (still && !f.settled && !blocked && !holdStill && err > P.settleTriggerM) want.push({ s, why: 'settle', urgency: (err - P.settleTriggerM) * 0.1 });
     }
     const held = (s: ArmSide): boolean => plan.feet[s].mode === 'planted' && !plan.feet[s].tentative;
     // a waiting foot takes the next ordinary step: when no step is in progress and the other foot is held (or both wait:

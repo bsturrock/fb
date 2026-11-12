@@ -11,7 +11,9 @@
 //   retry=on|off       a conversion rejected on an overlap deferred and tried again (CONVERSION_RETRY_V1, rung 8j), or not;
 //   selfleg=on|off     the ragdoll's legs meeting each other and its trunk (own-leg contact, SELF_LEGS_V1, rung 9a), or not;
 //   armtwist=on|off    the ragdoll shoulder's twist limit in the anatomical measure, holding with the arm overhead
-//                      (SHOULDER_TWIST_ANAT_V1, rung 13a), or plan 09's, which fades out there.
+//                      (SHOULDER_TWIST_ANAT_V1, rung 13a), or plan 09's, which fades out there;
+//   holdstill=on|off   a stationary hold keeping its feet planted (the footwork's HOLD_STILL_V1, rung 13b), or stepping
+//                      home, settling and turning its feet as any stance; a fixture without footwork is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, then armtwist), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -22,6 +24,7 @@ import {
   CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry,
   withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withSelfLegs, withShoulderTwistLimit, type RagdollProfile,
 } from '../sim/profiles';
+import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
@@ -30,6 +33,7 @@ const KNEES = ['off', '140', '145'];
 const RETRY = ['on', 'off'];
 const SELFLEG = ['on', 'off'];
 const ARMTWIST = ['on', 'off'];
+const HOLDSTILL = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -56,7 +60,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `holdstill`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -125,6 +129,17 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
       if (v === 'off') return withoutShoulderTwistLimit(r);
       return r.shoulderTwistLimit?.id === SHOULDER_TWIST_ANAT_V1.id ? r : withShoulderTwistLimit(withoutShoulderTwistLimit(r));
     });
+  }
+  const holdstill = params.get('holdstill');
+  if (holdstill !== null && holdstill !== '') {
+    const v = holdstill.toLowerCase();
+    if (!HOLDSTILL.includes(v)) parts.push(`holdstill=${holdstill} ignored`);
+    else if (!out.footwork) parts.push('holdstill n/a (no footwork)');
+    else {
+      const f = v === 'off' ? withoutHoldStill(out.footwork) : out.footwork.holdStill?.id === HOLD_STILL_V1.id ? out.footwork : withHoldStill(withoutHoldStill(out.footwork));
+      parts.push(`hold still ${v}${f === out.footwork ? ' (registered)' : ''}`);
+      if (f !== out.footwork) out = { ...out, footwork: f };
+    }
   }
   return { def: out, opts, label: parts.join(' · ') };
 }

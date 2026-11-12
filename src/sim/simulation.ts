@@ -1523,7 +1523,9 @@ export class Simulation {
 
   /** Foot planner input from the solved state, the support probe and control mode, and the pose path's requests. */
   footInput(pl: PlayerRuntime, inp: ProxyPoseInput, sampled: ProxyPoseInput['sampled'], dt: number): FootPlanInput {
-    return footInputOf(this, pl, inp, sampled, dt);
+    const f = footInputOf(this, pl, inp, sampled, dt);
+    // ladder 13b: whether a hold is engaged, read only by a profile with the stationary hold's still feet
+    return this.def.footwork?.holdStill ? { ...f, held: this.retained(pl) } : f;
   }
 
   /** Supported-state limb constraints for the procedural pose (`poseClearanceOf`). */
