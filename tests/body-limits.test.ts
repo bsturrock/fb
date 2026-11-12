@@ -23,11 +23,11 @@ import { armSelfShapes, buildProxyPose, CONT_LEG_MPS, HARD_OK, hingeChain, LEG_S
 import { initPhysics, RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX, withoutConversionRetry } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX, withoutBornOverlap, withoutConversionRetry } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preFlip, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preFlip, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -684,8 +684,9 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
       async ([id, rev, beforeM]) => {
         const o = rev ? { reverseOrder: true } : {};
         // (ladder 8l: the sample as measured before the visible flip; under it R's shoe is moved and the fault twins
-        // convert, 1.46 cm, with the deferred conversion off too)
-        const def = pinV1(preFlip(FIX(id)));
+        // convert, 1.46 cm, with the deferred conversion off too; ladder 17b: and before the born-overlap flip, under which
+        // the fault twins' thigh in a shoe converts, held out of the solve)
+        const def = pinV1(preFlip(preBornOverlap(FIX(id))));
         const on = await handoffOf(def, o);
         expect(on.outcome, id).toBe('accepted');
         expect(on.newM, id).toBeLessThan(0.012);
@@ -713,8 +714,10 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
   const THROW = { atS: 0.4, mps: 10, along: 0.6, clearM: 0.01 };
   // The case is the conversion's validation at the switch. Since the visible flip L3 carries the deferred conversion
   // (ladder rung 8j), which retries a conversion rejected for external penetration and takes it once the thrown head has
-  // passed (7 tries later, at 0.429 s); the case runs without it (tests/conversion-retry.test.ts holds the retry's own)
-  const atSwitch = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withoutConversionRetry(d.ragdoll!) });
+  // passed (7 tries later, at 0.429 s); the case runs without it (tests/conversion-retry.test.ts holds the retry's own).
+  // Since ladder 17b L3 also converts a candidate born in another body, the pair held out of the solve (the thrown head in
+  // the thigh): the case runs without that too (tests/born-overlap.test.ts holds its own)
+  const atSwitch = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withoutBornOverlap(withoutConversionRetry(d.ragdoll!)) });
   const vecOf = (v: { x: number; y: number; z: number }): Vec3 => v3(v.x, v.y, v.z);
   type Sd = 'left' | 'right';
   const thrownAt = async (def: FixtureDef, opts: SimOptions = {}) => {

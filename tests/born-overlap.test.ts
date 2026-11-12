@@ -7,10 +7,11 @@ import { create, evs, FIX, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter } from './passive-energy';
 
 // Ladder 17 (direction item 4: a player who should go to ragdoll always does): the born-overlap conversion
-// (`RagdollProfile.bornOverlap`, BORN_OVERLAP_V1; no fixture runs it). The registered validation refuses a candidate
-// deeper than 1.5 cm in another player, and a refused (or, under the retry, still refused at the window's end) player
-// falls as the rigid Gate 3 proxy to the end of the run. Under the profile the candidate is converted and each collider
-// pair born deeper than the tolerance is left out of the solve until the two have separated.
+// (`RagdollProfile.bornOverlap`, BORN_OVERLAP_V1; registered on L3, L4 and HC since 17b). Without it the validation
+// refuses a candidate deeper than 1.5 cm in another player, and a refused (or, under the retry, still refused at the
+// window's end) player falls as the rigid Gate 3 proxy to the end of the run. Under the profile the candidate is
+// converted and each collider pair born deeper than the tolerance is left out of the solve until the two have separated.
+// The cases are G4's, whose profile has neither, each test adding the profile itself.
 //
 // The constructed cases are G4-F6-crowded's: R stands with D's chest against his right side, so R's articulated right
 // arm starts 3.7 cm inside D's torso (the registered fixture's contract: the handoff is rejected), and, with D

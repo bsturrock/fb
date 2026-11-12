@@ -8,7 +8,7 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preFlip, preHoldStill, preOwnLegs, preV3, runSim } from './helpers';
+import { create, FIX, flip8i, preBornOverlap, preFlip, preHoldStill, preOwnLegs, preV3, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `holdstill`, `upperarm`, `armswing` and `armstay` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -130,8 +130,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   it('hips=on&pgs=4&knees=140&retry=on runs the 8i variant with the deferred conversion (HC-F3-falling reversed: D converts where the variant alone leaves it a falling proxy), named in the label; retry=off takes it off again; unknown values change nothing', async () => {
     const id = 'HC-F3-falling';
     // (the profile before the visible flip, which registers this variant; a natural sample, with the leg guard before
-    // the ladder 10 flip: under V3 the variant alone converts D, its posed legs held out of R)
-    const d = preV3(preFlip(FIX(id)));
+    // the ladder 10 flip: under V3 the variant alone converts D, its posed legs held out of R; and before the ladder 17b
+    // flip, under which the variant alone converts D too, its thigh in R's palm held out of the solve)
+    const d = preV3(preFlip(preBornOverlap(FIX(id))));
     const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
     expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
     const want = withConversionRetry(flip8i(d).ragdoll!);
@@ -185,7 +186,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   // ladder rung 9a: selfleg=on|off, composed after the others; registered on every L3/L4/HC ragdoll since the own-leg flip
   it('on a fixture registered with own-leg contact (HC-F1-at0.9: every ragdoll gets its own-leg shapes), selfleg=off is the view before it, id and all, and its run differs; selfleg=on is the registered run and puts it back; with the view before both flips it is named last; unknown values change nothing', async () => {
     const id = 'HC-F1-at0.9';
-    const d = FIX(id);
+    // (before the ladder 17b flip, registered after own-leg contact on the same profile)
+    const d = preBornOverlap(FIX(id));
     expect(d.ragdoll!.selfLegs).toBe(SELF_LEGS_V1);
     expect(d.ragdoll!.id).toBe(`${preOwnLegs(d).ragdoll!.id}+${SELF_LEGS_V1.id}`);
     const s = await create(d, {});
@@ -359,17 +361,21 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('armstay=maybe'))).toEqual({ def: d, opts: {}, label: 'armstay=maybe ignored' });
   }, 120000);
 
-  // ladder 17: born=on|off on the fixture's ragdoll profile, composed after armtwist; no fixture registers it yet
-  it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling: D converts at his first try, where the registered run defers him); born=off takes it off again and on the registered fixture is the registered run; a fixture without a ragdoll and unknown values change nothing', async () => {
+  // ladder 17: born=on|off on the fixture's ragdoll profile, composed after armtwist; registered on L3, L4 and HC (17b),
+  // so the row starts from the definition before that flip
+  it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling before the 17b flip: D converts at his first try, where that run defers him), which is the registered fixture; born=off takes it off again and on a fixture without it is that run; a fixture without a ragdoll and unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
-    const d = FIX(id);
+    const reg = FIX(id);
+    expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
+    const d = preBornOverlap(reg);
     expect(d.ragdoll!.bornOverlap).toBeUndefined();
     const on = labRun(d, new URLSearchParams(`fixture=${id}&born=on`));
     expect(on.label).toBe('born overlap on');
     expect(on.def).toEqual({ ...d, ragdoll: withBornOverlap(d.ragdoll!) });
+    expect(on.def).toEqual(reg);
     expect(on.def.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
     expect(on.def.ragdoll!.id).toBe(`${d.ragdoll!.id}+born-overlap-v1`);
-    // the twin: the registered run defers D's conversion (his palm in R's arm), the profile converts him at once
+    // the twin: the run before the flip defers D's conversion (his palm in R's arm), the profile converts him at once
     const dAt = async (def: FixtureDef): Promise<{ t: number; deferred: boolean }> => {
       const s = await create(def, {});
       while (!s.done && s.t < 1.2) s.stepTick();
@@ -385,7 +391,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(back.label).toBe('born overlap off');
     expect(back.def).toEqual(d);
     expect(labRun(d, new URLSearchParams('born=off'))).toEqual({ def: d, opts: {}, label: 'born overlap off (registered)' });
-    expect(labRun(on.def, new URLSearchParams('born=on'))).toEqual({ def: on.def, opts: {}, label: 'born overlap on (registered)' });
+    expect(labRun(reg, new URLSearchParams('born=on'))).toEqual({ def: reg, opts: {}, label: 'born overlap on (registered)' });
     const g = allFixtures().find((x) => !x.ragdoll)!;
     expect(labRun(g, new URLSearchParams('born=on'))).toEqual({ def: g, opts: {}, label: 'born on n/a (no ragdoll profile)' });
     expect(labRun(d, new URLSearchParams('born=maybe'))).toEqual({ def: d, opts: {}, label: 'born=maybe ignored' });

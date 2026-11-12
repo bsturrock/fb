@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
 import { readdirSync } from 'node:fs';
 import type { FixtureDef } from '../src/sim/fixture';
-import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preFlip, preHoldStill, preV3, runSim } from './helpers';
+import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preFlip, preHoldStill, preV3, runSim } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
 import { ARM_G2, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 
@@ -157,15 +157,17 @@ describe('asCaptured: a capture\'s definition out of the flip chain', () => {
     }
     const S = (f: string): StateCapture => loadState(`tests/data/state/${f}.json.gz`);
     const same = (a: FixtureDef, b: FixtureDef): boolean => JSON.stringify(a) === JSON.stringify(b);
-    // before the visible flip, own-leg contact, the leg-guard flip and the still feet: all four helpers composed
-    expect(same(asCaptured(S('L3-F4-oneArm@70')), preHoldStill(preV3(preFlip(FIX('L3-F4-oneArm')))))).toBe(true);
+    // before the visible flip, own-leg contact, the leg-guard flip, the still feet and the born overlap: all five helpers
+    // composed
+    expect(same(asCaptured(S('L3-F4-oneArm@70')), preHoldStill(preV3(preFlip(preBornOverlap(FIX('L3-F4-oneArm'))))))).toBe(true);
     // a variant taken before the flips
-    expect(same(asCaptured(S('L3-F1-phase4~flip8i-rev@72'), flip8i), flip8i(preV3(preHoldStill(FIX('L3-F1-phase4')))))).toBe(true);
-    expect(same(asCaptured(S('L4-F3-run-on~v3@66'), (d) => ({ ...d, legGuard: LEG_GUARD_V3 })), { ...preHoldStill(preFlip(FIX('L4-F3-run-on'))), legGuard: LEG_GUARD_V3 })).toBe(true);
-    // after the leg-guard flip, before the still feet: the first helper only; after all of them: the registered fixture
-    expect(same(asCaptured(S('L3-F6-hold@126')), preHoldStill(FIX('L3-F6-hold')))).toBe(true);
-    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(FIX('L3-F16-contactStop'));
-    expect(BEFORE_FLIPS[0]).toBe(preHoldStill);
+    expect(same(asCaptured(S('L3-F1-phase4~flip8i-rev@72'), flip8i), flip8i(preV3(preHoldStill(preBornOverlap(FIX('L3-F1-phase4'))))))).toBe(true);
+    expect(same(asCaptured(S('L4-F3-run-on~v3@66'), (d) => ({ ...d, legGuard: LEG_GUARD_V3 })), { ...preHoldStill(preFlip(preBornOverlap(FIX('L4-F3-run-on')))), legGuard: LEG_GUARD_V3 })).toBe(true);
+    // after the leg-guard flip, before the still feet: the first two helpers; after the still feet, before the born
+    // overlap: the first only
+    expect(same(asCaptured(S('L3-F6-hold@126')), preHoldStill(preBornOverlap(FIX('L3-F6-hold'))))).toBe(true);
+    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(preBornOverlap(FIX('L3-F16-contactStop')));
+    expect(BEFORE_FLIPS[0]).toBe(preBornOverlap);
   });
 
   it('fault twins: a capture no definition of the chain ran (a flip not added to it) is refused, naming the differing paths; a variant path the chain changes is refused', () => {

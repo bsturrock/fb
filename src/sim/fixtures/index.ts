@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
+import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
 import { withHoldStill } from '../footwork';
 
 /**
@@ -55,6 +55,16 @@ function holdStillFlip(d: FixtureDef): FixtureDef {
   return d.footwork && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withHoldStill(d.footwork) } : d;
 }
 
+/**
+ * Ladder 17b, the born-overlap flip: every L3, L4 and HC ragdoll converts a candidate born inside another player, its
+ * born pairs out of the solve until they separate (BORN_OVERLAP_V1, rung 17a), rather than leave a rigid falling figure.
+ * G, L1, L2 and RH keep their profiles. The lab's `born=off` is the view before it; tests/runs.ts `preBornOverlap` gives a
+ * definition as before it.
+ */
+function bornFlip(d: FixtureDef): FixtureDef {
+  return d.ragdoll && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withBornOverlap(d.ragdoll) } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -83,6 +93,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip));
   return registry.slice();
 }

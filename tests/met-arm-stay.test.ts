@@ -5,7 +5,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { MET_ARM_STAY_ID, withClipArmSwing, withMetArmStay, withoutMetArmStay } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { armProbe, firstDifference, watch, type Seen, type Watched } from './arm-watch';
-import { asCaptured, FIX } from './runs';
+import { asCaptured, FIX, preBornOverlap } from './runs';
 import { captureState, loadState, resumeState, type StateCapture } from './state';
 import { DEEP_M, SNAP_RADPS } from './visible';
 
@@ -30,8 +30,8 @@ async function resume(cap: StateCapture, variant?: (d: FixtureDef) => FixtureDef
   return w;
 }
 /** Fixture `id` run under `stay` to `tick`, captured in memory (resumed under `stay(FIX(id))`). */
-async function stayCapture(id: string, tick: number): Promise<StateCapture> {
-  const sim = await Simulation.create(stay(FIX(id)), {});
+async function stayCapture(id: string, tick: number, def = FIX(id)): Promise<StateCapture> {
+  const sim = await Simulation.create(stay(def), {});
   while (sim.tick < tick) sim.stepTick();
   const cap = captureState(sim);
   sim.dispose();
@@ -98,9 +98,12 @@ describe('ladder 16b: a composed arm another body has met keeps its natural pose
   }, 120000);
 
   it('no stiff player: in L3-F4-gripBoth from 0.80 s both handoffs, deferred at 0.90 s for overlapping the other body, convert, the met arms pushed out as registered while the handoff is deferred; the fault twin, the arms kept on their rules then, rejects both at the window\'s end and the players stand stiff', async () => {
-    const cap = await stayCapture('L3-F4-gripBoth', 48);
+    // (the deferral is the case: before the ladder 17b flip, which converts both at once with the met arms' born pairs
+    // held out of the solve)
+    const before = preBornOverlap(FIX('L3-F4-gripBoth'));
+    const cap = await stayCapture('L3-F4-gripBoth', 48, before);
     const outcome = async (pose?: PoseDebug): Promise<string[]> => {
-      const sim = await resumeState(cap, { def: stay(FIX('L3-F4-gripBoth')), ...(pose ? { faults: { pose } } : {}) });
+      const sim = await resumeState(cap, { def: stay(before), ...(pose ? { faults: { pose } } : {}) });
       while (!sim.done) sim.stepTick();
       const out = sim.players.map((p) => `${p.id}:${p.handoff?.outcome ?? p.controlMode}`);
       expect(sim.events.some((e) => e.type === 'handoffDeferred'), 'deferred').toBe(true);

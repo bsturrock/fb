@@ -6,7 +6,7 @@ import { LEG_GUARD_V3, SELF_LEGS_V1, sideSignX, withoutHipStops, withSelfLegs, w
 import { poseOfRb, SEGMENTS, selfLegPair, selfLegPairs, type Ragdoll } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
 import { toWorld, v3, type Vec3 } from '../src/sim/vec';
-import { asCaptured, create, FIX as REGISTERED, preOwnLegs, rows, runSim } from './helpers';
+import { asCaptured, create, FIX as REGISTERED, preBornOverlap, preOwnLegs, rows, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter } from './passive-energy';
 import { loadState, resumeState } from './state';
 
@@ -17,9 +17,9 @@ import { loadState, resumeState } from './state';
 // the other leg's and, the shin's and the shoe's, the own trunk; a group of pairs overlapping deeper than the skin at
 // the switch stays out of the solve until none of its pairs is.
 
-// (the definitions as before the own-leg flip: each case switches it on itself, its twin runs without it, and the capture
-// was taken under rung 8m's registration)
-const FIX = (id: string): FixtureDef => preOwnLegs(REGISTERED(id));
+// (the definitions as before the own-leg flip, and the later born-overlap flip: each case switches it on itself, its twin
+// runs without it, and the capture was taken under rung 8m's registration)
+const FIX = (id: string): FixtureDef => preOwnLegs(preBornOverlap(REGISTERED(id)));
 const on = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withSelfLegs(d.ragdoll!) });
 /** The summed contact impulse of a ragdoll's own-leg pairs in the last solve (N s). */
 function selfImpulse(sim: Simulation, rag: Ragdoll): number {
@@ -112,7 +112,7 @@ describe('own-leg contact: profile and shapes', () => {
     const ragdolls = allFixtures().filter((d) => d.ragdoll);
     for (const d of ragdolls) expect(d.ragdoll!.selfLegs, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) ? SELF_LEGS_V1 : undefined);
     expect(ragdolls.filter((d) => d.ragdoll!.selfLegs).length).toBeGreaterThan(100);
-    expect(on(FIX('HC-F1-at0.9'))).toEqual(REGISTERED('HC-F1-at0.9'));
+    expect(on(FIX('HC-F1-at0.9'))).toEqual(preBornOverlap(REGISTERED('HC-F1-at0.9')));
     expect(withoutSelfLegs(withSelfLegs(FIX('HC-F1-at0.9').ragdoll!))).toEqual(FIX('HC-F1-at0.9').ragdoll);
   });
 

@@ -8,7 +8,7 @@ import { withoutHoldStill } from '../src/sim/footwork';
 import { RAPIER } from '../src/sim/physics';
 import {
   HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
-  withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
+  withoutBornOverlap, withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
@@ -45,6 +45,12 @@ export const preV3 = (d: FixtureDef): FixtureDef => (d.legGuard ? { ...d, legGua
  * and natural sample taken before the flip ran under. Composes with the other `pre*` helpers.
  */
 export const preHoldStill = (d: FixtureDef): FixtureDef => (d.footwork?.holdStill ? { ...d, footwork: withoutHoldStill(d.footwork) } : d);
+/**
+ * Ladder 17b: `d` with its ragdoll profile as before the born-overlap flip (no `bornOverlap`): the profile every state
+ * capture and natural sample taken before the flip ran under. Composes with the other `pre*` helpers, which leave it as
+ * given.
+ */
+export const preBornOverlap = (d: FixtureDef): FixtureDef => (d.ragdoll?.bornOverlap ? { ...d, ragdoll: withoutBornOverlap(d.ragdoll) } : d);
 /** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */
 export const hipStops8i = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
 /**
@@ -92,10 +98,11 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
 
 /**
  * The flips registered on L3, L4 and HC since the first state capture, the latest first: each gives a definition as
- * before its flip (14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip adds its `pre*`
- * helper at the head, and every capture taken before it then resumes under the definition it ran under (`asCaptured`).
+ * before its flip (17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
+ * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
+ * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before
