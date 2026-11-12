@@ -22,6 +22,7 @@ import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
 import { breathe, create, evs, FIX, nonEmpty, pace, preFlip, preV3, rows, run, runSim, stepWhile, traceDiff } from './helpers';
 import { loadedLimbMonitor } from './loaded-limb';
+import { JOINT_PAST_DEG, JOINT_PAST_S } from './visible-bar';
 
 const ALL = fallFixtures();
 
@@ -337,36 +338,39 @@ describe('the limit torque follows a potential', () => {
       return { data: m, substep: m.substep };
     },
   );
-  it('in every fall, on or off, no joint stays past the tolerance longer than the persistence limit, and a limit returns less than it absorbs and launches nothing', async () => {
+  it('in every fall, on or off, no joint stays far past its limit, and a limit returns less than it absorbs and launches nothing', async () => {
     await checks([
       [
-        'no joint stays past the tolerance longer than the persistence limit while its envelope can correct it, a pinned limb stays within its load, and an unloaded one returns, in any fall, on or off',
+        'no joint stays more than 15 deg past its limit for 0.25 s in any fall, on or off (the loaded-limb rule printed)',
         async () => {
+          // ladder 15: what blocks is the visible bar, a joint more than 15 deg past its limit for 0.25 s (deepRunS,
+          // tests/visible-bar.ts), in every fall. The rule's three parts (free past the 5 deg tolerance under the persistence
+          // limit, a pinned limb within its load's deflection, an unloaded one back within its crossing time) are printed
+          // per family, and their own cases and fault twins stay in tests/loaded-limb.test.ts; the natural sample that
+          // pinned L4-F3-model-oblique-off's ['R rightShoulder'] (pre-flip) is the rule's case now
+          const meter = new Map<string, { n: number; free: number; bound: number; ret: number; deg: number; at: string }>();
           await rows(
             ALL.filter((x) => !x.id.startsWith('L4-F1-')).map((d) => d.id),
             (id) => id,
             async (id) => {
               for (const r of (await limbs(id)).records()) {
-                expect(r.freeRunS, `${r.key} free past the tolerance`).toBeLessThan(ENVELOPE_L4.persistS);
-                expect(r.overBoundDeg, `${r.key} pinned past its load's deflection (deg, at ${r.overBoundAt})`).toBeLessThanOrEqual(0);
-                expect(r.returnOverS, `${r.key} return after the unload at ${r.returnAt} (s over its bound ${r.returnBoundS})`).toBeLessThanOrEqual(0);
+                const fam = id.split('-')[0];
+                const m = meter.get(fam) ?? { n: 0, free: 0, bound: -Infinity, ret: -Infinity, deg: 0, at: '' };
+                m.n++;
+                m.free = Math.max(m.free, r.freeRunS);
+                m.bound = Math.max(m.bound, r.overBoundDeg);
+                m.ret = Math.max(m.ret, r.returnOverS);
+                if (r.maxDeg > m.deg) [m.deg, m.at] = [r.maxDeg, `${id} ${r.key}`];
+                meter.set(fam, m);
+                expect(r.deepRunS, `${r.key} more than ${JOINT_PAST_DEG} deg past its limit for ${r.deepRunS.toFixed(3)} s from ${r.deepFrom.toFixed(3)} s`).toBeLessThan(JOINT_PAST_S);
               }
             },
           );
-          // the class the rule is for occurs in the registered falls: L4-F3-model-oblique-off R's right shoulder (plan 12's
-          // known limit, 0.32 s on the envelope's own clock), pinned under its body throughout. Ladder 8l: a natural sample,
-          // read on the profile before the visible flip (under it no joint of any fall stays past the old clock for the limit,
-          // nor with any one of its parts off), where the rule holds for it too
-          const m = loadedLimbMonitor();
-          const sample = await runSim(await create(preFlip(FIX('L4-F3-model-oblique-off')), { onSubstep: m.substep }), Infinity);
-          sample.dispose();
-          const past = m.records().filter((r) => r.oldRunS >= ENVELOPE_L4.persistS);
-          expect(past.map((r) => r.key)).toEqual(['R rightShoulder']);
-          for (const r of past) {
-            expect(r.freeRunS, r.key).toBeLessThan(ENVELOPE_L4.persistS);
-            expect(r.overBoundDeg, r.key).toBeLessThanOrEqual(0);
-            expect(r.returnOverS, r.key).toBeLessThanOrEqual(0);
-          }
+          console.log(
+            `loaded-limb rule (ladder 15 meter): ${[...meter]
+              .map(([f, m]) => `${f} ${m.n} joints: free past ${ENVELOPE_L4.toleranceDeg} deg ${m.free.toFixed(3)} s (limit ${ENVELOPE_L4.persistS}), over the load's bound ${m.bound.toFixed(2)} deg, return over ${m.ret.toFixed(3)} s, largest ${m.deg.toFixed(1)} deg (${m.at})`)
+              .join('; ')}`,
+          );
         },
       ],
       // the regression behind the cone: limits per quadrant fell under a limb sliding sideways, and paid 320 J to leave

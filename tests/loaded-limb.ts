@@ -27,6 +27,7 @@ import { envelopeMoments, relativeOmega, type Ragdoll } from '../src/sim/ragdoll
 import type { SegmentId } from '../src/sim/contracts';
 import type { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, qConj, qMul, qRot, scale, sub, v3, vc, type Vec3 } from '../src/sim/vec';
+import { JOINT_PAST_DEG } from './visible-bar';
 
 /** One envelope joint's record over a run. */
 export interface LimbRecord {
@@ -50,6 +51,10 @@ export interface LimbRecord {
   returnS: number;
   returnBoundS: number;
   returnAt: number;
+  /** Ladder 15, the visible bar: the longest run (s) of substeps more than JOINT_PAST_DEG past the limit (tests/visible-bar.ts), pinned or not, its start, and the largest excess (deg). */
+  deepRunS: number;
+  deepFrom: number;
+  maxDeg: number;
 }
 
 type Kin = { m: number; com: Vec3; v: Vec3; L: Vec3 };
@@ -64,6 +69,8 @@ interface JointState {
   ret: number;
   retBound: number;
   retFrom: number;
+  deep: number;
+  deepFrom: number;
 }
 
 const DEG = 180 / Math.PI;
@@ -100,7 +107,7 @@ export function loadedLimbMonitor(declared?: (pid: string) => RagdollEnvelope): 
         const key = `${pl.id} ${e.jointId}`;
         let st = joints.get(key);
         if (!st) {
-          st = { rec: { key, oldRunS: 0, freeRunS: 0, pinnedS: 0, overBoundDeg: -Infinity, overBoundAt: NaN, transient: 0, capped: 0, returnOverS: -Infinity, returnS: 0, returnBoundS: NaN, returnAt: NaN }, prev: null, hist: [], free: 0, loadedFor: 0, armed: false, ret: 0, retBound: Infinity, retFrom: NaN };
+          st = { rec: { key, oldRunS: 0, freeRunS: 0, pinnedS: 0, overBoundDeg: -Infinity, overBoundAt: NaN, transient: 0, capped: 0, returnOverS: -Infinity, returnS: 0, returnBoundS: NaN, returnAt: NaN, deepRunS: 0, deepFrom: NaN, maxDeg: 0 }, prev: null, hist: [], free: 0, loadedFor: 0, armed: false, ret: 0, retBound: Infinity, retFrom: NaN, deep: 0, deepFrom: NaN };
           joints.set(key, st);
         }
         st.rec.oldRunS = e.maxOverRunS;
@@ -115,6 +122,13 @@ export function loadedLimbMonitor(declared?: (pid: string) => RagdollEnvelope): 
         ];
         const b = terms.reduce((x, y) => (y.t.excess > x.t.excess ? y : x));
         const x = Math.max(0, b.t.excess);
+        // ladder 15: the visible bar, on the same excess
+        st.rec.maxDeg = Math.max(st.rec.maxDeg, x * DEG);
+        if (x * DEG > JOINT_PAST_DEG) {
+          if (st.deep === 0) st.deepFrom = s.t;
+          st.deep += dt;
+          if (st.deep > st.rec.deepRunS) [st.rec.deepRunS, st.rec.deepFrom] = [st.deep, st.deepFrom];
+        } else st.deep = 0;
         const gw = qRot(qp, b.t.grad);
         const gl = len(gw);
         const gh = gl > 0 ? scale(gw, 1 / gl) : v3(1, 0, 0);

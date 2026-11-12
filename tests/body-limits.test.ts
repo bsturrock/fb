@@ -28,6 +28,7 @@ import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type Ragd
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, preFlip, rows, runSim } from './helpers';
+import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
 type Check = [string, () => void | Promise<void>];
@@ -46,34 +47,55 @@ function rapierShape(s: PoseShape): { shape: RAPIER.Shape; p: { x: number; y: nu
   return { shape: new RAPIER.Capsule(l / 2, s.r), p: addScaled(s.a, d, 0.5), q: qFromUnitVectors(v3(0, 1, 0), scale(d, 1 / l)) };
 }
 
-/** Deepest penetration (m) of either arm's self shapes, at their full radii, in the player's own measured trunk. */
-function selfDepth(def: FixtureDef, pl: PlayerRuntime, side: 'left' | 'right'): number {
+/**
+ * Deepest penetration (m) of either arm's self shapes, at their full radii, in the player's own measured trunk; and
+ * (ladder 15) whether a bone axis of the arm (the forearm's elbow to wrist, the hand's palm to tip: the self shapes'
+ * axes, at 1 mm) is inside a trunk piece.
+ */
+function selfDepth(def: FixtureDef, pl: PlayerRuntime, side: 'left' | 'right'): { d: number; axisIn: boolean } {
   const T = trunkShapes(pl.body);
-  if (!T || !pl.pose) return 0;
+  if (!T || !pl.pose) return { d: 0, axisIn: false };
   const lm = pl.pose.jointLandmarksWorld;
   const core = pl.pose.segments.core;
   let d = 0;
+  let axisIn = false;
   for (const s of armSelfShapes(def.ragdoll!.radii, pl.body.measured!.handTipM!, side, lm[`${side}Elbow`], lm[`${side}Wrist`], lm[`${side}Palm`])) {
     const q = rapierShape(s);
+    const ax = s.kind === 'capsule' ? rapierShape({ ...s, r: AXIS_R }) : null;
     for (const t of T) {
       const r = t.contactShape(core.originWorld, core.rotationWorld, q.shape, q.p, q.q, 0.02);
       if (r) d = Math.max(d, -r.distance);
+      if (ax && !axisIn) {
+        const a = t.contactShape(core.originWorld, core.rotationWorld, ax.shape, ax.p, ax.q, 0);
+        if (a && -a.distance > AXIS_R) axisIn = true;
+      }
     }
   }
-  return d;
+  return { d, axisIn };
 }
+const AXIS_R = 0.001;
 
-/** The worst own-trunk depth per arm source, every tick of a run. */
-function depthObserver(def: FixtureDef): { out: Record<Src, { d: number; at: string }>; tick: (s: Simulation) => void } {
+/**
+ * The worst own-trunk depth per arm source, every tick of a run; and (ladder 15) the visible-bar rule per source, a
+ * limb in a body (tests/visible-bar.ts limbInBody), fed every drawn frame of every arm.
+ */
+function depthObserver(def: FixtureDef): { out: Record<Src, { d: number; at: string }>; limb: Record<Src, ReturnType<typeof limbInBody>>; tick: (s: Simulation) => void } {
   const out: Record<Src, { d: number; at: string }> = { pose: { d: 0, at: '' }, armTask: { d: 0, at: '' }, ragdoll: { d: 0, at: '' } };
+  const limb: Record<Src, ReturnType<typeof limbInBody>> = { pose: limbInBody(), armTask: limbInBody(), ragdoll: limbInBody() };
+  let last = 0;
   return {
     out,
+    limb,
     tick: (s) => {
+      const dt = s.t - last;
+      last = s.t;
       for (const pl of s.players)
         for (const side of ['left', 'right'] as const) {
           const src: Src = pl.rag ? 'ragdoll' : s.arms?.obs(pl.id)?.[side]?.enabled ? 'armTask' : 'pose';
-          const d = selfDepth(def, pl, side);
+          const { d, axisIn } = selfDepth(def, pl, side);
+          const at = `${def.id} ${pl.id}.${side}@${s.t.toFixed(3)}`;
           if (d > out[src].d) out[src] = { d, at: `${pl.id}.${side}@${s.t.toFixed(3)}` };
+          for (const k of ['pose', 'armTask', 'ragdoll'] as const) limb[k].sample(`${pl.id}.${side}`, s.t, dt, k === src ? d : 0, k === src && axisIn, at);
         }
     },
   };
@@ -114,8 +136,6 @@ function pullForearms(): (s: Simulation) => void {
 }
 
 // ------------------------------------------------------------------ plan 12: the joint-range probe
-/** Plan 09's persistence limit (s), which the ragdoll envelope under the profile keeps. */
-const FALLS_PERSIST_S = ENVELOPE_L4.persistS;
 
 const J = JOINT_RANGE_V1;
 const D = Math.PI / 180;
@@ -138,8 +158,10 @@ const excessDeg = (pl: PlayerRuntime, side: Side): number => swingExcess(J.shoul
 interface Probe {
   /** Worst excess (deg) and behind angle (deg) per arm source, with where. */
   worst: Record<Src, { ex: number; behind: number; at: string }>;
-  /** Longest run (s) of a ragdoll arm more than the envelope's 5 deg tolerance past the cone. */
+  /** Longest run (s) of a ragdoll arm more than the envelope's 5 deg tolerance past the cone (printed, ladder 15). */
   ragOverRunS: number;
+  /** Ladder 15: the visible-bar rule on the ragdoll arms, past the cone (tests/visible-bar.ts jointPastRange). */
+  ragPast: ReturnType<typeof jointPastRange>;
   /** Supported ankle minimum (deg). */
   ankleMin: number;
   /** Per ragdoll: the published pitch on its first ragdoll tick, 0.35 s later, and the limp foot's held substeps then. */
@@ -152,7 +174,7 @@ interface Probe {
 function rangeObserver(): { out: Probe; tick: (s: Simulation) => void } {
   const worst = { pose: { ex: -999, behind: -999, at: '' }, armTask: { ex: -999, behind: -999, at: '' }, ragdoll: { ex: -999, behind: -999, at: '' } };
   const run = new Map<string, number>();
-  const out: Probe = { worst, ragOverRunS: 0, ankleMin: 999, feet: new Map(), planted: { n: 0, past: 0, gapM: 0, hzM: 0 } };
+  const out: Probe = { worst, ragOverRunS: 0, ragPast: jointPastRange(), ankleMin: 999, feet: new Map(), planted: { n: 0, past: 0, gapM: 0, hzM: 0 } };
   let last = 0;
   return {
     out,
@@ -169,6 +191,7 @@ function rangeObserver(): { out: Probe; tick: (s: Simulation) => void } {
           if (ex > w.ex) [w.ex, w.at] = [ex, `${pl.id}.${side}@${s.t.toFixed(3)}`];
           w.behind = Math.max(w.behind, behindDeg(upperArm(pl, side)));
           const k = `${pl.id}.${side}`;
+          if (src === 'ragdoll') out.ragPast.sample(k, s.t, dt, ex, `${pl.id}.${side}@${s.t.toFixed(3)}`);
           const r = src === 'ragdoll' && ex > 5 ? (run.get(k) ?? 0) + dt : 0;
           run.set(k, r);
           out.ragOverRunS = Math.max(out.ragOverRunS, r);
@@ -270,7 +293,7 @@ function limpViolations(id: string, calls: LimpCall[]): string[] {
 const DEPTH = new Set<string>();
 const measureDepth = (defs: FixtureDef[]): void => defs.forEach((d) => DEPTH.add(d.id));
 
-type Watched = { depth?: Record<Src, { d: number; at: string }>; range: Probe; limp?: LimpCall[] };
+type Watched = { depth?: Record<Src, { d: number; at: string }>; limb?: Record<Src, ReturnType<typeof limbInBody>>; range: Probe; limp?: LimpCall[] };
 const runs = new Map<string, Promise<Watched>>();
 const watched = (def: FixtureDef): Promise<Watched> => {
   if (!runs.has(def.id)) runs.set(def.id, runWatched(def));
@@ -286,7 +309,14 @@ async function runWatched(def: FixtureDef, fault?: (own: ShoeDecide) => ShoeDeci
     range.tick(s);
   });
   sim.dispose();
-  return { depth: depth?.out, range: range.out, limp };
+  return { depth: depth?.out, limb: depth?.limb, range: range.out, limp };
+}
+
+/** Ladder 15: the limb-in-a-body rule per arm source over a whole run (its depth measured: listed with measureDepth). */
+async function limbBySource(def: FixtureDef): Promise<Record<Src, ReturnType<typeof limbInBody>>> {
+  const w = (await watched(def)).limb;
+  if (!w) throw new Error(`${def.id}: its run does not measure the own-trunk depth (list it with measureDepth)`);
+  return w;
 }
 
 /** Worst own-trunk depth per arm source over a whole run. */
@@ -341,27 +371,34 @@ describe('arm self-clearance: supported and arm-task arms stay out of the own tr
   // (0.7 cm); the walk's swing still crosses it (3.6 cm, R.left at 1.45 s)
   measureDepth([without(FIX('L3-F14-forward'))]);
 
-  it('pose arms and arm-task arms stay within the skin tolerance of the own trunk, on every free-running and tackle fixture listed', async () => {
+  // ladder 15: the visible bar (tests/visible-bar.ts limbInBody: deeper than 10 cm in a frame, 5 cm for 0.1 s, or the bone
+  // axis inside for 0.1 s) replaced the skin tolerance plus 1.2 cm (pose arms) and plus 5 mm (arm-task arms); the deepest
+  // per fixture is printed
+  it('pose arms and arm-task arms never pass through the own trunk, on every free-running and tackle fixture listed', async () => {
+    const said: string[] = [];
     await checks([
       ...POSE.map(
         (id): Check => [
-          `${id}: pose arms within the skin tolerance`,
+          `${id}: pose arms not through the own trunk`,
           async () => {
-            const w = await worstBySource(FIX(id));
-            expect(w.pose.d, w.pose.at).toBeLessThanOrEqual(TOL + 0.012);
+            const l = (await limbBySource(FIX(id))).pose;
+            said.push(`${id} pose ${(l.deepest().d * 100).toFixed(2)} cm (${l.deepest().at})`);
+            expect(l.breaches()).toEqual([]);
           },
         ],
       ),
       ...ARM_TASK.map(
         (id): Check => [
-          `${id}: arm-task arms within the skin tolerance`,
+          `${id}: arm-task arms not through the own trunk`,
           async () => {
-            const w = await worstBySource(FIX(id));
-            expect(w.armTask.d, w.armTask.at).toBeLessThanOrEqual(TOL + 0.005);
+            const l = (await limbBySource(FIX(id))).armTask;
+            said.push(`${id} armTask ${(l.deepest().d * 100).toFixed(2)} cm (${l.deepest().at})`);
+            expect(l.breaches()).toEqual([]);
           },
         ],
       ),
     ]);
+    console.log(`arms in the own trunk, supported (ladder 15 meter; skin tolerance ${TOL * 100} cm): ${said.join('; ')}`);
   }, 240000);
 
   it('without the profile the same walk swing crosses the trunk (the historical path is unchanged)', async () => {
@@ -379,12 +416,16 @@ describe('arm self-clearance: ragdoll forearms collide with their own trunk', ()
   measureDepth(RAGDOLL.flatMap((id) => [FIX(id), withoutV1(FIX(id)), pulled(FIX(id)), pulled(without(FIX(id)))]));
 
   it('ragdoll forearms stay out of the trunk; without the profile they pass through, on every ragdoll fixture listed', async () => {
+    // ladder 15: the visible bar (limbInBody) replaced 2.5 cm; the deepest is printed
+    const said: string[] = [];
     await rows(RAGDOLL, (id) => id, async (id) => {
-      const w = await worstBySource(FIX(id));
-      expect(w.ragdoll.d, w.ragdoll.at).toBeLessThanOrEqual(0.025);
+      const l = (await limbBySource(FIX(id))).ragdoll;
+      said.push(`${id} ${(l.deepest().d * 100).toFixed(2)} cm (${l.deepest().at})`);
+      expect(l.breaches()).toEqual([]);
       const off = await worstBySource(withoutV1(FIX(id)));
       expect(off.ragdoll.d, off.ragdoll.at).toBeGreaterThan(0.05);
     });
+    console.log(`arms in the own trunk, ragdoll (ladder 15 meter): ${said.join('; ')}`);
   }, 240000);
 
   it('negative control, driven: a forearm pulled into its own trunk is stopped by the profile and passes through without it, on every ragdoll fixture listed', async () => {
@@ -395,6 +436,10 @@ describe('arm self-clearance: ragdoll forearms collide with their own trunk', ()
       expect(on.ragdoll.d, `pulled ${on.ragdoll.at}`).toBeLessThanOrEqual(0.025);
       const off = await worstBySource(pulled(without(FIX(id))));
       expect(off.ragdoll.d, `pulled twin ${off.ragdoll.at}`).toBeGreaterThan(0.05);
+      // ladder 15, the fault twin of the visible bar above: the profile holds the pulled forearms out of the trunk by the
+      // rule; without it the rule sees them through it
+      expect((await limbBySource(pulled(FIX(id)))).ragdoll.breaches(), id).toEqual([]);
+      expect((await limbBySource(pulled(without(FIX(id))))).ragdoll.breaches().length, id).toBeGreaterThan(0);
     });
   }, 240000);
 
@@ -487,7 +532,7 @@ describe('plan 12 joint range: shoulders', () => {
     }
   }, 120000);
 
-  it('ragdoll shoulders: the runner cases stay within the 5 deg tolerance past the cone, but for brief loads; the twins go far behind', async () => {
+  it('ragdoll shoulders: the runner cases are never long past the cone (15 deg for 0.25 s); the twins go far behind', async () => {
     // plan 13d: HC-F3-phase0 (margin 14.6 deg) and L3-F1-phase0 (twin 25.8 behind) no longer load the runner's arm behind
     // with Fast Run's contact timing; HC-F3-falling and HC-F3-mirror do (margins 32.9 and 32.0 deg). Plan 13e: on the L3
     // planner with the idle and walk clips HC-F3-falling's twin is 28.3 deg behind (the profile's 46.6, inside the cone by
@@ -495,6 +540,7 @@ describe('plan 12 joint range: shoulders', () => {
     // which HC-F3-phase50's twin is 63.2 deg behind (profile 50.7: margin 12.5); HC-F3-phase0 loads it again (twin 62.7,
     // profile 37.8). Ladder rung 7d: HC-F3-lowRunner pinned to LEG_GUARD_V1 (under the physical legs its profile arm is
     // 49.99 deg behind against the twin's 64.2, inside the margin)
+    const said: string[] = [];
     for (const id of ['HC-F3-phase0', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
       const d = id === 'HC-F3-lowRunner' ? pinV1(FIX(id)) : FIX(id);
       const on = await probe(d);
@@ -503,9 +549,10 @@ describe('plan 12 joint range: shoulders', () => {
       // plan 14: margin 15 (was 20): the profile's supported back swing now eases to 42 deg behind (the clip arm in the
       // ground frame), and L3-F1-low's runner ragdoll arm is 47.3 deg behind against its twin's 63.1
       expect(on.worst.ragdoll.behind, id).toBeLessThan(off.worst.ragdoll.behind - 15);
-      // past the tolerance only for a run shorter than the envelope's persistence limit
-      expect(on.ragOverRunS, `${id} ${on.worst.ragdoll.at}`).toBeLessThan(FALLS_PERSIST_S);
-      expect(on.worst.ragdoll.ex, `${id} ${on.worst.ragdoll.at}`).toBeLessThan(15);
+      // ladder 15: never more than 15 deg past the cone for 0.25 s (jointPastRange; it was past the 5 deg tolerance for
+      // less than the envelope's persistence limit, and never 15 deg past); both are printed
+      said.push(`${id} ${on.worst.ragdoll.ex.toFixed(1)} deg past (${on.worst.ragdoll.at}), ${on.ragOverRunS.toFixed(3)} s past ${ENVELOPE_L4.toleranceDeg} deg`);
+      expect(on.ragPast.breaches(), id).toEqual([]);
     }
     // a standing pile: the twin's ragdoll arm goes past the cone, with the profile it is inside. Plan 13f: was HC-F1-low
     // (twin 13 deg past); under the leg guard, which the twin keeps, its twin stays 22.5 deg inside. L3-F10-bothMirror:
@@ -517,8 +564,27 @@ describe('plan 12 joint range: shoulders', () => {
     const on = await probe(pile);
     const off = await probe(twin(pile));
     expect(off.worst.ragdoll.ex).toBeGreaterThan(5);
-    expect(on.worst.ragdoll.ex).toBeLessThanOrEqual(5);
+    // (ladder 15: the visible bar; it was within 5 deg)
+    said.push(`L3-F10-bothMirror (pre-flip, V1) ${on.worst.ragdoll.ex.toFixed(1)} deg past, twin ${off.worst.ragdoll.ex.toFixed(1)}`);
+    expect(on.ragPast.breaches()).toEqual([]);
+    console.log(`ragdoll shoulders past the cone (ladder 15 meter): ${said.join('; ')}`);
   }, 240000);
+});
+
+describe('ladder 15: the visible bar for ragdoll shoulders past the cone, its fault twin', () => {
+  it('a ragdoll arm held 100 deg behind hanging for 0.6 s (a driven fault, L4-F8-passive) fails the rule the runner cases pass; undriven it passes', async () => {
+    const probeOf = async (drive?: (s: Simulation) => void): Promise<Probe> => {
+      const range = rangeObserver();
+      const sim = await Simulation.create(FIX('L4-F8-passive'), drive ? { onSubstep: drive } : {});
+      await runSim(sim, Infinity, (s) => range.tick(s));
+      sim.dispose();
+      return range.out;
+    };
+    expect((await probeOf()).ragPast.breaches()).toEqual([]);
+    const held = await probeOf(holdArmBehind(100, 0.6));
+    expect(held.ragPast.breaches()).toHaveLength(1);
+    expect(held.ragPast.breaches()[0]).toMatch(/^R\.left@/);
+  }, 120000);
 });
 
 describe('plan 12 joint range: ankles', () => {

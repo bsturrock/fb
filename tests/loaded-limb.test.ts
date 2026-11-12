@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { GROUP_STATIC, interactionGroups } from '../src/sim/physics';
 import { ENVELOPE_L4, LEG_GUARD_V3, type RagdollEnvelope, type RagdollProfile } from '../src/sim/profiles';
-import type { Simulation } from '../src/sim/simulation';
+import { Simulation } from '../src/sim/simulation';
 import { FIX, preFlip, preHoldStill, runSim } from './helpers';
 import { loadedLimbMonitor, type LimbRecord } from './loaded-limb';
 import { loadState, resumeState } from './state';
+import { holdArmBehind, JOINT_PAST_DEG, JOINT_PAST_S } from './visible-bar';
 
 // Ladder rung 7f: the loaded-limb persistence rule (tests/loaded-limb.ts) on its case. L4-F3-run-on under the physical
 // supported legs (LEG_GUARD_V3), captured at the end of tick 66 (1.100 s): R lies on its right side, rolling back onto
@@ -56,6 +57,24 @@ const unload: Twin = (s) => {
   for (const c of s.players.find((p) => p.id === 'R')!.rag!.colliders) if (c.segment === 'rightUpperArm' || c.segment === 'rightForearm') c.collider.setCollisionGroups(interactionGroups(0xffff & ~GROUP_STATIC, 0xffff & ~GROUP_STATIC));
 };
 
+describe('ladder 15: the visible bar for a joint past its limit, on the monitor the falls are judged by', () => {
+  it('a shoulder held 55 deg past its swing limit for 0.6 s (a driven fault, L4-F8-passive) is more than 15 deg past for 0.25 s; the same run undriven never is', async () => {
+    const rec = async (drive?: (s: Simulation) => void): Promise<LimbRecord> => {
+      const mon = loadedLimbMonitor();
+      const sim = await Simulation.create(FIX('L4-F8-passive'), { onSubstep: (s) => (mon.substep(s), drive?.(s)) });
+      await runSim(sim);
+      sim.dispose();
+      return mon.records().find((r) => r.key === 'R leftShoulder')!;
+    };
+    const free = await rec();
+    expect(free.deepRunS).toBe(0);
+    expect(free.maxDeg).toBeLessThan(JOINT_PAST_DEG);
+    const held = await rec(holdArmBehind(100, 0.6));
+    expect(held.deepRunS).toBeGreaterThanOrEqual(JOINT_PAST_S);
+    expect(held.maxDeg).toBeGreaterThan(40);
+  }, 120000);
+});
+
 describe('ladder rung 7f: the loaded-limb persistence rule (L4-F3-run-on, V3, from 1.10 s)', () => {
   it("R's right shoulder, pinned by the floor past the tolerance longer than the persistence limit, is within its load's deflection; the fault twins fail the rule's three parts", async () => {
     const base = (await resumed())['R rightShoulder'];
@@ -78,6 +97,11 @@ describe('ladder rung 7f: the loaded-limb persistence rule (L4-F3-run-on, V3, fr
     expect(ii.pinnedS).toBe(0);
     expect(ii.oldRunS).toBeGreaterThan(PERSIST);
     expect(ii.freeRunS).toBeGreaterThan(PERSIST);
+    // ladder 15: the registered run's shoulders never pass the visible bar's 15 deg (7.6 at most), nor with the spring off
+    // (12.6: the arm lies on the floor); the bar's fault twin is the driven arm below
+    expect(base.deepRunS).toBe(0);
+    expect(base.maxDeg).toBeLessThan(JOINT_PAST_DEG);
+    expect(ii.deepRunS).toBe(0);
 
     // the unload: at 1.40 s, 7 deg past, the floor lets go of the right arm, and the envelope returns it inside within its
     // crossing time plus a tick
