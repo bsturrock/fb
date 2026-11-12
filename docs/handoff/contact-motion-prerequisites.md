@@ -5,14 +5,16 @@ Sequence: [contact motion](../open/contact-motion/README.md). This work comes af
 ([contact-motion.md](contact-motion.md)) and before M2.
 
 The work is on branch `prereq-ladder`, cut from `a6d712f` (M1) and built in the worktree
-`~/.claude-wt/football-sim-7-ladder`: 61 commits to `8a6af97`, then the close-out docs. It is not merged into
-`model-integration`, and the repository has no remote. Replacing that branch's old uncommitted stack is the user's
-decision (plan doc, "Replacing the old working tree"). Build work stopped on 2026-11-12. What remains is on the
-supported side, worth less per step, and waits on look calls from the user.
+`~/.claude-wt/football-sim-7-ladder`: 61 commits to `8a6af97`, the close-out docs, then ladder 13 (four commits to
+`599dc57`, and its docs). It is not merged into `model-integration`, and the repository has no remote. Replacing that
+branch's old uncommitted stack is the user's decision (plan doc, "Replacing the old working tree"). Ladder 13
+(2026-11-12) took the user's three look rulings: the fallen arm bent the wrong way overhead (13a), legs planted and still
+in a stationary hold (13b), the elbow and upper arm inside the own chest (13c). Each landed off; all three flips are
+parked.
 
-**Result at the tip** (full check `.scratch/ladder/r12b-twist-fit/` in the main checkout; every step after 10e is
-byte-identical to 10e):
-- The suite passes 364/364 in 38 files (250 at the start). Typecheck and build pass. 411 fixtures export, equal to
+**Result at the tip** (full check `.scratch/ladder/r13c-upper-arm/` in the main checkout; every step after 10e is
+byte-identical to 10e, and 13a-i changed only the visible meter):
+- The suite passes 376/376 in 40 files (250 at the start). Typecheck and build pass. 411 fixtures export, equal to
   `evidence/summary.json`.
 - G, L1, L2 and RH summaries and traces are byte-identical to `a6d712f`. Summaries changed: L3 59 of 98, L4 70 of 75,
   HC 21 of 22.
@@ -57,6 +59,9 @@ brace pressed on a body at the end of its window misses `obstructed` (9e); and t
 | `SELF_CLEARANCE_V2` `seamSettle` (11d iii) | The own trunk's share of an arm's continuity push halves each time it turns against the one before | `pose.ts` |
 | `JOINT_RANGE_V4` (11d ii) | The M1 twist window works in `limbAnatomicalTwistRad`: the envelope's measure up to horizontal, regular overhead. `guardEnvelopeTwist` keeps the envelope's twist in range | `joint-cone.ts`, `pose.ts` |
 | `JOINT_RANGE_V5` (12b) | V4 plus `fitMaxMps` 6: the M1 elbow fit moves the elbow at most 6 m/s | `pose.ts` |
+| `SHOULDER_TWIST_ANAT_V1` (13a, `withShoulderTwistLimit`) | The ragdoll shoulder's twist limit reads the anatomical twist (regular overhead) instead of plan 09's measure, which fades at the pole | `ragdoll.ts` |
+| `HOLD_STILL_V1` (13b, `withHoldStill`) | A player holding or held (a grip or clamp within the last 0.25 s), its body under 0.3 m/s, takes no step home, settle or turn step; a foot that cannot keep its plant still steps | `footwork.ts` |
+| `SelfClearanceProfile.upperArm` (13c, `withUpperArmClearance`) | The supported upper arm's distal half (at the forearm's radius) joins the arm's self shapes: candidate depth, the arm task's validity and the continuity push, whose target stays within the arm's reach of its shoulder | `pose.ts`, `arms.ts` |
 
 Kept but unregistered: `LEG_GUARD_V2`, `HIP_STOPS_V1` (no zone, lab `hips=v1`), `HIP_STOPS_L4_V1` (8g's L4 backstop,
 `hips=l4`). Every one of the flips is parked (below).
@@ -95,12 +100,13 @@ Kept but unregistered: `LEG_GUARD_V2`, `HIP_STOPS_V1` (no zone, lab `hips=v1`), 
   drawn-frame joints against human ranges, plus overlaps and snaps, with lab links. It exits 1 only on a new suite
   failure or a changed G/L1/L2/RH output.
 - **Captures and twins** (`tests/state.ts`, `scripts/capture-state.ts`, `tests/README.md`): the full state at a tick,
-  resumed byte for byte; a twin is `resumeState(cap, { def, variant })` or `{ faults }`. 26 captures in
+  resumed byte for byte; a twin is `resumeState(cap, { def, variant })` or `{ faults }`. 29 captures in
   `tests/data/state/`; `tests/seed.ts` is the older seed behind `headplant` and `corerock`.
 - **Rules as tests:** `tests/loaded-limb.ts` (7f), `tests/passive-energy.ts` (7g), `tests/visible.ts` (8c).
 - **Lab parameters** (`src/lab/lab-params.ts`): `order=rev`, `legs=v1|v2|v3`, `hips=on|l4|v1|off`, `pgs=<n>`,
-  `knees=off|140|145`, `retry=on|off`, `selfleg=on|off`. Before-views (each equals the earlier registration on all 195
-  L3/L4/HC fixtures, `r10d-v3-flip/lab-views.txt`):
+  `knees=off|140|145`, `retry=on|off`, `selfleg=on|off`, and the ladder 13 flags `armtwist=on|off`,
+  `holdstill=on|off`, `upperarm=on|off` (each shows its parked flip). Before-views (each equals the earlier
+  registration on all 195 L3/L4/HC fixtures, `r10d-v3-flip/lab-views.txt`):
 
   | as it was | add |
   | --- | --- |
@@ -126,6 +132,11 @@ after rungs 1-7, the first visible measure.
 The impossible time was nearly all L3/HC hips, which had no limit; the deep own-body overlap left is mostly arms on
 the trunk; the L3 supSelfLegAxS rise is V2's sweep paths. Passive energy: L3 1150 -> 804 J (largest 128 -> 48), L4 2907 -> 531 (122 -> 58), HC 949 -> 423 (197 -> 48). Of
 the 464 injecting solves left, 387 (1653 J) follow a larger loss in the tick before (rebound).
+
+13a-i changed the meter, not the sim: shoulder rotation is read in the anatomical twist (regular overhead), as the
+user's ruling on question 1 asked. At the tip (`r13c-upper-arm`) the ragdoll shoulder rotation past the impossible line
+reads 31.5 player-s where the old reading found 2.5, so ragImpS reads L3 11.35, L4 17.67, HC 4.77, ragImplS 14.5,
+29.0, 10.8, and L3 supImpS 1.17; every other column is as in the table.
 
 ## Who falls, against the ladder's start
 
@@ -172,16 +183,18 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
   reversed R (V3), solve 270, +7.70 J. Capture `L4-F9-contact~v3-rev@63`; with 3 extra PGS iterations it reads -5.87 J.
   At the tip there are 21 pinch solves (32 J). A backup idea is one gap-free trunk hull for the self shapes.
 - **A rigid proxy rebounding off a ragdoll:** on L3-F9-noProbe-prep, D's pelvis bounces 13.9 cm off R's shoe at
-  0.917 s (V1 from 0.750 s: 12.85 cm). On L3-F9-noProbe-free, D bounces 24.2 cm at 1.1 s. It is also a user question.
+  0.917 s (V1 from 0.750 s: 12.85 cm). On L3-F9-noProbe-free, D bounces 24.2 cm at 1.1 s. The user accepts it as a
+  look for now (question 7).
 - **A physical leg starting a solve inside another ragdoll:** at worst 1.85 cm (HC-F2-bothFallL2 rev A's right
   shoe in B's trunk, 0.683 s), and 2.3 cm for 0.05 s (L3-F1-phase2 and L3-F4-oneArm D's left shin in R's shoe,
   1.233 s), against `PHYS_LEG_OK` 1 mm. Small; no test.
-- **`SHOULDER_POLE_TWIST`:** on HC-F5-strictTransfer, R lies with its right arm straight overhead from 2.95 s. The
-  envelope's measure reads it 41 deg past the human range; the anatomical measure (11d ii) reads +78, inside. The
-  envelope's twist limit fades at the pole, so nothing acts. The flip reached it, it did not cause it
-  (`assess-8l/tools/worktree-scratch/r8m/`). Test: `shoulder-pole.test.ts` on `HC-F5-strictTransfer@165`. The fix
-  depends on the user's look: if the arm looks fine, the meter reads the anatomical twist; if it looks twisted, the
-  ragdoll's twist limit uses that measure instead of fading.
+- **`SHOULDER_TWIST_REBOUND`** (blocks 13a's flip; replaces `SHOULDER_POLE_TWIST`): HC-F5-strictTransfer R lies with
+  its right arm overhead, bent the wrong way (the user's ruling on question 1), because plan 09's twist limit fades at
+  the pole. `SHOULDER_TWIST_ANAT_V1` brings it back inside (`shoulder-twist.test.ts` on `HC-F5-strictTransfer~v3@100`),
+  but the limit is still plan 09's spring (400 N m/rad, about 0.3 of critical for a bent arm), and an arm lifted past
+  it stores the impact and gives it back: L4-F10-elbow-on R's left shoulder snaps 86 deg in a frame at 0.517 s, and
+  solves gain 8.2 J (HC-F3-phase75 rev D) and 3.1 J (L4-F9-low rev R). Same-state twins in `assess-13a/caps/`. Fix
+  (13a-iii): step the term as 8g's approach zone is stepped (`parked/arm-twist-flip/README.md`).
 - **The solved-impulse reading misses coincident manifold points:** L3-F1-phase6 reversed, solve 266. Points 2-4
   share one position and one solver contact. Rapier wrote 15.53 N s to point 4, but the match gives it to point 2, so
   the pair reads 0. The energy meter uses max(solved, raw). Still to check: which records read 0 for a real contact.
@@ -197,17 +210,27 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
 - **A falling proxy's thigh sliding in a ragdoll shoe at HARD_OK** (blocks 11b): under V3 it is 1.16-1.20 cm deep
   (HARD_OK 1.2) on L3-F11-invalid and HC-F5-invalidOne, both orders, from about 1.88 s (`assess-12a/`). The fix is the
   guard's, and it moves V2 runs too.
-- **Footwork plants a held foot by the midline** (blocks 11c): L3-F6-hold R's left foot at 3.70 s. Under V3 the knee
-  tucks behind the other from 3.90 s; under V4 the foot steps out at 4.02 s and plants again at 4.33 s.
-  `own-legs.test.ts` on `L3-F6-hold@231`. Fix the stance width, or accept the step as the look.
+- **`HOLD_LEG_CLEARANCE`** (blocks 11c; replaces "footwork plants a held foot by the midline"): on L3-F6-hold the
+  defender steps in the still hold at 2.15 s, its step, held off its home, sweeps the runner's planted left leg at
+  3.18 s, and that foot plants by the midline at 3.70 s. Under V3 the runner's knee then tucks behind the other from
+  3.90 s; under V4 the foot steps out at 4.02 s and plants again at 4.33 s (`own-legs.test.ts` on `L3-F6-hold@231`).
+  `HOLD_STILL_V1` removes the voluntary steps. What it leaves is forced: the clearance solve releases the runner's plant
+  when the defender's swaying leg meets it, and the held-off step chases a lifted clearance variant
+  (`hold-still.test.ts` on `L3-F6-hold@126`). Fix the release in a still hold, or the stance width.
 - **A palm target inside the arm's minimum reach** (21.9 cm) turns the reach direction 62 deg in a frame (L3-F1-phase7
   D, V4). Plan 07a's `stableReach` fixes it. It is not landed, because under V5 only one frame reaches it
   (`r12b-twist-fit/mechanism/`).
 - **Palms going to and fro under the arm pair:** L3 325 substeps (L3-F4-gripTarget D, L3-F6-saturated rev). Not
   traced.
-- **A supported upper arm inside its own trunk** (plan 11's known limit; `assess-11e/`). The upper arm is past 5 cm for
-  160 of L3's 750 supported player-s, mostly sampled clip arms. The worst is 13.6 cm, on L3-F5-drag R's carry arm. Fixing
-  it changes how the clips' arms look on every run, so the user's look comes first.
+- **`CLIP_ARM_HELD_DEPARTURE`** (replaces "a supported upper arm inside its own trunk"; what 13c leaves). Registered,
+  the upper arm is past 5 cm in its own trunk for 160 of L3's 750 supported player-s. `upperArm` (13c) keeps arm-task
+  arms out (16.7 -> 0.03 s), but most of it is clip and procedural arms in an alternative: with no valid candidate
+  (another body 0.7-1 cm deep) the continuity alpha is about 0.01, and the shown departure (0.4-0.9 m) is held in the
+  body frame while the clip's target swings, so the arm is carried across the chest. L3-F16-contactStop R's right arm
+  from 0.55 to past 1 s (`upper-arm-self.test.ts` on `L3-F16-contactStop@30`); L3-F9-low D's left from 0.35 s. The same
+  hold keeps L3-F6-holdMirror R's right arm overhead (the raised arm above, registered too), and carried to the
+  shoulder cone's edge it flips the elbow or palm in one frame (the snaps the 13c flip worsens). Fix (13c-ii): what a
+  held departure may keep while no candidate is valid. `parked/upper-arm-flip/README.md`, `assess-13c/`.
 
 Resolved on the way, tests kept: `LEG_IN_RAGDOLL`, `HOLD_CLEARANCE_REPLANT` (exceptions retired),
 `BRACE_EXPIRED_OBSTRUCTED`, `THIGH_MET_AT_CONVERSION`, stale impulses, loaded-limb persistence, the 4036-query tick.
@@ -223,6 +246,9 @@ Its README has the evidence and the suite failures by class.
 | `JOINT_RANGE_V3` (11b) | Supported knees turning sideways or backwards: HC supported impossible 4.22 -> 0.05 s | The proxy thigh sliding in a shoe (caused); 3 who-falls changes, all reached: HC-F3-phase0 rev D stands, L3-F1-phase0 rev D falls, L3-F1-phase7 D stands | `hip-twist-flip/map.patch`; `assess-11b/`, `assess-12a/` |
 | `LEG_GUARD_V4` (11c) | L3-F6's tucked knee (supSelfLegAxS L3 12.84 -> 10.44) | The hold's second plant (`HOLD_SETTLES`); on L3-F6-saturated, a cross-leg rise and a 1.22 cm transition, not twinned | `own-legs-flip/map.patch`; `assess-11c/` |
 | Arm pair: `JOINT_RANGE_V5` with `SELF_CLEARANCE_V2` (11d, 12b) | One-frame arm turns (supSnap60 L3 16 -> 2) and trembling palms (L3 3027 -> 405) | The raised held arm (L3 supImpS 0.95 -> 4.13, caused). Not yet twinned: three natural samples (falls' L4-F9 boundary identity first) and HC ragdoll implausible time 4.48 -> 6.58 | `arm-pair-flip/map.patch` (replaces `palm-seam-flip/`, `overhead-twist-flip/`); `assess-12b/` |
+| `SHOULDER_TWIST_ANAT_V1` on every L3/L4/HC ragdoll (13a) | The fallen arm bent the wrong way overhead: ragdoll shoulder impossible 31.5 -> 0.5 player-s | `SHOULDER_TWIST_REBOUND`: a rebound snap and two solve gains, caused; two soft suite rows (L4-F1-shoulderTwist, L4-F8-passive) | `arm-twist-flip/flip.patch`; `assess-13a/` |
+| `HOLD_STILL_V1` on every L3/L4/HC foot planner (13b) | Legs stepping in a still hold: L3 own-leg axis crossing 12.84 -> 10.68 s, standing legs crossing 6.56 -> 5.57 s; no who-falls change | A coverage floor the flip lowers by its definition (`l3-contracts` 10b: 29,647 step substeps against 30,000) | `hold-still-flip/flip.patch`; `assess-13b/` |
+| `upperArm` on every L3/L4/HC self-clearance (13c) | Arms in the own chest: L3 upper arm past 5 cm 160 -> 85 player-s (arm tasks 16.7 -> 0); trembling palms L3 3027 -> 1111 | Caused: two runners fall as rigid figures, the low-tackle runner stays up, shape queries 4265 (budget 4000), the carry's tuck. Worsened: supported snaps L3 16 -> 53 (`CLIP_ARM_HELD_DEPARTURE`) | `upper-arm-flip/flip.patch`; `assess-13c/` |
 
 Not taken: the narrowed L4 envelope (`l4-hip-envelope-narrowed/`). From the old stack: `ARM_CLEARANCE_V1` and the
 arm sweep (dormant and untested; M3 reworks the wrap arms), shoulder twist 1000/3 (it traded one power breach for
@@ -232,22 +258,30 @@ another) and `arm.patch`'s pushed-target clamp (it raised reversals on trapped a
 
 Open each link on a lab served from the ladder worktree. Start with the who-falls table above.
 
-1. Does the overhead arm look twisted? `?fixture=HC-F5-strictTransfer&cam=side&speed=0.25&t=2.80`
-2. Lying on its own leg, or held up? `?fixture=L3-F3-collision&order=rev&cam=side&speed=0.25&t=1.90`
+Open:
+
 3. Does one leg sliding off the other look natural? `?fixture=L3-F9-noProbe-free&cam=side&speed=0.25&t=1.95`
 4. Legs crossed at the switch stay crossed until they part. Acceptable, or push them apart?
    `?fixture=HC-F1-at0.9&cam=front&speed=0.25&t=1.25`
-5. The held runner's thighs cross by about 1.5 cm. Fix this before the next milestone, and would a step-out (11c) look
-   better? `?fixture=L3-F6-hold&cam=front&speed=0.25&t=3.95`
-6. The slow trip: a stumble, or held up and let down? `?fixture=L4-F10-elbow-on&cam=side&speed=0.25&t=0.40`
-7. The rigid standing body bouncing off the fallen runner: acceptable for now?
-   `?fixture=L3-F9-noProbe-free&cam=side&speed=0.25&t=0.85`, `?fixture=L3-F9-noProbe-prep&cam=side&speed=0.25&t=0.70`
-8. Does the elbow show inside the chest? `?fixture=L3-F5-drag&cam=front&speed=0.25&t=1.55`,
-   `?fixture=L3-F9-low&cam=front&speed=0.25&t=0.55`
 9. An L4 standing arm flicks from hanging to overhead and back. Fix before M2?
    `?fixture=L4-F9-crowded&cam=front&speed=0.25&t=0.05`
 10. May an arm held raised through a hold stay raised (the arm pair's blocker)? It shows only under the parked patch,
     which has no lab parameter: `?fixture=L3-F6-holdMirror&cam=front&speed=0.25&t=1.60` is the registered arm.
+11. In the still hold (13b) the planted thighs touch, 1.6 to 2.8 cm, where before the stepping shins crossed 5.6 to
+    7.4 cm. Acceptable? `?fixture=L3-F6-saturated&cam=front&speed=0.25&t=3.20&holdstill=on`
+12. Under 13c the arm a clip swings across the chest is held out at the chest's surface. Is that the look, or should
+    the clip's swing itself stay off the chest?
+    `?fixture=L3-F16-contactStop&cam=front&speed=0.25&t=0.55&upperarm=on`
+
+Answered (2026-11-12):
+
+1. The overhead arm bends the wrong way: a real limit is wanted, not a meter change. Taken as 13a (the meter now reads
+   the anatomical twist too).
+2. Propped on its own leg: does not matter.
+5. Legs planted and still while the hold is stationary. Taken as 13b; question 11 is what it leaves.
+6. The slow trip is fine.
+7. The rigid body's bounce is accepted as a look for now.
+8. The elbow inside the chest: wanted fixed, lower urgency. Taken as 13c.
 
 ## Known issues carried from the M1 handoff
 
@@ -270,5 +304,5 @@ trajectories have moved since, so re-read them before relying on a time.
 ## Evidence
 
 Main checkout `.scratch/ladder/`: `r0-baseline` (start), `r8c-visible-checks`, `r10d-v3-flip` (last behaviour flip,
-`netfalls`, lab views), `r12b-twist-fit` (tip); `assess-*/` (README each), `parked/`, `pinch/`, `visible-audit/`. Old
+`netfalls`, lab views), `r12b-twist-fit` (before ladder 13), `r13c-upper-arm` (tip); `assess-*/` (README each), `parked/`, `pinch/`, `visible-audit/`. Old
 stack: `.scratch/cmp-evidence/s17/`. What may be deleted: `.scratch/ladder/cleanup-audit.md`.

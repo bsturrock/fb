@@ -1,8 +1,8 @@
 # Contact-motion prerequisites: ladder (open items)
 
-Status: build work stopped 2026-11-12 at `8a6af97` (branch `prereq-ladder`, 61 commits on `a6d712f`). What landed,
-how it works, the measured result, open defects and parked flips:
-[handoff](../../handoff/contact-motion-prerequisites.md). This page keeps what is still open: the user's review list,
+Status: ladder 13 landed on 2026-11-12 at `599dc57` (branch `prereq-ladder`, 67 commits on `a6d712f`, then its docs).
+Its three steps are off and their flips parked. What landed, how it works, the measured result, open defects and
+parked flips: [handoff](../../handoff/contact-motion-prerequisites.md). This page keeps what is still open: the user's review list,
 the next steps, and how this branch replaces the old working tree. M2 starts after the review.
 
 ## Rules
@@ -12,7 +12,7 @@ The working rules are in `CLAUDE.md` ("How work is done here"). For this ladder 
 - One step is one commit on `prereq-ladder`. New behaviour lands behind a flag with fixture summaries byte-identical,
   and a flip is its own step. G, L1, L2 and RH stay byte-identical.
 - Each step's full check goes to `.scratch/ladder/<step>/` in the main checkout and is compared with the previous step
-  (`scripts/check/README.md`). The tip's result is `r12b-twist-fit`. The primary measure is the visible-quality matrix.
+  (`scripts/check/README.md`). The tip's result is `r13c-upper-arm`. The primary measure is the visible-quality matrix.
 - A flip is assessed first as a variant, with every suite failure classed and behaviour failures twinned
   (`assess-<step>/`). If it is not clean it is parked with its patch (`parked/<flip>/`) and a README saying what blocks
   it.
@@ -224,27 +224,52 @@ To look at and decide:
   for now? (It belongs to the rigid standing body, a separate step: the open defect "a rigid proxy rebounding off a
   ragdoll" in the handoff.)
 
+### 13a-13c: the three look rulings (landed off; each flip parked)
+
+Nothing changes at the tip. Each link adds the lab parameter that shows the parked flip; drop it for the tip.
+
+- 13a, the fallen arm: `?fixture=HC-F5-strictTransfer&cam=side&speed=0.25&t=2.80&armtwist=on`. The runner's right arm
+  overhead turns back inside its range instead of lying bent the wrong way. No who-falls change.
+- 13b, the still hold: `?fixture=L3-F6-hold&cam=front&speed=0.25&t=2.10&holdstill=on`. The defender no longer steps in
+  the still hold at 2.15 s, the runner's left leg is not swept, and at 3.95 s its knee no longer tucks behind the other.
+  No who-falls change. The planted thighs it leaves touching are question 11 in the handoff.
+- 13c, the arm in the chest: `?fixture=L3-F16-contactStop&cam=front&speed=0.25&t=0.55&upperarm=on` (registered, the
+  runner's right arm is carried into its chest from 0.55 s to past 1 s; with the flag it is out by 0.8 s; question 12)
+  and `?fixture=L3-F5-dragMirror&cam=front&speed=0.25&t=0.30&upperarm=on` (the defender's reaching arm no longer goes
+  through its chest). Who falls changes on 13 player-runs with it; the parked README lists them. The three twinned from
+  the same state are caused by it: the runner keeps its feet in the low tackle
+  (`?fixture=L3-F1-low&cam=front&speed=0.25&t=0.80&upperarm=on`), and on
+  `?fixture=L3-F1-phase5&order=rev&cam=front&speed=0.25&t=1.05&upperarm=on` and
+  `?fixture=HC-F1-at1.6&order=rev&cam=front&speed=0.25&t=1.55&upperarm=on` the runner falls as a rigid figure.
+
 ## Next steps
 
-None of these is started. Each needs the user's look or design answer first (questions 1-10 in the handoff), except
-the two marked as fixes. Details, captures and twins are in the handoff's "Open defects" and "Parked flips".
+None of these is started. The open questions are 3, 4, 9-12 in the handoff (1, 2, 5-8 are answered). Details, captures
+and twins are in the handoff's "Open defects" and "Parked flips", and each parked README.
 
-1. **The user's review** of the list above and the handoff's questions. A changed outcome the user rejects becomes
-   its own fix step.
+1. **The user's review** of the list above and the open questions. A changed outcome the user rejects becomes its own
+   fix step.
 2. **Replace the old working tree** (below). This is the user's decision.
-3. Fix: an own-trunk hit read from what the solve will take, then re-assess the parked `selfTrunkBody` flip
+3. 13a-iii: step the anatomical twist term as 8g's approach zone is stepped (`SHOULDER_TWIST_REBOUND`), re-twin the
+   three cases it caused, then the 13a flip.
+4. 13b flip: the only blocker is a coverage floor (`l3-contracts` 10b, 29,647 step substeps against 30,000) that the
+   flip lowers by its definition. Whether that floor may follow the flip is the driver's call (the builder's flip rule
+   allowed no lowered floor); then the flip with the by-construction changes in `parked/hold-still-flip/README.md`, then `HOLD_LEG_CLEARANCE` (the forced release in a still hold).
+   `LEG_GUARD_V4`'s step-out is a step in a still hold, which ruling 2 rules out.
+5. 13c-ii: `CLIP_ARM_HELD_DEPARTURE` (a clip arm with no valid candidate holds a large departure in the body frame and
+   is carried across the chest), as its own fix. Then 13c-iii, the flip's own blockers: own-trunk depth ranked below
+   another body's (the rigid runners), the carry arm's tuck kept, the upper arm's trunk queries culled. Then re-assess
+   the 13c flip.
+6. Fix: an own-trunk hit read from what the solve will take, then re-assess the parked `selfTrunkBody` flip
    (`IMPACT_OVER_POWER`).
-4. Fix: the leg guard keeping a falling proxy's leg clear of a ragdoll shoe at HARD_OK, then re-assess the parked
+7. Fix: the leg guard keeping a falling proxy's leg clear of a ragdoll shoe at HARD_OK, then re-assess the parked
    thigh-rotation flip (`JOINT_RANGE_V3`; it applies unchanged on the tip).
-5. After question 10: the raised-arm fix in the anatomical window or the guard, then the arm pair flip (`JOINT_RANGE_V5`
+8. After question 10: the raised-arm fix in the anatomical window or the guard, then the arm pair flip (`JOINT_RANGE_V5`
    with `SELF_CLEARANCE_V2`). Twin its three natural samples first, then the HC ragdoll implausible rise.
-6. After question 5: the stance width in footwork, or accept the step-out and flip `LEG_GUARD_V4`.
-7. After question 1: the meter reads the anatomical twist, or the ragdoll's twist limit is taken in it
-   (`SHOULDER_POLE_TWIST`).
-8. After questions 8 and 9: the upper arm in the self shapes (it moves clip arms everywhere); pose continuity without
-   ground on L4.
-9. Not scheduled: rebound energy (needs solver access Rapier 0.21's JS lacks), the rigid proxy's rebound off a ragdoll,
-   physical legs starting a solve 1-2 cm inside a ragdoll, and the coincident-manifold impulse reading.
+9. After question 9: pose continuity without ground on L4.
+10. Not scheduled: rebound energy (needs solver access Rapier 0.21's JS lacks), the rigid proxy's rebound off a ragdoll
+    (accepted as a look, question 7), physical legs starting a solve 1-2 cm inside a ragdoll, and the
+    coincident-manifold impulse reading.
 
 ## Replacing the old working tree
 
