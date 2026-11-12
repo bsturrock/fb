@@ -15,12 +15,34 @@ Ladder results live outside git in the main checkout: `.scratch/ladder/<rung>/` 
 `.scratch/ladder/r0-baseline`). A result directory is about 1 MB.
 
 Order and load: typecheck, build, then the test suite **alone** (nothing else running, so no timeout is induced by the
-check itself), then the fixture export and the matrices as shards in a bounded pool (`CHECK_JOBS`, default 6 on the
-8-core machine; these runs have no timeouts and their results do not depend on load). Other heavy processes on the
-machine during the suite still matter: run the check on an otherwise idle machine.
+check itself), then the fixture export and the matrices in one pass (below) in a pool of worker processes
+(`CHECK_JOBS`, default 6 on the 8-core machine: 8 is no faster; these runs have no timeouts and their results do not
+depend on load). Other heavy processes on the machine during the suite still matter: run the check on an otherwise idle
+machine.
 
 Environment: `CHECK_JOBS=<n>` pool size; `CHECK_SKIP=suite,legmx,...` skips parts (typecheck, build, suite, fixtures,
 legmx, l4mx, energymx, visiblemx), recorded as skipped, for a quick look only (a rung is judged on a full run).
+
+### One pass
+
+Every fixture runs once per body order it is needed in: forward for the export (every fixture), both orders for the
+matrices (every L3, L4 and HC fixture; the L4 matrix the L4 ones with a fall response). The run carries the meters of
+every part it feeds at once (`meters.ts runPass`): the leg matrix's `onSubstep` sample and the shape-query counter, the
+passive-energy meter's wrapper of the physics step, the visible meter after each tick, and at the end the fall-response
+stats, the export's summary and the sha256 of its trace file's text. The meters only read the run, and every run takes
+the same options (default ones, ledgers off, `reverseOrder` for the second order; `onSubstep` only calls the sample), so a
+run metered for one part is the run metered for all. Two things keep that so:
+
+- the shape-query counter counts the tick only: the visible meter's own shape queries, after the tick, are discarded;
+- each check runs the first L3, L4 (with a fall response) and HC fixture again forward with no meter at all (bare
+  twins, `meta.json` `meterTwins`); a twin whose trace hashes differently from the metered run fails the check
+  (`shardsFailed`: `meters-change-run:<fixture>`). Fault twin (ladder 14-speed): an impulse of 1e-6 N s on a ragdoll's
+  core in the energy meter's step wrapper fails all three.
+
+The pool's workers (`pass.ts`, IPC) take runs longest first (substeps times players); a run that throws is listed in
+`shardsFailed` as `<part>:<fixture>[:rev]` for each matrix it fed (and in `fixtures.threw` for the export).
+The one pass replaced shards of a separate run per matrix (each fixture and order replayed four times, five forward):
+the same files byte for byte (`compare.ts` against `r13-docs`), the pool 241 s to 74 s.
 
 ## Outputs
 
@@ -30,7 +52,7 @@ Compared files (deterministic: stable order, no timestamps):
 | --- | --- |
 | `status.json` | typecheck (ok, error count), build ok, suite exit code, fixture count, fixtures that threw, whether the export equals the tree's committed `evidence/summary.json`, matrix row counts, failed shards |
 | `suite.json` | test counts; every failing test (and every file that failed outside a test) with its file, full name, kind (`TIMEOUT` when the first line says it timed out, else `REAL`), first message line and the message up to its stack |
-| `summary.json` | the fixture export of every registered fixture: byte for byte what `npm run fixtures` writes to `evidence/summary.json` (run in shards through `scripts/fixture-runner.ts` and merged in registry order) |
+| `summary.json` | the fixture export of every registered fixture: byte for byte what `npm run fixtures` writes to `evidence/summary.json` (the same run, summary and trace text as `scripts/fixture-runner.ts`, merged in registry order) |
 | `traces.sha256` | sha256 of every fixture's trace file the export writes (`evidence/traces/<id>.json`; the traces themselves are not kept) |
 | `legmx.jsonl` | leg matrix (`legmx.ts`): every fixture with a leg-guard profile, both body orders. Per row: fixture, order, leg-guard id, result; per player: conversion time, end mode, largest one-substep player-player contact impulse on the player and on its leg colliders (thigh, shin, shoe) with when, and the leg ledger (largest one-substep leg impulse and when, ungrounded impulse substeps, totals), `"absent"` on a tree without one |
 | `l4mx.jsonl` | L4 matrix (`l4mx.ts`): every fixture with a fall-response profile, both body orders. Per player: conversion time, end mode and every scalar of its fall-response stats (`peakPositiveW` the peak audited power, `overPowerSubsteps` / `overWork` the ceiling breaches, `heldSubsteps` / `heldBodySubsteps` the impact guard, ...) |
@@ -38,14 +60,15 @@ Compared files (deterministic: stable order, no timestamps):
 | `visiblemx.jsonl` | visible-quality matrix (`visiblemx.ts`, `tests/visible.ts`): every L3, L4 and HC fixture with a ragdoll profile, both body orders, every drawn frame. Per row: duration, ragdoll and supported player-seconds (`ragS`, `supS`); for ragdoll frames (`rag`) and supported or falling-proxy frames (`sup`) the seconds past the implausible (`impl`) and impossible (`imp`) margin by `Joint.dof`, the own bone-axis crossing seconds (`selfAx`: `legLeg`, `legTrunk`) and the joint snaps (`snap60`, joint-frames); for ragdolls also the own-body overlap seconds past 1 cm (`self`) and in events past 10 cm (`selfDeep`) by class, and the knee seconds past 150 (`kneeStop`); cross-player leg overlap seconds by pair kind (`cross`); each conversion's player, time and the hips at its last supported frame (`conv`: `[flex, abd, rot]` left, right); the worst event of each column (`worst`: `[player, what, peak, peak time, start, end, severity]`). Definitions below. `status.json` carries the headline per family |
 | `queries.jsonl` | shape-query budget (the leg matrix's runs, so every L3, L4 and HC fixture in both orders): the most Rapier shape queries in one tick (`worstTickQueries`, counted as plan 13a's budget test counts them) and when (`at`) |
 
-Not compared: `meta.json` (commit, dirty file count, timings, pool size) and `logs/` (each step's output, the raw
-vitest JSON report).
+Not compared: `meta.json` (commit, dirty file count, timings, pool size, each run's ms, the meters' twins) and `logs/`
+(each step's output, `pass-<n>.log` per worker, the raw vitest JSON report).
 
 The matrices run each fixture with default options (ledgers off, as `npm run fixtures`) and `reverseOrder` for the
 second order. They read later features defensively: a column whose feature the tree does not have is reported absent,
-never a crash. `ONLY=<regex>` limits any matrix to some fixtures and `LEGV2=1` runs the leg matrix under
-`LEG_GUARD_V2` (a tree that has it) when run by hand:
-`ONLY='^L4-F10' npx vite-node scripts/check/legmx.ts 0 1 /path/out.jsonl`.
+never a crash. By hand, each matrix runs alone (the same `runPass` with only its meters; shard `i` of `n`, rows with
+their registry index `k`): `ONLY=<regex>` limits it to some fixtures and `LEGV2=1` runs the leg matrix under
+`LEG_GUARD_V2` (a tree that has it), the shape queries going to `<out>.q`:
+`ONLY='^L4-F10' npx vite-node scripts/check/legmx.ts 0 1 /path/out.jsonl` (also `l4mx.ts`, `energymx.ts`, `visiblemx.ts`).
 
 ## Compare
 

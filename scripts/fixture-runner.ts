@@ -34,6 +34,11 @@ export function assertUniqueIds(defs: FixtureDef[]): void {
   }
 }
 
+/** The trace file of a finished run (`evidence/traces/<id>.json`), `s` its summary; the full check hashes the same text. */
+export function traceFileOf(sim: Simulation, s: Record<string, unknown>): string {
+  return JSON.stringify({ fixture: sim.exportFixture(), summary: s, events: sim.events, trace: sim.trace });
+}
+
 export async function runFixtures(o: FixtureRunOptions = {}): Promise<FixtureRunResult> {
   const filter = o.filter ?? null;
   const root = o.evidenceDir ?? 'evidence';
@@ -52,7 +57,7 @@ export async function runFixtures(o: FixtureRunOptions = {}): Promise<FixtureRun
       sim.runToEnd();
       const s = sim.summary();
       summaries.push(s);
-      writeFileSync(join(traceDir, `${def.id}.json`), JSON.stringify({ fixture: sim.exportFixture(), summary: s, events: sim.events, trace: sim.trace }));
+      writeFileSync(join(traceDir, `${def.id}.json`), traceFileOf(sim, s));
       const ev = sim.events
         .filter((e) => e.type !== 'grounded')
         .map((e) => `${e.t}:${e.type}${e.playerId ? '@' + e.playerId : ''}${e.data && 'own' in e.data ? `(${e.data.own}>${e.data.otherClass})` : ''}`);

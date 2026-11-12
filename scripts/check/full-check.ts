@@ -5,13 +5,17 @@
 // Env: CHECK_JOBS (parallel workers after the suite, default 6), CHECK_SKIP (comma list of
 // typecheck,build,suite,fixtures,legmx,l4mx,energymx,visiblemx; a skipped part is recorded as skipped).
 // The leg matrix's runs also write the shape-query budget (queries.jsonl).
-// The suite runs first and alone (no competing load, so no induced timeouts); the export and matrix shards then run in a
-// bounded pool. Every compared file is deterministic: no timestamps, stable order. Timings go to meta.json and logs/.
-import { spawn, execFileSync } from 'node:child_process';
+// The suite runs first and alone (no competing load, so no induced timeouts); then every fixture runs once per body
+// order it is needed in, with the meters of every part it feeds attached (scripts/check/meters.ts), in a pool of
+// worker processes (pass.ts) that take the runs longest first. Every compared file is deterministic: no timestamps,
+// stable order. Timings go to meta.json and logs/.
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { allFixtures } from '../../src/sim/fixtures/index';
 import { familyOf, visibleHeadline, type VisRow } from './lib';
+import { PARTS, partsOf, type Part, type PassRows } from './meters';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const outArg = process.argv[2];
@@ -24,7 +28,6 @@ const WORK = join(OUT, '.work');
 const LOGS = join(OUT, 'logs');
 const JOBS = Math.max(1, Number(process.env.CHECK_JOBS ?? 6));
 const SKIP = new Set((process.env.CHECK_SKIP ?? '').split(',').filter(Boolean));
-const SHARDS = { fixtures: 8, legmx: 8, l4mx: 4, energymx: 8, visiblemx: 8 };
 const VITE_NODE = join(ROOT, 'node_modules/vite-node/vite-node.mjs');
 
 rmSync(WORK, { recursive: true, force: true });
@@ -46,7 +49,6 @@ const meta: Record<string, unknown> = {
   dirtyFiles: git('status', '--porcelain').split('\n').filter(Boolean).length,
   startedAt: new Date().toISOString(),
   jobs: JOBS,
-  shards: SHARDS,
   skipped: [...SKIP],
   node: process.version,
   ms: {} as Record<string, number>,
@@ -66,17 +68,6 @@ function run(log: string, cmd: string, args: string[], env: Record<string, strin
     });
   });
 }
-const node = (log: string, script: string, args: string[]): Promise<number> => run(log, process.execPath, [VITE_NODE, script, ...args]);
-
-async function pool(tasks: (() => Promise<void>)[], n: number): Promise<void> {
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(n, tasks.length) }, async () => {
-      while (next < tasks.length) await tasks[next++]();
-    }),
-  );
-}
-
 const write = (name: string, body: string): void => writeFileSync(join(OUT, name), body);
 const json = (v: unknown): string => JSON.stringify(v, null, 1) + '\n';
 const status: Record<string, unknown> = {};
@@ -148,27 +139,89 @@ else {
 }
 ms.beforePool = Date.now() - t0;
 
-// 3. the export and the matrices: shards in a bounded pool (longest first)
-const tasks: (() => Promise<void>)[] = [];
-const shardCodes: Record<string, number> = {};
-const shard = (part: keyof typeof SHARDS, script: string): void => {
-  if (SKIP.has(part)) return;
-  for (let i = 0; i < SHARDS[part]; i++)
-    tasks.push(async () => {
-      shardCodes[`${part}-${i}`] = await node(`${part}-${i}`, script, [String(i), String(SHARDS[part]), join(WORK, `${part}-${i}.out`)]);
-    });
-};
-shard('legmx', join(ROOT, 'scripts/check/legmx.ts'));
-shard('energymx', join(ROOT, 'scripts/check/energymx.ts'));
-shard('visiblemx', join(ROOT, 'scripts/check/visiblemx.ts'));
-shard('fixtures', join(ROOT, 'scripts/check/fixtures-shard.ts'));
-shard('l4mx', join(ROOT, 'scripts/check/l4mx.ts'));
+// 3. the export and the matrices: one run per fixture and body order with every meter it feeds, in a pool of workers
+const all = allFixtures();
+interface Run {
+  k: number;
+  rev: boolean;
+  parts: Part[];
+  cost: number;
+  /** A bare twin: the export's run with no meter at all, whose trace must hash as the metered run's (README "One pass"). */
+  twin?: boolean;
+}
+const runs: Run[] = [];
+for (let k = 0; k < all.length; k++)
+  for (const rev of [false, true]) {
+    const parts = partsOf(all[k], rev).filter((p) => !SKIP.has(p));
+    // cost estimate for the order (longest first): physics substeps times players
+    const d = all[k];
+    if (parts.length) runs.push({ k, rev, parts, cost: d.durationS * d.solver.substeps * d.players.length });
+  }
+// the meters' twins: the first fixture of L3, L4 (with a fall response) and HC, run again forward with no meter
+const TWINS = ['L3', 'L4', 'HC'].map((f) => all.findIndex((d) => familyOf(d.id) === f && (f !== 'L4' || !!d.fallResponse))).filter((k) => k >= 0);
+if (!SKIP.has('fixtures')) for (const k of TWINS) runs.push({ k, rev: false, parts: ['fixtures'], cost: 0, twin: true });
+runs.sort((a, b) => b.cost - a.cost || a.k - b.k || Number(a.rev) - Number(b.rev) || Number(!!a.twin) - Number(!!b.twin));
+const twinSha = new Map<number, string>();
+/** Every run's rows by part, and the runs that threw (`<part>:<fixture>[:rev]`, one per part the run fed). */
+const got = new Map<Part | 'queries', { k: number; rev: boolean; line: string }[]>();
+const exportRows: { k: number; id: string; summary: unknown; sha256: string }[] = [];
+const threw: { id: string; message: string }[] = [];
+const shardFailed: string[] = [];
+const runMs: Record<string, number> = {};
 const tp = Date.now();
-await pool(tasks, JOBS);
+if (runs.length) {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(JOBS, runs.length) }, (_, w) => {
+      const fd = openSync(join(LOGS, `pass-${w}.log`), 'w');
+      const t0 = Date.now();
+      const p: ChildProcess = spawn(process.execPath, [VITE_NODE, join(ROOT, 'scripts/check/pass.ts')], { cwd: ROOT, stdio: ['ignore', fd, fd, 'ipc'], env: process.env });
+      let current: Run | null = null;
+      const give = (): void => {
+        current = next < runs.length ? runs[next++] : null;
+        if (current) p.send({ k: current.k, rev: current.rev, parts: current.parts });
+        else p.send('exit');
+      };
+      p.on('message', (m: 'ready' | { k: number; rev: boolean; rows?: PassRows; error?: string; ms: number }) => {
+        if (m !== 'ready' && current?.twin) {
+          if (m.error !== undefined) shardFailed.push(`twin:${all[m.k].id}`);
+          else twinSha.set(m.k, m.rows!.fixtures!.sha256);
+        } else if (m !== 'ready') {
+          const id = all[m.k].id;
+          runMs[`${id}${m.rev ? ':rev' : ''}`] = m.ms;
+          if (m.error !== undefined) {
+            if (!m.rev && current?.parts.includes('fixtures')) threw.push({ id, message: m.error });
+            for (const part of current!.parts) if (part !== 'fixtures') shardFailed.push(`${part}:${id}${m.rev ? ':rev' : ''}`);
+          } else {
+            const r = m.rows!;
+            if (r.fixtures) exportRows.push({ k: m.k, id, summary: r.fixtures.summary, sha256: r.fixtures.sha256 });
+            for (const part of [...PARTS, 'queries'] as const) {
+              const line = part === 'fixtures' ? undefined : r[part];
+              if (line !== undefined) (got.get(part) ?? got.set(part, []).get(part)!).push({ k: m.k, rev: m.rev, line });
+            }
+          }
+        }
+        give();
+      });
+      return new Promise<void>((res) =>
+        p.on('close', (code) => {
+          closeSync(fd);
+          ms[`pass-${w}`] = Date.now() - t0;
+          // a worker that died took its current run with it
+          if (current) for (const part of (current as Run).parts) shardFailed.push(`${part}:${all[(current as Run).k].id}${(current as Run).rev ? ':rev' : ''}`);
+          if (code !== 0) shardFailed.push(`pass-${w}`);
+          res();
+        }),
+      );
+    }),
+  );
+}
 ms.pool = Date.now() - tp;
-const shardFailed = Object.entries(shardCodes)
-  .filter(([, c]) => c !== 0)
-  .map(([k]) => k);
+meta.runMs = runMs;
+// a meter that changed a run: the metered export's trace differs from its bare twin's
+const twins = TWINS.filter((k) => twinSha.has(k)).map((k) => ({ id: all[k].id, same: exportRows.find((r) => r.k === k)?.sha256 === twinSha.get(k) }));
+meta.meterTwins = twins;
+for (const t of twins) if (!t.same) shardFailed.push(`meters-change-run:${t.id}`);
 status.shardsFailed = shardFailed.sort();
 
 /** The passive-energy matrix's headline per family: runs, runs and solves injecting, total injected and the largest gain (J). */
@@ -187,23 +240,16 @@ function energyHeadline(rows: EnergyRow[]): Record<string, { runs: number; injec
   return out;
 }
 
-const outputs = (part: keyof typeof SHARDS): string[] =>
-  Array.from({ length: SHARDS[part] }, (_, i) => join(WORK, `${part}-${i}.out`)).filter((f) => existsSync(f));
+/** A matrix's lines in registry order, forward before reversed. */
+const linesOf = (part: Part | 'queries'): string[] =>
+  (got.get(part) ?? [])
+    .sort((a, b) => a.k - b.k || Number(a.rev) - Number(b.rev))
+    .map((r) => r.line);
 
 if (SKIP.has('fixtures')) status.fixtures = 'skipped';
 else {
-  type Row = { k: number; id: string; summary: unknown };
-  const rows: Row[] = [];
-  const traces: { k: number; id: string; sha256: string }[] = [];
-  const threw: { id: string; message: string }[] = [];
-  for (const f of outputs('fixtures')) {
-    const r = JSON.parse(readFileSync(f, 'utf8')) as { rows: Row[]; traces: typeof traces; threw: typeof threw };
-    rows.push(...r.rows);
-    traces.push(...r.traces);
-    threw.push(...r.threw);
-  }
-  rows.sort((a, b) => a.k - b.k);
-  traces.sort((a, b) => a.k - b.k);
+  const rows = exportRows.sort((a, b) => a.k - b.k);
+  const traces = rows;
   // exactly what scripts/fixture-runner.ts writes for a full run
   const summary = JSON.stringify(
     rows.map((r) => r.summary),
@@ -224,10 +270,7 @@ for (const part of ['legmx', 'l4mx', 'energymx', 'visiblemx'] as const) {
     status[part] = 'skipped';
     continue;
   }
-  const rows = outputs(part)
-    .flatMap((f) => readFileSync(f, 'utf8').split('\n').filter(Boolean))
-    .map((l) => JSON.parse(l) as { k: number; rev: boolean });
-  rows.sort((a, b) => a.k - b.k || Number(a.rev) - Number(b.rev));
+  const rows = linesOf(part).map((l) => JSON.parse(l) as { k: number; rev: boolean });
   write(`${part}.jsonl`, rows.map(({ k: _k, ...r }) => JSON.stringify(r) + '\n').join(''));
   status[part] = {
     rows: rows.length,
@@ -237,12 +280,7 @@ for (const part of ['legmx', 'l4mx', 'energymx', 'visiblemx'] as const) {
 }
 // the shape-query budget (the leg matrix's runs): the most queries in one tick per fixture and order
 if (!SKIP.has('legmx')) {
-  const rows = outputs('legmx')
-    .map((f) => `${f}.q`)
-    .filter((f) => existsSync(f))
-    .flatMap((f) => readFileSync(f, 'utf8').split('\n').filter(Boolean))
-    .map((l) => JSON.parse(l) as { k: number; rev: boolean });
-  rows.sort((a, b) => a.k - b.k || Number(a.rev) - Number(b.rev));
+  const rows = linesOf('queries').map((l) => JSON.parse(l) as { k: number; rev: boolean });
   write('queries.jsonl', rows.map(({ k: _k, ...r }) => JSON.stringify(r) + '\n').join(''));
 }
 write('status.json', json(status));
@@ -259,7 +297,7 @@ console.log(
     `fixtures ${JSON.stringify(status.fixtures)}`,
     `legmx ${JSON.stringify(status.legmx)}  l4mx ${JSON.stringify(status.l4mx)}  energymx ${JSON.stringify(status.energymx)}`,
     `visiblemx ${typeof status.visiblemx === 'string' ? status.visiblemx : `${(status.visiblemx as { rows: number }).rows} rows`}`,
-    shardFailed.length ? `SHARDS FAILED: ${shardFailed.join(', ')} (see logs/)` : 'all shards ok',
+    shardFailed.length ? `RUNS FAILED: ${shardFailed.join(', ')} (see logs/pass-*.log)` : 'all runs ok',
   ].join('\n'),
 );
 process.exit(shardFailed.length ? 1 : 0);

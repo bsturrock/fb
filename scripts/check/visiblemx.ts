@@ -5,32 +5,11 @@
 // joint snaps, the knee at its stop, the worst event of each column with its time, and the hips at each conversion.
 // Informational: compare.ts reports it, no invariant reads it. Observation only: the meter changes nothing in a run.
 // JSON lines {k, id, rev, ...} to the output file (k = registry index, for the merge's order). Env ONLY=<regex>.
+// The rows come from scripts/check/meters.ts (the runs the full check's workers make, with only this matrix's meters).
 import { writeFileSync } from 'node:fs';
-import { Simulation } from '../../src/sim/simulation';
-import { allFixtures } from '../../src/sim/fixtures/index';
-import { idleBaseline, VisibleMeter } from '../../tests/visible';
-import { ENERGY_FAMILIES, familyOf, shardArgs } from './lib';
+import { runMatrix } from './meters';
+import { shardArgs } from './lib';
 
 const { i, n, out } = shardArgs();
-const only = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
-
-const all = allFixtures();
-const idle = all.find((d) => d.id === 'L3-F13-free');
-if (!idle) throw new Error('visiblemx: the idle baseline fixture L3-F13-free is gone');
-const base = await idleBaseline(idle);
-const lines: string[] = [];
-for (let k = 0; k < all.length; k++) {
-  const d = all[k];
-  if (!d.ragdoll || !ENERGY_FAMILIES.includes(familyOf(d.id)) || k % n !== i || (only && !only.test(d.id))) continue;
-  for (const rev of [false, true]) {
-    const sim = await Simulation.create(d, rev ? { reverseOrder: true } : {});
-    const meter = new VisibleMeter(sim, base);
-    while (!sim.done) {
-      sim.stepTick();
-      meter.frame();
-    }
-    lines.push(JSON.stringify({ k, id: d.id, rev, ...meter.finish() }));
-    sim.dispose();
-  }
-}
+const { lines } = await runMatrix('visiblemx', i, n);
 writeFileSync(out, lines.map((l) => l + '\n').join(''));
