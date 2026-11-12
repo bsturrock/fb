@@ -1,8 +1,9 @@
 // Plan 10f (F9): representation conversions, moved out of simulation.ts: one batch of proxy-to-ragdoll handoffs at a
 // controlled boundary (candidate build and validation, the transfer and its audit, the handoff record and events).
+import type RAPIER from '@dimforge/rapier3d-compat';
 import type { PlayerId } from './contracts';
 import { newLocoState } from './locomotion';
-import { buildCandidate, externalFromColliders, externalFromRagdoll, holdOverlappingSelfLegs, initEnvelope, ragdollPose, removeRagdoll, switchToRagdoll, validateCandidate, type CandidateEdit, type CandidateReport, type ExternalShape } from './ragdoll';
+import { buildCandidate, externalFromColliders, externalFromRagdoll, holdOverlappingSelfLegs, initEnvelope, ragdollPose, removeRagdoll, switchToRagdoll, validateCandidate, type BornPair, type CandidateEdit, type CandidateReport, type ExternalShape } from './ragdoll';
 import { vc, round } from './vec';
 import { legsOffInsideConverted } from './pose-runtime';
 import type { Simulation, HandoffRecord, PlayerRuntime } from './simulation';
@@ -20,12 +21,36 @@ export type ConversionHost = Pick<
   | 'fall'
   | 'invalidTransfer'
   | 'obstacleColliders'
+  | 'opts'
   | 'physics'
   | 'players'
   | 'rules'
   | 'steps'
   | 't'
 >;
+
+/** Ladder 17 (`bornOverlap`): live colliders as external shapes with their handles and tags (pairs the solve can leave out). */
+function tagged(host: ConversionHost, cs: RAPIER.Collider[], shapes: ExternalShape[]): ExternalShape[] {
+  if (!host.def.ragdoll!.bornOverlap) return shapes;
+  return shapes.map((e, i) => (i < cs.length ? { ...e, handle: cs[i].handle, tag: host.physics.tags.get(cs[i].handle) } : e));
+}
+
+/**
+ * Ladder 17 (`bornOverlap`): a candidate refused only for external penetration (a trunk or head born in another, never an
+ * obstacle past `floorBornM`) whose retry window has passed, or with no window: converted with every born pair left out
+ * of the solve, rather than left a rigid falling proxy.
+ */
+function bornForced(host: ConversionHost, pl: PlayerRuntime, rep: CandidateReport): boolean {
+  const R = host.def.ragdoll!;
+  const BO = R.bornOverlap;
+  if (!BO || !rep.born || rep.reasons.length !== 1 || rep.reasons[0] !== 'externalPenetration') return false;
+  if (rep.born.some((p) => p.fixed)) {
+    // (a fixed pair within floorBornM is tolerated in the solve; one past it, or with no collider, refuses)
+    if (rep.born.some((p) => p.fixed && (p.otherHandle === undefined || p.newDepthM > BO.floorBornM))) return false;
+  }
+  const W = R.conversionRetry;
+  return !W || host.t - (pl.deferred?.t ?? host.t) >= W.windowS - 1e-9;
+}
 
 // ------------------------------------------------------------------ Gate 4: representation transition
 /**
@@ -35,30 +60,37 @@ export type ConversionHost = Pick<
  * continues as the Gate 3 falling proxy with a recorded handoffRejected reason. Ladder rung 8j
  * (`RagdollProfile.conversionRetry`): a candidate rejected only for external penetration is deferred instead
  * (`handoffDeferred` at the first try, `PlayerRuntime.deferred`), tried again at the next boundary within the window.
+ * Ladder 17 (`RagdollProfile.bornOverlap`): a candidate overlapping another player is accepted, its born pairs left out
+ * of the solve until separated (`Ragdoll.born`, `releaseBornPairs`).
  */
 export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; reason: HandoffRecord['reason']; edit?: CandidateEdit }[]): void {
   const R = host.def.ragdoll!;
+  const BO = R.bornOverlap;
   const cands = list.map((c) => ({
     ...c,
     rag: buildCandidate(host.physics, c.pl.id, c.pl.body, c.pl.pose!, R, c.pl.proxy.body.mass(), c.edit, host.def.selfClearance, host.def.jointRange),
     report: null as CandidateReport | null,
+    forced: false,
   }));
   let accepted = [...cands];
   for (let pass = 0; pass < cands.length + 1; pass++) {
     for (const c of accepted) {
       const ext: ExternalShape[] = externalFromColliders([], () => '', host.physics.floorCollider);
-      ext.push(...externalFromColliders(host.obstacleColliders, (cc) => host.physics.tags.get(cc.handle)?.key ?? 'obstacle'));
+      ext.push(...tagged(host, host.obstacleColliders, externalFromColliders(host.obstacleColliders, (cc) => host.physics.tags.get(cc.handle)?.key ?? 'obstacle')));
       for (const o of host.players) {
         if (o === c.pl) continue;
         const oc = accepted.find((x) => x.pl === o);
-        if (oc) ext.push(...externalFromRagdoll(oc.rag));
-        else {
-          ext.push(...externalFromColliders(host.activeColliders(o), (cc) => `${o.id}:${host.physics.tags.get(cc.handle)?.key ?? '?'}`));
+        if (oc) {
+          const cs = oc.rag.colliders.map((x) => x.collider);
+          ext.push(...tagged(host, cs, externalFromRagdoll(oc.rag)));
+        } else {
+          const cs = host.activeColliders(o);
+          ext.push(...tagged(host, cs, externalFromColliders(cs, (cc) => `${o.id}:${host.physics.tags.get(cc.handle)?.key ?? '?'}`)));
           // contact motion (`LegGuardProfile.physicalLegs`): another supported player's physical legs in the solve are
           // bodies the candidate must clear (a leg kept off is inside a body the solver never sees it against)
           if (o.legs?.enabled) {
             const on = o.legs.colliders.filter((_, i) => o.legs!.on[i]);
-            ext.push(...externalFromColliders(on, (cc) => `${o.id}:${host.physics.tags.get(cc.handle)?.key ?? '?'}`));
+            ext.push(...tagged(host, on, externalFromColliders(on, (cc) => `${o.id}:${host.physics.tags.get(cc.handle)?.key ?? '?'}`)));
           }
         }
       }
@@ -68,8 +100,10 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
         if (t && (t.region === 'torso' || t.region === 'pelvis' || t.region === 'head')) cp[t.region] = { shape: pc.shape, pose: { p: vc(pc.translation()), q: { ...pc.rotation() } } };
       }
       c.report = validateCandidate(c.rag, c.pl.pose!, ext, cp, c.pl.proxy.body.mass());
+      // ladder 17: refused only for a trunk born in another past its window: converted with every born pair left out
+      c.forced = bornForced(host, c.pl, c.report);
     }
-    const still = accepted.filter((c) => c.report!.ok);
+    const still = accepted.filter((c) => c.report!.ok || c.forced);
     if (still.length === accepted.length) break;
     accepted = still;
   }
@@ -115,12 +149,19 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
       ...(deferred ? { deferred } : {}),
     });
   }
+  // ladder 17: a candidate converted past its window is accepted with what refused it tolerated (its born pairs left out)
+  for (const c of accepted) if (c.forced) c.report = { ...c.report!, ok: true, reasons: [], tolerated: [...(c.report!.tolerated ?? []), ...c.report!.reasons] };
   const captured = host.arms?.captureRelations(accepted.map((c) => c.pl.id)) ?? new Map();
   const switched: PlayerId[] = [];
+  // ladder 17: the pairs left out in this batch (engine handles, either order), so a pair two candidates were born in is
+  // held once
+  const heldPairs = new Set<string>();
   for (const c of accepted) {
     const pl = c.pl;
     const before = host.bodyCount(pl.id);
     const oldHandle = pl.proxy.body.handle;
+    // ladder 17: the proxy colliders other ragdolls' born pairs may hold, by region, before the switch removes them
+    const proxyRegions = BO ? new Map(pl.proxy.colliders.map((pc) => [pc.handle, host.physics.tags.get(pc.handle)?.region])) : null;
     const audit = switchToRagdoll(host.physics, pl.proxy.body, c.rag);
     // contact motion: the physical legs left with the proxy body (removed with its colliders and their tags)
     pl.legs = undefined;
@@ -136,6 +177,10 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
     const prior = pl.deferred;
     const deferred = prior ? { t: prior.t, step: prior.step, tries: prior.tries } : undefined;
     if (prior) delete pl.deferred;
+    if (BO && proxyRegions) {
+      carryBornPairs(host, pl, proxyRegions);
+      holdBornPairs(host, pl, c.report!, heldPairs);
+    }
     pl.handoff = {
       accepted: audit.ok,
       outcome: audit.ok ? 'accepted' : 'transferFailed',
@@ -164,6 +209,8 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
         maxLandmarkErrM: round(c.report!.maxLandmarkErrM, 6),
         hingeDeg: Object.fromEntries(Object.entries(c.report!.hingeDeg).map(([k, v]) => [k, round(v, 2)])),
         straightFallback: pl.pose?.straightFallback ?? [],
+        ...(c.report!.tolerated ? { tolerated: c.report!.tolerated } : {}),
+        ...(pl.rag.born?.length ? { born: pl.rag.born.map((p) => ({ own: p.ownKey, other: p.otherKey, depthM: round(p.depth0M, 5), gross: p.gross })) } : {}),
       },
       ...(deferred ? { deferred } : {}),
     });
@@ -190,4 +237,91 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
       if (host.fall && pl.handoff?.accepted) pl.fall = host.fall.begin(pl.id, pl.rag!, pl.setup.role, host.arms, host.carrySide(pl));
     }
   }
+}
+
+// ------------------------------------------------------------------ ladder 17: born pairs
+/** The ragdoll collider with the geometry of a proxy's trunk, pelvis or head collider (`buildCandidate` builds them alike). */
+const PROXY_TWIN: Partial<Record<string, { segment: string; region: string }>> = {
+  torso: { segment: 'core', region: 'torso' },
+  pelvis: { segment: 'core', region: 'pelvis' },
+  head: { segment: 'head', region: 'head' },
+};
+
+/**
+ * Ladder 17: the switched player's born pairs: every pair of its accepted report deeper than the tolerance against another
+ * player's collider (not a physical leg, which leaves the solve by its own rule, `legsOffInsideConverted`; not the floor
+ * or an obstacle, which stay in it), left out of the solve. Under the fault `debug.conversion.bornInSolve` none is (the
+ * pairs are switched in overlapping, as without the profile).
+ */
+function holdBornPairs(host: ConversionHost, pl: PlayerRuntime, rep: CandidateReport, held: Set<string>): void {
+  const rag = pl.rag!;
+  if (host.opts.debug?.conversion?.bornInSolve) return;
+  const out: BornPair[] = rag.born ?? [];
+  for (const p of rep.born ?? []) {
+    if (p.fixed || p.leg || p.otherHandle === undefined) continue;
+    const k = p.ownHandle < p.otherHandle ? `${p.ownHandle}~${p.otherHandle}` : `${p.otherHandle}~${p.ownHandle}`;
+    if (held.has(k)) continue;
+    held.add(k);
+    out.push({ own: p.ownHandle, other: p.otherHandle, ownKey: p.own, otherKey: p.other, t0: host.t, depth0M: p.newDepthM, maxDepthM: p.newDepthM, gross: p.gross });
+  }
+  if (out.length) rag.born = out;
+}
+
+/**
+ * Ladder 17: at a player's switch, another ragdoll's born pair held against one of its proxy colliders goes over to its
+ * new ragdoll's collider of the same geometry (trunk, pelvis, head: the new collider starts exactly where the old one was,
+ * the same overlap the new candidate's validation reads as not new). A pair held against its support capsule ends (its
+ * legs, which replace it, are the new candidate's own pairs).
+ */
+function carryBornPairs(host: ConversionHost, pl: PlayerRuntime, proxyRegions: Map<number, string | undefined>): void {
+  for (const o of host.players) {
+    const B = o.rag?.born;
+    if (o === pl || !B?.length) continue;
+    o.rag!.born = B.flatMap((p) => {
+      if (!proxyRegions.has(p.other)) return [p];
+      const twin = PROXY_TWIN[proxyRegions.get(p.other) ?? ''];
+      const nc = twin && pl.rag!.colliders.find((x) => x.segment === twin.segment && x.region === twin.region);
+      if (!nc) {
+        host.emit('bornOverlapReleased', o.id, { own: p.ownKey, other: p.otherKey, heldS: round(host.t - p.t0, 5), depth0M: round(p.depth0M, 5), maxDepthM: round(p.maxDepthM, 5), why: 'replaced' });
+        return [];
+      }
+      return [{ ...p, other: nc.collider.handle, otherKey: `${pl.id}:${twin.segment}:${twin.region}` }];
+    });
+  }
+}
+
+/**
+ * Ladder 17: before each solve, a born pair takes part again once its shapes are no deeper than the profile's `releaseM`
+ * in each other (`bornOverlapReleased`, with how long it was held and its deepest); a pair whose collider has left the
+ * world ends with it.
+ */
+export function releaseBornPairs(host: Pick<Simulation, 'physics' | 'emit' | 't'>, pl: PlayerRuntime): void {
+  const rag = pl.rag;
+  const B = rag?.born;
+  if (!rag || !B?.length) return;
+  const releaseM = rag.profile.bornOverlap!.releaseM;
+  const w = host.physics.world;
+  rag.born = B.filter((p) => {
+    const a = w.getCollider(p.own);
+    const b = w.getCollider(p.other);
+    const gone = !a || !b || !host.physics.tags.has(p.own) || !host.physics.tags.has(p.other);
+    let depth = 0;
+    if (!gone) {
+      const r = a.contactCollider(b, 0);
+      depth = r ? Math.max(0, -r.distance) : 0;
+      p.maxDepthM = Math.max(p.maxDepthM, depth);
+      if (depth > releaseM) return true;
+    }
+    host.emit('bornOverlapReleased', pl.id, { own: p.ownKey, other: p.otherKey, heldS: round(host.t - p.t0, 5), depth0M: round(p.depth0M, 5), maxDepthM: round(p.maxDepthM, 5), ...(gone ? { why: 'gone' } : {}) });
+    return false;
+  });
+}
+
+/** Ladder 17: whether the contact pair (engine handles) is a born pair held out of the solve on either player's ragdoll. */
+export function bornHeld(host: Pick<Simulation, 'byId'>, pa: PlayerId | null, pb: PlayerId | null, h1: number, h2: number): boolean {
+  const has = (pid: PlayerId | null): boolean => {
+    const B = pid === null ? undefined : host.byId.get(pid)?.rag?.born;
+    return !!B && B.some((p) => (p.own === h1 && p.other === h2) || (p.own === h2 && p.other === h1));
+  };
+  return has(pa) || has(pb);
 }

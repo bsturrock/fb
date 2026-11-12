@@ -399,8 +399,11 @@ export class PhysicsWorld {
     this.tags.set(this.floorCollider.handle, { playerId: null, part: 'floor', region: 'floor', key: 'floor' });
   }
 
-  /** Optional identity-based contact filter (used by ragdolls for same-owner self pairs). */
-  setContactFilter(filter: ((a: ColliderTag, b: ColliderTag) => boolean) | null): void {
+  /**
+   * Optional identity-based contact filter (used by ragdolls for same-owner self pairs), given the two colliders' tags and
+   * engine handles (ladder 17: a born pair is held by handle).
+   */
+  setContactFilter(filter: ((a: ColliderTag, b: ColliderTag, h1: number, h2: number) => boolean) | null): void {
     if (!filter) {
       this.hooks = undefined;
       this.hookEvents?.free();
@@ -413,7 +416,7 @@ export class PhysicsWorld {
         const a = this.tags.get(h1);
         const b = this.tags.get(h2);
         if (!a || !b) return RAPIER.SolverFlags.COMPUTE_IMPULSE;
-        return filter(a, b) ? RAPIER.SolverFlags.COMPUTE_IMPULSE : null;
+        return filter(a, b, h1, h2) ? RAPIER.SolverFlags.COMPUTE_IMPULSE : null;
       },
       filterIntersectionPair: () => true,
     } as RAPIER.PhysicsHooks;

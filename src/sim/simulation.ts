@@ -39,7 +39,7 @@ import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
-import { convertPlayers } from './conversion';
+import { bornHeld, convertPlayers, releaseBornPairs } from './conversion';
 import { observeContacts } from './contact-observation';
 import { carrySideOf, disablePhysicalLegs, footInputOf, legMeets, legPointMove, observePhysicalLegs, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
 import { EMPTY_APPLIED, applyMotors } from './motor-step';
@@ -512,7 +512,9 @@ export class Simulation {
     // a suspension guard ball touches static ground only (never a player collider).
     if (def.ragdoll || S) {
       const sameOwner = !!def.ragdoll;
-      this.physics.setContactFilter((a, b) => {
+      // ladder 17 (`RagdollProfile.bornOverlap`): a pair a ragdoll was switched in overlapping meets nothing until released
+      const born = !!def.ragdoll?.bornOverlap;
+      this.physics.setContactFilter((a, b, h1, h2) => {
         // ladder rung 9a (`RagdollProfile.selfLegs`): a leg's self shape meets its pairs of the same ragdoll
         // (`selfLegPair`) unless the pair is left out since the switch, and nothing else
         if (a.key.startsWith(SELF_LEG_KEY) || b.key.startsWith(SELF_LEG_KEY)) {
@@ -533,6 +535,7 @@ export class Simulation {
         // groups exclude those too) or a self-clearance shape; its own body never meets it (PhysicsWorld.addLegCollider)
         if (isSupportedLeg(a)) return legMeets(b, a.playerId!);
         if (isSupportedLeg(b)) return legMeets(a, b.playerId!);
+        if (born && bornHeld(this, a.playerId, b.playerId, h1, h2)) return false;
         return true;
       });
     }
@@ -963,6 +966,8 @@ export class Simulation {
         if (pl.rag.limpFoot) easeLimpFeet(pl.rag, this.physics.dt, (c, from, to) => this.shoeDeeper(pl, c, from, to, limbs()));
         // ladder rung 9a: an own-leg group left out since the switch takes part again once within the skin
         if (pl.rag.selfLegs) releaseSelfLegs(this.physics, pl.rag);
+        // ladder 17: so does a pair the ragdoll was switched in overlapping, once separated
+        if (pl.rag.born?.length) releaseBornPairs(this, pl);
         applyEnvelope(pl.rag, this.physics.dt);
         if (pl.rag.hipStops) {
           // ladder rung 8g: the approach zone inside the hip stops (a profile without one applies nothing)

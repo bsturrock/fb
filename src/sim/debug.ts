@@ -110,20 +110,31 @@ export function poseProbe(o: { on?: boolean; trace?: PoseProbe['trace'] } = {}):
   return { on: o.on ?? false, last: {}, legs: {}, cont: {}, contLast: null, ...(o.trace ? { trace: o.trace } : {}) };
 }
 
+/** Ladder 17: fault switches of the conversion. */
+export interface ConversionDebug {
+  /**
+   * Fault (`RagdollProfile.bornOverlap`): a candidate is accepted as the profile accepts it, but its born pairs stay in
+   * the solve (switched in overlapping, as a looser tolerance would leave them).
+   */
+  bornInSolve?: boolean;
+}
+
 export interface SimDebug {
   foot?: FootDebug;
   pose?: PoseDebug;
+  conversion?: ConversionDebug;
   /** Diagnostics only; not a switch, so not exported. */
   poseProbe?: PoseProbe;
 }
 
 /** The switches that are on, for the export (null when every switch is off). */
-export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug } | null {
+export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug } | null {
   const on = <T extends object>(o: T | undefined): T | undefined => {
     const e = Object.entries(o ?? {}).filter(([, v]) => v);
     return e.length ? (Object.fromEntries(e) as T) : undefined;
   };
   const foot = on(d?.foot);
   const pose = on(d?.pose);
-  return foot || pose ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}) } : null;
+  const conversion = on(d?.conversion);
+  return foot || pose || conversion ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}) } : null;
 }

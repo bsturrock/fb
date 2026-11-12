@@ -2,9 +2,9 @@
 // bulk momentum transfer with an audit, and the atomic switch. Only PhysicsWorld/this module touch Rapier handles;
 // PlayerId and segment identity live in collider tags and body userData.
 import RAPIER from '@dimforge/rapier3d-compat';
-import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
+import type { ArmSide, ColliderRegion, ColliderTag, PlayerId, SegmentId } from './contracts';
 import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry';
-import { boxSeg, cullGeom, geomNear, type CullGeom, type PhysicsWorld } from './physics';
+import { boxSeg, cullGeom, geomNear, PHYS_LEG_KEY, type CullGeom, type PhysicsWorld } from './physics';
 import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { anatomicalTwistReach, clampDirToEnvelope, limbAnatomicalTwistRad, swingExcess, swingExtentDeg } from './joint-cone';
 import { applyHipApproach, hipNeutralFrame, initHipStop, initKneeStop, ratchetHipStop, ratchetKneeStop, type HipStopRuntime, type KneeStopRuntime } from './joint-stops';
@@ -115,6 +115,45 @@ export interface Ragdoll {
    * since the switch until their group is within the skin (`selfLegPair` keys). Absent: profile off.
    */
   selfLegs?: { legs: SelfLegShape[]; trunk: RAPIER.Collider[]; off: string[] };
+  /**
+   * Ladder 17 (`RagdollProfile.bornOverlap`): the collider pairs this ragdoll was switched in overlapping (or another
+   * ragdoll's pair carried onto this one's collider), left out of the solve until no deeper than the profile's
+   * `releaseM`. Absent or empty: none (profile off, or every pair released).
+   */
+  born?: BornPair[];
+}
+
+/** Ladder 17: one collider pair left out of the solve since a switch (`Ragdoll.born`). */
+export interface BornPair {
+  /** This ragdoll's segment collider and the other body's collider (engine handles). */
+  own: number;
+  other: number;
+  /** `segment:region` of the own collider, and the other collider's `player:key`. */
+  ownKey: string;
+  otherKey: string;
+  /** When the pair was left out, its depth then and the deepest it has been since (m). */
+  t0: number;
+  depth0M: number;
+  maxDepthM: number;
+  /** A trunk or head in another trunk or head (converted at the end of the retry window). */
+  gross: boolean;
+}
+
+/** Ladder 17: a candidate collider deeper than the tolerance in one external shape (`CandidateReport.born`). */
+export interface BornPairRec {
+  own: string;
+  other: string;
+  ownHandle: number;
+  otherHandle?: number;
+  /** Depth, and depth less the core counterpart's in the same shape (the new overlap). */
+  depthM: number;
+  newDepthM: number;
+  /** A trunk or head in another trunk or head. */
+  gross: boolean;
+  /** Another body the solve cannot leave out of a pair: an obstacle, or a shape with no collider. */
+  fixed: boolean;
+  /** Another supported player's physical leg (out of the solve until clear by its own rule, `legsOffInsideConverted`). */
+  leg: boolean;
 }
 
 /**
@@ -152,6 +191,13 @@ export interface CandidateReport {
   proxyCoreDepthM: number;
   maxLandmarkErrM: number;
   worstLandmark: string | null;
+  /** Ladder 17 (`RagdollProfile.bornOverlap`): every pair deeper than the tolerance, the floor's aside. Absent: profile off. */
+  born?: BornPairRec[];
+  /**
+   * Ladder 17: the reasons the profile accepted the candidate with: `externalPenetration` (its born pairs left out of the
+   * solve), `floorPenetration` (within `floorBornM`). Absent: profile off, or nothing tolerated.
+   */
+  tolerated?: string[];
 }
 
 /** External collision geometry a candidate is validated against (opponents, floor, other candidates). */
@@ -166,6 +212,12 @@ export interface ExternalShape {
    * no physics step runs between the capture and the queries.
    */
   collider?: RAPIER.Collider;
+  /**
+   * Ladder 17 (`RagdollProfile.bornOverlap`): the engine handle and tag of the collider the shape is, where the conversion
+   * gives them (a pair the solve can leave out); absent elsewhere.
+   */
+  handle?: number;
+  tag?: ColliderTag;
 }
 
 /** A rigid body's solved pose. */
@@ -1020,6 +1072,37 @@ function depthAgainst(shape: RAPIER.Shape, pose: Pose, ext: ExternalShape[], geo
   return { depth, other, floor };
 }
 
+/** Ladder 17: the depth of `shape` at `pose` in each external shape (0 where none), by index; `depthAgainst`'s queries. */
+function depthsAgainst(shape: RAPIER.Shape, pose: Pose, ext: ExternalShape[], geoms: CullGeom[]): number[] {
+  const out = new Array<number>(ext.length).fill(0);
+  const g = cullGeom(shape, pose.p, pose.q);
+  for (let i = 0; i < ext.length; i++) {
+    const e = ext[i];
+    if (!geomNear(geoms[i], g, DEPTH_QUERY_M)) continue;
+    const r = e.shape.contactShape(e.pose.p, e.pose.q, shape, pose.p, pose.q, DEPTH_QUERY_M);
+    if (r) out[i] = Math.max(0, -r.distance);
+  }
+  return out;
+}
+
+/** Ladder 17: `depthAgainst` read off per-shape depths (the same deepest, first such shape and floor depth). */
+function deepestOf(ds: number[], ext: ExternalShape[]): { depth: number; other: string; floor: number } {
+  let depth = 0;
+  let other = '';
+  let floor = 0;
+  ds.forEach((d, i) => {
+    if (ext[i].floor) floor = Math.max(floor, d);
+    if (d > depth) {
+      depth = d;
+      other = ext[i].key;
+    }
+  });
+  return { depth, other, floor };
+}
+
+/** Ladder 17: a trunk or head collider by its tag (a proxy's support capsule, torso, pelvis or head; a ragdoll's core or head). */
+const isTrunkTag = (t: ColliderTag): boolean => (t.part === 'core' || t.part === 'head') && !t.key.startsWith(PHYS_LEG_KEY);
+
 /**
  * Validate a candidate before enabling it. `counterparts` maps a candidate core region (torso/pelvis/head) to the
  * proxy collider with identical geometry, so already-existing proxy overlap is not counted as new penetration.
@@ -1078,22 +1161,75 @@ export function validateCandidate(
   let maxNew = 0;
   let proxyCoreDepth = 0;
   const geoms = ext.map((e) => cullGeom(e.shape, e.pose.p, e.pose.q));
-  for (const cp of Object.values(counterparts)) if (cp) proxyCoreDepth = Math.max(proxyCoreDepth, depthAgainst(cp.shape, cp.pose, ext, geoms).depth);
-  for (const c of rag.colliders) {
-    const p = colliderWorldPose(rag, c);
-    const d = depthAgainst(c.collider.shape, p, ext, geoms);
-    floorPen = Math.max(floorPen, d.floor);
-    let base = 0;
-    const cp = c.segment === 'core' || c.segment === 'head' ? counterparts[c.region] : undefined;
-    if (cp) base = depthAgainst(cp.shape, cp.pose, ext, geoms).depth;
-    const nd = Math.max(0, d.depth - base);
-    if (nd > maxNew) {
-      maxNew = nd;
-      worst = { depthM: d.depth, newDepthM: nd, own: `${c.segment}:${c.region}`, other: d.other };
+  const BO = R.bornOverlap;
+  let born: BornPairRec[] | undefined;
+  const tolerated: string[] = [];
+  if (!BO) {
+    for (const cp of Object.values(counterparts)) if (cp) proxyCoreDepth = Math.max(proxyCoreDepth, depthAgainst(cp.shape, cp.pose, ext, geoms).depth);
+    for (const c of rag.colliders) {
+      const p = colliderWorldPose(rag, c);
+      const d = depthAgainst(c.collider.shape, p, ext, geoms);
+      floorPen = Math.max(floorPen, d.floor);
+      let base = 0;
+      const cp = c.segment === 'core' || c.segment === 'head' ? counterparts[c.region] : undefined;
+      if (cp) base = depthAgainst(cp.shape, cp.pose, ext, geoms).depth;
+      const nd = Math.max(0, d.depth - base);
+      if (nd > maxNew) {
+        maxNew = nd;
+        worst = { depthM: d.depth, newDepthM: nd, own: `${c.segment}:${c.region}`, other: d.other };
+      }
     }
+    if (floorPen > V.penetrationTolM) reasons.push('floorPenetration');
+    if (maxNew > V.penetrationTolM) reasons.push('externalPenetration');
+  } else {
+    // ladder 17 (`bornOverlap`): the same depths, shape by shape (maxNew and worst as above, the meter), and every pair
+    // deeper than the tolerance: new overlap, a core or head counterpart's depth in the same shape taken off
+    born = [];
+    const cpDepths: Partial<Record<ColliderRegion, number[]>> = {};
+    for (const [region, cp] of Object.entries(counterparts) as [ColliderRegion, { shape: RAPIER.Shape; pose: Pose } | undefined][]) {
+      if (!cp) continue;
+      const ds = depthsAgainst(cp.shape, cp.pose, ext, geoms);
+      cpDepths[region] = ds;
+      proxyCoreDepth = Math.max(proxyCoreDepth, deepestOf(ds, ext).depth);
+    }
+    let fixedOver = false;
+    let grossOver = false;
+    let limbOver = false;
+    for (const c of rag.colliders) {
+      const p = colliderWorldPose(rag, c);
+      const ds = depthsAgainst(c.collider.shape, p, ext, geoms);
+      const d = deepestOf(ds, ext);
+      floorPen = Math.max(floorPen, d.floor);
+      const trunk = c.segment === 'core' || c.segment === 'head';
+      const cpd = trunk ? cpDepths[c.region] : undefined;
+      const base = cpd ? deepestOf(cpd, ext).depth : 0;
+      const nd = Math.max(0, d.depth - base);
+      const own = `${c.segment}:${c.region}`;
+      if (nd > maxNew) {
+        maxNew = nd;
+        worst = { depthM: d.depth, newDepthM: nd, own, other: d.other };
+      }
+      ds.forEach((di, i) => {
+        const e = ext[i];
+        if (e.floor) return;
+        const ni = Math.max(0, di - (cpd ? cpd[i] : 0));
+        if (ni <= V.penetrationTolM) return;
+        const t = e.tag;
+        // (an obstacle, as the floor: in the solve, within floorBornM; a shape with no collider: never)
+        const fixed = !t || t.playerId === null || e.handle === undefined;
+        const leg = !!t && t.key.startsWith(PHYS_LEG_KEY);
+        const gross = !fixed && trunk && isTrunkTag(t!);
+        if (fixed && (!t || e.handle === undefined || ni > BO.floorBornM)) fixedOver = true;
+        else if (gross) grossOver = true;
+        else limbOver = true;
+        born!.push({ own, other: e.key, ownHandle: c.collider.handle, ...(e.handle !== undefined ? { otherHandle: e.handle } : {}), depthM: di, newDepthM: ni, gross, fixed, leg });
+      });
+    }
+    if (floorPen > BO.floorBornM) reasons.push('floorPenetration');
+    else if (floorPen > V.penetrationTolM) tolerated.push('floorPenetration');
+    if (fixedOver || grossOver) reasons.push('externalPenetration');
+    else if (limbOver) tolerated.push('externalPenetration');
   }
-  if (floorPen > V.penetrationTolM) reasons.push('floorPenetration');
-  if (maxNew > V.penetrationTolM) reasons.push('externalPenetration');
   // landmark continuity: candidate landmarks vs the visible pose
   let maxLm = 0;
   let worstLm: string | null = null;
@@ -1124,6 +1260,8 @@ export function validateCandidate(
     proxyCoreDepthM: proxyCoreDepth,
     maxLandmarkErrM: maxLm,
     worstLandmark: worstLm,
+    ...(born ? { born } : {}),
+    ...(tolerated.length ? { tolerated } : {}),
   };
 }
 

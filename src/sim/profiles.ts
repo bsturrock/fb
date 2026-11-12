@@ -764,6 +764,51 @@ export interface RagdollProfile {
    * holds with the arm raised overhead. Absent: plan 09's twist, which fades out toward an arm straight overhead.
    */
   shoulderTwistLimit?: ShoulderTwistLimitProfile;
+  /**
+   * Ladder 17 (direction item 4, ragdoll rather than fall stiff): a candidate that overlaps another player is converted,
+   * the overlapping collider pairs left out of the solve until they have separated (`BornOverlapProfile`). Absent: a
+   * candidate past the external penetration tolerance is rejected (or deferred, `conversionRetry`) as before.
+   */
+  bornOverlap?: BornOverlapProfile;
+}
+
+/**
+ * Ladder 17: the conversion of a candidate born overlapping another player. Two bodies switched in overlapping are pushed
+ * apart by the next solve, so a candidate deeper than `validation.penetrationTolM` in another body was refused, and one
+ * that stayed so left a rigid falling proxy (the worst look there is). Under this profile such a candidate is accepted,
+ * and each collider pair born deeper than the tolerance (this player's segment collider and the other body's collider
+ * it starts in) meets nothing in the solve (the contact hook) until the two are no deeper than `releaseM` in each other;
+ * from then on they collide as any pair. The solver never acts on the overlap it was born with, so the switch adds no
+ * depenetration. What may be born so:
+ * - a limb (arm or leg segment) in any part of another player, or another player's limb in this one's trunk or head;
+ * - not a trunk or head in another player's trunk or head (two bodies merged, "grossly impossible"): such a candidate is
+ *   deferred within `conversionRetry`'s window, and at its end (or at once, without one) converted with those pairs left
+ *   out as well, rather than left a rigid falling proxy;
+ * - not the floor or another static body: the floor is not a pair to leave out (a segment would fall through it); a
+ *   candidate past the floor tolerance is converted with the floor in the solve, which pushes the segment out, and
+ *   `floorBornM` is the deepest so accepted (measured: a shoe born 4 cm in the floor leaves it at about 0.2 m/s, about
+ *   4 J, and the trunk does not rise; deeper is refused as before).
+ * The other reasons (finite, mass, lengths, anchors, hinges, landmarks) still refuse a conversion: a candidate that is
+ * not the shown body. A pair whose other collider leaves the world (a proxy replaced by its ragdoll) is carried to the
+ * ragdoll's collider of the same geometry (trunk, pelvis, head) or ends with it.
+ */
+export interface BornOverlapProfile {
+  id: string;
+  /** A pair rejoins the solve once its shapes are no deeper than this in each other (m). */
+  releaseM: number;
+  /** The deepest a candidate may start in the floor and still be converted (m). */
+  floorBornM: number;
+}
+
+export const BORN_OVERLAP_V1: BornOverlapProfile = { id: 'born-overlap-v1', releaseM: 0.001, floorBornM: 0.05 };
+
+/** Ladder 17: the ragdoll profile with the born-overlap conversion, under an id that names it. */
+export const withBornOverlap = (r: RagdollProfile, p: BornOverlapProfile = BORN_OVERLAP_V1): RagdollProfile => ({ ...r, id: `${r.id}+${p.id}`, bornOverlap: p });
+/** Ladder 17: the ragdoll profile without it, under the id it had before it. */
+export function withoutBornOverlap(r: RagdollProfile): RagdollProfile {
+  if (!r.bornOverlap) return r;
+  const { bornOverlap, ...rest } = r;
+  return { ...rest, id: r.id.replace(`+${bornOverlap.id}`, '') };
 }
 
 /**
