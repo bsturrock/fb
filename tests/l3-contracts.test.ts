@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { breathe, FIX, preFlip, rows, run, runSim } from './helpers';
+import { breathe, FIX, preFlip, preV3, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -794,9 +794,9 @@ describe('ladder tracked defects (rule 7)', () => {
   // fixtures (tests/l3-pass.ts HOLD_CLEARANCE_REPLANT) is to lose the exception. LEG_IN_RAGDOLL (ladder 9g): no live run
   // shows it since the 8m flip and its exception is retired; its captures' tests stay as the pre-flip record of the
   // rejection and the twin, without the fix, of rung 6's physical legs converting the same states (below).
-  // (captured before the visible flip: resumed under the profile they ran under)
+  // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile they ran under)
   const resumed = async (capture: string, opts: SimOptions = {}) =>
-    runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preFlip(FIX(capture.split('@')[0])), opts }));
+    runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preV3(preFlip(FIX(capture.split('@')[0]))), opts }));
   it('a posed leg held inside the runner\'s ragdoll, the defender\'s conversion rejected for it (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off)', async () => {
     // captured with R a ragdoll and D supported beside it, 2 ticks before D's posed legs pass the conversion tolerance
     // (12 substeps from 1.200 s on the L3 fixtures, 8 from 1.271 s on L4-F10-wrap-off at rung 4b), D converting at 1.30 s

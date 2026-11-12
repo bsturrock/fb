@@ -5,7 +5,7 @@ import { applyHipApproach, boxGradients, boxReading, clampDirToHipStops, hipStop
 import { initPhysics } from '../src/sim/physics';
 import { ENVELOPE_L4, HIP_APPROACH_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, HIP_STOPS_V2, hipStopsFor, withHipStops, withoutHipStops, type HipStopProfile } from '../src/sim/profiles';
 import { addScaled, dot, m3Add, m3Inverse, m3ParallelAxis, m3Vec, qFromAxisAngle, qFromUnitVectors, qMul, qRot, v3, type Mat3, type Quat, type Vec3 } from '../src/sim/vec';
-import { create, FIX, preFlip, preOwnLegs, runSim } from './helpers';
+import { create, FIX, preFlip, preOwnLegs, preV3, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter, type SolveEnergy } from './passive-energy';
 import { loadState, resumeState } from './state';
 
@@ -288,8 +288,9 @@ const CAP = 'tests/data/state/L4-F2-side-off~hipsv2@12.json.gz';
 const SIDE = 'L4-F2-side-off';
 
 async function fromCapture(S: HipStopProfile) {
-  // (captured before the visible flip: resumed under the profile it ran under, the stops aside)
-  const d = preFlip(FIX(SIDE));
+  // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile it ran under, the
+  // stops aside)
+  const d = preV3(preFlip(FIX(SIDE)));
   const sim = await resumeState(loadState(CAP), { def: { ...d, ragdoll: withHipStops(d.ragdoll!, S) }, variant: ['ragdoll'] });
   const R = sim.players[0];
   const hip = R.rag!.hipStops!.find((h) => h.jointId === 'rightHip')!;

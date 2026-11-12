@@ -3,7 +3,8 @@ import type { FallEpisode } from '../src/sim/fall-response';
 import { FALL_L4, withSelfTrunkBody, type FallResponseProfile } from '../src/sim/profiles';
 import { isGround } from '../src/sim/contracts';
 import type { Simulation } from '../src/sim/simulation';
-import { FIX, preOwnLegs } from './helpers';
+import { FIX, preOwnLegs, preV3 } from './helpers';
+import { disablePhysicalLegs } from '../src/sim/pose-runtime';
 import { loadState, resumeState } from './state';
 
 // Ladder 9c, defects (rule 7) of the fall response reached by own-leg contact's moved trajectories, each on a capture
@@ -18,7 +19,8 @@ import { loadState, resumeState } from './state';
  */
 async function resume(file: string, ownLegs: boolean, opts = {}, fall?: (p: FallResponseProfile) => FallResponseProfile): Promise<Simulation> {
   const cap = loadState(file);
-  let def = FIX(cap.fixture);
+  // (captured before the ladder 10 leg-guard flip: resumed under the leg guard it ran under)
+  let def = preV3(FIX(cap.fixture));
   if (!ownLegs) def = preOwnLegs(def);
   if (fall) def = { ...def, fallResponse: fall(def.fallResponse!) };
   const variant = [...(ownLegs ? [] : ['ragdoll']), ...(fall ? ['fallResponse'] : [])];
@@ -86,6 +88,70 @@ describe('tracked defect IMPACT_OVER_POWER (L4-F3-run-on, from 1.600 s)', () => 
     const held = await landing(true, { holdLegs: true });
     expect(held.ev).toEqual([]);
     expect(held.r.overPowerSubsteps).toBe(0);
+  }, 180000);
+});
+
+// IMPACT_OVER_POWER under the ladder 10 leg-guard flip: L4-F9-low reversed, R (no forward run shows the defect under the
+// flip: L4-F3-run-on and L4-F9-free D stay under the cap). R lands face down and swings its right forearm into its own
+// trunk, closing at 3.64 m/s at the request of substep 260, the guard holds that arm only, and the hips and knees, their
+// effort acting, realize 161.5 W against the 150 W cap (+5%), tagged an impact (audited at 1.0875 s). Captured at the
+// end of tick 50 (0.833 s), as registered. Twin, the leg guard before the flip (V1, the physical legs out of the solve)
+// from there: the same substep, 161.5 W: reached by V3's moved trajectory (the whole run under V1 has no such substep),
+// not made by it. Fault twin: the legs' effort held off in that one substep, and nothing is over the cap. The fix (ladder
+// 9f, `impactGuard.selfTrunkBody`, off): the body holds there, and nothing is over the cap.
+describe('tracked defect IMPACT_OVER_POWER under the leg-guard flip (L4-F9-low reversed, from 0.833 s)', () => {
+  const CAP = 'tests/data/state/L4-F9-low~rev@50.json.gz';
+  const STEP = 260;
+
+  async function landing(o: { v1?: boolean; holdLegs?: boolean; selfTrunkBody?: boolean } = {}) {
+    let def = FIX('L4-F9-low');
+    if (o.v1) def = preV3(def);
+    if (o.selfTrunkBody) def = { ...def, fallResponse: withSelfTrunkBody(def.fallResponse!) };
+    const variant = [...(o.v1 ? ['legGuard'] : []), ...(o.selfTrunkBody ? ['fallResponse'] : [])];
+    const sim = await resumeState(loadState(CAP), { def, variant });
+    if (o.v1) for (const p of sim.players) disablePhysicalLegs(p);
+    const F = sim.fall!;
+    const G = F.P.impactGuard;
+    const request = F.request.bind(F);
+    let atStep: { cmds: string[]; selfTrunk: Partial<Record<string, number>> } | null = null;
+    F.request = (ep, contacts, arms) => {
+      request(ep, contacts, arms);
+      if (ep.playerId !== 'R' || sim.steps !== STEP) return;
+      if (o.holdLegs) ep.cmds = ep.cmds.filter((c) => !/Hip|Knee/.test(c.joint.id));
+      const selfTrunk: Partial<Record<string, number>> = {};
+      sim.closingSpeeds(ep.rag, G.lookaheadSubsteps * sim.dt, G.predictionM, G.skinM, !!G.jointResidual, !!G.manifoldPoints, selfTrunk);
+      atStep = { cmds: ep.cmds.map((c) => c.joint.id), selfTrunk };
+    };
+    while (!sim.done) sim.stepTick();
+    // V1's twin: no physical leg came back into the solve
+    if (o.v1) expect(sim.players.every((p) => !p.legs?.colliders.some((c) => c.isEnabled()))).toBe(true);
+    const r = (sim.exportFixture() as any).fallEffort.R;
+    const ev = sim.events.filter((e) => e.type === 'fallEffortOver' && e.playerId === 'R').map((e) => ({ t: +e.t.toFixed(4), impact: e.data?.impact }));
+    sim.dispose();
+    return { r, ev, atStep: atStep! };
+  }
+
+  it('the hit substep is over the power cap, an impact, as registered and under V1 from the same state; with the legs\' effort held off in it, nothing is; with selfTrunkBody the body holds there and nothing is', async () => {
+    const P = FALL_L4.power;
+    for (const v1 of [false, true]) {
+      const { r, ev, atStep } = await landing({ v1 });
+      expect(ev, `v1 ${v1}`).toEqual([{ t: 1.0875, impact: true }]);
+      expect(r.overPowerSubsteps, `v1 ${v1}`).toBe(1);
+      expect(r.impactPowerSubsteps, `v1 ${v1}`).toBe(1);
+      expect(r.peakImpactW, `v1 ${v1}`).toBeGreaterThan(P.maxPositiveW * (1 + P.toleranceFraction));
+      // the right forearm closes on the own trunk faster than the body speed, and only its arm is held
+      expect(atStep.selfTrunk.rightForearm!, `v1 ${v1}`).toBeGreaterThan(FALL_L4.impactGuard.bodyClosingMPerS);
+      expect(atStep.cmds, `v1 ${v1}`).toEqual(['leftKnee', 'rightKnee', 'leftHip', 'rightHip', 'leftShoulder', 'leftElbow']);
+    }
+    const held = await landing({ holdLegs: true });
+    expect(held.atStep.cmds).toEqual(['leftShoulder', 'leftElbow']);
+    expect(held.ev).toEqual([]);
+    expect(held.r.overPowerSubsteps).toBe(0);
+    const fixed = await landing({ selfTrunkBody: true });
+    expect(fixed.atStep.cmds).toEqual([]);
+    expect(fixed.ev).toEqual([]);
+    expect(fixed.r.overPowerSubsteps).toBe(0);
+    expect(fixed.r.peakPositiveW).toBeLessThanOrEqual(P.maxPositiveW * (1 + P.toleranceFraction));
   }, 180000);
 });
 

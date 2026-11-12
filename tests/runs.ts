@@ -6,7 +6,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { RAPIER } from '../src/sim/physics';
 import {
-  HIP_STOPS_L4_V1, HIP_STOPS_V2, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
+  HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
   withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
@@ -33,6 +33,12 @@ export const preOwnLegs = (d: FixtureDef): FixtureDef => (d.ragdoll ? { ...d, ra
  * case "without the field" or a natural sample was taken under (as LEG_GUARD_V1 pins those of ladder rung 7d).
  */
 export const preFlip = (d: FixtureDef): FixtureDef => (d.ragdoll ? { ...d, ragdoll: unflipped(d.ragdoll) } : d);
+/**
+ * Ladder 10: `d` with its leg guard as before the leg-guard flip (LEG_GUARD_V1, plan 13f's predictive guard; the flip
+ * registers LEG_GUARD_V3): the guard every state capture without `~v3` in its name, and every natural sample taken
+ * before the flip, ran under. Composes with `preOwnLegs`, `preFlip` and `flip8i`, which leave the leg guard as given.
+ */
+export const preV3 = (d: FixtureDef): FixtureDef => (d.legGuard ? { ...d, legGuard: LEG_GUARD_V1 } : d);
 /** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */
 export const hipStops8i = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
 /**

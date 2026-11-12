@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { hipStopsFor, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
+import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -33,6 +33,16 @@ function visibleFlip(d: FixtureDef): FixtureDef {
 function ownLegFlip(d: FixtureDef): FixtureDef {
   if (!d.ragdoll || !VISIBLE_FLIP.test(d.id)) return d;
   return { ...d, ragdoll: withSelfLegs(d.ragdoll) };
+}
+
+/**
+ * Ladder 10, the leg-guard flip: every fixture with a leg guard (every L3, L4 and HC fixture; plan 13f's predictive
+ * LEG_GUARD_V1 until then) runs LEG_GUARD_V3: the swept leg step and planted pose (V2, rungs 5 and 7) and physical
+ * supported legs (rung 6). G, L1, L2 and RH have no leg guard. The lab's `legs=v1` is the view before it;
+ * tests/runs.ts `preV3` gives a definition as before it.
+ */
+function legFlip(d: FixtureDef): FixtureDef {
+  return d.legGuard ? { ...d, legGuard: LEG_GUARD_V3 } : d;
 }
 
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
@@ -63,6 +73,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip));
   return registry.slice();
 }

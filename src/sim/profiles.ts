@@ -1037,10 +1037,14 @@ export interface LegGuardProfile {
   physicalLegs?: true;
 }
 
+/** Plan 13f's predictive guard: registered on every L3, L4 and HC fixture until the ladder 10 flip (now the lab's `legs=v1`). */
 export const LEG_GUARD_V1: LegGuardProfile = { id: 'leg-guard-predictive-v1', aheadS: 1 / 240 };
 /** Contact motion prerequisite: plan 13f's prediction with the swept leg step (`sweep`). No fixture uses it yet. */
 export const LEG_GUARD_V2: LegGuardProfile = { ...LEG_GUARD_V1, id: 'leg-guard-sweep-v2', sweep: true };
-/** Contact motion prerequisite: `LEG_GUARD_V2` with physical supported legs (`physicalLegs`). No fixture uses it yet. */
+/**
+ * Contact motion prerequisite: `LEG_GUARD_V2` with physical supported legs (`physicalLegs`). Registered on every fixture
+ * with a leg guard since the ladder 10 flip (fixtures/index.ts `legFlip`).
+ */
 export const LEG_GUARD_V3: LegGuardProfile = { ...LEG_GUARD_V2, id: 'leg-guard-physical-v3', physicalLegs: true };
 
 /**

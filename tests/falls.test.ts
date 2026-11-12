@@ -20,7 +20,7 @@ import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, LEG_GUARD_V1, LEG_GUARD_V3, SOLVE
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, landmarkWorld, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { breathe, create, evs, FIX, nonEmpty, pace, preFlip, rows, run, runSim, stepWhile, traceDiff } from './helpers';
+import { breathe, create, evs, FIX, nonEmpty, pace, preFlip, preV3, rows, run, runSim, stepWhile, traceDiff } from './helpers';
 import { loadedLimbMonitor } from './loaded-limb';
 
 const ALL = fallFixtures();
@@ -899,7 +899,9 @@ describe('L4-F4 braces that fail stay failures', () => {
       [
         'L4-F4-occupied: a carrier with no free arm: one protects, one holds, nothing braces',
         async () => {
-          const s = await sim('L4-F4-occupied');
+          // (ladder 10: a natural sample, pinned to the leg guard it was taken under. Under V3 R's legs meet D's body from
+          // 0.93 s and D's left hold ends on separation at 1.729 s, so that arm is free and braces, too late: braceMiss)
+          const s = await simV1('L4-F4-occupied');
           expect(tasksOf(s, 'D')).toEqual({ left: 'hold', right: 'protect' });
           expect(evs(s, 'braceTarget').length + evs(s, 'braceContact').length + evs(s, 'braceMiss').length).toBe(0);
           // plan 10c (C8): a per-item check over nothing proves nothing
@@ -992,10 +994,13 @@ async function simV1(id: string): Promise<Simulation> {
   return ran.get(k)!;
 }
 
-/** Ladder 8l: `id` pinned to the profile before the visible flip (`preFlip`), the profile its natural samples were taken under. */
+/**
+ * Ladder 8l: `id` pinned to the profile before the visible flip (`preFlip`; since ladder 10 also the leg guard before
+ * its flip, `preV3`), the profile its natural samples were taken under.
+ */
 async function simPre(id: string): Promise<Simulation> {
   const k = `${id}~pre`;
-  if (!ran.has(k)) ran.set(k, await runSim(await create(preFlip(FIX(id))), Infinity));
+  if (!ran.has(k)) ran.set(k, await runSim(await create(preV3(preFlip(FIX(id)))), Infinity));
   return ran.get(k)!;
 }
 

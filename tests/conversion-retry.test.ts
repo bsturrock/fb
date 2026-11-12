@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { CONVERSION_RETRY_V1, withConversionRetry, type ConversionRetryProfile } from '../src/sim/profiles';
 import type { Simulation } from '../src/sim/simulation';
-import { create, evs, FIX, flip8i, rows, runSim } from './helpers';
+import { create, evs, FIX, flip8i, preV3, rows, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter } from './passive-energy';
 import { loadState, resumeState } from './state';
 
@@ -15,7 +15,8 @@ import { loadState, resumeState } from './state';
 // that substep only) or held there for some substeps (the LEG_IN_RAGDOLL class). The registered profile rejects each the
 // same from the same state (ladder 8i). Unguarded, D's posed legs then sink 2-9 cm into R's legs and come out again; a
 // candidate built from them would be valid 5-22 substeps after the rejection (21-92 ms), and stays so.
-// Captured under the 8i variant (scripts/capture-state.ts --flip8i), each a few ticks before D's conversion:
+// Captured under the 8i variant (scripts/capture-state.ts --flip8i; the leg guard before the ladder 10 flip, `preV3`),
+// each a few ticks before D's conversion:
 const CASES: { cap: string; rejectedAt: number; outcome: 'accepted' | 'transferFailed' }[] = [
   // D's diagnostic conversion at 1.171 s: right thigh 1.57 cm in R's left palm; deferred: converts at the next try
   { cap: 'HC-F3-falling~flip8i-rev@69', rejectedAt: 1.1708, outcome: 'accepted' },
@@ -125,7 +126,7 @@ async function start(cap: string, def: FixtureDef, variant: string[], addAt?: nu
 describe('ladder rung 8j: the deferred conversion', () => {
   it('as captured D is rejected for a posed leg in R and left a rigid falling proxy to the end; deferred, D converts within the window from a candidate inside the tolerance, with the outcome the fixture registers (HC-F3-falling, HC-F5-strictTransfer both orders, L3-F1-phase4, under the 8i variant)', async () => {
     await rows(CASES, (c) => c.cap, async (c) => {
-      const base = flip8i(FIX(fixtureOf(c.cap)));
+      const base = flip8i(preV3(FIX(fixtureOf(c.cap))));
       const tol = base.ragdoll!.validation.penetrationTolM;
       // the twin: as captured (no deferral), the rejection is final
       const off = await runSim(await resumeState(loadState(`tests/data/state/${c.cap}.json.gz`), { def: base }));
@@ -161,7 +162,7 @@ describe('ladder rung 8j: the deferred conversion', () => {
 
   it('the deferred conversion starts clear of R and without an energy spike: over 0.1 s no segment deeper in R than the tolerance, no solve gaining over the injection threshold (untouched, or D and R together); twins: converted at the first try regardless of depth it starts past the tolerance; 2 J added in D\'s first untouched solve reads as an injection', async () => {
     await rows(CASES, (c) => c.cap, async (c) => {
-      const base = flip8i(FIX(fixtureOf(c.cap)));
+      const base = flip8i(preV3(FIX(fixtureOf(c.cap))));
       const tol = base.ragdoll!.validation.penetrationTolM;
       const on = await start(c.cap, withRetry(base), ['ragdoll']);
       on.sim.dispose();
@@ -192,7 +193,7 @@ describe('ladder rung 8j: the deferred conversion', () => {
 
   it('a try at or past the window that is rejected is final, with the deferral recorded (HC-F5-strictTransfer forward, a window of 2 substeps); a candidate rejected for a reason outside the profile\'s is final at once (HC-F5-invalidOne, D\'s labelled anchor offset), deferred when the reason is the profile\'s (twin)', async () => {
     const cap = 'HC-F5-strictTransfer~flip8i@75';
-    const base = flip8i(FIX(fixtureOf(cap)));
+    const base = flip8i(preV3(FIX(fixtureOf(cap))));
     const dt = base.solver.outerTickS / base.solver.substeps;
     const short = await runSim(await resumeState(loadState(`tests/data/state/${cap}.json.gz`), { def: withRetry(base, { ...CONVERSION_RETRY_V1, id: 'retry-2substeps', windowS: 2 * dt }), variant: ['ragdoll'] }));
     const D = short.players.find((p) => p.id === 'D')!;

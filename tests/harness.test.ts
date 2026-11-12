@@ -38,9 +38,9 @@ import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
-import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
+import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
-import { breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
+import { breathe, create, FIX, pace, preV3, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 import { loadState, resumeState } from './state';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -230,12 +230,13 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 13f: the leg guard is on for exactly the L3, L4 and HC fixtures, and the export records it; the swept V2 is on for none',
+    'plan 13f, ladder 10: the leg guard is on for exactly the L3, L4 and HC fixtures, as V3 since the flip, and the export records it; V1 and the swept V2 are on for none',
     async () => {
-      for (const d of allFixtures()) expect(d.legGuard, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? LEG_GUARD_V1 : undefined);
+      for (const d of allFixtures()) expect(d.legGuard, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? LEG_GUARD_V3 : undefined);
       expect(LEG_GUARD_V1).toEqual({ id: 'leg-guard-predictive-v1', aheadS: 1 / 240 });
-      // rung 5: the swept step is a separate profile that no fixture runs yet (the line above)
+      // rung 5: the swept step is a separate profile; rung 6 adds the physical legs (V3, the one registered: the line above)
       expect(LEG_GUARD_V2).toEqual({ id: 'leg-guard-sweep-v2', aheadS: 1 / 240, sweep: true });
+      expect(LEG_GUARD_V3).toEqual({ ...LEG_GUARD_V2, id: 'leg-guard-physical-v3', physicalLegs: true });
       for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
         const sim = await Simulation.create(d);
         const e = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
@@ -748,7 +749,9 @@ describe('plan 13a: contact-time shape queries', () => {
     // per tick: the shape queries, and the substeps in it with D's conversion deferred while R is a ragdoll
     const ticks: { tick: number; n: number; deferred: number }[] = [];
     let deferred = 0;
+    // (captured before the ladder 10 leg-guard flip: resumed under the leg guard it ran under)
     const sim = await resumeState(loadState('tests/data/state/L3-F1-phase4~rev@76.json.gz'), {
+      def: preV3(FIX('L3-F1-phase4')),
       opts: {
         onSubstep: (s) => {
           const D = s.byId.get('D')!;

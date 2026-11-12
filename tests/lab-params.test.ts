@@ -7,7 +7,7 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preFlip, preOwnLegs, runSim } from './helpers';
+import { create, FIX, flip8i, preFlip, preOwnLegs, preV3, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry` and `selfleg` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -21,15 +21,16 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
 };
 
 describe('lab URL parameters: order, legs, hips, pgs, knees, retry and selfleg', () => {
-  it('order=rev&legs=v3 runs the matrices\' reversed V3 row of the fixture (L3-F1-phase6), named in the label; without them the run differs', async () => {
+  it('order=rev&legs=v1 runs the matrices\' reversed V1 row of the fixture (L3-F1-phase6, the guard before the ladder 10 flip), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
-    const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v3'));
-    expect(lab.label).toBe('order rev · legs V3');
-    expect(lab.def.legGuard).toBe(LEG_GUARD_V3);
+    const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v1'));
+    expect(lab.label).toBe('order rev · legs V1');
+    expect(lab.def.legGuard).toBe(LEG_GUARD_V1);
     expect(lab.opts).toEqual({ reverseOrder: true });
-    // nothing else of the fixture changes
+    // nothing else of the fixture changes: it is the definition before the flip
     expect({ ...lab.def, legGuard: FIX(id).legGuard }).toEqual(FIX(id));
-    const matrix = await summaryOf({ ...FIX(id), legGuard: LEG_GUARD_V3 }, { reverseOrder: true });
+    expect(lab.def).toEqual(preV3(FIX(id)));
+    const matrix = await summaryOf({ ...FIX(id), legGuard: LEG_GUARD_V1 }, { reverseOrder: true });
     expect(await summaryOf(lab.def, lab.opts)).toBe(matrix);
     // the twin: the page without the parameters runs the registered fixture forward, another run
     const plain = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6'));
@@ -39,10 +40,10 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry and selfleg',
 
   it('a registered guard, a fixture without one and unknown values are named in the label and change nothing', () => {
     const l3 = FIX('L3-F1-phase6');
-    expect(l3.legGuard).toEqual(LEG_GUARD_V1);
-    const reg = labRun(l3, new URLSearchParams('legs=v1&order=fwd'));
+    expect(l3.legGuard).toEqual(LEG_GUARD_V3);
+    const reg = labRun(l3, new URLSearchParams('legs=v3&order=fwd'));
     expect(reg.def).toBe(l3);
-    expect(reg.label).toBe('legs V1 (registered)');
+    expect(reg.label).toBe('legs V3 (registered)');
     const g = allFixtures().find((d) => !d.legGuard)!;
     const none = labRun(g, new URLSearchParams('legs=V3'));
     expect(none.def).toBe(g);
@@ -127,8 +128,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry and selfleg',
   // ladder rung 8j: retry=on|off, composed after the others
   it('hips=on&pgs=4&knees=140&retry=on runs the 8i variant with the deferred conversion (HC-F3-falling reversed: D converts where the variant alone leaves it a falling proxy), named in the label; retry=off takes it off again; unknown values change nothing', async () => {
     const id = 'HC-F3-falling';
-    // (the profile before the visible flip, which registers this variant)
-    const d = preFlip(FIX(id));
+    // (the profile before the visible flip, which registers this variant; a natural sample, with the leg guard before
+    // the ladder 10 flip: under V3 the variant alone converts D, its posed legs held out of R)
+    const d = preV3(preFlip(FIX(id)));
     const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
     expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
     const want = withConversionRetry(flip8i(d).ragdoll!);
@@ -152,23 +154,31 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry and selfleg',
     expect(labRun(d, new URLSearchParams('retry=maybe'))).toEqual({ def: d, opts: {}, label: 'retry=maybe ignored' });
   }, 120000);
 
-  // ladder 8m: the visible flip registered on L3, L4 and HC; the owner compares the two views in the lab
-  it('on a fixture registered with the visible flip, hips=off&pgs=0&knees=off&retry=off is the view before it: the definition before the flip, id and all, and its run (an L3, L4 and HC fixture the flip changes); the flip\'s own values are the registered run', async () => {
+  // ladder 8m: the visible flip registered on L3, L4 and HC; the owner compares the two views in the lab. Since the
+  // own-leg flip (9d) with selfleg=off, and since the leg-guard flip (10d) with legs=v1: the view before all three
+  it('on a fixture registered with the visible, own-leg and leg-guard flips, legs=v1&hips=off&pgs=0&knees=off&retry=off&selfleg=off is the view before them: the definition before the flips, ids and all, and its run (an L3, L4 and HC fixture the flips change); without legs=v1 the view keeps the registered leg guard and is another run; the flips\' own values are the registered run', async () => {
     for (const id of ['L3-F1-phase2', 'L4-F12-base', 'HC-F5-strictTransfer']) {
-      // (since the own-leg flip, with selfleg=off: the view before both)
       const d = FIX(id);
-      const before = labRun(d, new URLSearchParams(`fixture=${id}&hips=off&pgs=0&knees=off&retry=off&selfleg=off`));
-      expect(before.label, id).toBe('hip stops off · pgs +0 · knee stop off · conversion retry off · own-leg contact off');
-      expect(before.def, id).toEqual(preFlip(d));
+      const before = labRun(d, new URLSearchParams(`fixture=${id}&legs=v1&hips=off&pgs=0&knees=off&retry=off&selfleg=off`));
+      expect(before.label, id).toBe('legs V1 · hip stops off · pgs +0 · knee stop off · conversion retry off · own-leg contact off');
+      expect(before.def, id).toEqual(preV3(preFlip(d)));
+      expect(before.def.legGuard, id).toBe(LEG_GUARD_V1);
       expect(before.def.ragdoll!.id, id).toBe(preFlip(d).ragdoll!.id);
       const run = await summaryOf(before.def, before.opts);
-      expect(run, id).toBe(await summaryOf(preFlip(d), {}));
-      // the twin: the registered run, which the flip changes
+      expect(run, id).toBe(await summaryOf(preV3(preFlip(d)), {}));
+      // the twin: the registered run, which the flips change
       expect(await summaryOf(d, {}), id).not.toBe(run);
-      const after = labRun(d, new URLSearchParams(`fixture=${id}&hips=on&pgs=4&knees=140&retry=on&selfleg=on`));
+      // without legs=v1 (the 9d before-view) the leg guard stays the registered V3: not the view before the flips
+      const noLegs = labRun(d, new URLSearchParams(`fixture=${id}&hips=off&pgs=0&knees=off&retry=off&selfleg=off`));
+      expect(noLegs.def.legGuard, id).toBe(LEG_GUARD_V3);
+      expect(noLegs.def, id).toEqual(preFlip(d));
+      const after = labRun(d, new URLSearchParams(`fixture=${id}&legs=v3&hips=on&pgs=4&knees=140&retry=on&selfleg=on`));
       expect(after.def, id).toBe(d);
-      expect(after.label, id).toBe('hip stops on (registered) · pgs +4 (registered) · knee stop 140 (registered) · conversion retry on (registered) · own-leg contact on (registered)');
+      expect(after.label, id).toBe('legs V3 (registered) · hip stops on (registered) · pgs +4 (registered) · knee stop 140 (registered) · conversion retry on (registered) · own-leg contact on (registered)');
     }
+    // the leg guard alone moves the before-view's run (HC-F5-strictTransfer: D's thigh met by R's under V3)
+    const hc = FIX('HC-F5-strictTransfer');
+    expect(await summaryOf(preFlip(hc), {})).not.toBe(await summaryOf(preV3(preFlip(hc)), {}));
   }, 120000);
 
   // ladder rung 9a: selfleg=on|off, composed after the others; registered on every L3/L4/HC ragdoll since the own-leg flip

@@ -18,8 +18,10 @@ npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3]
 Runs the fixture with the fixture export's defaults (ledgers off; `--ledgers` for a test that reads them, about twice
 the size), writes `tests/data/state/<fixture>@<tick>.json.gz` and checks that the resumed run reproduces the
 uninterrupted one to the end (exits 1 otherwise). `--v3` runs it under `LEG_GUARD_V3` (the physical supported legs, which
-no registered fixture runs yet) and writes `<fixture>~v3@<tick>.json.gz`; a test resumes that one with the same
-definition, `{ def: { ...FIX(id), legGuard: LEG_GUARD_V3 } }`. `--audit` runs it with the transition audit on (`transitionAudit`,
+every L3, L4 and HC fixture registers since the ladder 10 flip) and writes `<fixture>~v3@<tick>.json.gz`; a test resumes
+that one with the same definition, `{ def: { ...FIX(id), legGuard: LEG_GUARD_V3 } }`. A capture without `~v3` of an
+L3, L4 or HC fixture taken before the flip ran under `LEG_GUARD_V1`: a test resumes it with `preV3(FIX(id))`
+(tests/runs.ts), composed with `preOwnLegs`, `preFlip` or `flip8i` for a capture older than those flips. `--audit` runs it with the transition audit on (`transitionAudit`,
 kept in the capture's options, so the resumed run audits too) and adds `-audit` to the suffix (`<fixture>~v3-audit@<tick>`). `--rev`
 runs the reversed body order (suffix `rev`). `--hips=v1|v2` runs the fixture's ragdoll under the hip stops `HIP_STOPS_V1`
 (ladder 8d) or `HIP_STOPS_V2` (8g, with the approach zone), suffix `hipsv1` / `hipsv2`; a test resumes it with

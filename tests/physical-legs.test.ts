@@ -1,5 +1,6 @@
 // Ladder rung 6 (docs/open/contact-motion/prerequisites-ladder.md): physical supported legs, `LegGuardProfile.physicalLegs`
-// (LEG_GUARD_V3 = LEG_GUARD_V2 with it; no fixture runs it in this rung, so every case here sets it). A supported proxy's
+// (LEG_GUARD_V3 = LEG_GUARD_V2 with it; every L3, L4 and HC fixture since the ladder 10 flip, and every case here sets
+// it). A supported proxy's
 // six pose leg shapes become massless colliders on its own body (PhysicsWorld.addLegCollider), placed from the achieved
 // pose after each solve (syncPhysicalLegs), live only while the proxy stands on static ground (physicalLegsLive), off at
 // the conversion request and removed with the proxy; the pose guard keeps the posed legs clear of the bodies they meet,
@@ -35,10 +36,12 @@ function stepUntil(sim: Simulation, until: () => boolean): boolean {
 }
 
 describe('rung 6: the profile', () => {
-  it('LEG_GUARD_V3 is LEG_GUARD_V2 with physical legs, and no fixture runs it; a fixture under it makes six leg colliders per supported player, under V2 none', async () => {
+  it('LEG_GUARD_V3 is LEG_GUARD_V2 with physical legs, and every fixture with a leg guard runs it (the ladder 10 flip); a fixture under it makes six leg colliders per supported player, under V2 none', async () => {
     expect({ ...LEG_GUARD_V3, id: LEG_GUARD_V2.id, physicalLegs: undefined }).toEqual({ ...LEG_GUARD_V2, physicalLegs: undefined });
     expect(LEG_GUARD_V3.physicalLegs).toBe(true);
-    expect(allFixtures().filter((f) => f.legGuard?.physicalLegs).map((f) => f.id)).toEqual([]);
+    const guarded = allFixtures().filter((f) => f.legGuard);
+    expect(guarded.length).toBeGreaterThan(190);
+    expect(guarded.filter((f) => f.legGuard !== LEG_GUARD_V3).map((f) => f.id)).toEqual([]);
     const legColliders = async (d: FixtureDef): Promise<number> => {
       const sim = await Simulation.create({ ...d, durationS: 0.1 }, { trace: false });
       stepUntil(sim, () => false);

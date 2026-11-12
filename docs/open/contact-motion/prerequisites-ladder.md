@@ -64,12 +64,56 @@ read 5.9 / 19.6 / 461 (8e, 8f). Own-leg contact (rung 9, registered at 9d) takes
 ## Morning review for the user
 
 What each step changed that is worth watching, newest last. Every link is a lab URL (`npm run dev` on this branch). The
-link as given is the view after the step (the default); add the step's "before" parameters to see the same moment as it
-was. Speed 0.25 in all of them.
+link as given is the current tip; the parameters below show a moment as an earlier step left it. Speed 0.25 in all of
+them.
+
+| to see a moment as | add to the link |
+| --- | --- |
+| before 8m (the registration up to 8k) | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off` |
+| 8m left it | `&legs=v1&selfleg=off` |
+| 9d left it (through 10b) | `&legs=v1` |
+| now (10d) | nothing |
+
+### Who falls now, against the ladder's start (the net list to review)
+
+Several steps changed who falls and some undid each other; this is what is left. The start is the registration the
+ladder began from (`a6d712f`, `r0-baseline`); "changed at" is the step that made the change (each step's own list is in
+its section below). The lab cannot show the start itself (rungs 3 to 7c are not lab parameters): the earliest view is
+"before 8m" above. Who ends a rigid falling figure (a rejected conversion) is unchanged: only the three fixtures built to
+be rejected, as at the start (at the start known for the forward order).
+
+| fixture | order | player | at the start | now | changed at | lab (now) |
+| --- | --- | --- | --- | --- | --- | --- |
+| HC-F3-mirror | reversed | defender | stays up | falls 1.75 s | 3 | `?fixture=HC-F3-mirror&order=rev&cam=front&speed=0.25&t=1.60` |
+| HC-F3-phase0 | forward | defender | falls 1.18 s | stays up | 8m | `?fixture=HC-F3-phase0&cam=front&speed=0.25&t=1.05` |
+| L3-F1-low | both | defender | falls 1.70 / 1.65 s | stays up | 3 (forward), 9d (reversed) | `?fixture=L3-F1-low&cam=front&speed=0.25&t=1.55` |
+| L3-F1-mirror0 | both | defender | stays up | falls 1.39 / 1.45 s | 8m | `?fixture=L3-F1-mirror0&cam=front&speed=0.25&t=1.25` |
+| L3-F1-mirror4 | reversed | defender | stays up | falls 1.50 s | 8m | `?fixture=L3-F1-mirror4&order=rev&cam=front&speed=0.25&t=1.35` |
+| L3-F1-phase0 | forward | defender | falls 1.17 s | stays up | 8m | `?fixture=L3-F1-phase0&cam=front&speed=0.25&t=1.00` |
+| L3-F1-phase5 | reversed | defender | stays up | falls 1.60 s | 3 | `?fixture=L3-F1-phase5&order=rev&cam=front&speed=0.25&t=1.45` |
+| L3-F1-phase7 | forward | defender | stays up | falls 1.54 s | 10d | `?fixture=L3-F1-phase7&cam=front&speed=0.25&t=1.40` |
+| L3-F4-gripTarget | both | defender | falls 1.82 s | stays up | 10d (forward: 8m up, 9d falls, 10d up) | `?fixture=L3-F4-gripTarget&cam=front&speed=0.25&t=1.65` |
+| L3-F9-convert-free | both | defender | stays up | falls 0.86 s | 10d | `?fixture=L3-F9-convert-free&cam=front&speed=0.25&t=0.70` |
+| L4-F3-run-off | both | defender | stays up | falls 0.86 s | 10d (the same run as L3-F9-convert-free) | `?fixture=L4-F3-run-off&cam=front&speed=0.25&t=0.70` |
+| L4-F10-knee-on | both | defender | stays up | falls 0.69 s | 10d | `?fixture=L4-F10-knee-on&cam=front&speed=0.25&t=0.55` |
+| L4-F3-run-on | both | defender | stays up | falls 1.12 s | 9d | `?fixture=L4-F3-run-on&cam=front&speed=0.25&t=0.95` |
+| L4-F9-free | both | defender | stays up | falls 1.12 s | 9d (the same run as L4-F3-run-on) | `?fixture=L4-F9-free&cam=front&speed=0.25&t=0.95` |
+| L4-F5-twoPalm-on | both | runner | falls 2.17 s | stays up | 8m | `?fixture=L4-F5-twoPalm-on&cam=front&speed=0.25&t=2.00` |
+
+In all: 16 player-runs now fall that stayed up, 8 now stay up that fell. Times are when the fall starts (the switch to
+falling); for "stays up" the link is just before the moment it used to fall. Changed and back again, so not in the
+list (the defender each time): L4-F10-elbow-on (fell at the start; up at 4b, down at 7c, up at 9d, down at 10d),
+L4-F10-knee-off (up at 8m, down at 10d), L3-F9-noProbe-free (down at 8m, up at 10d), HC-F3-phase0 reversed (up at 8m,
+down at 10d), L3-F1-phase0 reversed (down at rung 3, up at 10d), HC-F3-lowRunner reversed and HC-F3-mirror forward
+(down at rung 3, up at 9d), HC-F3-phase75 reversed (up at rung 3, down at 8m), L3-F1-phase6 reversed (up at rung 3,
+down at 7c), and the conversions rejected from rung 3 until 8m (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off: rigid
+falling figures then), which convert again as at the start. Tool: `.scratch/ladder/r10d-v3-flip/tools/netfalls.py`
+(`netfalls.txt` there).
 
 ### 8m: the joint stops on every falling player
 
-Before: add `&hips=off&pgs=0&knees=off&retry=off` to any link below.
+Before: add `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off` to any link below; as 8m left it:
+`&legs=v1&selfleg=off`.
 
 What visibly changes. A falling player's hips no longer twist round or swing to where a body cannot go, its knees no
 longer fold flat, and its legs pass through its own body much less. On the falls with a muscle response the hips no
@@ -126,12 +170,12 @@ To look at and decide:
   limit that holds overhead becomes a later step; if it looks natural, the measure stops reading shoulder twist
   overhead, as it already does not for the hip.
 
-Since 9d the links above also show the fallen players' legs meeting (below); add `&selfleg=off` as well to see a
-moment exactly as 8m left it.
+The links above show the current tip: since 9d the fallen players' legs meet, since 10d standing legs are solid (both
+below). To see a moment exactly as 8m left it, add `&legs=v1&selfleg=off` (the table at the top of this section).
 
 ### 9d: fallen players' legs meet each other
 
-Before: add `&selfleg=off` to any link below.
+Before: add `&legs=v1&selfleg=off` to any link below; as 9d left it: `&legs=v1`.
 
 What visibly changes. A fallen player's legs no longer pass through each other or through its own body: they stop at
 each other and lie together. Where the legs were already crossed through each other at the moment the player went
@@ -165,8 +209,62 @@ To look at and decide:
   Question: is a crossing that lasts until the legs part acceptable, or should crossed legs be pushed apart (a later
   step)?
 
-Since 9d nothing visible has changed: 9e changes a recorded reason only, 9f's fix is off (its flip parked), 9g and
-10b are byte-identical.
+Between 9d and 10d nothing visible changed: 9e changes a recorded reason only, 9f's fix is off (its flip parked), 9g
+and 10b are byte-identical. The links above show the current tip, where standing legs are solid (10d, below); add
+`&legs=v1` to see a moment exactly as 9d left it.
+
+### 10d: standing players' legs are solid to falling players
+
+Before: add `&legs=v1` to any link below.
+
+What visibly changes. A standing player's legs no longer pass into a falling or fallen player's body: a falling arm,
+leg or body meets the shin or thigh and both are pushed. Overlap between standing legs and fallen bodies drops by
+70-100%; what is left is at most about 2 cm for a few frames.
+
+- `?fixture=L4-F5-onePalm-on&cam=front&speed=0.25&t=1.45`: the runner's right thigh sat inside the defender's thigh.
+- `?fixture=HC-F5-strictTransfer&order=rev&cam=front&speed=0.25&t=1.15`: the defender's thigh went into the runner's.
+- `?fixture=L3-F1-phase4&order=rev&cam=front&speed=0.25&t=0.95`: the defender's thigh went into the runner's hand.
+
+Who falls (the defender each time). Several undo an earlier step's change; the net list against the ladder's start is
+at the top of this section.
+
+- Now falls:
+  - `?fixture=L4-F10-elbow-on&cam=front&speed=0.25&t=0.05`, `?fixture=L4-F10-knee-off&cam=front&speed=0.25&t=0.05`,
+    `?fixture=L4-F10-knee-on&cam=front&speed=0.25&t=0.25` (all both orders): running into the shoved runner from
+    behind, the defender's feet catch the runner's feet and it trips. On elbow-on it goes over slowly, about half a
+    second, its body resting on the runner's shin near the end. Elbow-on undoes 9d (it fell at the start too);
+    knee-off undoes 8m (it fell at the start too); knee-on is new.
+  - `?fixture=L3-F9-convert-free&cam=front&speed=0.25&t=0.40` (both orders; `L4-F3-run-off` is the same run): the
+    runner's falling arm sweeps the defender's thigh instead of passing through to its hips. New.
+  - `?fixture=L3-F1-phase7&cam=front&speed=0.25&t=1.20`: the defender's thigh meets the runner's hips, then the runner's
+    arm lands on its leg. New.
+  - `?fixture=HC-F3-phase0&order=rev&cam=front&speed=0.25&t=0.95`: the defender's thigh drives into the runner's body.
+    Undoes 8m for this order, as at the start (8m stood it up in both orders; forward it still stays up).
+- Now stays up:
+  - `?fixture=L3-F4-gripTarget&cam=front&speed=0.25&t=0.95` (both orders): the runner's thighs press the defender's
+    and hold it up. Forward undoes 9d (which made it fall again after 8m stood it up); reversed it fell from the start.
+  - `?fixture=L3-F9-noProbe-free&cam=front&speed=0.25&t=0.40` (both orders): the runner's arm hits the defender's
+    thigh instead of its hips. Undoes 8m (it stayed up at the start).
+  - `?fixture=L3-F1-phase0&order=rev&cam=front&speed=0.25&t=1.00`: the defender leans 13 degrees and recovers. 8m stood
+    the forward order up; now the reversed one stays up too, as at the start (it fell from rung 3 on).
+
+A hand that changed: `?fixture=L4-F4-occupied&cam=front&speed=0.25&t=1.65`: the falling player's one-hand hold now
+lets go at 1.73 s (the standing player's legs push its body), and that hand then reaches for the floor, too late.
+
+To look at and decide:
+
+- `?fixture=L3-F6-hold&cam=front&speed=0.25&t=3.95`: the held runner's thighs cross into each other (about 1.5 cm)
+  from 4.0 to 5.0 s. Standing legs crossing each other goes up by almost half over the L3 falls (down on L4); it comes
+  with the new leg stepping and planting (the parts that are not the solid legs), and is the same without the solid
+  legs. Question: visible enough to fix before the next milestone?
+- `?fixture=L4-F10-elbow-on&cam=side&speed=0.25&t=0.40`: the slow trip above. Question: does it look like a stumble,
+  or like being held up and let down?
+- `?fixture=L3-F9-noProbe-free&cam=side&speed=0.25&t=0.85`: the defender, now staying up, is bounced about 24 cm
+  upward at 1.1 s. Not its legs: its rigid standing body rebounds, and from 0.67 s with the old legs it bounces the
+  same. `?fixture=L3-F9-noProbe-prep&cam=side&speed=0.25&t=0.70` is the same kind of bounce (about 14 cm at 0.9 s, its
+  hips off the runner's shoe), and that defender now falls 0.4 s later than before. Question: is the bounce acceptable
+  for now? (It belongs to the rigid standing body, a separate step: the open defect "unsupported proxy over a refused
+  surface".)
 
 ## Status
 
@@ -605,12 +703,21 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   surface or normal the legs are off. Off everywhere (only V3 has physical legs): byte-identical, 347/347. Capture test
   (physical-legs, `L3-F9-noProbe-prep~v3@33`): 134 refused substeps, none live, no leg impulse; fault twin
   (`PoseDebug.legsOnRefused`, the rule before): live in all 142, 170.8 N s, D rises 28.7 cm against 13.9.
-- **10c** (`.scratch/ladder/parked/v3-flip/`, README there): the flip patch, parked for the owner's review. 348/348;
-  its full check (`assess-10a/flip-patch/`) equals the assessed variant except where 10b acts (L3-F9-noProbe-prep,
-  -contact, -exit); who falls the same 17. `preV3` (tests/runs.ts) pins V1 captures and natural samples;
-  `IMPACT_OVER_POWER` on L4-F9-low reversed R becomes a capture test. After it: retire the two live exceptions that
-  exclude nothing under V3 (`IMPACT_OVER_POWER` in falls.test, `HOLD_CLEARANCE_REPLANT` in l3-pass), re-assess 9f's
-  self-trunk flip.
+- **10c** (`.scratch/ladder/parked/v3-flip/`, README there): the flip patch. 348/348; its full check
+  (`assess-10a/flip-patch/`) equals the assessed variant except where 10b acts (L3-F9-noProbe-prep, -contact, -exit);
+  who falls the same 17. `preV3` (tests/runs.ts) pins V1 captures and natural samples; `IMPACT_OVER_POWER` on L4-F9-low
+  reversed R becomes a capture test. Applied at 10d.
+- **10d** (`r10d-v3-flip`) landed: `LEG_GUARD_V3` registered on every fixture with a leg guard (`legFlip` after
+  `ownLegFlip` in src/sim/fixtures), the 10c patch as assessed. 348/348. Against the assessed run
+  (`assess-10a/flip-patch/`) every summary, trace and matrix is byte-identical. Against 10b: G/L1/L2/RH byte-identical,
+  88 summaries changed (L3 46, L4 27, HC 15), the 17 who-falls player-runs of 10a, leg matrix none over a ceiling, L4
+  matrix 4 -> 1 over (L4-F9-low reversed R, tracked), worst query tick 3423 -> 3588, passive energy L3 1013 -> 804 J,
+  L4 552 -> 531, HC 467 -> 423; supported leg in a ragdoll L3 1.83 -> 0.45, L4 2.12 -> 0, HC 0.67 -> 0.20 player-s;
+  ragdoll own-leg axes L4 16.7 -> 21.7 (most of it L4-F9-transferFailed reversed R, 0.18 -> 4.35 s, assessed at 10a);
+  full check 336 -> 377 s. Lab: the 8m before-view test (lab-params) adds `legs=v1`, with the view without it as its
+  twin (the leg guard stays V3); every L3/L4/HC fixture's before-views run as the earlier registrations
+  (`r10d-v3-flip/lab-views.txt`: `legs=v1` as 10b, `legs=v1&selfleg=off` as 9b, with `hips=off&pgs=0&knees=off&retry=off`
+  too as 8k, 195/195 each).
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -624,8 +731,6 @@ order, not hunk-split.
 - 9f's flip, the own-trunk hold on every L4 fall response: fixes the captured landing but not the mechanism (an
   own-trunk hit read before the solve far under what the solve takes); the run reaches it one substep later. Patch,
   twins and README `.scratch/ladder/parked/self-trunk-flip/`.
-- The leg-guard flip (10c), ready, awaiting the owner's review: `.scratch/ladder/parked/v3-flip/` (patch on `978f9be`,
-  README with the morning-review text).
 - 8k's other option, the L4 hip envelope narrowed to the human ab/adduction (cone across 60 -> 42, its own backstop):
   removes the hip implausible time as the box does but not the own-body overlap; not taken. Patch and README
   `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
