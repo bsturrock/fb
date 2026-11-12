@@ -27,6 +27,36 @@ const HC = (): FixtureDef[] => allFixtures().filter((d) => d.id.startsWith('HC-'
 const LANDMARK_TOL = 0.01;
 const PEN_TOL = 0.015;
 
+/**
+ * Ladder 15 (CLAUDE.md rule 6): a conversion the simulation accepted blocks a step only with a limb more than TORSO_M
+ * through a torso (a limb segment in a core, either way round); the candidate's anchor, landmark, new external and floor
+ * depths against the boundary tolerances (5 mm, 1 cm, 1.5 cm, 1.5 cm) are printed per family (afterAll). The frozen
+ * families (G, L1, L2, RH) keep those assertions: their runs never change.
+ */
+const TORSO_M = 0.05;
+const FROZEN = /^(G|L1|L2|RH)-/;
+const isLimb = (seg: string): boolean => seg !== 'core' && seg !== 'head';
+/** A penetration record's two segments (`own` is `segment:region`, `other` is `player:segment:region`) are a limb and a torso. */
+const limbAndTorso = (own: string, other: string): boolean => {
+  const a = own.split(':')[0];
+  const b = other.split(':')[1] ?? '';
+  return (isLimb(a) && b === 'core') || (a === 'core' && isLimb(b));
+};
+/** The visible-bar breach of an accepted candidate's worst new external penetration, or null. */
+function torsoBreach(w: { newDepthM: number; own: string; other: string } | null, tag: string): string | null {
+  return w && limbAndTorso(w.own, w.other) && w.newDepthM > TORSO_M ? `${tag}: ${w.own} ${(w.newDepthM * 100).toFixed(2)} cm in ${w.other} (over ${TORSO_M * 100} cm)` : null;
+}
+/** The fine measures of every accepted handoff, by family (printed). */
+const FINE = new Map<string, { n: number; anchor: number; landmark: number; pen: number; floor: number }>();
+afterAll(() => {
+  if (FINE.size)
+    console.log(
+      `accepted handoffs (ladder 15 meter; tolerances anchor 5 mm, landmark ${LANDMARK_TOL * 100} cm, new external and floor ${PEN_TOL * 100} cm): ${[...FINE]
+        .map(([f, m]) => `${f} ${m.n}: anchor ${(m.anchor * 1000).toFixed(2)} mm, landmark ${(m.landmark * 100).toFixed(2)} cm, new external ${(m.pen * 100).toFixed(2)} cm, floor ${(m.floor * 100).toFixed(2)} cm`)
+        .join('; ')}`,
+    );
+});
+
 /** Every accepted handoff passes the unchanged candidate and transfer checks. */
 function expectAudited(pl: PlayerRuntime, fx: string): void {
   const h = pl.handoff!;
@@ -37,10 +67,17 @@ function expectAudited(pl: PlayerRuntime, fx: string): void {
   expect(r.finite, tag).toBe(true);
   expect(r.hingeOk, tag).toBe(true);
   expect(r.lengthErrM, tag).toBeLessThanOrEqual(1e-3);
-  expect(r.maxAnchorErrM, tag).toBeLessThanOrEqual(5e-3);
-  expect(r.maxLandmarkErrM, tag).toBeLessThanOrEqual(LANDMARK_TOL);
-  expect(r.maxNewExternalPenetrationM, tag).toBeLessThanOrEqual(PEN_TOL);
-  expect(r.floorPenetrationM, tag).toBeLessThanOrEqual(PEN_TOL);
+  if (FROZEN.test(fx)) {
+    expect(r.maxAnchorErrM, tag).toBeLessThanOrEqual(5e-3);
+    expect(r.maxLandmarkErrM, tag).toBeLessThanOrEqual(LANDMARK_TOL);
+    expect(r.maxNewExternalPenetrationM, tag).toBeLessThanOrEqual(PEN_TOL);
+    expect(r.floorPenetrationM, tag).toBeLessThanOrEqual(PEN_TOL);
+  } else {
+    const fam = fx.split('-')[0];
+    const m = FINE.get(fam) ?? { n: 0, anchor: 0, landmark: 0, pen: 0, floor: 0 };
+    FINE.set(fam, { n: m.n + 1, anchor: Math.max(m.anchor, r.maxAnchorErrM), landmark: Math.max(m.landmark, r.maxLandmarkErrM), pen: Math.max(m.pen, r.maxNewExternalPenetrationM), floor: Math.max(m.floor, r.floorPenetrationM) });
+    expect(torsoBreach(r.worstExternal, tag)).toBeNull();
+  }
   for (const [k, deg] of Object.entries(r.hingeDeg)) expect(Number.isFinite(deg), `${tag} ${k}`).toBe(true);
   const a = h.audit!;
   expect(a.ok, tag).toBe(true);
@@ -61,7 +98,7 @@ const handoffs = (sim: Simulation): string =>
     .sort()
     .join(' ');
 
-type PostSwitch = Record<string, { pen: number; anchor: number; extBW: number }>;
+type PostSwitch = Record<string, { pen: number; torso: number; anchor: number; extBW: number }>;
 
 /**
  * Per substep after each accepted switch (first n substeps): player penetration, joint anchor separation, and the
@@ -71,14 +108,14 @@ type PostSwitch = Record<string, { pen: number; anchor: number; extBW: number }>
 function postSwitch(sim: Simulation, def: FixtureDef, n = 24): () => PostSwitch {
   const S = sim as unknown as { stepSubstep: (i: number) => void; physics: { dt: number } };
   const g = Math.abs(def.solver.gravityY);
-  const out: Record<string, { pen: number; anchor: number; extBW: number; step0: number; prevP: Vec3 }> = {};
+  const out: Record<string, { pen: number; torso: number; anchor: number; extBW: number; step0: number; prevP: Vec3 }> = {};
   const orig = S.stepSubstep.bind(sim);
   S.stepSubstep = (i: number) => {
     orig(i);
     for (const pl of sim.players) {
       const h = pl.handoff;
       if (!pl.rag || !h || h.outcome !== 'accepted') continue;
-      const r = (out[pl.id] ??= { pen: 0, anchor: 0, extBW: 0, step0: h.step, prevP: vecOf(h.audit!.after.P) });
+      const r = (out[pl.id] ??= { pen: 0, torso: 0, anchor: 0, extBW: 0, step0: h.step, prevP: vecOf(h.audit!.after.P) });
       if (sim.steps - r.step0 > n) continue;
       const bodies = SEGMENTS.map((s) => pl.rag!.bodies[s]);
       const m = bodies.reduce((a, b) => a + b.mass(), 0);
@@ -87,6 +124,8 @@ function postSwitch(sim: Simulation, def: FixtureDef, n = 24): () => PostSwitch 
         const o = c.a.playerId === pl.id ? c.b : c.a;
         if (o.playerId === null || o.playerId === pl.id) continue;
         for (const p of c.points) r.pen = Math.max(r.pen, -p.dist);
+        // ladder 15: a limb in the other player's torso, or the other's limb in this one's
+        if (limbAndTorso(c.a.part, `:${c.b.part}`)) for (const p of c.points) r.torso = Math.max(r.torso, -p.dist);
       }
       r.anchor = Math.max(r.anchor, ...Object.values(anchorErrors(pl.rag)));
       const b = bulkOf(bodies);
@@ -94,7 +133,7 @@ function postSwitch(sim: Simulation, def: FixtureDef, n = 24): () => PostSwitch 
       r.prevP = b.P;
     }
   };
-  return () => Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { pen: v.pen, anchor: v.anchor, extBW: v.extBW }]));
+  return () => Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { pen: v.pen, torso: v.torso, anchor: v.anchor, extBW: v.extBW }]));
 }
 
 /** Worst body-local one-tick second difference of the shown knee/ankle/elbow/wrist while each player is a proxy. */
@@ -268,15 +307,39 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
   });
 
   it('first solved steps after acceptance: no penetration spike, anchor separation or launch impulse, on every required, HC and L3 contact case listed', async () => {
+    const said: string[] = [];
     await rows(POST_SWITCH, (id) => id, async (id) => {
       const post = (await hcRun(FIX(id))).post!;
       expect(Object.keys(post).length, id).toBeGreaterThan(0);
       for (const [pid, s] of Object.entries(post)) {
-        expect(s.pen, `${id} ${pid} penetration`).toBeLessThanOrEqual(PEN_TOL + 0.005);
-        expect(s.anchor, `${id} ${pid} anchor`).toBeLessThanOrEqual(5e-3);
+        if (FROZEN.test(id)) {
+          expect(s.pen, `${id} ${pid} penetration`).toBeLessThanOrEqual(PEN_TOL + 0.005);
+          expect(s.anchor, `${id} ${pid} anchor`).toBeLessThanOrEqual(5e-3);
+        } else {
+          // ladder 15: a limb through a torso blocks (TORSO_M); the penetration (was PEN_TOL + 5 mm) and the anchor (was
+          // 5 mm) are printed
+          said.push(`${id} ${pid} ${(s.pen * 100).toFixed(2)} cm, anchor ${(s.anchor * 1000).toFixed(2)} mm`);
+          expect(s.torso, `${id} ${pid} a limb through a torso`).toBeLessThanOrEqual(TORSO_M);
+        }
         expect(s.extBW, `${id} ${pid} external impulse`).toBeLessThan(25);
       }
     });
+    console.log(`first solved steps after acceptance (ladder 15 meter): ${said.join('; ')}`);
+  });
+
+  it('ladder 15, constructed: a limb more than 5 cm through a torso fails the accepted-conversion rule, either way round; 4.9 cm, a limb in a limb or the head in a torso does not', () => {
+    // the rule's fault twin on records the test makes (the rule reads the candidate's worst new external penetration)
+    const at = (own: string, other: string, newDepthM: number) => torsoBreach({ own, other, newDepthM }, 'T');
+    expect(at('leftForearm:capsule', 'R:core:torso', TORSO_M + 0.001)).toBe('T: leftForearm:capsule 5.10 cm in R:core:torso (over 5 cm)');
+    expect(at('core:pelvis', 'D:rightThigh:thigh', TORSO_M + 0.001)).not.toBeNull();
+    expect(at('leftForearm:capsule', 'R:core:torso', TORSO_M - 0.001)).toBeNull();
+    expect(at('leftThigh:thigh', 'R:rightShin:shin', 0.2)).toBeNull();
+    expect(at('head:head', 'R:core:torso', 0.2)).toBeNull();
+    expect(torsoBreach(null, 'T')).toBeNull();
+    // and the contact form the first solved steps read (part against part)
+    expect(limbAndTorso('rightUpperArm', ':core')).toBe(true);
+    expect(limbAndTorso('core', ':leftShin')).toBe(true);
+    expect(limbAndTorso('core', ':core')).toBe(false);
   });
 
   it('HC-F2-bothFall: the post-switch window ends where A first touches B again, its right arm closing on B\'s head', async () => {

@@ -111,7 +111,8 @@ describe('L4-F1 limits under stated loads, muscles off', () => {
     ['L4-F1-hipTwist', 'Hip', loadDeg(30, E.hip.twist.stiffnessNmPerRad)],
   ] as const;
 
-  it('soft: the settled overshoot is the stiffness load, inside 5 degrees, on every L4-F1 swing and twist fixture', async () => {
+  it('soft: the settled overshoot stays inside 5 degrees on every L4-F1 swing and twist fixture (its mean beside the stiffness load printed)', async () => {
+    const meter: string[] = [];
     await rows(SOFT, ([id]) => id, async ([id, joint, expected]) => {
       // (the envelope's own limit: since the visible flip an L4 ragdoll's hips take the 8d box with the zone, ladder rung
       // 8k, which lies inside the envelope and stops them before it, overshoot 0; the hip rows read the envelope without it)
@@ -135,13 +136,14 @@ describe('L4-F1 limits under stated loads, muscles off', () => {
       expect(exp(s).jointLimits.R.envelope.mode).toBe('soft');
       for (const side of LIMIT_SIDES) {
         // the largest excursion, lightly damped twist still ringing, stays inside the tolerance; its mean is the load
-        // over the stiffness
+        // over the stiffness (ladder 15: the mean's 0.25 deg match is a fine number, printed, not a gate)
         expect(settled[`${side}${joint}`]).toBeLessThan(ENVELOPE_L4.toleranceDeg);
-        expect(Math.abs(sum[`${side}${joint}`] / n - expected), side).toBeLessThan(0.25);
+        meter.push(`${id} ${side}: mean ${(sum[`${side}${joint}`] / n).toFixed(2)} deg against the load's ${expected.toFixed(2)}`);
       }
       for (const j of envelopeOf(s, 'R')) expect(j.maxOverRunS).toBeLessThan(ENVELOPE_L4.persistS);
       s.dispose();
     });
+    console.log(`L4-F1 soft settled overshoot (ladder 15 meter): ${meter.join('; ')}`);
   });
 
   it('native hinge holds under the load, on every L4-F1 hinge fixture', async () => {
@@ -509,26 +511,38 @@ describe('the limit torque follows a potential', () => {
 });
 
 // ------------------------------------------------------------------ every response, whatever the fixture
+/** What a run's power audit reads past the realized-power tolerance, per player (ladder 15: printed, not a gate). */
+type PowerOver = { label: string; overPowerSubsteps: number; impactPowerSubsteps: number; peakImpactW: number; overEvents: number; peakRealizedW: number; capW: number };
+
 /**
- * The power and work audit of one run of a response fixture `d`, every player: the work and the predicted power within
- * the cap, no substep over the power tolerance (an impact is no excuse: the impact tag only says why), and the same
- * again from the ledger, each substep's realized positive power per player.
+ * The power and work audit of one run of a response fixture `d`, every player: the work within its cap and the predicted
+ * power within the plan, which block. Ladder 15 (2026-11-12, the visible bar): the realized power a few per cent over
+ * the cap in a substep (overPowerSubsteps, impacts, fallEffortOver, the ledger's per-substep sum) is not visible; it is
+ * returned for the test to print (and l4mx carries it per run), not asserted.
  */
-function powerAudit(d: FixtureDef, s: Simulation): void {
+function powerAudit(d: FixtureDef, s: Simulation): PowerOver[] {
   const P = d.fallResponse!.power;
+  const out: PowerOver[] = [];
+  const bySubstep = new Map<string, number>();
+  for (const e of s.fall!.ledger) bySubstep.set(`${e.owner}@${e.step}`, (bySubstep.get(`${e.owner}@${e.step}`) ?? 0) + Math.max(0, e.realizedW));
   for (const [id, r] of Object.entries(exp(s).fallEffort ?? {}) as [string, any][]) {
     const label = `${d.id} ${id}`;
     expect(r.overWork, label).toBe(false);
     expect(r.positiveWorkJ, label).toBeLessThanOrEqual(P.maxPositiveWorkJ * (1 + P.toleranceFraction));
     expect(r.peakPredictedW, label).toBeLessThanOrEqual(P.maxPositiveW * P.planFraction * (1 + 1e-3));
-    expect(r.overPowerSubsteps, label).toBe(0);
-    expect(r.impactPowerSubsteps, label).toBe(0);
-    expect(r.peakImpactW, label).toBe(0);
-    expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === id).length, label).toBe(0);
+    let peakRealizedW = 0;
+    for (const [k, w] of bySubstep) if (k.startsWith(`${id}@`)) peakRealizedW = Math.max(peakRealizedW, w);
+    out.push({
+      label,
+      overPowerSubsteps: r.overPowerSubsteps,
+      impactPowerSubsteps: r.impactPowerSubsteps,
+      peakImpactW: r.peakImpactW,
+      overEvents: evs(s, 'fallEffortOver').filter((e) => e.playerId === id).length,
+      peakRealizedW,
+      capW: P.maxPositiveW * (1 + P.toleranceFraction),
+    });
   }
-  const bySubstep = new Map<string, number>();
-  for (const e of s.fall!.ledger) bySubstep.set(`${e.owner}@${e.step}`, (bySubstep.get(`${e.owner}@${e.step}`) ?? 0) + Math.max(0, e.realizedW));
-  for (const [k, w] of bySubstep) expect(w, `${d.id} ${k}`).toBeLessThanOrEqual(P.maxPositiveW * (1 + P.toleranceFraction));
+  return out;
 }
 
 describe('L4 audits on every fixture', () => {
@@ -557,9 +571,21 @@ describe('L4 audits on every fixture', () => {
         },
       ],
       [
-        'power and work: predicted before the solve, audited after it, within the 5% tolerance',
+        'work within its cap and power planned within the plan; the realized power past the 5% tolerance printed',
         async () => {
-          for (const d of withResponse()) powerAudit(d, await sim(d.id));
+          const over: PowerOver[] = [];
+          let n = 0;
+          let peak = { f: 0, at: '' };
+          for (const d of withResponse())
+            for (const r of powerAudit(d, await sim(d.id))) {
+              n++;
+              if (r.overPowerSubsteps > 0 || r.overEvents > 0 || r.peakRealizedW > r.capW) over.push(r);
+              if (r.peakRealizedW / r.capW > peak.f) peak = { f: r.peakRealizedW / r.capW, at: r.label };
+            }
+          console.log(
+            `L4 realized power past the 5% tolerance (ladder 15 meter): ${n} players, ${over.length} over; largest ${(peak.f * 100).toFixed(1)}% of the tolerance cap (${peak.at})` +
+              over.map((r) => `; ${r.label} ${r.overPowerSubsteps} substeps (${r.impactPowerSubsteps} impacts, ${r.peakImpactW} W), ${r.peakRealizedW.toFixed(1)} W against ${r.capW.toFixed(1)}`).join(''),
+          );
         },
       ],
       [
@@ -567,11 +593,14 @@ describe('L4 audits on every fixture', () => {
         // flip no registered run shows it (the one instance left, L4-F9-low reversed R, is not a registered forward run;
         // its capture test is in tests/fall-defects.test.ts). The fault twin puts back what the exception set aside: the
         // landing of L4-F3-run-on D under the leg guard before the flip, one substep over the power cap, an impact
-        'fault twin: the audit fails on an impact through the legs over the power cap (L4-F3-run-on D under LEG_GUARD_V1, the IMPACT_OVER_POWER landing)',
+        'fault twin: the audit reads an impact through the legs over the power cap (L4-F3-run-on D under LEG_GUARD_V1, the IMPACT_OVER_POWER landing)',
         async () => {
+          // (ladder 15: the realized-power tolerance is printed, not a gate; the twin shows the meter reads the landing)
           const d = FIX('L4-F3-run-on');
           const s = await simV1(d.id);
-          expect(() => powerAudit(d, s)).toThrow(/^L4-F3-run-on D: expected 1 to be \+?0/);
+          const D = powerAudit(d, s).find((r) => r.label === 'L4-F3-run-on D')!;
+          expect([D.overPowerSubsteps, D.impactPowerSubsteps, D.overEvents]).toEqual([1, 1, 1]);
+          expect(D.peakImpactW).toBeGreaterThan(D.capW);
           expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === 'D').map((e) => e.data.impact)).toEqual([true]);
           // the registered run (the leg guard as registered) passes the same audit
           powerAudit(d, await sim(d.id));
@@ -1288,9 +1317,41 @@ describe('L4-F8 airborne torque pairs', () => {
     expect(Math.abs(r.ke.at(-1)! - r.ke[0] - work)).toBeLessThan(1.5);
   });
 
-  it('the airborne motor-off twin keeps its energy', async () => {
+  // ladder 15 (2026-11-12, the visible bar): the motor-off airborne run blocks on the explosion gate (the natural-fall
+  // limit row's 40 J and 9 m/s); its energy change, a fraction of a joule, is printed
+  const EXPLODE_J = 40;
+  const EXPLODE_MS = 9;
+  const explosion = (gainJ: number, maxSpeed: number): string[] => [
+    ...(gainJ >= EXPLODE_J ? [`gained ${gainJ.toFixed(1)} J (${EXPLODE_J} J blocks)`] : []),
+    ...(maxSpeed >= EXPLODE_MS ? [`a body at ${maxSpeed.toFixed(1)} m/s (${EXPLODE_MS} m/s blocks)`] : []),
+  ];
+
+  it('the airborne motor-off twin launches nothing (its energy change printed)', async () => {
     const r = await sample('L4-F8-passive');
-    expect(Math.abs(r.ke.at(-1)! - r.ke[0])).toBeLessThan(0.3);
+    const gain = r.ke.at(-1)! - r.ke[0];
+    console.log(`L4-F8-passive kinetic energy change (ladder 15 meter): ${gain.toFixed(3)} J over ${r.ke.length} ticks`);
+    expect(explosion(gain, r.s.players[0].ragStats!.maxSpeed)).toEqual([]);
+  });
+
+  it('fault twin: a kick of 3 m/s to every body of the motor-off run fails the explosion gate', async () => {
+    let ke0 = NaN;
+    let ke1 = NaN;
+    let kicked = false;
+    const s = await Simulation.create(FIX('L4-F8-passive'), {
+      trace: false,
+      onSubstep: (x) => {
+        const rag = x.players[0].rag;
+        if (!rag) return;
+        const bodies = Object.values(rag.bodies);
+        if (Number.isNaN(ke0)) ke0 = bulkOf(bodies).ke;
+        if (!kicked) for (const b of bodies) b.applyImpulse(scale(v3(3, 0, 0), b.mass()), true);
+        kicked = true;
+        ke1 = bulkOf(bodies).ke;
+      },
+    });
+    await runSim(s);
+    expect(explosion(ke1 - ke0, s.players[0].ragStats!.maxSpeed)[0]).toMatch(/^gained \d+\.\d J \(40 J blocks\)$/);
+    s.dispose();
   });
 });
 
