@@ -493,6 +493,11 @@ export interface ProxyPoseInput {
    */
   handoffPossible?: boolean;
   /**
+   * Ladder 16b (`metArmStay`): this player's handoff was deferred for overlapping another body (ladder 8j's retry window
+   * is open). Absent: false.
+   */
+  handoffDeferred?: boolean;
+  /**
    * Contact motion prerequisite (`LegGuardProfile.sweep`, ground-relative legs): the supported legs' achieved step is
    * judged against the physical bodies, may take another placement, and is swept from the shown pose. Absent: false.
    */
@@ -505,6 +510,8 @@ export interface ProxyPoseInput {
   selfUpperArm?: boolean;
   /** Ladder 14b (`SelfClearanceProfile.clipArmSwing`): a composed clip arm keeps its swing. Absent: false. */
   clipArmSwing?: boolean;
+  /** Ladder 16b (`SelfClearanceProfile.metArmStay`): a composed arm another body has met keeps its natural pose. Absent: false. */
+  metArmStay?: boolean;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
   loco?: {
     profile: LocomotionProfile;
@@ -688,6 +695,16 @@ const CONT_PLANT_EXACT_M = 0.05;
 const CLEAR_OK = 0.004;
 /** Physical depth a candidate may have and still count as valid for the handoff (margin under 0.015 m). */
 export const HARD_OK = 0.012;
+/**
+ * Ladder 16b (`SelfClearanceProfile.metArmStay`): how far (m) a met arm's departure may carry it into its own trunk before
+ * it is given up. The user's bar is gross pass-through, not a brush: the visible bar blocks a limb whose bone axis is
+ * inside a body (deeper than its radius: palm 4 cm, forearm 4.5, upper arm 5.5) or past 5 cm for 0.1 s; 1 cm under the
+ * smallest of those. Into another body it presses at most HARD_OK, the depth a handoff accepts: pressed to 3 cm, 40 of
+ * 195 runs deferred a handoff (L3-F4-gripBoth: the runner's arm 3.4 cm into the defender's grip).
+ */
+export const MET_ARM_OWN_M = 0.03;
+/** Ladder 16b: how much deeper (m) than the least deep a hanging met arm's last choice may be and still be kept. */
+const MET_ARM_BACK_M = 0.01;
 
 /** Ladder 11c: a leg's bone axes (the distal half thigh, the shin, ankle to shoe) with their slim radii. */
 function legAxes(P: OwnLegProfile, hip: Vec3, knee: Vec3, ankle: Vec3, shoe: Vec3): [Vec3, Vec3, number][] {
@@ -925,7 +942,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
      * deep its centre is in the player's own torso or pelvis (a soft cost: a variant with the ball through the body ranks
      * below one without).
      */
-    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; reach: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number; tgtL?: Vec3; poleL?: Vec3; seat?: CarrySeat; ball?: { depth: number; self: number }; body?: number; selfShapes?: PoseShape[] };
+    type ArmC = { elbow: Vec3; wrist: Vec3; palm: Vec3; reach: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; softOther: number; other: number; floor: number; tgtL?: Vec3; poleL?: Vec3; seat?: CarrySeat; ball?: { depth: number; self: number }; body?: number; selfShapes?: PoseShape[] };
     const build = (elbow: Vec3, palm: Vec3, wristIn?: Vec3): ArmC => {
       const wrist0 = wristIn ?? add(elbow, scale(sub(palm, elbow), R.lengths.forearm / (R.lengths.forearm + R.lengths.palmExtension)));
       const chain = hingeChain(sh, elbow, [wrist0, palm], [fwd, upB], straight);
@@ -936,7 +953,10 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const palmS = !seatC ? reach : carried ? toWorld(fa, seatPalmLocal(seatC, R.lengths.forearm, R.lengths.palmExtension)) : handW > 0 ? add(reach, qRot(chain.frameB, sub(seatPalmLocal(seatC, R.lengths.forearm, R.lengths.palmExtension), seatPalmLocal({ ...seatC, handW: 0 }, R.lengths.forearm, R.lengths.palmExtension)))) : reach;
       const shapes = armShapes(R, s, sh, elbow, wrist, palmS);
       const selfD = inp.clearance?.self ? inp.clearance.self(shapes.slice(1)) : 0;
-      let depth = Math.max(ext(shapes), floorDepth(shapes));
+      // ladder 16b: another body's depth and the floor's apart (`metArmStay` judges them apart from the own trunk)
+      let other = ext(shapes);
+      let floor = floorDepth(shapes);
+      let depth = Math.max(other, floor);
       // arm self-clearance (opt-in): the arm's self shapes in the player's own measured trunk count as physical depth
       const selfShapes = inp.clearance?.body && tipAlong !== undefined ? armSelfShapes(R.radii, tipAlong, s, elbow, wrist, palmS, inp.selfUpperArm ? { shoulder: sh, r: R.radii.forearm } : undefined) : undefined;
       const bodyD = selfShapes ? inp.clearance!.body!(selfShapes) : undefined;
@@ -948,12 +968,16 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // the ball's centre inside the player's own torso or pelvis (the authored carry presses the ball into the padded
         // proxy torso, never its centre)
         const centre: PoseShape = { kind: 'ball', c: lerp(bc.a, bc.b, 0.5), r: 1e-4, key: 'carriedBall' };
-        ball = { depth: Math.max(ext([bs]), floorDepth([bs])), self: inp.clearance?.self ? inp.clearance.self([centre]) : 0 };
+        const be = ext([bs]);
+        const bf = floorDepth([bs]);
+        other = Math.max(other, be);
+        floor = Math.max(floor, bf);
+        ball = { depth: Math.max(be, bf), self: inp.clearance?.self ? inp.clearance.self([centre]) : 0 };
         depth = Math.max(depth, ball.depth);
         shapes.push(bs);
       }
       const so = softExt(shapes);
-      return { elbow, wrist, palm: palmS, reach, chain, shapes, depth, soft: Math.max(so, 0.5 * selfD, ball?.self ?? 0), softOther: so, seat: seatC, ball, ...(bodyD !== undefined ? { body: bodyD, selfShapes } : {}) };
+      return { elbow, wrist, palm: palmS, reach, chain, shapes, depth, soft: Math.max(so, 0.5 * selfD, ball?.self ?? 0), softOther: so, other, floor, seat: seatC, ball, ...(bodyD !== undefined ? { body: bodyD, selfShapes } : {}) };
     };
     let a: ArmC;
     if (given) {
@@ -1082,7 +1106,65 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // `depth`); otherwise the clips' self overlap stands: they were authored on this skeleton and the proxy boxes are
       // padded.
       let r: { best: ArmC; index: number } | null = null;
-      if (held) {
+      // ladder 16b (`metArmStay`): 14b's met gate is read first (the choice depends on it): an arm another body has met,
+      // from its request meeting one until its departure is back on the chosen pose: a composed arm of a locomotion pose,
+      // ready hands too (as registered they took the raised alternatives, and their elbow flipped between frames there:
+      // L3-F1-phase2 D's left at 0.97 s). Not while the player's handoff is deferred for overlapping another body: the
+      // player is falling and its ragdoll may not start inside the other body, so the arm is pushed out as registered
+      // (kept in the overlap, the handoff was rejected at the window's end and the player stood stiff: 21 of 195 runs,
+      // L3-F4-gripBoth both players at 1.15 s)
+      const metK = `${k}:met`;
+      const stayGate = !!inp.metArmStay && !!lo && (held || !!inp.readyHands) && (!inp.handoffDeferred || !!inp.debug?.metArmStayDeferred);
+      const s0 = stayGate ? cands[0]() : null;
+      if (s0 && (ext(s0.shapes) > CLEAR_OK || s0.softOther > CLEAR_OK)) mem[metK] = 1;
+      const stay = !!s0 && (mem[metK] === 1 || !!inp.debug?.clipArmSwingUngated);
+      if (stay) {
+        // a met arm keeps its request while no part of it is more than HARD_OK into another body (another player's arm
+        // task too: the handoff validates against it) or the floor, whatever the request's own overlap with its trunk. Past
+        // it, the swing-out above to that depth; past that, hanging at its side; never a raised or forward alternative. A
+        // move off the request may not take it more than MET_ARM_OWN_M into its own trunk (or deeper than the request is)
+        const ownOk = Math.max(MET_ARM_OWN_M, s0.body ?? 0) + 1e-9;
+        const okAt = (c: ArmC, m: number) => Math.max(c.other, c.softOther) <= m && c.floor <= HARD_OK && (c.body ?? 0) <= ownOk;
+        const ok = (c: ArmC) => okAt(c, HARD_OK);
+        const worse = (c: ArmC): number => Math.max(c.other, c.softOther) + Math.max(0, (c.body ?? 0) - ownOk);
+        // a hanging arm comes back to its request (or the swing-out) only once that is clear (CLEAR_OK), so a request at
+        // the depth does not take it to and fro
+        const hangIx = [cands.length - 2, cands.length - 1];
+        const fromHang = hangIx.includes(mem[k] ?? -1);
+        const okReq = (c: ArmC) => okAt(c, fromHang ? CLEAR_OK : HARD_OK);
+        // the ball's carry arm keeps its tuck whatever presses it: moved off the other body, the ball went with the hand
+        // (as registered up to the raised alternatives, the ball at the head: L3-F16-contactStop R at 0.73 s; swung out,
+        // the elbow rose to the shoulder and the hand crossed the chest: HC-F1-lowMirror R at 0.9 s)
+        if (carry || okReq(s0)) r = { best: s0, index: 0 };
+        else {
+          const u = norm(v3(palm0.x, 0, palm0.z), v3(sx, 0, 0));
+          const at = (d: number) => procedural(addScaled(palm0, u, d), pole0)();
+          let out = 0;
+          for (let d = SWING_OUT_STEP; d <= SWING_OUT_MAX + 1e-9 && !r; d += SWING_OUT_STEP) {
+            if (!okReq(at(d))) {
+              out = d;
+              continue;
+            }
+            let hi = d;
+            for (let b = 0; b < 6; b++) {
+              const m = 0.5 * (out + hi);
+              if (okReq(at(m))) hi = m;
+              else out = m;
+            }
+            r = { best: at(hi), index: 0 };
+          }
+        }
+        if (!r) {
+          // hanging at its side (the last two alternatives: a little forward, a little back), the one chosen last kept while
+          // it is within the depth; reached at the continuity rate. Past that, the least deep of those and the request (the
+          // one chosen last while within MET_ARM_BACK_M of it)
+          const hang = hangIx.map((i) => ({ best: cands[i](), index: i }));
+          const all = [{ best: s0, index: 0 }, ...hang];
+          const least = all.reduce((b, h) => (worse(h.best) < worse(b.best) - 1e-6 ? h : b));
+          const last = all.find((h) => h.index === (mem[k] ?? 0));
+          r = hang.find((h) => h.index === mem[k] && ok(h.best)) ?? hang.find((h) => ok(h.best)) ?? (last && worse(last.best) <= worse(least.best) + MET_ARM_BACK_M ? last : least);
+        }
+      } else if (held) {
         const clear = (c: ArmC) => c.depth <= CLEAR_OK && c.softOther <= CLEAR_OK;
         const c0 = cands[0]();
         if (clear(c0)) r = { best: c0, index: 0 };
@@ -1112,13 +1194,14 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // (the swing-out above, the continuity push below), never sent to a body-fixed alternative while its own arm is clear
       // of its trunk: the step toward one is a departure from the swinging clip target, and was carried with it across the
       // chest. An arm nothing has met (a free run's carry tuck) is as before.
-      const metK = `${k}:met`;
-      const c0 = inp.clipArmSwing && lo && held ? cands[0]() : null;
-      if (c0 && (ext(c0.shapes) > CLEAR_OK || c0.softOther > CLEAR_OK)) mem[metK] = 1;
-      const met = !!c0 && (mem[metK] === 1 || !!inp.debug?.clipArmSwingUngated);
+      const c0 = stayGate ? s0 : inp.clipArmSwing && !inp.metArmStay && lo && held ? cands[0]() : null;
+      if (!stayGate && c0 && (ext(c0.shapes) > CLEAR_OK || c0.softOther > CLEAR_OK)) mem[metK] = 1;
+      const met = stayGate ? stay : !!c0 && (mem[metK] === 1 || !!inp.debug?.clipArmSwingUngated);
       const keepSwing = met && sampledArm;
+      // ladder 16b: a met arm's departure is let go as fast as its request moves, a procedural request's too
+      const letGo = keepSwing || stay;
       const trunkFirst = met;
-      if (keepSwing && r.index !== 0 && (c0!.body ?? 0) <= HARD_OK) r = { best: c0!, index: 0 };
+      if (!stay && keepSwing && r.index !== 0 && (c0!.body ?? 0) <= HARD_OK) r = { best: c0!, index: 0 };
       mem[k] = r.index;
       if (!held) mem[`${k}Proc`] = r.index;
       else if (lo) mem[`${k}Proc`] = 0;
@@ -1139,9 +1222,10 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const handed = !!pb && !!last2 && dist(palm0, pb) > CONT_BASE_MPS * dt;
         const dp0 = contPrev(mem, k, palm0, dt);
         let dp = handed ? sub(sub(scale(last!, 2), last2!), palm0) : dp0;
+        const dpStart = dp;
         // ladder 14b: and its departure moves toward the chosen pose as fast as the clip's target moves too (bounded by the
         // swing's own speed: it rejoins the swing with no jump), not only at the continuity rate while carried with it
-        if (keepSwing && !handed && dp && pb) {
+        if (letGo && !handed && dp && pb) {
           const moved = dist(palm0, pb);
           const g = sub(dc, dp);
           const l = len(g);
@@ -1155,27 +1239,46 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const clipPole = !!lo && sampledArm;
         const pp0 = memVec(mem, `${k}:p`);
         const pq = clipPole && !handed ? memVec(mem, `${k}:q`) : null;
-        const pp = pp0 && pq ? qRot(qFromUnitVectors(norm(pq, pole0), norm(pole0, pq)), pp0) : pp0;
+        let pp = pp0 && pq ? qRot(qFromUnitVectors(norm(pq, pole0), norm(pole0, pq)), pp0) : pp0;
         if (clipPole) setMemVec(mem, `${k}:q`, pole0);
         else for (const c of ['x', 'y', 'z']) delete mem[`${k}:q:${c}`];
         // ladder 14b: a met arm (clip or procedural) gives up as much of a departure as would carry it into its own trunk
         // (toward its request, clear of the trunk: squeezed between another body and its own trunk, it stays out of its chest)
+        // (ladder 16b, `metArmStay`: a departure that would carry it more than MET_ARM_OWN_M into its trunk, or deeper
+        // than the chosen pose is; given up with its elbow pole, toward the chosen pose's: with the departure's pole kept,
+        // the request itself was through the trunk and nothing was given up, and HC-F2-lift1.4 A's right forearm stayed
+        // in its belly 0.9 s)
+        const trunkOk = stay ? Math.max(MET_ARM_OWN_M, a.body ?? 0) + 1e-9 : HARD_OK;
         if (trunkFirst && !handed && dp && pp && dt > 0) {
-          const bodyAt = (f: number): number => procedural(addScaled(palm0, dp!, f), pp)().body ?? 0;
-          if (bodyAt(1) > HARD_OK && bodyAt(0) <= HARD_OK) {
+          const pf = pp;
+          const bodyAt = (f: number): number => procedural(addScaled(palm0, dp!, f), stay ? towardDir(pc, pf, f) : pf)().body ?? 0;
+          if (bodyAt(1) > trunkOk && bodyAt(0) <= trunkOk) {
             let lo = 0;
             let hi = 1;
             for (let b = 0; b < 6; b++) {
               const m = 0.5 * (lo + hi);
-              if (bodyAt(m) <= HARD_OK) lo = m;
+              if (bodyAt(m) <= trunkOk) lo = m;
               else hi = m;
             }
             dp = scale(dp, lo);
+            // (ladder 16b, `metArmStay`: its pole turned no faster than the continuity's fast bound; the departure's own
+            // step is bounded below)
+            if (stay) {
+              const ang = Math.acos(clamp(dot(norm(pf, pc), norm(pc, pf)), -1, 1));
+              const fr = inp.debug?.metArmUnbounded || ang <= 1e-9 ? 1 : Math.min(1, ((CONT_FAST_MPS / CONT_L3_MPS) * CONT_L3_RADPS * dt) / ang);
+              pp = towardDir(pc, pf, Math.max(lo, 1 - fr));
+            }
           }
         }
         if (dp && pp && dt > 0) {
           const chosen = a;
           const extOk = Math.max(HARD_OK, chosen.depth) + 1e-9;
+          // ladder 16b (`metArmStay`): a met arm's step is valid within HARD_OK of another body and the floor, MET_ARM_OWN_M
+          // of its own trunk (or as deep as the chosen pose)
+          const okO = Math.max(HARD_OK, chosen.other) + 1e-9;
+          const okF = Math.max(HARD_OK, chosen.floor) + 1e-9;
+          const okB = Math.max(MET_ARM_OWN_M, chosen.body ?? 0) + 1e-9;
+          const valid = (c: ArmC): boolean => (stay ? c.other <= okO && c.floor <= okF && (c.body ?? 0) <= okB : c.depth <= extOk);
           // the blended palm target, pushed out along the contact normals while it penetrates
           const at = (al: number): ArmC => {
             const t0 = add(palm0, lerp(dp, dc, al));
@@ -1197,7 +1300,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
               // chest: the push out of the other body loses its share toward the trunk (it slides along the trunk instead)
               const bl = bw && trunkFirst ? len(bw) : 0;
               const pwS = bl > 1e-9 ? addScaled(pw, bw!, -Math.min(0, dot(pw, bw!)) / (bl * bl)) : pw;
-              const pv = qInvRot(pose.q, bw ? (selfGain === 1 ? add(pwS, bw) : addScaled(pwS, bw, selfGain)) : pw);
+              // (ladder 16b, `metArmStay`: and a met arm is not pushed by its own trunk: only a departure into it is given up)
+              const pv = qInvRot(pose.q, stay ? pwS : bw ? (selfGain === 1 ? add(pwS, bw) : addScaled(pwS, bw, selfGain)) : pw);
               const m = len(pv);
               if (m < 1e-6) break;
               t = add(t0, clampLen(sub(addScaled(t, pv, 1 + 0.001 / m), t0), CONT_PUSH_MAX_M));
@@ -1211,7 +1315,11 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
                 const d = sub(t, shL);
                 if (len(d) > reachM) t = addScaled(shL, d, reachM / len(d));
               }
-              c = procedural(t, pole)();
+              const cn = procedural(t, pole)();
+              // (ladder 16b, `metArmStay`: and a push out of another body that would carry it deeper into its own trunk
+              // than okB is not taken: before, the push folded L3-F5-drag R's left elbow 12 cm into its chest in a substep)
+              if (stay && (cn.body ?? 0) > okB && (cn.body ?? 0) > (c.body ?? 0) + 1e-9) break;
+              c = cn;
             }
             return c;
           };
@@ -1224,18 +1332,27 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           };
           const al = continuityAlpha(dp, pp, dc, pc, dt, lo ? CONT_L3_MPS : CONT_ARM_MPS, lo ? CONT_L3_RADPS : CONT_POLE_RADPS, (x) => {
             const c = atM(x);
-            return { good: !guard || c.depth <= extOk, depth: c.depth };
+            // (ladder 16b, `metArmStay`: with no valid step, the least deep counts a step into its own trunk past okB too)
+            return { good: !guard || valid(c), depth: stay ? Math.max(c.other, c.floor) + Math.max(0, (c.body ?? 0) - okB) : c.depth };
           }, P);
           if (P?.on && P.contLast) P.cont[`${inp.playerId}:${k}`] = P.contLast;
           // plan 07a: a tangled chosen candidate (itself in another body) is shown pushed out too, as for the legs
           const shownPushed = al < 1 || ext(chosen.shapes) > HARD_OK;
           if (shownPushed) a = atM(al);
+          // ladder 16b (`metArmStay`): a met arm's shown departure moves at most CONT_FAST_MPS a substep, whatever moved it
+          // (the let-go, the give-up, the continuity step and the push add up: L3-F7-mirror50 R's left palm moved 0.16 m in
+          // one substep at 0.62 s as its push out of the defender turned about, 0.40 m in a frame; and the give-up alone,
+          // at once, 0.37 m: HC-F1-mirror R's right palm at 0.80 s)
+          const bound = stay && !inp.debug?.metArmUnbounded && dpStart ? CONT_FAST_MPS * dt : Infinity;
+          const bounded = (d: Vec3): Vec3 => (bound < Infinity ? add(dpStart!, clampLen(sub(d, dpStart!), bound)) : d);
+          if (bound < Infinity && dist(sub(a.tgtL!, palm0), dpStart!) > bound + 1e-9) a = procedural(add(palm0, bounded(sub(a.tgtL!, palm0))), a.poleL!)();
           if (P?.trace) contDbg = { ...(P.contLast ?? { a0: al, dd: 0 }), al, push: dist(a.tgtL!, add(palm0, lerp(dp, dc, al))) };
           // the shown target (with its push-out) is the next pose's start: each step then only needs a shallow push
           // (ladder 14b: for a met clip arm, a push that leaves it invalid is not the next start, or it walks the target on
           // each step; and the arm is no longer met once its departure is back on the chosen pose and nothing meets it)
-          const kept = shownPushed && !(keepSwing && a.depth > extOk);
-          const dn = kept ? sub(a.tgtL!, palm0) : shownPushed ? lerp(dp, dc, al) : dc;
+          // (ladder 16b, `metArmStay`: a met arm's push is never the next start: it would walk the target as the body presses)
+          const kept = !stay && shownPushed && !(keepSwing && a.depth > extOk);
+          const dn = kept ? sub(a.tgtL!, palm0) : bounded(shownPushed ? lerp(dp, dc, al) : dc);
           setMemVec(mem, `${k}:d`, dn);
           if (met && dist(dn, dc) < 1e-3 && ext(c0!.shapes) <= CLEAR_OK && c0!.softOther <= CLEAR_OK) delete mem[metK];
           setMemVec(mem, `${k}:p`, al < 1 ? towardDir(pp, pc, al) : pc);
@@ -1245,7 +1362,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           if (met && ext(c0!.shapes) <= CLEAR_OK && c0!.softOther <= CLEAR_OK) delete mem[metK];
         }
       }
-      if (P?.trace) P.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, sampled: sampledArm, palm0, dc: sub(r.best.tgtL!, palm0), shown: a.tgtL ? sub(a.tgtL, palm0) : null, poleC: r.best.poleL, pole: a.poleL, elbow: qInvRot(pose.q, sub(a.elbow, pose.p)), wrist: qInvRot(pose.q, sub(a.wrist, pose.p)), fb: a.chain.fallback, depth: a.depth });
+      if (P?.trace) P.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, sampled: sampledArm, palm0, dc: sub(r.best.tgtL!, palm0), shown: a.tgtL ? sub(a.tgtL, palm0) : null, poleC: r.best.poleL, pole: a.poleL, elbow: qInvRot(pose.q, sub(a.elbow, pose.p)), wrist: qInvRot(pose.q, sub(a.wrist, pose.p)), fb: a.chain.fallback, depth: a.depth, other: a.other, floor: a.floor, body: a.body ?? 0, otherC: r.best.other });
       if (held) targetResidualM[k] = dist(a.reach, W(palm0));
     }
     const pre = s;

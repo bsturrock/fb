@@ -103,6 +103,29 @@ export interface SelfClearanceProfile {
    * met (a free run's carry tuck), are unchanged.
    */
   clipArmSwing?: true;
+  /**
+   * Ladder 16b (absent: false): a composed arm another body has met keeps its natural pose (`MET_ARM_FIXED_ALTERNATIVE`).
+   * Before, a met arm whose swing-out found nothing clear of the other body took the first clear of eight body-fixed
+   * alternatives, several of them raised (a palm at chest or head height), and travelled there at the continuity rate;
+   * each push-out was kept as the next step's start and walked the target on (L3-F5-drag: the carrier's left hand in
+   * its facemask from 0.8 s, its target 1.5 m off its request by 2.7 s). With this, for a composed arm of a locomotion
+   * pose (clip, procedural, brace, ready hands or the ball's carry tuck), from its request meeting another body until
+   * its departure is back on the chosen pose (14b's gate), while its player's handoff is not deferred (then as
+   * registered: pushed clear, so the retry converts):
+   * - it keeps its request while no part of it is more than HARD_OK into another body (the depth a handoff accepts;
+   *   another player's arm task included); past that it moves off only by the swing-out (to that depth, not to clear);
+   *   when that does not reach it, it hangs at its side (the two hanging alternatives, the one chosen last kept, the
+   *   request coming back once it is clear). Never a raised or forward alternative. The ball's carry arm keeps its tuck
+   *   whatever presses it (pressed into the other body, not lifted with the ball);
+   * - its shown departure moves at most CONT_FAST_MPS a substep, whatever moves it (the let-go as fast as its request
+   *   moves, 14b's rule for a clip arm, now for a procedural one too; the give-up; the continuity step; the push);
+   * - a push-out is never the next step's start, and never carries it deeper into its own trunk than `MET_ARM_OWN_M`;
+   * - its own trunk bounds only a departure that would carry it more than `MET_ARM_OWN_M` into it (or deeper than the
+   *   chosen pose): the departure is given up with its elbow pole, the arm is not pushed by its trunk.
+   * Arm tasks and arms nothing has met are unchanged. With it, `clipArmSwing` changes nothing (14b's met-arm rules are
+   * this one's).
+   */
+  metArmStay?: true;
 }
 
 export const SELF_CLEARANCE_V1: SelfClearanceProfile = { id: 'self-clearance-v1', toleranceM: 0.01, ragdoll: true };
@@ -121,6 +144,16 @@ export const withoutClipArmSwing = (s: SelfClearanceProfile): SelfClearanceProfi
   if (!s.clipArmSwing) return s;
   const { clipArmSwing: _c, ...rest } = s;
   return { ...rest, id: s.id.replace(`+${CLIP_ARM_SWING_ID}`, '') };
+};
+/** Ladder 16b: the id part `withMetArmStay` adds. */
+export const MET_ARM_STAY_ID = 'met-arm-stay-v1';
+/** Ladder 16b: `s` with a met arm keeping its natural pose (`metArmStay`). */
+export const withMetArmStay = (s: SelfClearanceProfile): SelfClearanceProfile => (s.metArmStay ? s : { ...s, id: `${s.id}+${MET_ARM_STAY_ID}`, metArmStay: true });
+/** Ladder 16b: `s` without it, under the id it had before. */
+export const withoutMetArmStay = (s: SelfClearanceProfile): SelfClearanceProfile => {
+  if (!s.metArmStay) return s;
+  const { metArmStay: _m, ...rest } = s;
+  return { ...rest, id: s.id.replace(`+${MET_ARM_STAY_ID}`, '') };
 };
 /** Ladder 13c: `s` without it, under the id it had before. */
 export const withoutUpperArmClearance = (s: SelfClearanceProfile): SelfClearanceProfile => {

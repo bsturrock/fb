@@ -20,7 +20,11 @@
 //   armswing=on|off    a supported arm another body has met keeping its clip swing (the self-clearance profile's
 //                      `clipArmSwing`, rung 14b): no body-fixed alternative carried across the chest, its departure let
 //                      go as the clip moves, its own trunk first; or as before. A fixture without self-clearance is run
-//                      as it is.
+//                      as it is;
+//   armstay=on|off     a supported arm another body has met keeping its natural pose (the self-clearance profile's
+//                      `metArmStay`, rung 16b): pressing a little into the other body, at most hanging at its side, never
+//                      sent to a raised or forward alternative; or as before. A fixture without self-clearance is run as
+//                      it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, then armtwist), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -29,8 +33,8 @@
 import type { FixtureDef } from '../sim/fixture';
 import {
   CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry,
-  withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
-  withClipArmSwing, withUpperArmClearance, type RagdollProfile,
+  withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutMetArmStay, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
+  withClipArmSwing, withMetArmStay, withUpperArmClearance, type RagdollProfile,
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import type { SimOptions } from '../sim/simulation';
@@ -44,6 +48,7 @@ const ARMTWIST = ['on', 'off'];
 const HOLDSTILL = ['on', 'off'];
 const UPPERARM = ['on', 'off'];
 const ARMSWING = ['on', 'off'];
+const ARMSTAY = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -70,7 +75,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `holdstill`, `upperarm`, `armswing`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `holdstill`, `upperarm`, `armswing`, `armstay`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -170,6 +175,17 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     else {
       const sc = v === 'off' ? withoutClipArmSwing(out.selfClearance) : withClipArmSwing(out.selfClearance);
       parts.push(`clip arm swing ${v}${sc === out.selfClearance ? ' (registered)' : ''}`);
+      if (sc !== out.selfClearance) out = { ...out, selfClearance: sc };
+    }
+  }
+  const armstay = params.get('armstay');
+  if (armstay !== null && armstay !== '') {
+    const v = armstay.toLowerCase();
+    if (!ARMSTAY.includes(v)) parts.push(`armstay=${armstay} ignored`);
+    else if (!out.selfClearance) parts.push('armstay n/a (no self-clearance)');
+    else {
+      const sc = v === 'off' ? withoutMetArmStay(out.selfClearance) : withMetArmStay(out.selfClearance);
+      parts.push(`met arm stay ${v}${sc === out.selfClearance ? ' (registered)' : ''}`);
       if (sc !== out.selfClearance) out = { ...out, selfClearance: sc };
     }
   }

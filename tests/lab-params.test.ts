@@ -5,12 +5,12 @@ import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1 } from '../src/sim/footwork';
 import {
   CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preFlip, preHoldStill, preOwnLegs, preV3, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `holdstill`, `upperarm` and `armswing` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `holdstill`, `upperarm`, `armswing` and `armstay` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -21,7 +21,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, holdstill, upperarm and armswing', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, holdstill, upperarm, armswing and armstay', () => {
   it('order=rev&legs=v1 runs the matrices\' reversed V1 row of the fixture (L3-F1-phase6, the guard before the ladder 10 flip), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v1'));
@@ -325,5 +325,37 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((x) => !x.selfClearance)!;
     expect(labRun(g, new URLSearchParams('armswing=on'))).toEqual({ def: g, opts: {}, label: 'armswing n/a (no self-clearance)' });
     expect(labRun(d, new URLSearchParams('armswing=maybe'))).toEqual({ def: d, opts: {}, label: 'armswing=maybe ignored' });
+  }, 120000);
+
+  // ladder rung 16b: armstay=on|off on the fixture's self-clearance profile; no fixture registers it yet
+  it('armstay=on runs the fixture with its met arms keeping their natural pose (`metArmStay` on its profile, id and all: L3-F5-drag, another run); armstay=off takes it off again and on the registered fixture is the registered run; it composes after armswing; a fixture without self-clearance and unknown values change nothing', async () => {
+    const id = 'L3-F5-drag';
+    const d = FIX(id);
+    expect(d.selfClearance!.metArmStay).toBeUndefined();
+    const on = labRun(d, new URLSearchParams(`fixture=${id}&armstay=on`));
+    expect(on.label).toBe('met arm stay on');
+    expect(on.def).toEqual({ ...d, selfClearance: withMetArmStay(d.selfClearance!) });
+    expect(on.def.selfClearance!.metArmStay).toBe(true);
+    expect(on.def.selfClearance!.id).toBe(`${d.selfClearance!.id}+met-arm-stay-v1`);
+    // the twin: the stay changes the run (the carrier's left palm at 1.0 s, as registered at its facemask)
+    const palmAt = async (def: FixtureDef): Promise<string> => {
+      const s = await create(def, {});
+      while (!s.done && s.t < 1.0) s.stepTick();
+      const out = JSON.stringify(s.players.find((p) => p.id === 'R')!.pose!.jointLandmarksWorld.leftPalm);
+      s.dispose();
+      return out;
+    };
+    expect(await palmAt(on.def)).not.toBe(await palmAt(d));
+    const back = labRun(on.def, new URLSearchParams('armstay=OFF'));
+    expect(back.label).toBe('met arm stay off');
+    expect(back.def).toEqual(d);
+    expect(labRun(d, new URLSearchParams('armstay=off'))).toEqual({ def: d, opts: {}, label: 'met arm stay off (registered)' });
+    expect(labRun(on.def, new URLSearchParams('armstay=on'))).toEqual({ def: on.def, opts: {}, label: 'met arm stay on (registered)' });
+    const both = labRun(d, new URLSearchParams('armswing=on&armstay=on'));
+    expect(both.def.selfClearance!.id).toBe(`${d.selfClearance!.id}+clip-swing-v1+met-arm-stay-v1`);
+    expect(both.label).toBe('clip arm swing on · met arm stay on');
+    const g = allFixtures().find((x) => !x.selfClearance)!;
+    expect(labRun(g, new URLSearchParams('armstay=on'))).toEqual({ def: g, opts: {}, label: 'armstay n/a (no self-clearance)' });
+    expect(labRun(d, new URLSearchParams('armstay=maybe'))).toEqual({ def: d, opts: {}, label: 'armstay=maybe ignored' });
   }, 120000);
 });

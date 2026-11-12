@@ -81,6 +81,16 @@ export interface PoseDebug {
    * run's carry tuck then changes).
    */
   clipArmSwingUngated?: boolean;
+  /**
+   * Fault (ladder 16b, `SelfClearanceProfile.metArmStay`): a met arm's shown departure moves as far in a substep as the
+   * let-go, the give-up (at once, with its elbow pole) and the push take it, not at most CONT_FAST_MPS.
+   */
+  metArmUnbounded?: boolean;
+  /**
+   * Fault (ladder 16b, `metArmStay`): a met arm keeps its rules while its player's handoff is deferred for overlapping
+   * another body (not pushed out of it as registered, so the retry may find the ragdoll inside the other body again).
+   */
+  metArmStayDeferred?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */
