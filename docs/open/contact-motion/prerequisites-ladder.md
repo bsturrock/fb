@@ -733,6 +733,20 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   0.48 (the hold at 0.892 s, its forearm on the trunk at 14.3 m/s); L4-F9-exit reversed R gains 1.73 J in a pinch solve
   five substeps after a hold on a 2.02 m/s closing (none without); L4-F4-obstructed R's rebound solve 1.27 J against
   0.81. Kept parked; the parked README says what the fix needs (below, `IMPACT_OVER_POWER`).
+- **11a** (`r11a-state-capture`) landed: byte-identical (every summary, trace and matrix), 351/351; tests only. A state
+  capture could not hold a frozen profile constant the build keeps outside the definition (ARM_G2, for a fall-response
+  fixture with no `armProfile`: L4-F2-forward-on, L4-F4-obstructed). It is now written by its export name in
+  src/sim/profiles with its id, and refused on resume when that id changed; both fixtures round-trip byte for byte;
+  fault twin, a frozen copy no export names, still refused at capture.
+- **11b** (`r11b-hip-twist`) landed off: `JOINT_RANGE_V3` (`hipTwist`, `fitThighTwist`), no fixture uses it;
+  byte-identical, 354/354. The HC supported impossible time (4.2 s) is one mechanism: an ankle target close beside or
+  above the hip (a foot held up on the opponent while the hip drops) and the forward knee pole turn the knee sideways
+  and on to face backwards, 20 deg a frame, the thigh rotation wrapping at 180 (a ragdoll made from it starts there).
+  Under V3 the shin turns about the thigh (thigh and shin length kept, the ankle off its target) into the hip
+  envelope's twist range less 5 deg, read on the branch it left by and rate-limited while held. Capture test
+  `HC-F2-offset@24`: every supported thigh within 45 deg; twin (V2) A's right above 170. Flip assessed
+  (`assess-11b`): HC supported impossible 4.22 -> 0.05 s, ragdoll 2.48 -> 0.73, L3 0.95 -> 0.65; parked on 3 who-falls
+  changes, each reached by a moved trajectory (twins), and leg-crossing columns that rise (Parked).
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -750,6 +764,10 @@ order, not hunk-split.
 - 8k's other option, the L4 hip envelope narrowed to the human ab/adduction (cone across 60 -> 42, its own backstop):
   removes the hip implausible time as the box does but not the own-body overlap; not taken. Patch and README
   `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
+- 11b's flip, `JOINT_RANGE_V3` on L3/L4/HC: removes nearly all supported impossible hip rotation but changes who falls
+  in 3 player-runs (HC-F3-phase0 rev D stands, L3-F1-phase0 rev D falls, L3-F1-phase7 D stands: the three 10a moved,
+  each undone), every one from a placement the guard tried and did not show; crossLegSupRag L3 0.45 -> 0.8, HC 0.2 ->
+  0.4 not yet twinned. Needs the user's who-falls review first. Patch and README `.scratch/ladder/parked/hip-twist-flip/`.
 
 ## Open defects to test on the ladder
 
