@@ -55,6 +55,11 @@ export interface PoseDebug {
    * once by its next step (an ownership change jumps by the whole push-out), not at the continuity rate.
    */
   noHeldMetExit?: boolean;
+  /**
+   * Fault (ladder 10b, physical legs): a proxy whose support probe finds a refused surface or normal within travel keeps
+   * its physical legs live (the D2 rule before 10b), though it has no support.
+   */
+  legsOnRefused?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

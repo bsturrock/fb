@@ -1029,7 +1029,7 @@ export interface LegGuardProfile {
    * segment colliders (ragdoll legs included) and nothing else (pose-runtime `legMeets`): not another player's proxy,
    * supported or falling (supported against supported stays the proxy collision's and the pose guards'), its physical
    * legs, a ragdoll's self-clearance shapes, static ground (floor, obstacles) or their own body. Live only while the
-   * proxy stands on static ground (pose-runtime `physicalLegsLive`); removed with the proxy at a conversion; a leg inside
+   * proxy stands on support-eligible static ground (pose-runtime `physicalLegsLive`); removed with the proxy at a conversion; a leg inside
    * another player's new ragdoll at its conversion leaves the solve until clear (`legsOffInsideConverted`). The pose
    * leaves a physical leg at most PHYS_LEG_OK (pose.ts) in a body it meets, where that body stands, where the prediction
    * puts it, and where it stands stopped (absent: unchanged).

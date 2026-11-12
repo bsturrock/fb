@@ -11,12 +11,13 @@ import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import type { FixtureDef } from '../src/sim/fixture';
 import { CONT_LEG_MPS, HARD_OK, PHYS_LEG_OK, poseLimbShapes, type PhysicalPose, type PoseShape } from '../src/sim/pose';
-import { initPhysics, isSupportedLeg, PhysicsWorld, RAPIER } from '../src/sim/physics';
+import { initPhysics, isSupportedLeg, PHYS_LEG_KEY, PhysicsWorld, RAPIER } from '../src/sim/physics';
 import { legHull, legMeets, legPointMove, legSurfaceAdvance, observePhysicalLegs, physicalLegsLive, syncPhysicalLegs, type LegLedger, type LegPlace, type PhysicalLegs } from '../src/sim/pose-runtime';
 import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromUnitVectors, qFromYaw, qInvRot, qMul, qRot, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, rows } from './helpers';
+import { loadState, resumeState } from './state';
 import { SEGMENTS } from '../src/sim/ragdoll';
 
 type Check = [string, () => void | Promise<void>];
@@ -279,18 +280,20 @@ describe('rung 6 (5): the physical leg collision filter', () => {
 });
 
 // ------------------------------------------------------------------ requirement 7 (D2): live only on static ground
-// physicalLegsLive: a supported proxy of the profile, no handoff, and standing on static ground; players are never
-// ground. Under the suspension the support probe says where: HC-F2-lift1.4 A, held up by B, reads B below it
-// (`obstructed`) and ground beyond travel (`beyondTravel`, lifted), and `ok` when down; under legacy support (no probe:
+// physicalLegsLive: a supported proxy of the profile, no handoff, and standing on support-eligible static ground;
+// players are never ground. Under the suspension the support probe says where: HC-F2-lift1.4 A, held up by B, reads B
+// below it (`obstructed`) and ground beyond travel (`beyondTravel`, lifted), and `ok` when down; L3-F9-noProbe-prep D
+// reads the refused strip (`invalidSurface`, ladder 10b: no support, so not standing); under legacy support (no probe:
 // no suspension is not eligibility) the support capsule's floor contact (`grounded`): L4-F2-forward-on R grounded,
 // L4-F1-knee R not. Its legs are physical exactly in the ground substeps. The twin is the eligibility without D2 (a
 // supported proxy, no handoff), which holds the legs live in every one of those substeps.
 describe('rung 6 (D2): physical legs only on static ground', () => {
-  it('real states: physical on ground within travel or on the legacy floor, never over a player, lifted or ungrounded; the eligibility without D2 is live in all', async () => {
+  it('real states: physical on ground within travel or on the legacy floor, never over a player, a refused surface, lifted or ungrounded; the eligibility without D2 is live in all', async () => {
     const CASES: [string, string][] = [
       ['HC-F2-lift1.4', 'A'],
       ['L4-F2-forward-on', 'R'],
       ['L4-F1-knee', 'R'],
+      ['L3-F9-noProbe-prep', 'D'],
     ];
     const seen: Record<string, { n: number; live: number }> = {};
     let preD2 = 0;
@@ -312,9 +315,9 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
       stepUntil(sim, () => false);
       sim.dispose();
     }
-    expect(Object.keys(seen).sort()).toEqual(['beyondTravel', 'legacy grounded', 'legacy ungrounded', 'obstructed', 'ok']);
+    expect(Object.keys(seen).sort()).toEqual(['beyondTravel', 'invalidSurface', 'legacy grounded', 'legacy ungrounded', 'obstructed', 'ok']);
     for (const k of ['ok', 'legacy grounded']) expect(seen[k].live, k).toBe(seen[k].n);
-    for (const k of ['obstructed', 'beyondTravel', 'legacy ungrounded']) {
+    for (const k of ['obstructed', 'beyondTravel', 'invalidSurface', 'legacy ungrounded']) {
       expect(seen[k].n, k).toBeGreaterThan(4);
       expect(seen[k].live, k).toBe(0);
     }
@@ -322,7 +325,7 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
     expect(preD2).toBe(n);
   }, 120000);
 
-  it('the suspension rule on one real state, its probe replaced: a refused surface or normal within travel is live, nothing below or a reading past travel is not; off at once, on again the next tick', async () => {
+  it('the suspension rule on one real state, its probe replaced: support-eligible ground within travel is live; a refused surface or normal (live under the fault), nothing below or a reading past travel is not; off at once, on again the next tick', async () => {
     const sim = await Simulation.create(V3(FIX('L3-F9-convert-free')), { trace: false });
     expect(stepUntil(sim, () => sim.t >= 0.1 - 1e-9)).toBe(true);
     const D = player(sim, 'D');
@@ -330,19 +333,24 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
     expect(D.sus!.probe.status).toBe('ok');
     expect(physicalLegsLive(sim, D)).toBe(true);
     const probe = (status: string, heightM = D.sus!.probe.heightM) => ({ ...D, sus: { ...D.sus!, probe: { ...D.sus!.probe, status, heightM } } }) as unknown as PlayerRuntime;
-    const CASES: [string, PlayerRuntime, boolean][] = [
-      ['a refused surface within travel', probe('invalidSurface'), true],
-      ['a refused normal within travel', probe('invalidNormal'), true],
-      ['a player below (obstructed)', probe('obstructed'), false],
-      ['nothing below (none, airborne)', probe('none', Number.NaN), false],
-      ['ground beyond travel', probe('beyondTravel', S.probeMaxM + 0.1), false],
-      ['ok read past the travel', probe('ok', S.probeMaxM + 0.01), false],
+    // the fault (ladder 10b's rule off): a refused surface or normal within travel keeps the legs live
+    const fault = { def: sim.def, suspension: sim.suspension, opts: { ...sim.opts, debug: { pose: { legsOnRefused: true } } } };
+    const CASES: [string, PlayerRuntime, boolean, boolean][] = [
+      ['a refused surface within travel', probe('invalidSurface'), false, true],
+      ['a refused normal within travel', probe('invalidNormal'), false, true],
+      ['a player below (obstructed)', probe('obstructed'), false, false],
+      ['nothing below (none, airborne)', probe('none', Number.NaN), false, false],
+      ['ground beyond travel', probe('beyondTravel', S.probeMaxM + 0.1), false, false],
+      ['ok read past the travel', probe('ok', S.probeMaxM + 0.01), false, false],
+      ['a refused surface read past the travel', probe('invalidSurface', S.probeMaxM + 0.01), false, false],
     ];
     const preD2 = (pl: PlayerRuntime): boolean => !pl.rag && !pl.handoff && pl.controlMode === 'supported';
-    for (const [name, pl, live] of CASES) {
+    for (const [name, pl, live, liveUnderFault] of CASES) {
       expect(physicalLegsLive(sim, pl), name).toBe(live);
+      expect(physicalLegsLive(fault, pl), `under the fault, ${name}`).toBe(liveUnderFault);
       expect(preD2(pl), `the twin, ${name}`).toBe(true);
     }
+    expect(physicalLegsLive(fault, D), 'under the fault, ok').toBe(true);
     // syncing a state over a player turns the colliders off at once; the next tick (on ground) turns them on again
     syncPhysicalLegs(sim, probe('obstructed'));
     expect(D.legs!.enabled).toBe(false);
@@ -351,6 +359,58 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
     expect(D.legs!.enabled).toBe(true);
     expect(D.legs!.colliders.some((c) => c.isEnabled())).toBe(true);
     sim.dispose();
+  }, 60000);
+
+  // Ladder 10b, from a capture (`L3-F9-noProbe-prep~v3@33`, 0.550 s, taken under V3 before 10b: D's legs live and on
+  // turf, its probe refused on the strip from 0.558 s). Over the strip D has no support and sinks; with its legs live
+  // there they stood it on R's body, and R's pelvis, sliding under it at 4.7 m/s, kicked its left shin up (0.888-0.896
+  // s, 149 N s, D's proxy from 0.35 to 1.80 m/s up, a 28.7 cm rise). The legs a solve uses were synced after the
+  // substep before it, so a solve's leg contacts count where that substep's probe was refused too. What is left of D's
+  // rise without the legs (its pelvis off R's shoe at 0.754 s, 14 cm) is a proxy's rebound, as under V1 from the same
+  // state.
+  it('an unsupported proxy over a refused surface: its legs are off and take no contact; under the fault (live there) R kicks D up through its shin', async () => {
+    const run = async (fault: boolean) => {
+      let prev = 0;
+      let syncedRefused = false;
+      const r = { refused: 0, live: 0, legNs: 0, kick: 0 };
+      const sim = await resumeState(loadState('tests/data/state/L3-F9-noProbe-prep~v3@33.json.gz'), {
+        def: { ...FIX('L3-F9-noProbe-prep'), legGuard: LEG_GUARD_V3 },
+        ...(fault ? { faults: { pose: { legsOnRefused: true } } } : {}),
+        opts: {
+          onSubstep: (s) => {
+            const D = player(s, 'D');
+            const vy = D.rag ? 0 : D.proxy.body.linvel().y;
+            const dvy = vy - prev;
+            const solvedRefused = syncedRefused;
+            prev = vy;
+            syncedRefused = !D.rag && D.controlMode === 'supported' && D.sus!.probe.status !== 'ok';
+            if (!syncedRefused) return;
+            r.refused++;
+            if (D.legs?.enabled) r.live++;
+            if (!solvedRefused) return;
+            let j = 0;
+            for (const c of s.contacts) {
+              const mine = c.a.playerId === 'D' ? c.a : c.b.playerId === 'D' ? c.b : null;
+              if (mine?.key?.startsWith(PHYS_LEG_KEY)) j += c.impulse;
+            }
+            r.legNs += j;
+            if (j > 0) r.kick = Math.max(r.kick, dvy);
+          },
+        },
+      });
+      sim.runToEnd();
+      sim.dispose();
+      return r;
+    };
+    const on = await run(false);
+    expect(on.refused).toBeGreaterThan(60);
+    expect(on.live).toBe(0);
+    expect(on.legNs).toBe(0);
+    const off = await run(true);
+    expect(off.refused).toBeGreaterThan(60);
+    expect(off.live).toBe(off.refused);
+    expect(off.legNs).toBeGreaterThan(100);
+    expect(off.kick).toBeGreaterThan(0.5);
   }, 60000);
 });
 

@@ -289,19 +289,22 @@ function legPlacement(s: PoseShape, bp: Vec3, bq: Quat): LegPlace {
 /**
  * Whether a player's legs are physical this substep: a supported proxy (no handoff) of a physical-legs profile, and
  * (D2) only while it stands on static ground. Players are never ground. Under the suspension: while its support probe
- * finds static ground (not a player: `obstructed`) within the suspension's travel under it (not `none`, not
- * `beyondTravel`: up on another player or lifted), whether or not that ground is support-eligible (a refused surface or
- * normal: the proxy still stands among the same bodies). Physical legs on a proxy over a player would stand it on
- * whatever body they meet. Without the suspension there is no probe, and no suspension does not mean eligible: the
+ * finds support-eligible static ground (`ok`) within the suspension's travel under it: not a player (`obstructed`),
+ * not `none` or `beyondTravel` (up on another player or lifted), and (ladder 10b) not a refused surface or normal
+ * (`invalidSurface`, `invalidNormal`): such a proxy has no support and sinks to its bottom-out, and its legs would stand
+ * it on whatever body they meet, as they would over a player (L3-F9-noProbe-prep D, kicked up 1.45 m/s by R's pelvis
+ * on its shin over the strip). Without the suspension there is no probe, and no suspension does not mean eligible: the
  * legacy support stands on static ground only while its support capsule rests on the floor collider (`grounded`, from
  * `supportContact`: the low region, an upward normal, the floor only, never a player).
  */
-export function physicalLegsLive(host: Pick<PoseHost, 'def' | 'suspension'>, pl: PlayerRuntime): boolean {
+export function physicalLegsLive(host: Pick<PoseHost, 'def' | 'suspension' | 'opts'>, pl: PlayerRuntime): boolean {
   if (!host.def.legGuard?.physicalLegs || pl.rag || pl.handoff || pl.controlMode !== 'supported' || !host.def.ragdoll) return false;
   const S = host.suspension;
   const pr = pl.sus?.probe;
   if (!S || !pr) return pl.grounded;
-  return pr.status !== 'none' && pr.status !== 'obstructed' && pr.status !== 'beyondTravel' && pr.heightM <= S.probeMaxM;
+  if (pr.heightM > S.probeMaxM) return false;
+  if (pr.status === 'ok') return true;
+  return !!host.opts.debug?.pose?.legsOnRefused && (pr.status === 'invalidSurface' || pr.status === 'invalidNormal');
 }
 
 /**
