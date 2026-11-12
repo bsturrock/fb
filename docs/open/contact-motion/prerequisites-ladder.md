@@ -796,6 +796,32 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   that share the approach. Past 2 cm by source: a sampled clip arm L3 252, L4 28, HC 6; an arm task L3 41, L4 9, HC
   20; procedural L3 33, HC 4. So it is mostly the clips' own elbows inside the measured trunk: keeping the upper arm
   out moves the clip's look on every L3/L4/HC run, a look question for the user (Open defects) before a plan, not a ladder rung.
+- **12a** (`assess-12a`, README there; not applied): 11b's flip re-assessed at `19b2cb7`. The crossLegSupRag rise is four
+  runs (L3-F11-invalid and HC-F5-invalidOne, both orders, about 0.12 s each): D's right thigh 1.0-1.2 cm in R's ragdoll
+  shoe while D is the rigid falling proxy. Same-state twins from 1.83-1.90 s (V3 capture, resumed as V3 and V2): V3
+  repeats the overlap, V2 has none or one frame in three of the four, so the rule acts there (not reached). V3 brings the
+  placements whose knees V2 turned impossibly into range; they are clear, rank first, and the shown leg moving to them
+  slides along R's shoe at the guard's tolerance (1.16-1.20 cm against HARD_OK 1.2). Taking the rate limit off the
+  placements (variant A) gives the same overlap. Kept parked: the fix is the guard's (a falling proxy's leg sliding at
+  HARD_OK along a ragdoll), its own step, which moves V2 runs too.
+- **12b (i)** (`r12b-twist-fit`, `mechanism/README.md` there) landed off: `JOINT_RANGE_V5` (V4 with
+  `shoulderTwist.fitMaxMps` 6), no fixture uses it; byte-identical, 364/364. 11d's new snaps (a raised clip arm on
+  L3-F1 and HC-F3 coming down past the shoulder under V4) are two mechanisms. The M1 elbow fit turns the elbow about the
+  shoulder-to-palm line as far as the window needs; on a folded arm that line is short and the twist hardly follows,
+  so the elbow swung round it (L3-F1-phase3 D's left elbow 51.5 cm in one substep, 113 deg in a frame; V2 from the same
+  state 21 deg). Under V5 the fit's elbow moves at most 6 m/s, the twist left outside the window by what it could not
+  reach. Tests: a constructed folded arm (fault twin unbounded, 28 cm for 20 deg) and the capture twin
+  `L3-F1-phase3~jrv4@69` (capture-state.ts gains `--joints=v4`). The other: a palm target inside the arm's minimum reach
+  (twoBone's direction turns as fast as the target passes the shoulder, L3-F1-phase7 62 deg); plan 07a's `stableReach`
+  on the arms fixed it but with the bounded fit no run reaches it (one frame of L3-F2-missMirror), so not landed (Open
+  defects). Snaps L3/L4/HC under V4 with the bound: 1 / 22 / 1 (registered 16 / 28 / 1).
+- **12b (ii)** (`assess-12b`; not applied): the arm pair (V5 and `SELF_CLEARANCE_V2` together) assessed. supSnap60 L3
+  16 -> 2, L4 28 -> 22, HC 1 -> 1; palms to and fro L3 3027 -> 405, L4 225 -> 8, HC 375 -> 126; who falls the three
+  10a and 11b moved, each reached; the five largest passive-energy rises reached. Parked on one column it causes:
+  L3-F6-holdMirror R's right arm stays on the raised alternative through the hold, its shoulder rotation past the
+  impossible margin 3.18 s in the envelope's measure (L3 supImpS 0.95 -> 4.13); from the same state V2 has none, V4
+  without the bound the same (11d ii's window, which lets the envelope's twist go above the guard's fade). Suite 325/364,
+  most by construction, three natural samples not yet twinned (Parked).
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -815,20 +841,21 @@ order, not hunk-split.
   `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
 - 11b's flip, `JOINT_RANGE_V3` on L3/L4/HC: removes nearly all supported impossible hip rotation but changes who falls
   in 3 player-runs (HC-F3-phase0 rev D stands, L3-F1-phase0 rev D falls, L3-F1-phase7 D stands: the three 10a moved,
-  each undone), every one from a placement the guard tried and did not show; crossLegSupRag L3 0.45 -> 0.8, HC 0.2 ->
-  0.4 not yet twinned. Needs the user's who-falls review first. Patch and README `.scratch/ladder/parked/hip-twist-flip/`.
+  each undone), every one from a placement the guard tried and did not show (twinned as reached); crossLegSupRag L3
+  0.45 -> 0.8, HC 0.2 -> 0.4 twinned at 12a as caused by the rule (a falling proxy's leg sliding along a ragdoll shoe at
+  the guard's tolerance): blocked until the guard keeps that leg clear. Patch and README
+  `.scratch/ladder/parked/hip-twist-flip/`.
 - 11c's flip, `LEG_GUARD_V4` on L3/L4/HC: removes L3-F6's crossed knees (supSelfLegAxS L3 12.84 -> 10.44) but L3-F6-hold
   R then steps out of the hold once, a second plant after 3.5 s (`HOLD_SETTLES`); crossLegSupSup on L3-F6-saturated
   +0.15 and +0.12 s and a 1.22 cm transition on it are not twinned. The crossing starts where footwork plants the foot
   (by the midline); the fix is there, or the step is accepted as the look. Patch and README
   `.scratch/ladder/parked/own-legs-flip/`.
-- 11d (iii)'s flip, `SELF_CLEARANCE_V2` on L3/L4/HC: stops the seam's to-and-fro palms, but the arms freed go on to
-  one-frame turns (supSnap60 L3 16 -> 19) and HC-F1-mirror's ragdolls gain energy (HC 423 -> 478 J), not twinned. s17
-  saw the same: the overhead twist (11d ii) turned the freed arm over. Patch and README
-  `.scratch/ladder/parked/palm-seam-flip/`.
-- 11d (ii)'s flip, `JOINT_RANGE_V4` on L3/L4/HC (best taken with 11d iii's): the palms stop trembling and the overhead
-  snaps go, but a raised clip arm on L3-F1 and HC-F3 is held higher and then drops in one frame (HC snaps 1 -> 4).
-  Scratch-probed only. Patch and README `.scratch/ladder/parked/overhead-twist-flip/`.
+- The arm pair, `JOINT_RANGE_V5` (11d ii's anatomical twist window and 12b's bounded fit) with `SELF_CLEARANCE_V2`
+  (11d iii's seam settle) on L3/L4/HC: the one-frame arm turns and the trembling palms mostly go, who falls as reached;
+  blocked by L3-F6-holdMirror R's right arm held raised through the hold, past the shoulder's impossible twist in the
+  envelope's measure (caused by the window). Not yet twinned: three natural suite samples (falls' L4-F9 boundary
+  identity, 6 of 8 rows, first), HC ragdoll columns (ragImplS 4.48 -> 6.58). Patch and README
+  `.scratch/ladder/parked/arm-pair-flip/` (it replaces the separate `palm-seam-flip/` and `overhead-twist-flip/`).
 
 ## Open defects to test on the ladder
 
@@ -979,9 +1006,22 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   suspension, so the pose has no `ground` and no plan 07 continuity; 28 of L4's supported snaps are an arm or knee
   changing alternative between frames (L4-F9-crowded D's right arm hanging to overhead, 177 deg; L4-F9-transferFailed;
   L4-F10-knee). Fix: continuity on poses without ground, behind a flag, L4 only.
-- A raised clip arm held higher under the anatomical twist window, then dropping in one frame (blocks 11d ii's flip):
-  L3-F1-phase0/3/7, -mirror4 and HC-F3-mirror/-lowRunner D. Mechanism not found; where the measures part (horizontal
-  to the blend's top) the window reads the anatomical twist while `guardEnvelopeTwist` holds the envelope's.
+- A raised arm held on its raised alternative under the anatomical twist window (blocks the arm pair's flip, 12b): above
+  the guard's fade (upper arm height 0.55) the window lets the envelope's own twist go, so the raised alternative stays
+  valid where V2 left it. L3-F6-holdMirror R's right arm through the hold: the envelope's twist -113 to -128 deg (the
+  meter's measure and the ragdoll's limit), the anatomical -68 to -83; twinned as caused (`assess-12b/twins.txt`). Fix in
+  the window or the guard (keep the envelope's twist in range on a raised arm the pose holds, or let the raised
+  alternative go as V2 did), its own step; or the user rules the raised arm in a hold acceptable and the meter reads the
+  anatomical twist there. Before 12b's fit bound the same window brought L3-F1 and HC-F3 D's raised clip arm down in
+  one frame (12b i, fixed under V5).
+- A palm target inside the arm's minimum reach (21.9 cm) turns the reach direction as fast as the target passes the
+  shoulder (12b i: L3-F1-phase7 D's left 62 deg in a frame under V4). Plan 07a's `stableReach` on the arms with the band
+  the minimum reach fixes it (twice the minimum reach lags a run clip's palm 0.2 s); under V5 no run reaches it but one
+  frame of L3-F2-missMirror, so not landed. Scans `r12b-twist-fit/mechanism/`.
+- A falling proxy's leg sliding along a ragdoll's shoe at the guard's tolerance (12a, blocks 11b's flip): under V3 the
+  guard shows a clear first-ranked placement and the leg moving to it slides 1.16-1.20 cm in R's shoe (HARD_OK 1.2) on
+  L3-F11-invalid and HC-F5-invalidOne, both orders. Fix in the guard, its own step, which moves V2 runs too. States and
+  twins `assess-12a/`.
 - Footwork plants a held player's foot by the midline (11c): L3-F6-hold R at 3.70 s; the inward knee pole then tucks
   the knee behind the other (V3), or under V4 the pole is refused and the foot steps out and plants again. Fix in
   footwork's stance width, or the step accepted as the look (user question).
