@@ -20,7 +20,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { SimOptions, TransitionDelta } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
-import { FOOTWORK_L2, FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, stepAccelLimits, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
+import { FOOTWORK_L2, FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, stepAccelLimits, withHoldStill, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
 import type { ArmSide } from '../src/sim/contracts';
 import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
@@ -74,6 +74,7 @@ import {
   LIFT_RECOVERY,
   mergeRecords,
   NO_LAUNCH,
+  noneSeen,
   NOT_TWICE,
   OFF_GROUND,
   ONE_BALL,
@@ -108,6 +109,7 @@ import {
   stepAsIsCovered,
   STOP_MOTOR,
   TOE_OFF,
+  unseenKinds,
   WALK_STEPS,
   WALK_VALID,
   type Watch,
@@ -375,19 +377,46 @@ describe('plan 10b foot target continuity', () => {
     'step targets within the acceleration limit, stored vertical motion as published, chases within the lift acceleration, no jump in the clip leg request: every L3 fixture; the checks saw every kind of substep they bound',
     [CONTINUITY],
     () => {
-      expect(seen.steps).toBeGreaterThan(30000);
-      expect(seen.stored).toBeGreaterThan(30000);
+      // ladder 14a: the step bounds (B1, B2) saw every kind of planner step outside a stationary hold (tests/l3-pass.ts
+      // STEP_KINDS): voluntary steps, reach steps, liftoff steps and clip swings continued at the crossing. This replaced a
+      // floor of 30,000 B1 and B2 substeps over the pass, which a stationary hold's voluntary steps (2,783 of 31,223 B1
+      // substeps) held up and the still-hold flip took away by its definition; outside stationary holds the pass has 28,440
+      // with and without the flip, and the fault below removes a kind (the next test)
+      expect(unseenKinds(seen)).toEqual([]);
       expect(seen.chaseStarts).toBeGreaterThan(5);
       expect(seen.chaseInside).toBeGreaterThan(100);
       expect(seen.requests).toBeGreaterThan(30000);
     },
   );
 
+  it('the step coverage, controlled: two runs together check every kind of step outside a stationary hold, and with no voluntary step anywhere (the fault) not the voluntary kind; a stationary hold neither counts for it nor against it (L3-F6-hold with the still-hold rule and without it)', async () => {
+    // ladder 14a: the coverage rule of the test above on runs the test makes. L3-F16-kick (a run stop: voluntary, reach and
+    // continued steps) and L3-F10-defender (liftoff and continued) together see every kind; FootDebug.noVoluntarySteps
+    // takes the voluntary kind away and nothing else
+    const record = async (ids: string[], opts: SimOptions = {}, def: (d: FixtureDef) => FixtureDef = (d) => d): Promise<ContinuitySeen> => {
+      const s = noneSeen();
+      for (const id of ids) await runOne(def(FIX(id)), continuity(def(FIX(id)), s).watch, { transitionAudit: true, ...opts });
+      return s;
+    };
+    const pair = ['L3-F16-kick', 'L3-F10-defender'];
+    const ok = await record(pair);
+    expect(unseenKinds(ok)).toEqual([]);
+    expect(unseenKinds(await record(pair, { debug: { foot: { noVoluntarySteps: true } } }))).toEqual(['B1 voluntary', 'B2 voluntary']);
+    // the hold: registered, the defender steps in it (counted as held, for no kind); with the rule it does not, and every
+    // kind's count is the same
+    const off = await record(['L3-F6-hold']);
+    const on = await record(['L3-F6-hold'], {}, (d) => ({ ...d, footwork: withHoldStill(d.footwork!) }));
+    expect(off.held).toBeGreaterThan(on.held);
+    const kinds = (s: ContinuitySeen) => Object.fromEntries(Object.entries(s).filter(([k]) => /^b[12]/.test(k)));
+    expect(kinds(on)).toEqual(kinds(off));
+    expect(off.b1Voluntary).toBeGreaterThan(0);
+  }, 120000);
+
   it(`the continuity records: a step out of time while moving slows within its limit; a continued step is given the time its acceleration limit needs${NOTE}`, async () => {
     const of = async (id: string): Promise<Continuity> => {
       const kept = CONT.get(id);
       if (kept) return kept;
-      const c = continuity(FIX(id), { steps: 0, stored: 0, chaseStarts: 0, chaseReseeds: 0, chaseInside: 0, requests: 0 });
+      const c = continuity(FIX(id), noneSeen());
       await runOne(FIX(id), c.watch, { transitionAudit: true });
       return c.out;
     };
@@ -447,7 +476,7 @@ describe('plan 10b foot target continuity', () => {
     // across L3. The heading now follows at the planner's follow rate (run-clips headingRadPerS)
     const d = FIX('L3-F8-recontact');
     expect(d.runClips?.headingRadPerS).toBe(18);
-    const fresh = (): ContinuitySeen => ({ steps: 0, stored: 0, chaseStarts: 0, chaseReseeds: 0, chaseInside: 0, requests: 0 });
+    const fresh = noneSeen;
     let now = CONT.get(d.id);
     if (!now) {
       const c = continuity(d, fresh());

@@ -816,7 +816,8 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     // ---------------- reactive steps (no clip weight)
     const still = speed < P.settleSpeedMps && Math.abs(inp.yawRate) < 0.3;
     // ladder 13b: a stationary hold takes no step home, no settle step and no step to turn the feet
-    const holdStill = !!P.holdStill && holdStillAt(P.holdStill, plan.heldAtS, inp.t, speed);
+    // (FootDebug.noVoluntarySteps, a fault: as if every substep were one)
+    const holdStill = (!!P.holdStill && holdStillAt(P.holdStill, plan.heldAtS, inp.t, speed)) || !!inp.debug?.noVoluntarySteps;
     // clip-to-procedural crossing: every following foot is inherited, with its clip phase, achieved foot and contacts
     // (plants carry over unchanged and stay only while valid, below)
     const crossing = plan.clipLast;

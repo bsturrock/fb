@@ -22,6 +22,12 @@ export interface FootDebug {
   /** A foot held off its home by another body steps toward it again at once, as before plan 13e (negative control). */
   noBlockedMemory?: boolean;
   /**
+   * Fault (negative control of the step coverage, ladder 14a): no planted foot steps home, settles or steps to turn
+   * anywhere, as if every substep were a stationary hold (`FootworkProfile.holdStill`). Steps a plant cannot avoid
+   * (reach, liftoff, a released plant) still happen.
+   */
+  noVoluntarySteps?: boolean;
+  /**
    * Controlled coverage (tests only): the solve at time `t` (s, within half a substep) releases a confirmed plant of
    * `side` as a clearance solve does (observeFeet: the foot rejoins the request from the achieved ankle on the next plan;
    * where the clip stance goes on, the planner proposes it again there: a reseed that keeps mode and source).

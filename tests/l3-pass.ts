@@ -9,7 +9,7 @@ import { capturePose, drawnBall, lerpPose, type PoseKey } from '../src/lab/rende
 import { allFixtures } from '../src/sim/fixtures/index';
 import { carriedBall, type PhysicalPose } from '../src/sim/pose';
 import type { FixtureDef } from '../src/sim/fixture';
-import { FOOTWORK_L3 } from '../src/sim/footwork';
+import { FOOTWORK_L3, HOLD_STILL_V1, holdStillAt } from '../src/sim/footwork';
 import { IDLE_POSE_RECORD, IDLE_STANCE_FADE_MPS } from '../src/sim/locomotion';
 import { add, dist, horiz, len, qConj, qMul, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { expect } from './plain-expect';
@@ -520,9 +520,29 @@ const SW = FOOTWORK_L3.swing;
 const aMaxAt = (sp: number): number => C.stepAccelMps2 + C.stepAccelPerTravel * sp;
 const vCapAt = (sp: number): number => SW.maxSpeedMps + SW.travelSpeedK * sp;
 
-export type ContinuitySeen = { steps: number; stored: number; chaseStarts: number; chaseReseeds: number; chaseInside: number; requests: number };
+/**
+ * Ladder 14a: the kinds of planner step the step coverage asks for, by why the step started: `voluntary` from a plant the
+ * planner released on its own trigger (to step home, settle or turn: footRelease reason step, settle or yaw); `reach`
+ * from a plant released at the edge of its reach or ahead of the body leaving it (reason reach); `liftoff` from a plant
+ * leaving under the clip (reason liftoff); `continued` a clip swing carried on as a planner step at the clip-to-procedural
+ * crossing (why continue). Other steps (a plant released by its solve, support regained, a rejoin) are checked as every
+ * step is, and not asked for.
+ */
+export const STEP_KINDS = ['voluntary', 'reach', 'liftoff', 'continued'] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
+type KindCounts = { [K in StepKind as `b1${Capitalize<K>}` | `b2${Capitalize<K>}`]: number };
+export type ContinuitySeen = { steps: number; stored: number; chaseStarts: number; chaseReseeds: number; chaseInside: number; requests: number; held: number } & KindCounts;
+const cap = (k: StepKind): Capitalize<StepKind> => (k[0]!.toUpperCase() + k.slice(1)) as Capitalize<StepKind>;
+/** A record with nothing seen. */
+export const noneSeen = (): ContinuitySeen => ({ steps: 0, stored: 0, chaseStarts: 0, chaseReseeds: 0, chaseInside: 0, requests: 0, held: 0, ...(Object.fromEntries(STEP_KINDS.flatMap((k) => [[`b1${cap(k)}`, 0], [`b2${cap(k)}`, 0]])) as KindCounts) });
 /** What the per-substep checks saw over every L3 fixture of the pass. */
-export const seen: ContinuitySeen = { steps: 0, stored: 0, chaseStarts: 0, chaseReseeds: 0, chaseInside: 0, requests: 0 };
+export const seen: ContinuitySeen = noneSeen();
+/**
+ * Ladder 14a, the step coverage: the kinds of step that B1 or B2 did not check outside a stationary hold (empty: every
+ * kind was checked). A stationary hold (`holdStillAt` with HOLD_STILL_V1, read from outside the planner) neither counts
+ * for it nor against it: a step that starts in one is checked like any other and counted under `held` only.
+ */
+export const unseenKinds = (s: ContinuitySeen): string[] => STEP_KINDS.flatMap((k) => [...(s[`b1${cap(k)}`] > 0 ? [] : [`B1 ${k}`]), ...(s[`b2${cap(k)}`] > 0 ? [] : [`B2 ${k}`])]);
 
 /** B3: the declared limit of the clip leg request's own world-frame second difference (m): the composition limit. */
 const REQUEST_DD_M = 0.01;
@@ -578,12 +598,26 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
   const hist = new Map<string, Row[]>();
   const late = new Map<string, { t: number; speed: number; aMax: number } | null>();
   const reqs = new Map<string, { p: Vec3; ok: boolean }[]>();
+  // ladder 14a (the step coverage): each foot's current planner step, its kind and whether it started in a stationary hold
+  const kindOf = new Map<string, { kind: StepKind | null; held: boolean }>();
+  const heldAt = new Map<string, number>();
+  let evAt = 0;
   const watch: Watch = {
     substep: (s: Simulation) => {
       const dt = s.dt;
       const audit = (s as unknown as AuditView).auditPrev;
+      // this substep's plant releases and planner step starts, per foot
+      const rel = new Map<string, string>();
+      const started = new Map<string, string>();
+      for (; evAt < s.events.length; evAt++) {
+        const e = s.events[evAt]!;
+        const ed = e.data as { side?: string; reason?: string; source?: string };
+        if (e.type === 'footRelease') rel.set(`${e.playerId}:${ed.side}`, ed.reason ?? '');
+        else if (e.type === 'footSwing' && ed.source === 'step') started.set(`${e.playerId}:${ed.side}`, ed.reason ?? '');
+      }
       for (const pl of s.players) {
         if (pl.rag) continue;
+        if ((s as unknown as { retained(p: PlayerRuntime): boolean }).retained(pl)) heldAt.set(pl.id, s.t);
         // B3: the ordinary request, as the audit recorded it this substep, in the world
         const a = audit.get(pl.id);
         if (a) {
@@ -606,9 +640,19 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
         if (!pl.feet) continue;
         const v = pl.proxy.body.linvel();
         const sp = Math.hypot(v.x, v.z);
+        // a stationary hold as the hold-still rule reads it (tests/hold-still.test.ts), whether or not the profile has the rule
+        const stillHold = holdStillAt(HOLD_STILL_V1, heldAt.get(pl.id), s.t, sp);
         for (const side of SIDES) {
           const f = pl.feet.feet[side];
           const at = `${d.id} ${pl.id}:${side} ${s.t.toFixed(4)}`;
+          const fk = `${pl.id}:${side}`;
+          const why = started.get(fk);
+          if (why !== undefined) {
+            const r = rel.get(fk);
+            const kind: StepKind | null = why === 'continue' ? 'continued' : r === 'step' || r === 'settle' || r === 'yaw' ? 'voluntary' : r === 'reach' ? 'reach' : r === 'liftoff' ? 'liftoff' : null;
+            kindOf.set(fk, { kind, held: stillHold });
+          } else if (f.mode === 'planted' || f.source !== 'step') kindOf.delete(fk);
+          const kd = kindOf.get(fk);
           const pastDue = f.mode === 'swing' && f.source === 'step' && f.why === 'continue' && !f.wait && !f.rejoin && f.elapsedS > f.durS;
           const o = over.get(`${pl.id}:${side}`);
           if (pastDue && o) o.n++;
@@ -629,12 +673,15 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
           // B2: the stored vertical rate is the published one
           if (f.mode !== 'planted' && f.source === 'step' && r1.key === r2.key) {
             into.stored++;
+            if (kd?.kind && !kd.held) into[`b2${cap(kd.kind)}`]++;
             const pub = (r2.y - r1.y) / dt;
             if (Math.abs(f.stepY.v - pub) > 1e-9) breaches.push({ what: 'stored vertical rate', at, got: f.stepY.v, limit: pub });
           }
           // B1: the step's horizontal second difference
           if (step && r0 && r0.key === r2.key && r1.key === r2.key) {
             into.steps++;
+            if (kd?.held) into.held++;
+            else if (kd?.kind) into[`b1${cap(kd.kind)}`]++;
             const m1 = sub(r1.h, r0.h);
             const m2 = sub(r2.h, r1.h);
             const bound = Math.max(r1.aMax, r2.aMax) * dt * dt + Math.max(0, len(m1) - r2.vCap * dt);
