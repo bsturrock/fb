@@ -770,7 +770,8 @@ export const HIP_APPROACH_V1: HipApproachProfile = {
 export const HIP_STOPS_V2: HipStopProfile = { ...HIP_STOPS_V1, id: 'hip-stops-v2', approach: HIP_APPROACH_V1 };
 
 /**
- * Ladder rung 8g: the backstop of a hip with the L4 soft envelope (ENVELOPE_L4.hip). On each axis alone the approach zone
+ * Ladder rung 8g: the backstop of a hip with the L4 soft envelope (ENVELOPE_L4.hip; not taken since rung 8k, see
+ * `hipStopsFor`; the 8i assessment's L4 stops, the lab's `hips=l4`). On each axis alone the approach zone
  * starts 5 deg past the envelope's range plus its declared tolerance (forward 128.75, out 61.25, back 39, in 45, twist
  * 50, tolerance 5; rounded up): the zone reads the depth a substep ends at, 5 deg ahead at 20 rad/s, and a fast swing
  * inside the tolerance is the envelope's. The stop is the zone's width past that, so the envelope takes the hip first
@@ -791,8 +792,17 @@ export const HIP_STOPS_L4_V1: HipStopProfile = {
   approach: HIP_APPROACH_V1,
 };
 
-/** Ladder rung 8g: the hip stops a ragdoll takes: the backstop outside its soft hip envelope (L4), or the 8d box with the approach zone. */
-export const hipStopsFor = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
+/**
+ * The hip stops a ragdoll takes (rung 8g: on L4 the backstop outside its soft hip envelope, HIP_STOPS_L4_V1). Ladder
+ * rung 8k: every ragdoll the 8d box with the approach zone, L4 too, so its hips have the human ab/adduction. With the
+ * backstop the L4 envelope admits adduction 45 and abduction 61.25 on one axis, past the implausible margins at flexed
+ * poses (the boundary's largest in the visible measure 50.7 and 70.6); the envelope narrowed to the human range (parked,
+ * `.scratch/ladder/parked/l4-hip-envelope-narrowed/`) removes that as well, but the box also halves the L4 deep own-body
+ * overlap (248 -> 134 player-s under the visible flip; leg-trunk crossings gone), and the narrowed envelope adds
+ * nothing visible inside the box (`.scratch/ladder/r8k-choice/`). The envelope's hip stays as it is: outside the box on
+ * every axis, it takes no load under the stops, and it still bounds the fall response's hip targets.
+ */
+export const hipStopsFor = (_r: RagdollProfile): HipStopProfile => HIP_STOPS_V2;
 
 /** Ladder rung 8f: the ragdoll profile with the knee flexion stop at `deg`, under an id that names it. */
 export const withKneeStop = (r: RagdollProfile, deg: number): RagdollProfile => ({ ...r, id: `${r.id}+knee${deg}`, kneeFlexionStopDeg: deg });

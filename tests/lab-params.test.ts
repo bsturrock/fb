@@ -3,7 +3,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import {
-  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop,
   withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
@@ -78,7 +78,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
   }, 120000);
 
   // ladder rung 8h: pgs=<n> and knees=off|140|145 with hips, composed in that order: the assessments' variant (8i)
-  it('hips=on&pgs=4&knees=140 runs the fixture as the 8i variant (L3-F9-convert-free: the 8d box with the approach zone, PGS +4, knee stop 140), its profile to the id, named in the label; on L4 hips=on takes the backstop; without them the run differs', async () => {
+  it('hips=on&pgs=4&knees=140 runs the fixture as the 8i variant (L3-F9-convert-free: the 8d box with the approach zone, PGS +4, knee stop 140), its profile to the id, named in the label; on L4 hips=on takes the same box (rung 8k), hips=l4 the 8i backstop; without them the run differs', async () => {
     const id = 'L3-F9-convert-free';
     const d = FIX(id);
     const r = d.ragdoll!;
@@ -91,9 +91,12 @@ describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
     expect(await summaryOf(lab.def, lab.opts)).toBe(run);
     // the twin: the registered run is another
     expect(await summaryOf(d, {})).not.toBe(run);
-    // on L4 the stops as they would flip are the backstop outside the soft envelope; hips=v1 the 8d box alone
+    // on L4 the stops as they would flip are the same box (rung 8k); hips=l4 the 8g backstop outside the soft envelope
+    // (the 8i assessment's L4 stops); hips=v1 the 8d box alone
     const l4 = FIX('L4-F2-side-off');
-    expect(labRun(l4, new URLSearchParams('hips=on')).def.ragdoll!.hipStops).toBe(HIP_STOPS_L4_V1);
+    expect(labRun(l4, new URLSearchParams('hips=on')).def.ragdoll!.hipStops).toBe(HIP_STOPS_V2);
+    expect(labRun(l4, new URLSearchParams('hips=l4')).def).toEqual({ ...l4, ragdoll: withHipStops(l4.ragdoll!, HIP_STOPS_L4_V1) });
+    expect(labRun(l4, new URLSearchParams('hips=l4')).label).toBe('hip stops l4');
     expect(labRun(l4, new URLSearchParams('hips=v1')).def).toEqual({ ...l4, ragdoll: withHipStops(l4.ragdoll!) });
     expect(labRun(l4, new URLSearchParams('hips=v1')).label).toBe('hip stops v1');
   }, 120000);

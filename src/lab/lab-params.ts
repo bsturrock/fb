@@ -2,9 +2,10 @@
 //   order=rev          the players created in reverse order (SimOptions.reverseOrder), the matrices' reversed rows;
 //   legs=v1|v2|v3      a fixture with a leg guard run under LEG_GUARD_V1 / V2 / V3 in place of its own (the triage's map);
 //                      a fixture without one is run as it is;
-//   hips=on|v1|off     a ragdoll fixture run with the hip stops as they would flip (`hipStopsFor`: the 8d box with the
-//                      approach zone, ladder rung 8g, or on L4 the backstop outside the soft envelope), the 8d box alone
-//                      (HIP_STOPS_V1, rung 8d), or without any;
+//   hips=on|l4|v1|off  a ragdoll fixture run with the hip stops as they would flip (`hipStopsFor`: the 8d box with the
+//                      approach zone, ladder rung 8g, on L4 too since rung 8k), the 8g L4 backstop outside the soft
+//                      envelope (HIP_STOPS_L4_V1, the 8i assessment's L4 stops), the 8d box alone (HIP_STOPS_V1, rung
+//                      8d), or without any;
 //   pgs=<n>            n additional PGS iterations on the ragdoll's segments (rung 8a; 0: none; up to 16);
 //   knees=off|140|145  the knee flexion stop at 140 or 145 (rung 8f), or none;
 //   retry=on|off       a conversion rejected on an overlap deferred and tried again (CONVERSION_RETRY_V1, rung 8j), or not.
@@ -15,13 +16,13 @@
 // a test can build the same run headless (tests/lab-params.test.ts).
 import type { FixtureDef } from '../sim/fixture';
 import {
-  CONVERSION_RETRY_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, type RagdollProfile,
 } from '../sim/profiles';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
-const HIPS = ['on', 'v1', 'off'];
+const HIPS = ['on', 'l4', 'v1', 'off'];
 const KNEES = ['off', '140', '145'];
 const RETRY = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
@@ -75,7 +76,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     const h = hips.toLowerCase();
     out = ragdollParam(out, 'hips', hips, HIPS.includes(h), parts, `hip stops ${h}`, (r) => {
       if (h === 'off') return withoutHipStops(r);
-      const S = h === 'on' ? hipStopsFor(r) : HIP_STOPS_V1;
+      const S = h === 'on' ? hipStopsFor(r) : h === 'l4' ? HIP_STOPS_L4_V1 : HIP_STOPS_V1;
       return r.hipStops?.id === S.id ? r : withHipStops(withoutHipStops(r), S);
     });
   }

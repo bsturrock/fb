@@ -10,8 +10,9 @@ import { INJECTION_J, passiveEnergyMeter, type SolveEnergy } from './passive-ene
 import { loadState, resumeState } from './state';
 
 // Ladder rung 8g: the approach zone inside the hip stops (`HipStopProfile.approach`, src/sim/joint-stops.ts
-// `applyHipApproach`), opt-in: HIP_STOPS_V2 (the 8d box with the zone; L3, HC) and HIP_STOPS_L4_V1 (the backstop outside
-// the L4 soft envelope), `hipStopsFor` picking by ragdoll. No fixture uses either yet.
+// `applyHipApproach`), opt-in: HIP_STOPS_V2 (the 8d box with the zone) and HIP_STOPS_L4_V1 (the backstop outside the L4
+// soft envelope, the 8i assessment's L4 stops; since rung 8k `hipStopsFor` gives every ragdoll HIP_STOPS_V2,
+// tests/l4-hip-box.test.ts). No fixture uses either yet.
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
 const ID: Quat = { x: 0, y: 0, z: 0, w: 1 };
@@ -236,11 +237,9 @@ describe('ladder rung 8g: the approach zone on a thigh swung into its stops (con
   });
 });
 
-describe('ladder rung 8g: the stops a ragdoll takes', () => {
-  it('a ragdoll with the L4 hip envelope takes the backstop, one without the 8d box with the zone; on each axis alone the backstop\'s zone starts 5 deg past the envelope\'s range plus its tolerance (the 8d box, fault twin, lies inside the envelope)', () => {
-    expect(hipStopsFor(FIX('L4-F2-side-off').ragdoll!)).toBe(HIP_STOPS_L4_V1);
-    expect(hipStopsFor(FIX('L3-F9-convert-free').ragdoll!)).toBe(HIP_STOPS_V2);
-    expect(hipStopsFor(FIX('HC-F1-mirror').ragdoll!)).toBe(HIP_STOPS_V2);
+describe('ladder rung 8g: the L4 backstop', () => {
+  it('every ragdoll takes the 8d box with the zone (rung 8k: L4 too); on each axis alone the backstop\'s zone starts 5 deg past the L4 envelope\'s range plus its tolerance (the 8d box, fault twin, lies inside the envelope)', () => {
+    for (const id of ['L4-F2-side-off', 'L3-F9-convert-free', 'HC-F1-mirror']) expect(hipStopsFor(FIX(id).ragdoll!), id).toBe(HIP_STOPS_V2);
     const E = ENVELOPE_L4.hip;
     const tol = ENVELOPE_L4.toleranceDeg;
     const range = { flexionDeg: swingExtentDeg(E, 0), abductionDeg: swingExtentDeg(E, 90), extensionDeg: swingExtentDeg(E, 180), adductionDeg: swingExtentDeg(E, -90), internalDeg: -E.twistDeg[0], externalDeg: E.twistDeg[1] };
@@ -266,7 +265,7 @@ describe('ladder rung 8g: the stops a ragdoll takes', () => {
     };
     for (const id of ['L4-F1-hipSwing', 'L4-F1-hipTwist', 'L4-F2-side-off']) {
       const base = await run(id);
-      const back = await run(id, hipStopsFor(FIX(id).ragdoll!));
+      const back = await run(id, HIP_STOPS_L4_V1);
       expect(back.out === base.out, id).toBe(true);
       expect(back.depth, id).toBe(0);
       const v1 = await run(id, HIP_STOPS_V1);

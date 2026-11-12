@@ -343,6 +343,19 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   passive energy after the switch at most -0.03 J; the fault twin (tolerance 0.1) converts the first candidate, 1.56-3.41
   cm deep. Under the registered profile it also converts the three `LEG_IN_RAGDOLL` captures (1.313-1.333 s). Lab
   `retry=on|off`.
+- **8k** (`r8k-l4-hips`) landed off: `hipStopsFor` gives every ragdoll the 8d box with the zone (HIP_STOPS_V2), L4 too,
+  in place of the 8g backstop outside the L4 envelope (HIP_STOPS_L4_V1, kept: the 8i assessment's L4 stops, lab
+  `hips=l4`; `hipStops8i` in tests/runs.ts keeps `flip8i` the 8i variant). Chosen by evidence over the envelope narrowed
+  to the human range (`.scratch/ladder/r8k-choice/`, L4 rows under the 8i variant with the retry): L4 implausible or
+  worse 64.8 -> 3.7 (hips 0; narrowed envelope 2.5), deep own-body 332 -> 134 (narrowed 248), own-leg axes 201 -> 63
+  (154); the narrowed envelope inside the box adds nothing (134 / 74), so its shaping has no visible benefit; parked
+  with its fits (`parked/l4-hip-envelope-narrowed/`). Cost: L4 injecting solves 129 / 372 J / largest 15.4 -> 152 / 649
+  / 52.4 (narrowed 137 / 436 / 39.0); the two largest are impact rebounds reached (same-state twins with every hip stop
+  opened: L4-F9-free from 0.600 s 41.5 against 41.2 J, L4-F9-exit reversed from 1.267 s 52.75 against 52.35). The L4
+  envelope's hip lies outside the box on every axis and takes no load under the stops (8e); it still bounds the fall
+  response's hip targets. No who-falls change against the variant with the backstop. Test (tests/l4-hip-box.test.ts):
+  an L4 leg swung at 4 rad/s toward where the envelope reads its largest ab/adduction stops at 22.6 adduction and 40.7
+  abduction under the box, at 51.3 and 61.2 under the backstop (fault twin; margins 45 and 60).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -368,6 +381,9 @@ order, not hunk-split.
 - 8i, the visible flip (hip stops with the zone, PGS 4, knee 140 on L3/L4/HC): waits for the user's lab review and the
   rulings on its 9 moved tests; patch `.scratch/ladder/parked/visible-flip/flip.patch` (on 10dee91), evidence
   `.scratch/ladder/assess-8i/`.
+- 8k's other option, the L4 hip envelope narrowed to the human ab/adduction (cone across 60 -> 42, its own backstop):
+  removes the hip implausible time as the box does but not the own-body overlap; not taken. Patch and README
+  `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
 
 ## Open defects to test on the ladder
 
@@ -455,11 +471,12 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   R's right hip at adduction 28.75 under 30).
 - The L4 backstop cannot hold the envelope's corners: a twist t after a flexion f reads 2 atan(tan(f/2) tan(t/2)) on Z,
   59 at flexion 129 with twist 30, so there the Z stop (65, its zone from 55) meets a pose inside the envelope. Not met
-  in the three L4 hip fixtures; not read separately at 8i (L4 impossible 0.89 player-s against 0.90 registered).
+  in the three L4 hip fixtures; not read separately at 8i (L4 impossible 0.89 player-s against 0.90 registered). Moot
+  since 8k (the flip no longer takes the backstop); a swing toward 75 deg out enters its Z zone (tests/l4-hip-box).
 - The L4 envelope admits more hip than a person (8i): adduction 45 and abduction 61.25 plus tolerance 5, past the
   implausible margins (45, 60). With the backstop outside it, L4 implausible time is 64.8 player-s at 8i (hip
-  adduction 50.3, abduction 11.6; e.g. L4-F12-base R left hip at 0.70 s); the 8d box on L4 read 2.95. A design call
-  for the user: keep it, narrow the envelope, or the box with the zone on L4.
+  adduction 50.3, abduction 11.6; e.g. L4-F12-base R left hip at 0.70 s); the 8d box on L4 read 2.95. Resolved at 8k
+  (off): the box with the zone on L4 too.
 - A posed thigh met by another player's ragdoll in the substep before the conversion, the conversion rejected and the
   player left a rigid falling proxy (the 13f known-limit class, gone at plan 14; tracked defect
   `THIGH_MET_AT_CONVERSION` in the parked 8i patch). Reached by the 8i flip: HC-F3-falling reversed D at 1.171 s, right

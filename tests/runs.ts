@@ -6,8 +6,8 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { RAPIER } from '../src/sim/physics';
 import {
-  hipStopsFor, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations,
-  type RagdollProfile,
+  HIP_STOPS_L4_V1, HIP_STOPS_V2, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
+  withoutPgsIterations, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
@@ -22,15 +22,17 @@ export const FIX = (id: string): FixtureDef => {
  * without the deferred conversion (8j), under the id it had before them.
  */
 export const unflipped = (r: RagdollProfile): RagdollProfile => withoutConversionRetry(withoutKneeStop(withoutPgsIterations(withoutHipStops(r))));
+/** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */
+export const hipStops8i = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
 /**
- * Ladder 8i: `d` with the visible flip as the 8i assessment ran it (the hip stops `hipStopsFor` gives, 4 additional PGS
+ * Ladder 8i: `d` with the visible flip as the 8i assessment ran it (the hip stops `hipStops8i` gives, 4 additional PGS
  * iterations, the knee stop at 140) on its profile without them: the profile a capture taken under that variant ran
  * under (`scripts/capture-state.ts --flip8i`).
  */
 export const flip8i = (d: FixtureDef): FixtureDef => {
   if (!d.ragdoll) return d;
   const r = unflipped(d.ragdoll);
-  return { ...d, ragdoll: withKneeStop(withAdditionalPgsIterations(withHipStops(r, hipStopsFor(r)), 4), 140) };
+  return { ...d, ragdoll: withKneeStop(withAdditionalPgsIterations(withHipStops(r, hipStops8i(r)), 4), 140) };
 };
 
 /** An event with its data read loosely (tests read event-specific fields). */
