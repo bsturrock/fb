@@ -289,6 +289,23 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   is gone: hips + PGS 4 + knee 140 impossible 5.9, implausible or worse 19.6, deep own-body overlap 885 -> 461,
   1268 solves / 3792 J (largest 60 J, against 197 registered), no L4 ceiling row, 14 who-falls changes; knee 145 there
   8.4 / 25.7 / 1505 solves / 4720 J. The knee stop flips with the hips, at 140.
+- **8g** landed off, two commits. `r8g-box-reading` (7062264, byte-identical, 315/315): the box reads Rapier's own measure
+  per axis, 2 atan2(e_i, w), not 8d's 2 asin(e_i); they agree on one axis alone. Measured (tests/joint-stops.test.ts:
+  the thigh driven along one reading from 15 combined poses halts within 0.3 deg of each stop); the half-sine reading
+  of the same halts is 24 at flexion 75 and 17.5 at flexion 110 for the adduction stop of 30. Resolves the 8e corner
+  defect (below): the stop was not early, the reading was wrong. `r8g-hip-approach` (byte-identical, 323/323):
+  `HipStopProfile.approach` (HIP_APPROACH_V1), a damped one-sided spring 10 deg inside each stop on the box reading, the
+  torque along the reading's gradient; passive as stepped (the spring read at the depth the substep ends at, the damper
+  capped at what stops the rate in one substep); a hip built inside a band starts with a slack that decays. HIP_STOPS_V2
+  (the 8d box with the zone) for L3/HC; on L4 HIP_STOPS_L4_V1, a backstop whose zone starts 5 deg past the envelope's
+  range plus tolerance (stops 149 / 59 / 82 / 65 / twist 70); `hipStopsFor` picks. A fall-response hip target is held
+  inside the zone. Tests tests/hip-approach.test.ts: the rig (each stop, the zone stops the thigh over 3 deg short with
+  under 10% of its energy; stops alone at the stop), passivity over six entry phases (under 1e-4 of E0; read at the
+  substep's start, over 1%), the slack, the backstop inert on L4-F1-hipSwing, -hipTwist and L4-F2-side-off (byte-identical
+  but for the id; L4-F2-model-side-off differs under any stops: the model hip frame's `setFrameX1` alone moves floats).
+  The rebound twin from `L4-F2-side-off~hipsv2@12` (0.200 s): stops alone 4 injecting solves, 10.7 J (solve 71
+  +4.19 J with no contact, the hip on adduction 30 after losing 6.5 and 7.7 J); with the zone none over 0.5 J (largest
+  0.001 J), the hip 8.2 deg short of the stop.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -382,10 +399,13 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   off, alone): the right hip reaches adduction 30 at solve 69, the body loses 6.5 and 7.7 J (69, 70), solve 71 gains
   4.19 J with no contact; the registered run never gains 0.2 J, and the same profile with every stop at 170 (set, never
   reached) is byte-identical to it. Additional PGS iterations 1 / 3 / 4 / 8: 2.8 / 1.9 / 2.0 / 1.8 J. Rapier 0.21's JS
-  exposes no joint softness (only `contact_natural_frequency`). The brace rebound's class at a new trigger; to fix before
-  the stops can flip (candidates: a damped approach zone before each stop, the shaping the L4 envelope would give if it
-  sat inside the box; a Rapier upgrade that exposes joint softness).
-- Box reading against Rapier's stop at combined poses (found at 8e): exact on each axis alone (tests/joint-stops.test.ts),
-  but with flexion near 25 and rotation 20-30 Rapier's stop acts 1.3-1.9 deg before the box reading reaches it
-  (`.scratch/ladder/assess-8d/tools/probe2.ts`; L4-F2-side-off R's right hip halts at adduction 28.75 under a stop of 30).
-  Early, not late; a corner test before the flip.
+  exposes no joint softness (only `contact_natural_frequency`). Resolved on the sample by the 8g approach zone (the
+  capture regression test in tests/hip-approach.test.ts); over the matrix see 8i.
+- Resolved at 8g (7062264): box reading against Rapier's stop at combined poses. Rapier keeps 2 atan2(e_i, w) within
+  each limit; 8d read 2 asin(e_i), which is smaller off a single axis, so the stop seemed to act early (L4-F2-side-off
+  R's right hip at adduction 28.75 under 30).
+- The L4 backstop cannot hold the envelope's corners: a twist t after a flexion f reads 2 atan(tan(f/2) tan(t/2)) on Z,
+  59 at flexion 129 with twist 30, so there the Z stop (65, its zone from 55) meets a pose inside the envelope. Not met
+  in the three L4 hip fixtures; to read at the flip (the L4 rows of 8i).
+- Rapier's correction at a combined pose is not along the reading's gradient: at flexion 110 the Y stop's correction
+  turns mostly Z, so Y overruns by 11 deg until the Z stop also holds (seen in the 8g probes, not in a fixture).

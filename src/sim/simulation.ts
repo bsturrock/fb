@@ -20,7 +20,7 @@ import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newL
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
+  applyEnvelope, applyHipApproaches, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
   type RagdollCollider, type TransferAudit,
 } from './ragdoll';
 import {
@@ -932,8 +932,12 @@ export class Simulation {
         // plan 12: the limp shoe eases toward its relaxed pitch on the shin before the envelope reads the joints
         if (pl.rag.limpFoot) easeLimpFeet(pl.rag, this.physics.dt, (c, from, to) => this.shoeDeeper(pl, c, from, to, limbs()));
         applyEnvelope(pl.rag, this.physics.dt);
-        // ladder rung 8d: a hip stop widened at the conversion closes with its joint
-        if (pl.rag.hipStops) ratchetHipStops(pl.rag);
+        if (pl.rag.hipStops) {
+          // ladder rung 8g: the approach zone inside the hip stops (a profile without one applies nothing)
+          applyHipApproaches(pl.rag, this.physics.dt);
+          // ladder rung 8d: a hip stop widened at the conversion closes with its joint
+          ratchetHipStops(pl.rag);
+        }
         // ladder rung 8f: so does a knee stop
         if (pl.rag.kneeStops) ratchetKneeStops(pl.rag);
       }

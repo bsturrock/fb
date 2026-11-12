@@ -684,12 +684,79 @@ export interface HipStopProfile {
   capDeg: number;
   /** A fall-response hip target is held this far inside the stops (it would otherwise drive the thigh into one). */
   driveMarginDeg: number;
+  /** Ladder rung 8g: a damped soft zone inside each stop (absent: the stops alone). */
+  approach?: HipApproachProfile;
+}
+
+/**
+ * Ladder rung 8g: the hip stops' approach zone. Rapier's limit acts only on a joint already past it, and its position
+ * correction returns part of an arrested swing's energy in the solves after (the hip-stop rebound): inside each stop a
+ * band `widthDeg` wide (swing: the X and Z stops, flexion / extension and ab / adduction; twist: the Y stop) takes the
+ * swing first, a one-sided spring-damper on the box reading (`src/sim/joint-stops.ts`, the plan 09 envelope's law in
+ * the box's coordinates), so a thigh reaches its stop slowed or not at all. Passive as stepped: the spring a function of
+ * the band's depth only (capped as a function of it), read at the depth the substep ends at (at the current rate), so a
+ * band entered or left within a substep gives nothing back; a damper that never pulls and never more than stops the
+ * relative rate along the band in one substep. A joint that starts inside a band keeps a start slack that follows it
+ * back out of the band and decays, so the conversion adds no kick. Engineering settings.
+ */
+export interface HipApproachProfile {
+  widthDeg: { swing: number; twist: number };
+  swing: { stiffnessNmPerRad: number; dampingNmsPerRad: number };
+  twist: { stiffnessNmPerRad: number; dampingNmsPerRad: number };
+  maxTorqueNm: number;
+  slackDecayDegPerS: number;
 }
 
 export const HIP_STOPS_V1: HipStopProfile = { id: 'hip-stops-v1', flexionDeg: 125, extensionDeg: 30, abductionDeg: 50, adductionDeg: 30, internalDeg: 45, externalDeg: 45, capDeg: 172, driveMarginDeg: 3 };
 
 /** Ladder rung 8d: the ragdoll profile with hard hip stops, under an id that names them. */
 export const withHipStops = (r: RagdollProfile, h: HipStopProfile = HIP_STOPS_V1): RagdollProfile => ({ ...r, id: `${r.id}+${h.id}`, hipStops: h });
+
+/**
+ * Ladder rung 8g: the approach zone, 10 deg inside each stop. Swing: at the band's full depth the spring gives 524 N m (a
+ * leg's weight, about 50 N m, sits 1 deg in), the damping about critical for a leg about the hip (thigh alone 0.65 kg m^2
+ * to a straight leg about 2.5). Twist: the thigh's own inertia about its axis is about 0.025 kg m^2, so the spring is set
+ * where one substep resolves it (natural frequency times dt 0.5), critically damped there; 61 N m at full depth.
+ * Swung into a stop on its own (tests/hip-approach.test.ts) a thigh stops inside the band, 4 deg short of the stop at 15
+ * rad/s, and keeps a few percent of its energy. Stiffness, damping and the cap act on the reading (N m per rad of it):
+ * the torque is that times the reading's gradient, 1 on an axis alone and more at combined poses (1.7 for adduction at
+ * flexion 110), where the reading moves faster than the turn.
+ */
+export const HIP_APPROACH_V1: HipApproachProfile = {
+  widthDeg: { swing: 10, twist: 10 },
+  swing: { stiffnessNmPerRad: 3000, dampingNmsPerRad: 150 },
+  twist: { stiffnessNmPerRad: 350, dampingNmsPerRad: 6 },
+  maxTorqueNm: 600,
+  slackDecayDegPerS: 30,
+};
+
+/** Ladder rung 8g: the 8d box with the approach zone inside each stop, for a ragdoll whose hips have no soft envelope (L3, HC). */
+export const HIP_STOPS_V2: HipStopProfile = { ...HIP_STOPS_V1, id: 'hip-stops-v2', approach: HIP_APPROACH_V1 };
+
+/**
+ * Ladder rung 8g: the backstop of a hip with the L4 soft envelope (ENVELOPE_L4.hip). On each axis alone the approach zone
+ * starts 5 deg past the envelope's range plus its declared tolerance (forward 128.75, out 61.25, back 39, in 45, twist
+ * 50, tolerance 5; rounded up): the zone reads the depth a substep ends at, 5 deg ahead at 20 rad/s, and a fast swing
+ * inside the tolerance is the envelope's. The stop is the zone's width past that, so the envelope takes the hip first
+ * and the stop only what overruns it. A box cannot hold the envelope's corners: a twist t after a flexion f reads
+ * 2 atan(tan(f/2) tan(t/2)) on Z (`src/sim/joint-stops.ts`), 59 at flexion 129 with twist 30, so there the Z stop meets
+ * a pose inside the envelope.
+ */
+export const HIP_STOPS_L4_V1: HipStopProfile = {
+  id: 'hip-stops-l4-v1',
+  flexionDeg: 149,
+  extensionDeg: 59,
+  abductionDeg: 82,
+  adductionDeg: 65,
+  internalDeg: 70,
+  externalDeg: 70,
+  capDeg: 172,
+  driveMarginDeg: 3,
+  approach: HIP_APPROACH_V1,
+};
+
+/** Ladder rung 8g: the hip stops a ragdoll takes: the backstop outside its soft hip envelope (L4), or the 8d box with the approach zone. */
+export const hipStopsFor = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
 
 /** Ladder rung 8f: the ragdoll profile with the knee flexion stop at `deg`, under an id that names it. */
 export const withKneeStop = (r: RagdollProfile, deg: number): RagdollProfile => ({ ...r, id: `${r.id}+knee${deg}`, kneeFlexionStopDeg: deg });

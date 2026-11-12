@@ -7,7 +7,7 @@ import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry
 import type { PhysicsWorld } from './physics';
 import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { clampDirToEnvelope, swingExcess, swingExtentDeg } from './joint-cone';
-import { hipNeutralFrame, initHipStop, initKneeStop, ratchetHipStop, ratchetKneeStop, type HipStopRuntime, type KneeStopRuntime } from './joint-stops';
+import { applyHipApproach, hipNeutralFrame, initHipStop, initKneeStop, ratchetHipStop, ratchetKneeStop, type HipStopRuntime, type KneeStopRuntime } from './joint-stops';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type JointRangeProfile, type RagdollProfile, type SelfClearanceProfile } from './profiles';
 import {
   add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qFromUnitVectors, qIdentity, qMul, qRot, round, rv, scale,
@@ -450,6 +450,16 @@ export function ratchetHipStops(rag: Ragdoll): void {
   for (const h of rag.hipStops) {
     const j = rag.joints[h.jointIndex];
     ratchetHipStop(h, j.joint, rag.bodies[j.parent].rotation(), rag.bodies[j.child].rotation());
+  }
+}
+
+/** Ladder rung 8g: one substep of the hips' approach zones, before the solve (`applyHipApproach`); an enabled ragdoll only. */
+export function applyHipApproaches(rag: Ragdoll, dt: number): void {
+  const A = rag.profile.hipStops?.approach;
+  if (!A || !rag.hipStops || !rag.enabled) return;
+  for (const h of rag.hipStops) {
+    const j = rag.joints[h.jointIndex];
+    applyHipApproach(h, A, rag.bodies[j.parent], rag.bodies[j.child], j.anchorChildLocal, dt);
   }
 }
 

@@ -7,7 +7,7 @@ import { isGround, type ArmSide, type ContactRec, type PlayerId, type Role, type
 import type { FallResponseProfile, JointEnvelope } from './profiles';
 import { twoBone } from './pose';
 import { clampDirToEnvelope, hingeAngles, hingeAxisWorld, landmarkWorld, limbDirWorld, relativeOmega, type Ragdoll, type RagdollJoint } from './ragdoll';
-import { clampDirToHipStops, clampToKneeStop } from './joint-stops';
+import { clampDirToHipStops, clampToKneeStop, zoneStartBox } from './joint-stops';
 import { add, addScaled, clamp, clampLen, cross, dist, dot, horiz, len, norm, qFromAxisAngle, qInvRot, qRot, rad, rotateToward, round, rv, scale, smooth, sub, v3, vc, type Quat, type Vec3 } from './vec';
 
 export type ArmTask = 'passive' | 'protect' | 'hold' | 'brace';
@@ -435,9 +435,11 @@ export class FallResponse {
     const delta = rad(P.hip.flexDeg) * smooth((tS - P.timing.delayS) / P.hip.rampS);
     const raw = qRot(qFromAxisAngle(v3(1, 0, 0), -delta), ep.hipDir0[side]);
     let tgtCore = clampDirToEnvelope(this.envelope(ep, 'hip'), raw, j.sideSign ?? 1, 0);
-    // ladder rung 8d: the hard stops are inside the envelope's cone (flexion 125 against 129): the target stays inside them
+    // ladder rung 8d: the hard stops are inside the envelope's cone (flexion 125 against 129): the target stays inside them,
+    // and inside their approach zone where they have one (8g)
     const stop = ep.rag.hipStops?.find((h) => h.jointId === j.id);
-    if (stop) tgtCore = clampDirToHipStops(tgtCore, stop.frame1, stop.nominal, rad(ep.rag.profile.hipStops!.driveMarginDeg));
+    const HS = ep.rag.profile.hipStops;
+    if (stop && HS) tgtCore = clampDirToHipStops(tgtCore, stop.frame1, zoneStartBox(stop.nominal, HS.approach), rad(HS.driveMarginDeg));
     const cur = limbDirWorld(ep.rag, `${side}Thigh`);
     const curCore = qInvRot(this.coreQ(ep), cur);
     const past = Math.atan2(curCore.z, -curCore.y) >= Math.atan2(tgtCore.z, -tgtCore.y);

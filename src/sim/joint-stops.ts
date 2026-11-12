@@ -14,8 +14,8 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide } from './contracts';
 import { MODEL_CALIBRATION, MODEL_CALIBRATION_ID } from './model/profiles';
-import type { BodyProfile, HipStopProfile } from './profiles';
-import { qConj, qFromUnitVectors, qMul, qRot, v3, type Quat, type Vec3 } from './vec';
+import type { BodyProfile, HipApproachProfile, HipStopProfile } from './profiles';
+import { add, addScaled, dot, m3Add, m3Inverse, m3ParallelAxis, m3Vec, qConj, qFromUnitVectors, qMul, qRot, scale, sub, v3, type Mat3, type Quat, type Vec3 } from './vec';
 
 const RAD = Math.PI / 180;
 /** Rapier's angular joint axes, in the order of a box ([X, Y, Z]). */
@@ -98,6 +98,17 @@ export interface HipStopRuntime {
   /** The largest excess past a stop at the start (deg), and past the cap (what the stop could not take in). */
   startOutsideDeg: number;
   startBeyondCapDeg: number;
+  /** Ladder rung 8g: the approach zone's state (absent: the profile has none). */
+  approach?: HipApproachRuntime;
+}
+
+/** Ladder rung 8g: one hip's approach zone since the build. */
+export interface HipApproachRuntime {
+  /** Per axis [lo, hi]: how far the joint started inside that band (rad); it follows the joint out and decays. */
+  slack: AngBox;
+  /** Torque applied to the thigh this substep (world; the core takes the opposite), and the largest band depth (deg). */
+  torque: Vec3;
+  maxDepthDeg: number;
 }
 
 /**
@@ -117,7 +128,103 @@ export function initHipStop(joint: RAPIER.ImpulseJoint, jointId: string, jointIn
     return [Math.max(-cap, Math.min(lo, v[i])), Math.min(cap, Math.max(hi, v[i]))];
   }) as AngBox;
   current.forEach(([lo, hi], i) => setAngularLimits(joint, ANG_AXES[i], lo, hi));
-  return { jointId, jointIndex, frame1, nominal, current, startOutsideDeg: Math.max(0, outside) / RAD, startBeyondCapDeg: Math.max(0, beyond) / RAD };
+  const h: HipStopRuntime = { jointId, jointIndex, frame1, nominal, current, startOutsideDeg: Math.max(0, outside) / RAD, startBeyondCapDeg: Math.max(0, beyond) / RAD };
+  if (S.approach) h.approach = { slack: bandDepths(nominal, S.approach, v).map(([a, b]) => [Math.max(0, a), Math.max(0, b)]) as AngBox, torque: v3(), maxDepthDeg: 0 };
+  return h;
+}
+
+// ---------------------------------------------------------------- ladder rung 8g: the approach zone
+const bandWidth = (A: HipApproachProfile, i: number): number => (i === 1 ? A.widthDeg.twist : A.widthDeg.swing) * RAD;
+
+/** How deep a reading lies in each band of the nominal stops (rad, negative outside a band; past the stop counts on). */
+function bandDepths(box: AngBox, A: HipApproachProfile, v: [number, number, number]): AngBox {
+  return box.map(([lo, hi], i) => [lo + bandWidth(A, i) - v[i], v[i] - (hi - bandWidth(A, i))]) as AngBox;
+}
+
+/** The nominal stops less their bands: where the approach zone starts (the box a hip target is held inside). */
+export const zoneStartBox = (box: AngBox, A: HipApproachProfile | undefined): AngBox => (A ? (box.map(([lo, hi], i) => [lo + bandWidth(A, i), hi - bandWidth(A, i)]) as AngBox) : box);
+
+/**
+ * The box reading's gradients (frame1 coordinates): for each axis the rate of that reading per turn of the thigh. A turn
+ * d of the thigh (frame1 coordinates) takes e to (1, d / 2) e: the vector part moves by (w I - [v]x) d / 2 and w by
+ * -v.d / 2, so the reading 2 atan2(e_i, w) by (w row_i + e_i v).d / (w^2 + e_i^2). Its length is 1 / sqrt(w^2 + e_i^2):
+ * 1 on the reading's own axis alone, more at combined poses (the reading moves faster than the turn there).
+ */
+export function boxGradients(e: Quat): [Vec3, Vec3, Vec3] {
+  const { x, y, z, w } = e;
+  const n = (c: number): number => 1 / Math.max(1e-12, w * w + c * c);
+  return [
+    scale(v3(w * w + x * x, w * z + x * y, x * z - w * y), n(x)),
+    scale(v3(x * y - w * z, w * w + y * y, w * x + y * z), n(y)),
+    scale(v3(w * y + x * z, y * z - w * x, w * w + z * z), n(z)),
+  ];
+}
+
+/** g . M g for a symmetric 3x3 matrix given by its upper triangle (Rapier's SdpMatrix3). */
+const quad = (M: { m11: number; m12: number; m13: number; m22: number; m23: number; m33: number }, g: Vec3): number =>
+  M.m11 * g.x * g.x + M.m22 * g.y * g.y + M.m33 * g.z * g.z + 2 * (M.m12 * g.x * g.y + M.m13 * g.x * g.z + M.m23 * g.y * g.z);
+
+/**
+ * One substep, before the solve: the approach zone's torque pair on the thigh and the core. Per band, the rate u at which
+ * the reading goes deeper and the depth x it reaches by the end of the substep at that rate (x now + u dt, less the start
+ * slack): a generalised force m = min(cap, max(0, min(k x, cap) + c' u)) on the reading, the torque m g with g the
+ * reading's gradient (`boxGradients`), out of the band; its work is m times the reading's change, so the spring is the
+ * band's energy. Read at the end of the substep, a spring entered or left within one gives nothing back (read at its
+ * start, the substep that enters gets no spring and the one that leaves a whole one, tests/hip-approach.test.ts). c' is
+ * the damping, never more than stops u in one substep: at most 1 / (dt g.(I_thigh^-1 + I_core^-1).g), the thigh's
+ * inertia about the hip (`anchorLocal`, on the thigh) and the core's own, so a light axis (the thigh's twist) is not
+ * overdamped into turning back. The slack tightens as the joint comes out of the band, then decays.
+ */
+export function applyHipApproach(h: HipStopRuntime, A: HipApproachProfile, core: RAPIER.RigidBody, thigh: RAPIER.RigidBody, anchorLocal: Vec3, dt: number): Vec3 {
+  const z = h.approach!;
+  const q1 = core.rotation();
+  const F = qMul(q1, h.frame1);
+  const e = jointRelative(q1, h.frame1, thigh.rotation());
+  const v = boxReading(e);
+  const g1 = boxGradients(e);
+  const decay = A.slackDecayDegPerS * RAD * dt;
+  const depth = bandDepths(h.nominal, A, v);
+  let torque = v3();
+  const w1 = core.angvel();
+  const w2 = thigh.angvel();
+  const wRel = sub(v3(w2.x, w2.y, w2.z), v3(w1.x, w1.y, w1.z));
+  let inv: ((g: Vec3) => number) | null = null;
+  for (let i = 0; i < 3; i++) {
+    const S = i === 1 ? A.twist : A.swing;
+    const g = qRot(F, g1[i]);
+    const rate = dot(g, wRel);
+    for (let k = 0; k < 2; k++) {
+      // k 0: the lower stop (the reading goes deeper as it falls); 1: the upper
+      const sign = k === 0 ? -1 : 1;
+      const d = depth[i][k];
+      z.slack[i][k] = Math.max(0, Math.min(z.slack[i][k], d) - decay);
+      const u = sign * rate;
+      const x = d + u * dt - z.slack[i][k];
+      if (x <= 0) continue;
+      z.maxDepthDeg = Math.max(z.maxDepthDeg, (d - z.slack[i][k]) / RAD);
+      inv ??= (() => {
+        // the inertia views are shared scratch: read each at once
+        const I1 = core.effectiveWorldInvInertia();
+        const i1 = { m11: I1.m11, m12: I1.m12, m13: I1.m13, m22: I1.m22, m23: I1.m23, m33: I1.m33 };
+        const I2 = thigh.effectiveAngularInertia();
+        const c2: Mat3 = [I2.m11, I2.m12, I2.m13, I2.m12, I2.m22, I2.m23, I2.m13, I2.m23, I2.m33];
+        const t2 = thigh.translation();
+        const com = thigh.worldCom();
+        const hip = add(v3(t2.x, t2.y, t2.z), qRot(thigh.rotation(), anchorLocal));
+        const i2 = m3Inverse(m3Add(c2, m3ParallelAxis(thigh.mass(), sub(v3(com.x, com.y, com.z), hip))));
+        return (gw: Vec3): number => quad(i1, gw) + (i2 ? dot(gw, m3Vec(i2, gw)) : 0);
+      })();
+      const c = Math.min(S.dampingNmsPerRad, 1 / (dt * Math.max(inv(g), 1e-9)));
+      const m = Math.min(A.maxTorqueNm, Math.max(0, Math.min(S.stiffnessNmPerRad * x, A.maxTorqueNm) + c * u));
+      torque = addScaled(torque, g, -sign * m);
+    }
+  }
+  z.torque = torque;
+  if (torque.x !== 0 || torque.y !== 0 || torque.z !== 0) {
+    thigh.addTorque(torque, true);
+    core.addTorque(scale(torque, -1), true);
+  }
+  return torque;
 }
 
 /**
