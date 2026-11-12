@@ -683,6 +683,41 @@ export interface RagdollProfile {
    * (`src/sim/ragdoll.ts`, SELF_LEG_KEY). Absent: every same-owner pair but plan 11's passes through (Gate 4).
    */
   selfLegs?: SelfLegProfile;
+  /**
+   * Ladder rung 13a: the shoulder envelope's twist limit in the anatomical measure (`ShoulderTwistLimitProfile`), so it
+   * holds with the arm raised overhead. Absent: plan 09's twist, which fades out toward an arm straight overhead.
+   */
+  shoulderTwistLimit?: ShoulderTwistLimitProfile;
+}
+
+/**
+ * Ladder rung 13a: the ragdoll shoulder envelope's twist limit with the arm raised. Plan 09 measures the twist after the
+ * shortest arc from the hanging arm and scales its excess by cos(swing / 2), so that the limit's energy stays continuous
+ * at the pole straight overhead, where that measure turns singular (its swing axis turns with the arm's azimuth). Raised
+ * high the limit was then weak and read the wrong twist: HC-F5-strictTransfer's runner lies with its right arm up across
+ * its head and the forearm folded out and forward, 125 deg of external rotation in the anatomical measure (25 past the
+ * range), read as 71 and inside it. Here the limit reads the anatomical twist (`limbAnatomicalTwistRad`, ladder 11d,
+ * the measure of the visible meter since 13a-i): plan 09's up to horizontal, taken after the shortest arc from a
+ * reference 35 deg forward of hanging above it, singular only at that reference's opposite (35 deg behind straight up,
+ * outside the swing cone). Its excess is scaled to the same blend of cos(swing / 2) and cos(half the angle from the
+ * reference), so the scaled excess is, to first order, the turn that brings the arm back in range, and the limit's
+ * energy is continuous everywhere; up to horizontal the limit is plan 09's, term for term. Range, stiffness, damping, cap,
+ * tolerance and start slack stay the envelope's.
+ */
+export interface ShoulderTwistLimitProfile {
+  id: string;
+  measure: 'anatomical';
+}
+
+export const SHOULDER_TWIST_ANAT_V1: ShoulderTwistLimitProfile = { id: 'shoulder-twist-anat-v1', measure: 'anatomical' };
+
+/** Ladder rung 13a: the ragdoll profile with the anatomical shoulder twist limit, under an id that names it. */
+export const withShoulderTwistLimit = (r: RagdollProfile, p: ShoulderTwistLimitProfile = SHOULDER_TWIST_ANAT_V1): RagdollProfile => ({ ...r, id: `${r.id}+${p.id}`, shoulderTwistLimit: p });
+/** Ladder rung 13a: the ragdoll profile without it, under the id it had before it. */
+export function withoutShoulderTwistLimit(r: RagdollProfile): RagdollProfile {
+  if (!r.shoulderTwistLimit) return r;
+  const { shoulderTwistLimit, ...rest } = r;
+  return { ...rest, id: r.id.replace(`+${shoulderTwistLimit.id}`, '') };
 }
 
 /**

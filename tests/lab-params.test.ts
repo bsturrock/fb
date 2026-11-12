@@ -3,13 +3,13 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import {
-  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preFlip, preOwnLegs, preV3, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry` and `selfleg` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg` and `armtwist` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -20,7 +20,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs, knees, retry and selfleg', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg and armtwist', () => {
   it('order=rev&legs=v1 runs the matrices\' reversed V1 row of the fixture (L3-F1-phase6, the guard before the ladder 10 flip), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v1'));
@@ -213,5 +213,33 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry and selfleg',
     const g = allFixtures().find((x) => !x.ragdoll)!;
     expect(labRun(g, new URLSearchParams('selfleg=on'))).toEqual({ def: g, opts: {}, label: 'selfleg on n/a (no ragdoll profile)' });
     expect(labRun(d, new URLSearchParams('selfleg=maybe'))).toEqual({ def: d, opts: {}, label: 'selfleg=maybe ignored' });
+  }, 120000);
+
+  // ladder rung 13a: armtwist=on|off, composed last; no fixture registers the anatomical shoulder twist limit yet
+  it('armtwist=on runs the fixture with the anatomical shoulder twist limit on its ragdoll, id and all, named last (HC-F5-strictTransfer: another run, R\'s raised arm); armtwist=off takes it off again and on the registered fixture is the registered run; unknown values change nothing', async () => {
+    const id = 'HC-F5-strictTransfer';
+    const d = FIX(id);
+    expect(d.ragdoll!.shoulderTwistLimit).toBeUndefined();
+    const on = labRun(d, new URLSearchParams(`fixture=${id}&armtwist=on`));
+    expect(on.label).toBe('shoulder twist limit anatomical');
+    expect(on.def).toEqual({ ...d, ragdoll: withShoulderTwistLimit(d.ragdoll!) });
+    expect(on.def.ragdoll!.shoulderTwistLimit).toBe(SHOULDER_TWIST_ANAT_V1);
+    expect(on.def.ragdoll!.id).toBe(`${d.ragdoll!.id}+${SHOULDER_TWIST_ANAT_V1.id}`);
+    const run = await summaryOf(d, {});
+    // the twin: the limit changes the run
+    expect(await summaryOf(on.def, on.opts)).not.toBe(run);
+    // off puts it back, id and all; on the registered fixture it is the registered run
+    const back = labRun(on.def, new URLSearchParams('armtwist=OFF'));
+    expect(back.label).toBe('shoulder twist limit plan 09');
+    expect(back.def).toEqual(d);
+    expect(labRun(d, new URLSearchParams('armtwist=off'))).toEqual({ def: d, opts: {}, label: 'shoulder twist limit plan 09 (registered)' });
+    expect(labRun(on.def, new URLSearchParams('armtwist=on'))).toEqual({ def: on.def, opts: {}, label: 'shoulder twist limit anatomical (registered)' });
+    // composed after the others: with own-leg contact off, its id is named last
+    const both = labRun(d, new URLSearchParams('armtwist=on&selfleg=off'));
+    expect(both.label).toBe('own-leg contact off · shoulder twist limit anatomical');
+    expect(both.def).toEqual({ ...d, ragdoll: withShoulderTwistLimit(preOwnLegs(d).ragdoll!) });
+    const g = allFixtures().find((x) => !x.ragdoll)!;
+    expect(labRun(g, new URLSearchParams('armtwist=on'))).toEqual({ def: g, opts: {}, label: 'armtwist on n/a (no ragdoll profile)' });
+    expect(labRun(d, new URLSearchParams('armtwist=maybe'))).toEqual({ def: d, opts: {}, label: 'armtwist=maybe ignored' });
   }, 120000);
 });

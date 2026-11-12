@@ -5,8 +5,8 @@
 // with the arm's azimuth, so near vertical a small rotation of the arm changes the reading by up to tan(swing / 2) times
 // as much: a rate window in it holds a number while the arm turns over. The anatomical measure is the envelope's at and
 // below horizontal and blends above it into the twist after the swing from a reference 35 deg forward of hanging, whose
-// one singular direction is outside the shoulder cone. The same reading is the ragdoll's SHOULDER_POLE_TWIST (an arm at
-// rest straight overhead, where the envelope's twist limit fades): that use is proposed, not taken (the plan doc).
+// one singular direction is outside the shoulder cone. The visible meter reads it (ladder 13a), and the ragdoll's twist
+// limit takes it under SHOULDER_TWIST_ANAT_V1 (tests/shoulder-twist.test.ts).
 import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { armAnatomicalTwistRad, armTwistRad, clampDirToEnvelope, fitElbowTwist, limbAnatomicalTwistRad, limbTwistRad, swingExcess } from '../src/sim/joint-cone';

@@ -136,6 +136,21 @@ export function limbAnatomicalTwistRad(E: JointEnvelope, dir: Vec3, hinge: Vec3,
   return wrapPi(sideSign * (t - (E.neutralTwistDeg * Math.PI) / 180));
 }
 
+/**
+ * Ladder 13a: the scale that turns an excess of the anatomical twist (`limbAnatomicalTwistRad`) at limb direction `dir`
+ * (unit, parent frame) into, to first order, the turn that removes it: the twist's fastest rate per radian of turn is
+ * 1 / cos(half the angle from its reference), so the scale is that cosine, blended as the measure blends. Up to horizontal
+ * it is plan 09's cos(swing / 2) (the swing from the hanging limb); from `ANAT_BLEND_Y` up, cos(half the angle from
+ * `ANAT_REF`), 0 only at the measure's one singular direction, the reference's opposite.
+ */
+export function anatomicalTwistReach(dir: Vec3): number {
+  const r0 = Math.sqrt(Math.max(0, (1 - dir.y) / 2));
+  const w = smooth(dir.y / ANAT_BLEND_Y);
+  if (w <= 0) return r0;
+  const r1 = Math.sqrt(Math.max(0, (1 + dot(dir, ANAT_REF)) / 2));
+  return r0 + w * (r1 - r0);
+}
+
 /** Ladder 11d: an arm twist measure (envelope, core rotation, shoulder, elbow, distal point, side: rad, null when straight). */
 export type ArmTwistMeasure = (E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number) => number | null;
 

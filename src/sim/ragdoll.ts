@@ -6,9 +6,9 @@ import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
 import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry';
 import { boxSeg, cullGeom, geomNear, type CullGeom, type PhysicsWorld } from './physics';
 import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
-import { clampDirToEnvelope, swingExcess, swingExtentDeg } from './joint-cone';
+import { anatomicalTwistReach, clampDirToEnvelope, limbAnatomicalTwistRad, swingExcess, swingExtentDeg } from './joint-cone';
 import { applyHipApproach, hipNeutralFrame, initHipStop, initKneeStop, ratchetHipStop, ratchetKneeStop, type HipStopRuntime, type KneeStopRuntime } from './joint-stops';
-import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type JointRangeProfile, type RagdollProfile, type SelfClearanceProfile } from './profiles';
+import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointEnvelope, type JointRangeProfile, type RagdollProfile, type SelfClearanceProfile, type ShoulderTwistLimitProfile } from './profiles';
 import {
   add, addScaled, composePose, cross, dist, dot, isFiniteVec, len, m3Add, m3Det, m3Inverse, m3ParallelAxis, m3Vec, norm, qConj, qFromAxisAngle, qFromUnitVectors, qIdentity, qMul, qRot, round, rv, scale,
   sub, toLocal, toWorld, v3, vc, worldInertia, type Mat3, type Pose, type Quat, type Vec3,
@@ -756,13 +756,19 @@ function jointSwingTwist(rag: Ragdoll, j: RagdollJoint): SwingTwist {
   return swingTwistOf(qMul(qConj(rag.bodies[j.parent].rotation()), rag.bodies[j.child].rotation()));
 }
 
+/** Ladder 13a: the anatomical twist limit a joint of this ragdoll reads (a shoulder under `shoulderTwistLimit`), else undefined. */
+const anatOf = (rag: Ragdoll, j: RagdollJoint): ShoulderTwistLimitProfile | undefined => (j.kind === 'shoulder' ? rag.profile.shoulderTwistLimit : undefined);
+
 /** World unit axes along which a relative rotation raises this joint's swing excess and external twist. */
 export function limitGradients(rag: Ragdoll, j: RagdollJoint): { swing: Vec3; twist: Vec3 } {
   const q = qMul(qConj(rag.bodies[j.parent].rotation()), rag.bodies[j.child].rotation());
   const st = swingTwistOf(q);
   const qp = rag.bodies[j.parent].rotation();
   const s = j.sideSign ?? 1;
-  return { swing: qRot(qp, swingExcess(envelopeOf(rag, j)!, st.dir, s).axis), twist: scale(qRot(qp, twistAxis(q, st)), s) };
+  const E = envelopeOf(rag, j)!;
+  // ladder 13a: a raised arm under the anatomical limit, the direction raising that twist
+  const twist = anatOf(rag, j) && st.dir.y > 0 ? norm(anatomicalTwistGrad(E, q, s), v3(1, 0, 0)) : scale(twistAxis(q, st), s);
+  return { swing: qRot(qp, swingExcess(E, st.dir, s).axis), twist: qRot(qp, twist) };
 }
 
 /**
@@ -811,15 +817,63 @@ export function twistTerms(E: JointEnvelope, q: Quat, st: SwingTwist, sideSign: 
 }
 
 /**
+ * Ladder 13a: the anatomical twist of a relative rotation (rad, positive external, wrapped half a turn from the middle of
+ * the twist range as `rangeTwistRad`) and the scale of its excess (`anatomicalTwistReach`).
+ */
+export function anatomicalTwist(E: JointEnvelope, q: Quat, sideSign: number): { tw: number; reach: number } {
+  const dir = qRot(q, REF);
+  const mid = (((E.twistDeg[0] + E.twistDeg[1]) / 2) * Math.PI) / 180;
+  return { tw: mid + wrapPi(limbAnatomicalTwistRad(E, dir, qRot(q, v3(1, 0, 0)), sideSign) - mid), reach: anatomicalTwistReach(dir) };
+}
+
+/** Ladder 13a: the anatomical twist at q turned by `rad` about parent axis `a`, unwrapped next to `tw0`, and its reach there. */
+function anatomicalTwistAt(E: JointEnvelope, q: Quat, sideSign: number, a: Vec3, rad: number, tw0: number): { tw: number; reach: number } {
+  const t = anatomicalTwist(E, qMul(qFromAxisAngle(a, rad), q), sideSign);
+  return { tw: tw0 + wrapPi(t.tw - tw0), reach: t.reach };
+}
+
+/** Ladder 13a: the anatomical twist's rate per unit relative rotation about each parent axis (central differences). */
+function anatomicalTwistGrad(E: JointEnvelope, q: Quat, sideSign: number): Vec3 {
+  const tw0 = anatomicalTwist(E, q, sideSign).tw;
+  const g = AXES.map((a) => (anatomicalTwistAt(E, q, sideSign, a, GRAD_STEP_RAD, tw0).tw - anatomicalTwistAt(E, q, sideSign, a, -GRAD_STEP_RAD, tw0).tw) / (2 * GRAD_STEP_RAD));
+  return v3(g[0], g[1], g[2]);
+}
+
+/**
+ * Ladder 13a (`ShoulderTwistLimitProfile`): `twistTerms` in the anatomical twist, each excess scaled by
+ * `anatomicalTwistReach`, with the exact gradient of that product by central differences about each parent axis (the
+ * twist unwrapped about its value here, so a limit read across the wrap keeps its slope). The same function as
+ * `twistTerms` for an arm at or below horizontal, where `envelopeMoments` keeps that one.
+ */
+export function anatomicalTwistTerms(E: JointEnvelope, q: Quat, sideSign: number, slackLo: number, slackHi: number): { hi: LimitTerm; lo: LimitTerm } {
+  const hiR = (E.twistDeg[1] * Math.PI) / 180 + slackHi;
+  const loR = (E.twistDeg[0] * Math.PI) / 180 - slackLo;
+  const c = anatomicalTwist(E, q, sideSign);
+  const gHi: number[] = [];
+  const gLo: number[] = [];
+  for (const a of AXES) {
+    const p = anatomicalTwistAt(E, q, sideSign, a, GRAD_STEP_RAD, c.tw);
+    const m = anatomicalTwistAt(E, q, sideSign, a, -GRAD_STEP_RAD, c.tw);
+    gHi.push(((p.tw - hiR) * p.reach - (m.tw - hiR) * m.reach) / (2 * GRAD_STEP_RAD));
+    gLo.push(((loR - p.tw) * p.reach - (loR - m.tw) * m.reach) / (2 * GRAD_STEP_RAD));
+  }
+  return {
+    hi: { excess: (c.tw - hiR) * c.reach, grad: v3(gHi[0], gHi[1], gHi[2]) },
+    lo: { excess: (loR - c.tw) * c.reach, grad: v3(gLo[0], gLo[1], gLo[2]) },
+  };
+}
+
+/**
  * The envelope's restoring torque on the child (parent frame) from one energy per limit, U = integral over the excess
  * of min(k x, cap): torque = -(spring + damping) * gradient of the excess, the spring a function of that excess only,
  * so a closed path at rest returns exactly what it took. The damping acts along the same gradient and the total never
  * pulls (it is clamped to [0, cap]), so it can only remove energy from U plus the bodies' kinetic energy.
  */
-export function envelopeMoments(E: JointEnvelope, q: Quat, sideSign: number, slack: Pick<EnvelopeRuntime, 'swingSlack' | 'twistSlackLo' | 'twistSlackHi'>, wParent: Vec3): { torque: Vec3; swing: LimitTerm; hi: LimitTerm; lo: LimitTerm } {
+export function envelopeMoments(E: JointEnvelope, q: Quat, sideSign: number, slack: Pick<EnvelopeRuntime, 'swingSlack' | 'twistSlackLo' | 'twistSlackHi'>, wParent: Vec3, anat?: ShoulderTwistLimitProfile): { torque: Vec3; swing: LimitTerm; hi: LimitTerm; lo: LimitTerm } {
   const st = swingTwistOf(q);
   const swing = swingTerm(E, st.dir, sideSign, slack.swingSlack);
-  const { hi, lo } = twistTerms(E, q, st, sideSign, slack.twistSlackLo, slack.twistSlackHi);
+  // ladder 13a: a raised limb under the anatomical limit (`anat`); at or below horizontal the two are the same terms
+  const { hi, lo } = anat && st.dir.y > 0 ? anatomicalTwistTerms(E, q, sideSign, slack.twistSlackLo, slack.twistSlackHi) : twistTerms(E, q, st, sideSign, slack.twistSlackLo, slack.twistSlackHi);
   let torque = v3();
   const push = (t: LimitTerm, k: number, c: number): void => {
     if (t.excess <= 0) return;
@@ -841,7 +895,8 @@ export function initEnvelope(rag: Ragdoll): void {
     if (!E) continue;
     const st = jointSwingTwist(rag, j);
     const s = j.sideSign ?? 1;
-    const tw = rangeTwistRad(E, st.twistRad, s);
+    // ladder 13a: a raised arm under the anatomical limit starts with that twist's excess as its slack
+    const tw = anatOf(rag, j) && st.dir.y > 0 ? anatomicalTwist(E, qMul(qConj(rag.bodies[j.parent].rotation()), rag.bodies[j.child].rotation()), s).tw : rangeTwistRad(E, st.twistRad, s);
     const swingSlack = Math.max(0, swingExcess(E, st.dir, s).rad);
     const twistSlackHi = Math.max(0, tw - (E.twistDeg[1] * Math.PI) / 180);
     const twistSlackLo = Math.max(0, (E.twistDeg[0] * Math.PI) / 180 - tw);
@@ -884,17 +939,21 @@ export function applyEnvelope(rag: Ragdoll, dt: number): void {
     const st = swingTwistOf(q);
     const w = relativeOmega(rag, j);
     const over = swingExcess(E, st.dir, s).rad;
-    const tw = rangeTwistRad(E, st.twistRad, s);
+    // ladder 13a: a raised arm under the anatomical limit reads that twist and its reach
+    const anat = anatOf(rag, j);
+    const at = anat && st.dir.y > 0 ? anatomicalTwist(E, q, s) : null;
+    const tw = at ? at.tw : rangeTwistRad(E, st.twistRad, s);
+    const reach = at ? at.reach : Math.cos(st.swingRad / 2);
     const hi = (E.twistDeg[1] * Math.PI) / 180;
     const lo = (E.twistDeg[0] * Math.PI) / 180;
     // the slack only tightens: it follows a limb moving back inward, then decays at its bounded rate
     e.swingSlack = Math.max(0, Math.min(e.swingSlack, Math.max(0, over)) - decay);
     e.twistSlackHi = Math.max(0, Math.min(e.twistSlackHi, Math.max(0, tw - hi)) - decay);
     e.twistSlackLo = Math.max(0, Math.min(e.twistSlackLo, Math.max(0, lo - tw)) - decay);
-    const M = envelopeMoments(E, q, s, e, qRot(qConj(qp), w));
+    const M = envelopeMoments(E, q, s, e, qRot(qConj(qp), w), anat);
     const torque = qRot(qp, M.torque);
     const overDeg = (Math.max(0, M.swing.excess, M.hi.excess, M.lo.excess) * 180) / Math.PI;
-    const nominalDeg = (Math.max(0, over, Math.max(tw - hi, lo - tw) * Math.cos(st.swingRad / 2)) * 180) / Math.PI;
+    const nominalDeg = (Math.max(0, over, Math.max(tw - hi, lo - tw) * reach) * 180) / Math.PI;
     if (len(torque) > 0) {
       rag.bodies[j.child].addTorque(torque, true);
       rag.bodies[j.parent].addTorque(scale(torque, -1), true);

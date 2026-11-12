@@ -106,7 +106,8 @@ export function loadedLimbMonitor(declared?: (pid: string) => RagdollEnvelope): 
         st.rec.oldRunS = e.maxOverRunS;
         const qp = rag.bodies[j.parent].rotation();
         const q = qMul(qConj(qp), rag.bodies[j.child].rotation());
-        const M = envelopeMoments(E, q, j.sideSign ?? 1, e, qRot(qConj(qp), relativeOmega(rag, j)));
+        // ladder 13a: a shoulder under the anatomical twist limit is judged in that measure, as its envelope acts
+        const M = envelopeMoments(E, q, j.sideSign ?? 1, e, qRot(qConj(qp), relativeOmega(rag, j)), j.kind === 'shoulder' ? rag.profile.shoulderTwistLimit : undefined);
         const terms = [
           { t: M.swing, k: E.swing.stiffnessNmPerRad, c: E.swing.dampingNmsPerRad },
           { t: M.hi, k: E.twist.stiffnessNmPerRad, c: E.twist.dampingNmsPerRad },
