@@ -15,13 +15,17 @@
 //   `userData`, the collider's cached JS shape, whose exact f64 sizes the queries read);
 // - functions and accessors: taken from the fresh build at the same path (they all close over the Simulation);
 // - the measured trunk pieces (a process-wide cache with colliders in a private query world): by owner and index;
-// - other engine objects (the hook event queue): the fresh build's at the same path.
+// - other engine objects (the hook event queue): the fresh build's at the same path;
+// - a frozen profile constant the build uses outside the definition (a default such as ARM_G2, `sim.arms.profile` when
+//   the fixture names no `armProfile`: frozen because another registered fixture names it): by its export path in
+//   src/sim/profiles, with its id, which the resume checks.
 // Numbers are written exactly (JSON's shortest round-trip form, NaN / infinities / -0 tagged). Captures are taken
 // between ticks only (`stepTick` keeps no state on its stack across ticks).
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { FixtureDef } from '../src/sim/fixture';
 import { RAPIER, trunkPieces } from '../src/sim/physics';
+import * as PROFILES from '../src/sim/profiles';
 import { SIM_DEFAULTS, Simulation, type SimOptions } from '../src/sim/simulation';
 import { create, FIX } from './runs';
 
@@ -82,6 +86,14 @@ function profileIds(def: FixtureDef): Record<string, string> {
   return out;
 }
 
+/**
+ * The frozen objects src/sim/profiles exports or reaches, by their first path in export order (`.ARM_G2`,
+ * `.ARM_G2.wrap`): the constants a build may hold outside its definition. Only frozen ones: an extensible constant is
+ * written by value, as before. Read at each capture (the fixture registry freezes what it reaches when first built).
+ */
+const profileConstants = (): Map<object, string> =>
+  new Map([...pathsOf(PROFILES as unknown as object)].filter(([o, p]) => p !== '' && !Object.isExtensible(o)));
+
 /** The measured trunk pieces any player of `sim` can reach (module cache), keyed by player index and piece. */
 function trunkRegistry(sim: Simulation): Map<unknown, string> {
   const out = new Map<unknown, string>();
@@ -111,6 +123,7 @@ export function captureState(sim: Simulation): StateCapture {
   const world = sim.physics.world;
   const defPaths = pathsOf(sim.def);
   const trunk = trunkRegistry(sim);
+  const consts = profileConstants();
   const ids = new Map<object, number>();
   const layout: Record<string, string[]> = {};
   const W = world as unknown as { bodies: { raw: unknown }; colliders: { raw: unknown }; impulseJoints: { raw: unknown } };
@@ -125,6 +138,8 @@ export function captureState(sim: Simulation): StateCapture {
     if (ids.has(o)) return { $ref: ids.get(o) };
     if (defPaths.has(o)) return { $def: defPaths.get(o) };
     if (trunk.has(o)) return { $trunk: trunk.get(o) };
+    // a frozen profile constant outside the definition (by reference: no $id, every reference resolves to it again)
+    if (consts.has(o)) return { $const: consts.get(o), ...(typeof o.id === 'string' ? { id: o.id } : {}) };
     const ctor = Object.getPrototypeOf(o)?.constructor;
     const rn = RAPIER_NAME.get(ctor);
     if (rn === 'World') {
@@ -285,6 +300,12 @@ function decodeInto(sim: Simulation, cap: StateCapture, bad: (cap: StateCapture,
       return v;
     }
     if ('$trunk' in n) return trunk.get(n.$trunk) ?? bad(cap, `trunk piece ${n.$trunk} (at ${path}) is gone`);
+    if ('$const' in n) {
+      const v = at(n.$const, PROFILES) as { id?: unknown } | undefined;
+      if (!v || typeof v !== 'object') return bad(cap, `profile constant ${n.$const} (read at ${path}) is gone`);
+      if (n.id !== undefined && v.id !== n.id) bad(cap, `profile constant ${n.$const} (read at ${path}) is ${String(v.id)}, the capture ran under ${n.id}`);
+      return v;
+    }
     if ('$world' in n) return world;
     if ('$set' in n) return setsBack.get(n.$set) ?? bad(cap, `no world set ${n.$set}`);
     if ('$rb' in n) return world.getRigidBody(n.$rb) ?? bad(cap, `no rigid body ${n.$rb} at ${path}`);

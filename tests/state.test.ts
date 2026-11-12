@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
 import { create, FIX, preFlip, preV3, runSim } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
-import { LEG_GUARD_V3 } from '../src/sim/profiles';
+import { ARM_G2, LEG_GUARD_V3 } from '../src/sim/profiles';
 
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace });
 const copy = (c: StateCapture): StateCapture => JSON.parse(JSON.stringify(c));
@@ -31,6 +31,42 @@ describe('full-state capture and resume', () => {
       expect(same, `${id} resumed at tick ${tick}`).toBe(true);
     }
   }, 120000);
+
+  it('a fixture whose build uses a frozen profile constant outside its definition (ARM_G2, no armProfile) captures and resumes byte for byte', async () => {
+    // L4-F2-forward-on at 0.5 s and L4-F4-obstructed reversed at 1.0 s: fall responses (plan 10) and no armProfile, so the
+    // arm system holds ARM_G2 (frozen by the fixture registry, which reaches it through the fixtures that name it); the
+    // capture writes it as the constant, by reference, and the resume reads the same object
+    for (const [id, tick, opts] of [['L4-F2-forward-on', 30, {}], ['L4-F4-obstructed', 60, { reverseOrder: true }]] as const) {
+      expect(FIX(id).armProfile, id).toBeUndefined();
+      const sim = await create(FIX(id), opts);
+      await runSim(sim, tick);
+      expect((sim as any).arms.profile, id).toBe(ARM_G2);
+      expect(Object.isFrozen(ARM_G2)).toBe(true);
+      const cap = copy(captureState(sim));
+      expect(JSON.stringify(cap.state), id).toContain('{"$const":".ARM_G2","id":"arm-g2-v1"}');
+      await runSim(sim);
+      const whole = exportOf(sim);
+      sim.dispose();
+      const back = await resumeState(cap);
+      expect((back as any).arms.profile, id).toBe(ARM_G2);
+      await runSim(back);
+      const same = exportOf(back) === whole;
+      back.dispose();
+      expect(same, `${id} resumed at tick ${tick}`).toBe(true);
+      // a constant whose id is not the capture's is refused, naming it
+      const other = JSON.parse(JSON.stringify(cap).replace('{"$const":".ARM_G2","id":"arm-g2-v1"}', '{"$const":".ARM_G2","id":"arm-g2-other"}')) as StateCapture;
+      await expect(resumeState(other)).rejects.toThrow(/stale state capture .*profile constant \.ARM_G2 \(read at sim\.arms\.profile\) is arm-g2-v1, the capture ran under arm-g2-other/);
+    }
+  }, 120000);
+
+  it('fault twin: a frozen object outside the definition that src/sim/profiles does not export is still refused at capture', async () => {
+    const sim = await create(FIX('L4-F2-forward-on'));
+    await runSim(sim, 30);
+    // the same profile's values in a frozen copy the registry of constants cannot name: the capture as before the fix
+    (sim as any).arms.profile = Object.freeze({ ...ARM_G2 });
+    expect(() => captureState(sim)).toThrow(/state capture: a frozen object outside the definition at sim\.arms\.profile/);
+    sim.dispose();
+  }, 60000);
 
   it('a run under physical legs (LEG_GUARD_V3: leg colliders on the proxies, round convex hulls) resumes byte for byte', async () => {
     // L3-F4-oneArm at 1.167 s under the rung 6 profile: both players' physical legs made and reshaped every substep (their
