@@ -110,6 +110,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
       ...(host.def.legGuard?.sweep && host.def.legGuard.ownLegs ? { legOwn: host.def.legGuard.ownLegs } : {}),
       ...(host.def.selfClearance?.seamSettle ? { selfSeam: true } : {}),
       ...(host.def.selfClearance?.upperArm ? { selfUpperArm: true } : {}),
+      ...(host.def.selfClearance?.clipArmSwing ? { clipArmSwing: true } : {}),
       ...(host.def.locomotion ? { loco: { profile: host.def.locomotion, brakeB: pl.sus?.brakeB ?? 0, swing: walkSwing(pl, host.def.locomotion, core, sp, dt), contactW: pl.loco?.braceW ?? 0, ...idleOf(host, pl, sp) } } : {}),
       ...(host.opts.debug?.pose ? { debug: host.opts.debug.pose } : {}),
       ...(host.opts.debug?.poseProbe ? { probe: host.opts.debug.poseProbe } : {}),

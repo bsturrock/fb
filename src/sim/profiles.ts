@@ -88,6 +88,21 @@ export interface SelfClearanceProfile {
    * within the arm's reach of its shoulder. The ragdoll's self colliders are unchanged (forearms only).
    */
   upperArm?: true;
+  /**
+   * Ladder 14b (absent: false): a composed arm another body has met keeps its clip swing (`CLIP_ARM_HELD_DEPARTURE`).
+   * Before, a clip arm whose swing-out found nothing clear took a body-fixed alternative, and the continuity step toward it
+   * was a departure from the clip's target carried with that target: as the run's swing moved on, the departure went with
+   * it, across the chest (L3-F16-contactStop: the defender's left forearm 10 cm into its own trunk at 0.567 s), and each
+   * push-out the arm could not follow was kept as the next step's start, walking the target on (past 1 m). With this, from
+   * the arm's primary meeting another body until its departure is back on the chosen pose: a clip arm is moved off the
+   * other body only continuously (the swing-out, the continuity push), never sent to an alternative while its own arm is
+   * clear of its trunk; its departure also moves toward the chosen pose as fast as the clip's target moves (so it rejoins
+   * the swing with no jump); a push that leaves it invalid is not kept; and, squeezed between the other body and its own
+   * trunk, a met arm (clip or procedural) gives up as much of its departure as would carry it into its trunk and is not
+   * pushed into its chest by the other body (the push loses its share toward the trunk). Arm tasks, and arms nothing has
+   * met (a free run's carry tuck), are unchanged.
+   */
+  clipArmSwing?: true;
 }
 
 export const SELF_CLEARANCE_V1: SelfClearanceProfile = { id: 'self-clearance-v1', toleranceM: 0.01, ragdoll: true };
@@ -97,6 +112,16 @@ export const SELF_CLEARANCE_V2: SelfClearanceProfile = { ...SELF_CLEARANCE_V1, i
 export const UPPER_ARM_SELF_ID = 'upper-arm-v1';
 /** Ladder 13c: `s` with the upper arm in the supported arms' self shapes (`upperArm`). */
 export const withUpperArmClearance = (s: SelfClearanceProfile): SelfClearanceProfile => (s.upperArm ? s : { ...s, id: `${s.id}+${UPPER_ARM_SELF_ID}`, upperArm: true });
+/** Ladder 14b: the id part `withClipArmSwing` adds. */
+export const CLIP_ARM_SWING_ID = 'clip-swing-v1';
+/** Ladder 14b: `s` with the composed clip arms keeping their swing (`clipArmSwing`). */
+export const withClipArmSwing = (s: SelfClearanceProfile): SelfClearanceProfile => (s.clipArmSwing ? s : { ...s, id: `${s.id}+${CLIP_ARM_SWING_ID}`, clipArmSwing: true });
+/** Ladder 14b: `s` without it, under the id it had before. */
+export const withoutClipArmSwing = (s: SelfClearanceProfile): SelfClearanceProfile => {
+  if (!s.clipArmSwing) return s;
+  const { clipArmSwing: _c, ...rest } = s;
+  return { ...rest, id: s.id.replace(`+${CLIP_ARM_SWING_ID}`, '') };
+};
 /** Ladder 13c: `s` without it, under the id it had before. */
 export const withoutUpperArmClearance = (s: SelfClearanceProfile): SelfClearanceProfile => {
   if (!s.upperArm) return s;

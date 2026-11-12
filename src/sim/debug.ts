@@ -71,6 +71,16 @@ export interface PoseDebug {
    * of its shoulder (the bound off).
    */
   noArmReachBound?: boolean;
+  /**
+   * Fault (ladder 14b, `SelfClearanceProfile.clipArmSwing`): a met clip arm's departure is let go at once (the arm is
+   * shown on its chosen pose the next step), not as fast as the clip's target moves.
+   */
+  clipArmSwingAtOnce?: boolean;
+  /**
+   * Fault (ladder 14b, `clipArmSwing`): its rules hold for every composed arm, not only one another body has met (a free
+   * run's carry tuck then changes).
+   */
+  clipArmSwingUngated?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

@@ -503,6 +503,8 @@ export interface ProxyPoseInput {
   selfSeam?: boolean;
   /** Ladder 13c (`SelfClearanceProfile.upperArm`): an arm's self shapes take its upper arm's distal half. Absent: false. */
   selfUpperArm?: boolean;
+  /** Ladder 14b (`SelfClearanceProfile.clipArmSwing`): a composed clip arm keeps its swing. Absent: false. */
+  clipArmSwing?: boolean;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
   loco?: {
     profile: LocomotionProfile;
@@ -1105,6 +1107,18 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       }
       // a sampled arm returns to its primary as soon as that is clear again (no sticking in an alternative)
       r ??= pick(cands, mem[k], held, gr0);
+      // ladder 14b (`clipArmSwing`), for a composed arm another body has met (from its primary meeting one until its
+      // departure is back on the chosen pose): a clip arm keeps its swing. It is moved off the other body only continuously
+      // (the swing-out above, the continuity push below), never sent to a body-fixed alternative while its own arm is clear
+      // of its trunk: the step toward one is a departure from the swinging clip target, and was carried with it across the
+      // chest. An arm nothing has met (a free run's carry tuck) is as before.
+      const metK = `${k}:met`;
+      const c0 = inp.clipArmSwing && lo && held ? cands[0]() : null;
+      if (c0 && (ext(c0.shapes) > CLEAR_OK || c0.softOther > CLEAR_OK)) mem[metK] = 1;
+      const met = !!c0 && (mem[metK] === 1 || !!inp.debug?.clipArmSwingUngated);
+      const keepSwing = met && sampledArm;
+      const trunkFirst = met;
+      if (keepSwing && r.index !== 0 && (c0!.body ?? 0) <= HARD_OK) r = { best: c0!, index: 0 };
       mem[k] = r.index;
       if (!held) mem[`${k}Proc`] = r.index;
       else if (lo) mem[`${k}Proc`] = 0;
@@ -1124,7 +1138,15 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const pb = memVec(mem, `${k}:b`);
         const handed = !!pb && !!last2 && dist(palm0, pb) > CONT_BASE_MPS * dt;
         const dp0 = contPrev(mem, k, palm0, dt);
-        const dp = handed ? sub(sub(scale(last!, 2), last2!), palm0) : dp0;
+        let dp = handed ? sub(sub(scale(last!, 2), last2!), palm0) : dp0;
+        // ladder 14b: and its departure moves toward the chosen pose as fast as the clip's target moves too (bounded by the
+        // swing's own speed: it rejoins the swing with no jump), not only at the continuity rate while carried with it
+        if (keepSwing && !handed && dp && pb) {
+          const moved = dist(palm0, pb);
+          const g = sub(dc, dp);
+          const l = len(g);
+          dp = l <= moved || inp.debug?.clipArmSwingAtOnce ? dc : addScaled(dp, g, moved / l);
+        }
         // plan 14: a clip arm on a composed pose turns its shown pole with the request's own pole, as the departure is
         // measured from the moving request: only a departure from the request is rate-limited. Before, the clip's elbow
         // plane (which turns about 110 degrees each half cycle) was held at the rate limit, and the run's forward swing
@@ -1136,6 +1158,21 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const pp = pp0 && pq ? qRot(qFromUnitVectors(norm(pq, pole0), norm(pole0, pq)), pp0) : pp0;
         if (clipPole) setMemVec(mem, `${k}:q`, pole0);
         else for (const c of ['x', 'y', 'z']) delete mem[`${k}:q:${c}`];
+        // ladder 14b: a met arm (clip or procedural) gives up as much of a departure as would carry it into its own trunk
+        // (toward its request, clear of the trunk: squeezed between another body and its own trunk, it stays out of its chest)
+        if (trunkFirst && !handed && dp && pp && dt > 0) {
+          const bodyAt = (f: number): number => procedural(addScaled(palm0, dp!, f), pp)().body ?? 0;
+          if (bodyAt(1) > HARD_OK && bodyAt(0) <= HARD_OK) {
+            let lo = 0;
+            let hi = 1;
+            for (let b = 0; b < 6; b++) {
+              const m = 0.5 * (lo + hi);
+              if (bodyAt(m) <= HARD_OK) lo = m;
+              else hi = m;
+            }
+            dp = scale(dp, lo);
+          }
+        }
         if (dp && pp && dt > 0) {
           const chosen = a;
           const extOk = Math.max(HARD_OK, chosen.depth) + 1e-9;
@@ -1156,7 +1193,11 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
                 if (lastSelf && dot(bw, lastSelf) < 0) selfGain *= 0.5;
                 lastSelf = bw;
               }
-              const pv = qInvRot(pose.q, bw ? (selfGain === 1 ? add(pw, bw) : addScaled(pw, bw, selfGain)) : pw);
+              // ladder 14b (`clipArmSwing`): squeezed between another body and its own trunk, a met arm is not pushed into its
+              // chest: the push out of the other body loses its share toward the trunk (it slides along the trunk instead)
+              const bl = bw && trunkFirst ? len(bw) : 0;
+              const pwS = bl > 1e-9 ? addScaled(pw, bw!, -Math.min(0, dot(pw, bw!)) / (bl * bl)) : pw;
+              const pv = qInvRot(pose.q, bw ? (selfGain === 1 ? add(pwS, bw) : addScaled(pwS, bw, selfGain)) : pw);
               const m = len(pv);
               if (m < 1e-6) break;
               t = add(t0, clampLen(sub(addScaled(t, pv, 1 + 0.001 / m), t0), CONT_PUSH_MAX_M));
@@ -1191,11 +1232,17 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           if (shownPushed) a = atM(al);
           if (P?.trace) contDbg = { ...(P.contLast ?? { a0: al, dd: 0 }), al, push: dist(a.tgtL!, add(palm0, lerp(dp, dc, al))) };
           // the shown target (with its push-out) is the next pose's start: each step then only needs a shallow push
-          setMemVec(mem, `${k}:d`, shownPushed ? sub(a.tgtL!, palm0) : dc);
+          // (ladder 14b: for a met clip arm, a push that leaves it invalid is not the next start, or it walks the target on
+          // each step; and the arm is no longer met once its departure is back on the chosen pose and nothing meets it)
+          const kept = shownPushed && !(keepSwing && a.depth > extOk);
+          const dn = kept ? sub(a.tgtL!, palm0) : shownPushed ? lerp(dp, dc, al) : dc;
+          setMemVec(mem, `${k}:d`, dn);
+          if (met && dist(dn, dc) < 1e-3 && ext(c0!.shapes) <= CLEAR_OK && c0!.softOther <= CLEAR_OK) delete mem[metK];
           setMemVec(mem, `${k}:p`, al < 1 ? towardDir(pp, pc, al) : pc);
         } else {
           setMemVec(mem, `${k}:d`, dc);
           setMemVec(mem, `${k}:p`, pc);
+          if (met && ext(c0!.shapes) <= CLEAR_OK && c0!.softOther <= CLEAR_OK) delete mem[metK];
         }
       }
       if (P?.trace) P.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, sampled: sampledArm, palm0, dc: sub(r.best.tgtL!, palm0), shown: a.tgtL ? sub(a.tgtL, palm0) : null, poleC: r.best.poleL, pole: a.poleL, elbow: qInvRot(pose.q, sub(a.elbow, pose.p)), wrist: qInvRot(pose.q, sub(a.wrist, pose.p)), fb: a.chain.fallback, depth: a.depth });

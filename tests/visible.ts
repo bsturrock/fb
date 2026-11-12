@@ -100,7 +100,7 @@ export function jointAngles(pose: PhysicalPose, body: BodyProfile): Record<strin
 }
 
 /** Relative rotation (parent -> child) of every joint, for the frame-to-frame joint speed. */
-function jointQuats(pose: PhysicalPose): Record<string, Quat> {
+export function jointQuats(pose: PhysicalPose): Record<string, Quat> {
   const o: Record<string, Quat> = {};
   for (const s of SIDES) {
     o[`${s}Hip`] = rel(pose, 'core', `${s}Thigh`);
@@ -111,7 +111,7 @@ function jointQuats(pose: PhysicalPose): Record<string, Quat> {
   o.neck = rel(pose, 'core', 'head');
   return o;
 }
-const qAngle = (a: Quat, b: Quat): number => 2 * Math.acos(Math.min(1, Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w)));
+export const qAngle = (a: Quat, b: Quat): number => 2 * Math.acos(Math.min(1, Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w)));
 
 // ------------------------------------------------------------------------------------------------ human ranges
 /** One DOF's check: the excess (deg, <= 0 inside) past the human range, implausible and impossible margins past it. */
@@ -238,7 +238,7 @@ function trunkPieces(body: BodyProfile): { shape: RAPIER.Shape; c: Vec3; r: numb
  * own-body pairs whose proximal ends meet by construction), the measured trunk hull pieces (the compound cuboids on an
  * authored body) and the head ball.
  */
-function drawnShapes(pose: PhysicalPose, body: BodyProfile, R: RagdollProfile): DShape[] {
+export function drawnShapes(pose: PhysicalPose, body: BodyProfile, R: RagdollProfile): DShape[] {
   const out: DShape[] = [];
   for (const sh of poseLimbShapes(R, pose)) {
     const side: Side = sh.key.startsWith('left') ? 'left' : 'right';
@@ -279,7 +279,7 @@ const asShape = (s: DShape): { shape: RAPIER.Shape; p: Vec3; q: Quat } => {
 };
 
 /** Penetration depth (m, > 0 overlapping) of two drawn shapes, else 0: capsules and balls exactly, the rest by Rapier. */
-function depth(a: DShape, b: DShape): number {
+export function depth(a: DShape, b: DShape): number {
   if (len(sub(a.c, b.c)) > a.r + b.r) return 0;
   if (a.seg && b.seg) return Math.max(0, a.seg.r + b.seg.r - segDist(a.seg.a, a.seg.b, b.seg.a, b.seg.b));
   const x = asShape(a);
@@ -297,7 +297,7 @@ export const SELF_CLASSES: SelfClass[] = ['legLeg', 'legTrunk', 'legFold', 'armL
  * thigh, shinD vs its thighD: heel into buttock, calf through thigh); arm vs own legs (upperArmD, forearm, palm vs thigh,
  * shin, shoe); arm vs own trunk; arm vs the other arm; head vs own limbs.
  */
-function selfPairs(sh: DShape[]): { a: DShape; b: DShape; cls: SelfClass }[] {
+export function selfPairs(sh: DShape[]): { a: DShape; b: DShape; cls: SelfClass }[] {
   const out: { a: DShape; b: DShape; cls: SelfClass }[] = [];
   const one = (cls: ShapeCls, side?: Side): DShape | undefined => sh.find((s) => s.cls === cls && (side === undefined || s.side === side));
   const trunk = sh.filter((s) => s.cls === 'trunk');
