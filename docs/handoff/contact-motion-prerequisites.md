@@ -6,9 +6,9 @@ Sequence: [contact motion](../open/contact-motion/README.md). This work comes af
 
 The work is on branch `prereq-ladder`, cut from `a6d712f` (M1) and built in the worktree
 `~/.claude-wt/football-sim-7-ladder`: 61 commits to `8a6af97`, the close-out docs, then ladder 13 (four commits to
-`599dc57`, and its docs), the full check's speed-up (`69ae0bb` to `29c785b`) and ladder 14 (`c81146e` to `8f3ce6e`).
-It is not merged into `model-integration`, and the repository has no remote. Replacing that branch's old uncommitted
-stack is the user's decision (plan doc, "Replacing the old working tree").
+`599dc57`, and its docs), the full check's speed-up (`69ae0bb` to `29c785b`), ladder 14 (`c81146e` to `8f3ce6e`),
+ladder 15 and ladder 16 (`11551f6`, `5c8d4aa`). `model-integration` in the main checkout is fast-forwarded to it, and
+both branches are pushed to `origin`.
 
 Ladder 13 (2026-11-12) took the user's three look rulings: the fallen arm bent the wrong way overhead (13a), legs
 planted and still in a stationary hold (13b), and the elbow and upper arm inside the own chest (13c). Each landed off;
@@ -19,10 +19,18 @@ planted and still in a stationary hold (13b), and the elbow and upper arm inside
 - **14b** fixed what 13c left at its source: a clip arm's held departure carried across the chest
   (`CLIP_ARM_HELD_DEPARTURE`). It landed off (`clipArmSwing`, `8f3ce6e`), and its flip is parked.
 
-**Result at the tip** (full check `.scratch/ladder/r14b-flagoff/` in the main checkout). Every step after 10e is
+Ladder 16 took the user's L3-F5-drag report (the carrier's arm, natural at its side when the wrap lands, travels to
+its facemask and goes haywire: the body-fixed alternatives, `MET_ARM_FIXED_ALTERNATIVE`):
+
+- **16a** (`11551f6`): a capture's definition comes out of the flip chain (`asCaptured`, `BEFORE_FLIPS`).
+- **16b** (`5c8d4aa`): a met arm keeps its natural pose (`metArmStay`), landed off.
+- **16c**: its flip with `clipArmSwing` is parked after one fix round (`parked/met-arm-stay-flip/`): it leaves a new
+  rigid falling figure and the shape-query budget broken.
+
+**Result at the tip** (full check `.scratch/ladder/r16-b-metarmstay/` in the main checkout). Every step after 10e is
 byte-identical to 10e except 14a-ii, which changed four summaries. 13a-i changed only the visible meter:
 - The suite passes 383/383 in 41 files (250 at the start); after ladder 15's gate tests (below) 395/395 in 42 files,
-  `.scratch/ladder/r15-c-energy-conv/`. Typecheck and build pass. 411 fixtures export, equal to `evidence/summary.json`.
+  `.scratch/ladder/r15-c-energy-conv/`; after ladder 16 404/404 in 43. Typecheck and build pass. 411 fixtures export, equal to `evidence/summary.json`.
 - G, L1, L2 and RH summaries and traces are byte-identical to `a6d712f`. Summaries changed: L3 59 of 98, L4 70 of 75,
   HC 21 of 22.
 - Leg matrix: none over a ceiling. L4 matrix: one row over the power ceiling (`IMPACT_OVER_POWER`, tracked). The worst
@@ -278,7 +286,21 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
   (`r12b-twist-fit/mechanism/`).
 - **Palms going to and fro under the arm pair:** L3 325 substeps (L3-F4-gripTarget D, L3-F6-saturated rev). Not
   traced.
-- **`CLIP_ARM_HELD_DEPARTURE`**: fixed off by `clipArmSwing` (14b); its flip is parked. A clip arm with no clear
+- **`MET_ARM_FIXED_ALTERNATIVE`** (the user's L3-F5-drag report): fixed off by `metArmStay` (16b); its flip is parked.
+  A met arm whose swing-out finds nothing clear takes the first clear of eight body-fixed alternatives, most of them
+  raised or forward. In L3-F5-drag the wrap meets R's left arm at 0.40 s; it goes up (palm 0.98 m above the core), its
+  hand into its own head (5 cm, 0.97 s) and its shoulder snaps (116 rad/s, 1.27 s). Under the flag it stays at its
+  request or hangs at its side, palm at most 0.03 m above the core, nothing in the head, no snap. Tests:
+  `met-arm-stay.test.ts` on `L3-F5-drag@21` and `L3-F16-contactStop@18`, the registered arm the fault twin; the
+  substep bound (`metArmUnbounded`), the deferral (`metArmStayDeferred`) and unmet arms (`clipArmSwingUngated`) twinned.
+  Whole set under the flag (forward): forearm or hand through the own trunk 1.28 -> 0.37 s, hand in head 0.40 -> 0,
+  upper arm 41.6 -> 0.85 s (arm tasks only), snaps 8 -> 1, one-frame jumps over 20 cm 54 -> 5.
+- **`MET_ARM_UPPER_IN_OTHER`** (blocks 16c): a met arm hanging at its side whose shoulder is against the other player
+  keeps its upper arm in that player; no low pose clears it. HC-F1-at1.6 reversed R's left upper arm is 3-4.6 cm in D's
+  drawn torso from 1.35 s, 8.2 cm in the ragdoll's at the request (1.600 s), and the deferred handoff is rejected at
+  1.850 s: a rigid falling figure. Forward, R is deferred 0.204 s. Evidence and options:
+  `parked/met-arm-stay-flip/README.md`.
+- **`CLIP_ARM_HELD_DEPARTURE`**: fixed off by `clipArmSwing` (14b), and by `metArmStay` (16b); both flips are parked. A clip arm with no clear
   candidate takes a body-fixed alternative, and the departure toward it is carried with the clip's target. As the clip
   swings on, the arm is carried across the chest, and each push-out it cannot follow walks the target on.
   - Where it shows: in the user's screenshot (L3-F16-contactStop, 0.55 s, 21 ms before contact), D's left forearm goes
@@ -292,16 +314,24 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
   arm goes through the own trunk. Under the flag it is the larger part of the 7.1 s of upper-arm gross pass-through left
   (41.6 s registered). Example: L3-F5-drag R's left arm is 13.6 cm deep from 1.6 to 2.7 s, with a departure of 1.07 m.
   Fix: extend the let-go to a procedural arm's held departure, then re-measure whether `upperArm` is still needed.
+  `metArmStay` does that for a met arm (16b; L3-F5-drag R's left upper arm 1.25 -> 0.07 s); an arm nothing met is as
+  before.
 - **`ARM_OWN_HEAD`**: a supported hand passes through its own head (the user's "facemask" report). In L3-F5-drag, R's
   left hand bone axis is inside its own head at 0.80-1.25 s, after contact at 0.40 s: three events, with a peak of 5.0
   cm at 0.967 s. The arm is procedural, held 0.8 m off its request. The self-clearance shapes are the torso and pelvis
   only; the head is in none of them, and the visible meter's `headLimb` class has no deep or axis measure. The flag
   removes it over the whole run. From a capture at 1.10 s, where the departure is already held, it stays (3.6 cm at
   1.217 s). Parked failing test and capture: `parked/arm-own-head/`. Proposed: an own-head axis meter beside armTrunk's
-  (that test's measure), then the head as an arm self shape. Not built: the guard is not extended now.
-- **A met arm pressed into the other player** (the flag's trade-off). The met arm now stays against the other body
-  instead of being sent into its own chest: L3 any arm part past 5 cm in the other player goes 0.97 -> 6.50 s. In the
-  screenshot, D's forearm is 4.4 cm into R's trunk at 0.55-0.567 s. It is not yet judged against the gross bar.
+  (that test's measure), then the head as an arm self shape. Not built: the guard is not extended now. Under
+  `metArmStay` no hand enters its own head anywhere (forward runs), so the head shape is not needed for this report.
+- **A met arm pressed into the other player** (the trade-off of both flags). The met arm stays against the other body
+  instead of being sent into its own chest or up. Under `clipArmSwing` L3 any arm part past 5 cm in the other player
+  goes 0.97 -> 6.50 s. Under `metArmStay` (forward, every L3/L4/HC run): past 5 cm 0.12 -> 16.4 s, past 10 cm 0 -> 4.0 s,
+  forearm or hand bone axis inside the other player 0 -> 2.8 s. The deepest are the ball's carry tuck, which keeps its
+  tuck whatever presses it (L3-F5-dragMirror R's right 11.8 cm in D at 1.53-2.77 s; HC-F2-lift1.4 A's 16 cm in B's
+  head), and hanging arms in a wrap (L3-F5-drag R's left 10.9 cm at 1.63-2.03 s). Swung out instead, the carry arm's
+  elbow rose to the shoulder and the hand crossed the chest (HC-F1-lowMirror R at 0.9 s), so the tuck is kept. Question
+  16 below.
 - **L3-F1-low: a shoulder visibly turns as the player lands** (the user's report, minor). Not measured.
   `?fixture=L3-F1-low&cam=front&speed=0.25&t=0.90`.
 
@@ -321,6 +351,7 @@ Its README has the evidence and the suite failures by class.
 | Arm pair: `JOINT_RANGE_V5` with `SELF_CLEARANCE_V2` (11d, 12b) | One-frame arm turns (supSnap60 L3 16 -> 2) and trembling palms (L3 3027 -> 405) | The raised held arm (L3 supImpS 0.95 -> 4.13, caused). Not yet twinned: three natural samples (falls' L4-F9 boundary identity first) and HC ragdoll implausible time 4.48 -> 6.58 | `arm-pair-flip/map.patch` (replaces `palm-seam-flip/`, `overhead-twist-flip/`); `assess-12b/` |
 | `SHOULDER_TWIST_ANAT_V1` on every L3/L4/HC ragdoll (13a) | The fallen arm bent the wrong way overhead: ragdoll shoulder impossible 31.5 -> 0.5 player-s | `SHOULDER_TWIST_REBOUND`: a rebound snap and two solve gains, caused; two soft suite rows (L4-F1-shoulderTwist, L4-F8-passive) | `arm-twist-flip/flip.patch`; `assess-13a/` |
 | `upperArm` on every L3/L4/HC self-clearance (13c) | Arms in the own chest: L3 upper arm past 5 cm 160 -> 85 player-s (arm tasks 16.7 -> 0); trembling palms L3 3027 -> 1111 | Caused: two runners fall as rigid figures, the low-tackle runner stays up, shape queries 4265 (budget 4000), the carry's tuck. Worsened: supported snaps L3 16 -> 53 (`CLIP_ARM_HELD_DEPARTURE`). With `clipArmSwing` too (14b) the snaps are 20, but the low-tackle runner, one rigid runner (HC-F1-at1.6 rev), the tuck and the queries (4759) remain | `upper-arm-flip/flip.patch`; `assess-13c/`, `assess-14b/full-upperarm/` |
+| `metArmStay` with `clipArmSwing` on every L3/L4/HC self-clearance (16c) | `MET_ARM_FIXED_ALTERNATIVE` and the arms through the own body: forearm or hand 1.28 -> 0.27 s, hand in head 0.40 -> 0, upper arm 41.6 -> 0.85 s; snaps 8 -> 1, one-frame jumps over 20 cm 54 -> 5 (forward runs) | Caused: a rigid falling figure (HC-F1-at1.6 rev R, `MET_ARM_UPPER_IN_OTHER`), HC-F3-lowRunner D keeps its feet (twinned); shape queries 4248 after one fix round (4834 before). Worsened, not twinned: the largest passive gain L3 48 -> 197 J (a pinched forearm), one new L4 power row, ragdoll shoulder past range 31.5 -> 47.2 s. L3-F1-phase7 D keeps its feet (accepted); the L3-F1-low runner still falls | `met-arm-stay-flip/flip.patch`, `fix-r1.patch`; `evidence/` |
 | `clipArmSwing` on every L3/L4/HC self-clearance (14b) | Arms through the own body, gross pass-through: forearm or hand 28 events / 1.68 s -> 5 / 0.08 s, upper arm 111 / 41.6 s -> 75 / 7.1 s; the screenshot and the facemask are gone; forearm past 2 cm L3 26.4 -> 0.23 s | Who falls, caused (same-state twins): three defenders keep their feet (L3-F1-phase1, L3-F1-phase7, HC-F3-phase0 rev). Worsened, not twinned: supported snaps L3 16 -> 48, HC 1 -> 11; the largest passive gain 48 -> 144 J (L3) and 48 -> 77 J (HC); one new L4 power row; HC wrist jumps of 0.37-0.40 m | `clip-arm-swing-flip/flip.patch`; `assess-14b/` |
 
 Not taken: the narrowed L4 envelope (`l4-hip-envelope-narrowed/`). From the old stack: `ARM_CLEARANCE_V1` and the
@@ -354,6 +385,11 @@ Open:
     `?fixture=L3-F16-contactStop&cam=front&speed=0.25&t=0.55&armswing=on`
 15. Should a hand be kept out of its own head (the facemask), as the arms are kept out of the trunk? Today nothing
     stops it. `?fixture=L3-F5-drag&cam=side&speed=0.25&t=0.85` (with `&armswing=on` it no longer happens there).
+16. Under `metArmStay` a met arm stays low and presses into the other player, up to 10-16 cm for the carry tuck and a
+    hanging arm in a wrap. Is that the look? `?fixture=L3-F5-drag&cam=side&speed=0.25&t=0.35&armstay=on` (drop
+    `&armstay=on` for the arm that goes to the facemask), `?fixture=L3-F16-contactStop&cam=front&speed=0.25&t=0.55&armstay=on`.
+    Where the shoulder itself is against the tackler, may the arm lift over it (a raised arm, which the fix forbids), or
+    should it stay and the conversion start it clear? `?fixture=HC-F1-at1.6&order=rev&cam=front&speed=0.25&t=1.35&armstay=on`.
 
 Answered (2026-11-12):
 
@@ -387,5 +423,6 @@ trajectories have moved since, so re-read them before relying on a time.
 
 Main checkout `.scratch/ladder/`: `r0-baseline` (start), `r8c-visible-checks`, `r10d-v3-flip` (last behaviour flip,
 `netfalls`, lab views), `r12b-twist-fit` (before ladder 13), `r13c-upper-arm` (end of ladder 13), `r14a-flip`,
-`r14b-flagoff` (tip); `assess-*/` (README each), `parked/`, `pinch/`, `visible-audit/`. Old
+`r14b-flagoff`, `r16-a-ascaptured`, `r16-b-metarmstay` (tip); `assess-*/` (README each), `parked/`, `pinch/`,
+`visible-audit/`. Old
 stack: `.scratch/cmp-evidence/s17/`. What may be deleted: `.scratch/ladder/cleanup-audit.md`.
