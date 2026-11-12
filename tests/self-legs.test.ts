@@ -212,7 +212,7 @@ describe('own-leg contact: the impact guard', () => {
     // response drives a limb into it
     const LEGS = /^(left|right)(Thigh|Shin)$/;
     const legs = (r: Partial<Record<string, number>>): string[] => Object.keys(r).filter((k) => LEGS.test(k) && r[k]! > 0);
-    const seen = { closing: new Set<string>(), impulse: new Set<string>(), closingOff: new Set<string>() };
+    const seen = { closing: new Set<string>(), impulse: new Set<string>(), closingOff: new Set<string>(), trunkHit: new Set<string>(), trunkMismatch: 0, legLegAsTrunk: 0 };
     await legRun(rig('authored', 'left', 20, true), (s, rag) => {
       const dt = s.physics.dt;
       for (const k of legs(s.closingSpeeds(rag, 1.5 * dt, 0.1, 0.002, true, true))) seen.closing.add(k);
@@ -220,13 +220,31 @@ describe('own-leg contact: the impact guard', () => {
       // the same state with every pair left out
       const S = rag.selfLegs!;
       const off = S.off;
-      S.off = selfLegPairs(s.physics, rag).map((p) => p.key);
+      const pairs = selfLegPairs(s.physics, rag);
+      S.off = pairs.map((p) => p.key);
       for (const k of legs(s.closingSpeeds(rag, 1.5 * dt, 0.1, 0.002, true, true))) seen.closingOff.add(k);
+      // ladder 9f: the own-trunk closings (`selfTrunk`, what `impactGuard.selfTrunkBody` reads) are a leg's on the trunk
+      // only. With only the trunk pairs in, they are the legs' closings; with only the leg-on-leg pairs in, there are none
+      S.off = [...off, ...pairs.filter((p) => p.seg).map((p) => p.key)];
+      const trunk: Partial<Record<string, number>> = {};
+      const c: Partial<Record<string, number>> = s.closingSpeeds(rag, 1.5 * dt, 0.1, 0.002, true, true, trunk);
+      for (const k of legs(c)) {
+        seen.trunkHit.add(k);
+        if (trunk[k] !== c[k]) seen.trunkMismatch++;
+      }
+      S.off = [...off, ...pairs.filter((p) => !p.seg).map((p) => p.key)];
+      const legLeg: Partial<Record<string, number>> = {};
+      s.closingSpeeds(rag, 1.5 * dt, 0.1, 0.002, true, true, legLeg);
+      seen.legLegAsTrunk += legs(legLeg).length;
       S.off = off;
     });
     expect([...seen.closing].some((k) => k.startsWith('left')) && [...seen.closing].some((k) => k.startsWith('right'))).toBe(true);
     expect([...seen.impulse].some((k) => k.startsWith('left')) && [...seen.impulse].some((k) => k.startsWith('right'))).toBe(true);
     expect([...seen.closingOff]).toEqual([]);
+    // the rig's shins also close on the trunk as the legs cross
+    expect(seen.trunkHit.size).toBeGreaterThan(0);
+    expect(seen.trunkMismatch).toBe(0);
+    expect(seen.legLegAsTrunk).toBe(0);
   }, 60000);
 });
 

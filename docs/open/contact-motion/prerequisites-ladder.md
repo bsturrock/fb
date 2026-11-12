@@ -560,6 +560,20 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   constructed case moves with it, the raised deck of plan 10c C3 (`ground is the floor only`): its brace's forearm
   presses on the deck, an obstacle, in the substep the window ends (`r9e-brace-expired/deck.txt`), so its miss is
   `obstructed`, no longer `expired`; the test now reads the press and the rule (no brace contact, the C3 point, kept).
+- **9f** (`r9f-impact-power/off`) landed off: byte-identical (every file, query counts too), 345/345.
+  `IMPACT_OVER_POWER`'s mechanism, from the capture `L4-F3-run-on@96`: not a landing the guard missed. D's core lands
+  (1.604-1.613 s, 14 and 30 N s on the floor) and swings its right forearm into its own trunk; the guard sees it closing
+  at 4.2 and 3.6 m/s (substeps 389, 390) and holds that arm only (plan 11: an own-trunk hit is the arm's, "the core, far
+  heavier, is not held for it"); the solve takes 40 N s through the trunk (own legs off 38), the core turns 1.7 rad/s,
+  the hips' relative speed jumps 2.4-3.0 rad/s and the left knee's 2.5, and their effort realizes 183 W (off 169).
+  `impactGuard.selfTrunkBody` (`withSelfTrunkBody`, no fixture uses it): a limb's own-trunk pair (plan 11's forearms,
+  9a's shins and shoes; never leg on leg) closing faster than `bodyClosingMPerS` holds the whole body, as a hard hit on a
+  core-jointed segment does (plan 14): the trunk it strikes is the core. `closingSpeeds` writes those closings to an
+  optional map (no extra query). From the capture: 183 -> 137.4 W, nothing over the cap (own legs off 169 -> 128.2),
+  the body held 3 substeps more. Tests: the capture test (fall-defects) adds the flag's row and reads the hit (the
+  forearm's own-trunk closing over the body speed, the hips and knees commanded without it, nothing with it); the
+  self-legs guard rig: with only the trunk pairs in the solve the legs' closings are the own-trunk map's, with only the
+  leg-on-leg pairs it is empty (fault twin, leg on leg written there: 12 readings).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e

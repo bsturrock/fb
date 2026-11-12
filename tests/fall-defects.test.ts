@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FallEpisode } from '../src/sim/fall-response';
-import { FALL_L4 } from '../src/sim/profiles';
+import { FALL_L4, withSelfTrunkBody, type FallResponseProfile } from '../src/sim/profiles';
 import { isGround } from '../src/sim/contracts';
 import type { Simulation } from '../src/sim/simulation';
 import { FIX, preOwnLegs } from './helpers';
@@ -12,58 +12,81 @@ import { loadState, resumeState } from './state';
 // pairs) shows the same defect: reached, not made by it. A tracked defect's test (its exception in tests/falls.test.ts)
 // fails once the defect is gone from that state; it is then turned into the fix's test, with the fault twin.
 
-/** Resume `cap`; `ownLegs: false` takes own-leg contact off every ragdoll from there (the profile as before it). */
-async function resume(file: string, ownLegs: boolean, opts = {}): Promise<Simulation> {
+/**
+ * Resume `cap`; `ownLegs: false` takes own-leg contact off every ragdoll from there (the profile as before it); `fall`
+ * resumes under another fall-response profile (a variant at `fallResponse`).
+ */
+async function resume(file: string, ownLegs: boolean, opts = {}, fall?: (p: FallResponseProfile) => FallResponseProfile): Promise<Simulation> {
   const cap = loadState(file);
-  if (ownLegs) return resumeState(cap, { opts });
-  const sim = await resumeState(cap, { def: preOwnLegs(FIX(cap.fixture)), variant: ['ragdoll'], opts });
-  for (const p of sim.players) {
-    if (!p.rag) continue;
-    delete p.rag.selfLegs;
-    p.rag.profile = sim.def.ragdoll!;
-  }
+  let def = FIX(cap.fixture);
+  if (!ownLegs) def = preOwnLegs(def);
+  if (fall) def = { ...def, fallResponse: fall(def.fallResponse!) };
+  const variant = [...(ownLegs ? [] : ['ragdoll']), ...(fall ? ['fallResponse'] : [])];
+  const sim = await resumeState(cap, { def, variant, opts });
+  if (!ownLegs)
+    for (const p of sim.players) {
+      if (!p.rag) continue;
+      delete p.rag.selfLegs;
+      p.rag.profile = sim.def.ragdoll!;
+    }
   return sim;
 }
 
-// IMPACT_OVER_POWER: L4-F3-run-on, D falls only under own-leg contact (R's legs moved before 0.7 s); landing at 1.625 s,
-// the solve after substep 390 jolts both hips and the left knee while their fall effort acts: 183 W realized against
-// the 135 W cap (+5%), tagged an impact. D's own legs take no impulse in that solve. Captured at the end of tick 96
-// (1.600 s). Twin, own-leg contact off from there: the same substep over the cap (169 W), an impact. Fault twin: the
-// legs' effort held off in that one substep (what the impact guard is for) and nothing is over the cap.
+// IMPACT_OVER_POWER: L4-F3-run-on, D falls only under own-leg contact (R's legs moved before 0.7 s). D's core lands
+// (1.604-1.613 s) and swings its right forearm into its own trunk: closing at 3.6 m/s before the solve after substep
+// 390, the guard holds that arm only (plan 11: an own-trunk hit is the arm's), the solve takes 40 N s through the trunk,
+// the core turns 1.7 rad/s and both hips and the left knee, their effort acting, realize 183 W against the 150 W cap
+// (+5%), tagged an impact. D's own legs take no impulse in that solve. Captured at the end of tick 96 (1.600 s). Twin, own-
+// leg contact off from there: the same substep over the cap (169 W, 38 N s), an impact. Fault twin: the legs' effort held
+// off in that one substep, and nothing is over the cap. The fix (ladder 9f, `impactGuard.selfTrunkBody`, off): an own-
+// trunk hit faster than the body speed holds the body, there in substeps 389 and 390, and nothing is over the cap.
 describe('tracked defect IMPACT_OVER_POWER (L4-F3-run-on, from 1.600 s)', () => {
   const CAP = 'tests/data/state/L4-F3-run-on@96.json.gz';
-  // the substep whose solve takes the landing (its request at sim.steps 390), audited at 1.6292 s
+  // the substep whose solve takes the hit (its request at sim.steps 390), audited at 1.6292 s
   const STEP = 390;
 
-  async function landing(ownLegs: boolean, holdLegs = false) {
-    const sim = await resume(CAP, ownLegs);
+  async function landing(ownLegs: boolean, o: { holdLegs?: boolean; selfTrunkBody?: boolean } = {}) {
+    const sim = await resume(CAP, ownLegs, {}, o.selfTrunkBody ? withSelfTrunkBody : undefined);
     const F = sim.fall!;
-    if (holdLegs) {
-      const request = F.request.bind(F);
-      F.request = (ep, contacts, arms) => {
-        request(ep, contacts, arms);
-        if (ep.playerId === 'D' && sim.steps === STEP) ep.cmds = ep.cmds.filter((c) => !/Hip|Knee/.test(c.joint.id));
-      };
-    }
+    const G = F.P.impactGuard;
+    const request = F.request.bind(F);
+    let atStep: { cmds: string[]; selfTrunk: Partial<Record<string, number>> } | null = null;
+    F.request = (ep, contacts, arms) => {
+      request(ep, contacts, arms);
+      if (ep.playerId !== 'D' || sim.steps !== STEP) return;
+      if (o.holdLegs) ep.cmds = ep.cmds.filter((c) => !/Hip|Knee/.test(c.joint.id));
+      const selfTrunk: Partial<Record<string, number>> = {};
+      sim.closingSpeeds(ep.rag, G.lookaheadSubsteps * sim.dt, G.predictionM, G.skinM, !!G.jointResidual, !!G.manifoldPoints, selfTrunk);
+      atStep = { cmds: ep.cmds.map((c) => c.joint.id), selfTrunk };
+    };
     while (!sim.done) sim.stepTick();
     const r = (sim.exportFixture() as any).fallEffort.D;
     const ev = sim.events.filter((e) => e.type === 'fallEffortOver' && e.playerId === 'D').map((e) => ({ t: +e.t.toFixed(4), impact: e.data?.impact }));
     sim.dispose();
-    return { r, ev };
+    return { r, ev, atStep: atStep! };
   }
 
-  it('the landing substep is over the power cap, an impact, with own-leg contact and without it; with the legs\' effort held off in it, nothing is', async () => {
+  it('the hit substep is over the power cap, an impact, with own-leg contact and without it; with the legs\' effort held off in it, nothing is; with selfTrunkBody the body holds there and nothing is', async () => {
+    const P = FALL_L4.power;
     for (const ownLegs of [true, false]) {
-      const { r, ev } = await landing(ownLegs);
+      const { r, ev, atStep } = await landing(ownLegs);
       expect(ev, `own legs ${ownLegs}`).toEqual([{ t: 1.6292, impact: true }]);
       expect(r.overPowerSubsteps, `own legs ${ownLegs}`).toBe(1);
       expect(r.impactPowerSubsteps, `own legs ${ownLegs}`).toBe(1);
-      expect(r.peakImpactW, `own legs ${ownLegs}`).toBeGreaterThan(FALL_L4.power.maxPositiveW * (1 + FALL_L4.power.toleranceFraction));
+      expect(r.peakImpactW, `own legs ${ownLegs}`).toBeGreaterThan(P.maxPositiveW * (1 + P.toleranceFraction));
+      // the right forearm closes on the own trunk faster than the body speed, and only its arm is held
+      expect(atStep.selfTrunk.rightForearm!, `own legs ${ownLegs}`).toBeGreaterThan(FALL_L4.impactGuard.bodyClosingMPerS);
+      expect(atStep.cmds, `own legs ${ownLegs}`).toEqual(['leftKnee', 'rightKnee', 'leftHip', 'rightHip']);
+      const fixed = await landing(ownLegs, { selfTrunkBody: true });
+      expect(fixed.atStep.cmds, `own legs ${ownLegs}, selfTrunkBody`).toEqual([]);
+      expect(fixed.ev, `own legs ${ownLegs}, selfTrunkBody`).toEqual([]);
+      expect(fixed.r.overPowerSubsteps, `own legs ${ownLegs}, selfTrunkBody`).toBe(0);
+      expect(fixed.r.peakPositiveW, `own legs ${ownLegs}, selfTrunkBody`).toBeLessThanOrEqual(P.maxPositiveW * (1 + P.toleranceFraction));
     }
-    const held = await landing(true, true);
+    const held = await landing(true, { holdLegs: true });
     expect(held.ev).toEqual([]);
     expect(held.r.overPowerSubsteps).toBe(0);
-  }, 120000);
+  }, 180000);
 });
 
 // BRACE_EXPIRED_OBSTRUCTED, fixed at ladder 9e: L4-F5-twoClamp-on, D's right brace is still seeking when its response's

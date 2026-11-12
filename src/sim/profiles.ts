@@ -1132,8 +1132,20 @@ export interface FallResponseProfile {
      * segment closing on the landing body counts, not one near it.
      */
     carried?: true;
+    /**
+     * Ladder 9f: a limb striking its own trunk (plan 11's forearm pairs, rung 9a's shin and shoe pairs) closing faster
+     * than `bodyClosingMPerS` holds the whole body: the trunk it strikes is the core, so the hit turns the core and every
+     * joint it parents, as a hard hit on a core-jointed segment does (absent: the striking limb only).
+     */
+    selfTrunkBody?: true;
   };
   enable: { knee: boolean; hip: boolean; arms: boolean };
+}
+
+/** Ladder 9f: `p` with `impactGuard.selfTrunkBody` (an own-trunk hit faster than the body speed holds the body). */
+export function withSelfTrunkBody(p: FallResponseProfile): FallResponseProfile {
+  if (p.impactGuard.selfTrunkBody) return p;
+  return { ...p, id: `${p.id}+selfTrunkBody`, impactGuard: { ...p.impactGuard, selfTrunkBody: true } };
 }
 
 /**

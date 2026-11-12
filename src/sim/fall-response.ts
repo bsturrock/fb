@@ -130,9 +130,11 @@ export interface FallHost {
   /**
    * Per segment, the fastest closing speed (m/s) of a contact its geometry meets within `lookaheadS`, if any; with
    * `jointResidual`, counting the segment's parent-joint velocity residual along the contact normal; with
-   * `manifoldPoints`, at every point of the pair's last contact manifold as well as the closest one.
+   * `manifoldPoints`, at every point of the pair's last contact manifold as well as the closest one. With `selfTrunk`,
+   * the closings of the ragdoll's own-trunk pairs (plan 11's forearms, rung 9a's shins and shoes) are also written there
+   * per striking segment (they count in the result as before).
    */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual?: boolean, manifoldPoints?: boolean): Partial<Record<SegmentId, number>>;
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual?: boolean, manifoldPoints?: boolean, selfTrunk?: Partial<Record<SegmentId, number>>): Partial<Record<SegmentId, number>>;
   /**
    * `impactGuard.carried`: of the segments `segs` of `rag`, those closing faster than `closeMPerS` (within the
    * lookahead) on another player's ragdoll that is itself about to land on static ground faster than `landMPerS`, valued
@@ -386,11 +388,17 @@ export class FallResponse {
     // (tipped forward fall 3.5 m/s, 40 deg, 0.5 rad/s, seeded in tests/corerock.test.ts): that corner, the closest point,
     // does not close, the far corner closes at 3.5 m/s and the solve takes 56 N s through it; on the closest point alone
     // the response realizes 219 W against 157.5. Its closing over the manifold is 3.5: the body holds
-    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, !!G.jointResidual, !!G.manifoldPoints);
+    const selfTrunk: Partial<Record<SegmentId, number>> | undefined = G.selfTrunkBody ? {} : undefined;
+    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, !!G.jointResidual, !!G.manifoldPoints, selfTrunk);
     // plan 14: a segment jointed to the core passes a hard hit straight into it, and the core parents every other limb
     const onCore = (seg: SegmentId): boolean => ep.rag.joints.some((j) => j.child === seg && j.parent === 'core');
     for (const [seg, v] of Object.entries(closing) as [SegmentId, number][])
       if (v > G.closingMPerS) out.add(v > G.bodyClosingMPerS && onCore(seg) ? 'body' : LIMB_OF[seg]);
+    // ladder 9f (`selfTrunkBody`): a limb striking its own trunk strikes the core itself. L4-F3-run-on under own-leg
+    // contact (seeded in tests/fall-defects.test.ts): D's right forearm closes on its own trunk at 3.6 m/s after the core
+    // lands; the guard held that arm only, the solve takes 40 N s through the trunk, the core turns 1.7 rad/s and both hips
+    // and the left knee, their effort acting, realize 183 W against 157.5. Faster than the body speed, the body holds
+    if (selfTrunk) for (const v of Object.values(selfTrunk)) if (v! > G.bodyClosingMPerS) out.add('body');
     // v6 (`carried`): a landing carried through a closing contact. L4-F9-defenderFalling under the physical legs
     // (seeded in tests/carried.test.ts): D's right thigh closes on R's core at 1.5 m/s, under the body speed, while R's
     // core lands on the floor at 4.9 m/s; the solve takes R's landing through the thigh (83.7 N s) and D's response

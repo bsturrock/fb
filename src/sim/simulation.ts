@@ -682,7 +682,7 @@ export class Simulation {
         },
         gravity: Math.abs(def.solver.gravityY),
         emit: (type, id, data) => sim.emit(type, id, data),
-        closingSpeeds: (rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints),
+        closingSpeeds: (rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints, selfTrunk) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints, selfTrunk),
         carriedImpacts: (rag, segs, lookaheadS, predictionM, skinM, landMPerS, closeMPerS) => sim.carriedImpacts(rag, segs, lookaheadS, predictionM, skinM, landMPerS, closeMPerS),
         selfImpulses: (rag) => sim.selfImpulses(rag),
       });
@@ -1251,9 +1251,10 @@ export class Simulation {
 
   /**
    * Plan 09 impact guard: per segment of a ragdoll, the fastest closing speed of a contact its geometry meets within
-   * `lookaheadS` (floor, obstacles, other players' active colliders), read before the solve. Observation only.
+   * `lookaheadS` (floor, obstacles, other players' active colliders), read before the solve. Observation only. With
+   * `selfTrunk`, the own-trunk pairs' closings are written there too, per striking segment (ladder 9f).
    */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual = false, manifoldPoints = false): Partial<Record<SegmentId, number>> {
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual = false, manifoldPoints = false, selfTrunk?: Partial<Record<SegmentId, number>>): Partial<Record<SegmentId, number>> {
     const out: Partial<Record<SegmentId, number>> = {};
     // `impactGuard.jointResidual`: per child segment, the parent's velocity at their joint pivot less the child's (zero
     // for a solved joint). The next solve passes what the last one left unsatisfied into the child, and through a contact
@@ -1339,7 +1340,10 @@ export class Simulation {
           if (!r) continue;
           const vRel = sub(vc(body.velocityAtPoint(r.point2)), vc(core.velocityAtPoint(r.point1)));
           const closing = -dot(vRel, vc(r.normal1));
-          if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+          if (closing > 0 && r.distance - closing * lookaheadS < skinM) {
+            out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+            if (selfTrunk) selfTrunk[rc.segment] = Math.max(selfTrunk[rc.segment] ?? 0, closing);
+          }
         }
       }
     }
@@ -1358,6 +1362,7 @@ export class Simulation {
         if (!(closing > 0 && r.distance - closing * lookaheadS < skinM)) continue;
         out[p.a.segment] = Math.max(out[p.a.segment] ?? 0, closing);
         if (p.seg) out[p.seg] = Math.max(out[p.seg] ?? 0, closing);
+        else if (selfTrunk) selfTrunk[p.a.segment] = Math.max(selfTrunk[p.a.segment] ?? 0, closing);
       }
     return out;
   }
