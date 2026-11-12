@@ -20,8 +20,8 @@ import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newL
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  applyEnvelope, applyHipApproaches, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
-  type RagdollCollider, type TransferAudit,
+  applyEnvelope, applyHipApproaches, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, releaseSelfLegs, SEGMENTS, SELF_ARM_KEY, SELF_LEG_KEY, SELF_TRUNK_KEY, selfLegNear, selfLegPair,
+  selfLegPairs, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll, type RagdollCollider, type TransferAudit,
 } from './ragdoll';
 import {
   envelopeStep, measureLean, projectedLean,
@@ -513,6 +513,13 @@ export class Simulation {
     if (def.ragdoll || S) {
       const sameOwner = !!def.ragdoll;
       this.physics.setContactFilter((a, b) => {
+        // ladder rung 9a (`RagdollProfile.selfLegs`): a leg's self shape meets its pairs of the same ragdoll
+        // (`selfLegPair`) unless the pair is left out since the switch, and nothing else
+        if (a.key.startsWith(SELF_LEG_KEY) || b.key.startsWith(SELF_LEG_KEY)) {
+          const k = selfLegPair(a, b);
+          const S = k === null ? undefined : this.byId.get(a.playerId!)?.rag?.selfLegs;
+          return !!S && !S.off.includes(k!);
+        }
         // arm self-clearance colliders (ragdoll): a forearm's self shape meets its own trunk piece, and nothing else
         const ta = a.key.startsWith(SELF_TRUNK_KEY);
         const tb = b.key.startsWith(SELF_TRUNK_KEY);
@@ -954,6 +961,8 @@ export class Simulation {
       if (pl.rag) {
         // plan 12: the limp shoe eases toward its relaxed pitch on the shin before the envelope reads the joints
         if (pl.rag.limpFoot) easeLimpFeet(pl.rag, this.physics.dt, (c, from, to) => this.shoeDeeper(pl, c, from, to, limbs()));
+        // ladder rung 9a: an own-leg group left out since the switch takes part again once within the skin
+        if (pl.rag.selfLegs) releaseSelfLegs(this.physics, pl.rag);
         applyEnvelope(pl.rag, this.physics.dt);
         if (pl.rag.hipStops) {
           // ladder rung 8g: the approach zone inside the hip stops (a profile without one applies nothing)
@@ -1334,6 +1343,22 @@ export class Simulation {
         }
       }
     }
+    // ladder rung 9a: a leg's self shapes closing on the other leg (both legs are hit) or on the own trunk (the leg only,
+    // as plan 11's forearm), a pair in the solve only
+    if (rag.selfLegs)
+      for (const p of selfLegPairs(this.physics, rag)) {
+        if (rag.selfLegs.off.includes(p.key)) continue;
+        const a = p.a.collider;
+        if (!selfLegNear(p, predictionM)) continue;
+        const r = p.b.contactCollider(a, predictionM);
+        if (!r) continue;
+        const other = rag.bodies[p.seg ?? 'core'];
+        const vRel = sub(vc(rag.bodies[p.a.segment].velocityAtPoint(r.point2)), vc(other.velocityAtPoint(r.point1)));
+        const closing = -dot(vRel, vc(r.normal1));
+        if (!(closing > 0 && r.distance - closing * lookaheadS < skinM)) continue;
+        out[p.a.segment] = Math.max(out[p.a.segment] ?? 0, closing);
+        if (p.seg) out[p.seg] = Math.max(out[p.seg] ?? 0, closing);
+      }
     return out;
   }
 
@@ -1395,17 +1420,20 @@ export class Simulation {
     return out;
   }
 
-  /** Plan 11: per forearm of a ragdoll, the summed impulse of its self shapes on its own trunk in the last solve. */
+  /**
+   * Plan 11: per forearm of a ragdoll, the summed impulse of its self shapes on its own trunk in the last solve. Ladder
+   * rung 9a: per leg segment, its self shapes' on the other leg (both segments) and on the own trunk (the leg's).
+   */
   selfImpulses(rag: Ragdoll): Partial<Record<SegmentId, number>> {
     const out: Partial<Record<SegmentId, number>> = {};
-    if (!rag.self) return out;
     const W = this.physics.world;
-    for (const rc of rag.self.arms)
-      for (const t of rag.self.trunk)
-        W.contactPair(rc.collider, t, (m, flipped) => {
-          const J = this.physics.solver.solvedImpulses ? solvedImpulses(m, this.physics.colliderPose(flipped ? t : rc.collider), this.physics.colliderPose(flipped ? rc.collider : t)) : null;
-          for (let i = 0; i < m.numContacts(); i++) out[rc.segment] = (out[rc.segment] ?? 0) + (J ? J[i] : m.contactImpulse(i));
-        });
+    const pair = (c: RAPIER.Collider, t: RAPIER.Collider, segs: SegmentId[]): void =>
+      W.contactPair(c, t, (m, flipped) => {
+        const J = this.physics.solver.solvedImpulses ? solvedImpulses(m, this.physics.colliderPose(flipped ? t : c), this.physics.colliderPose(flipped ? c : t)) : null;
+        for (let i = 0; i < m.numContacts(); i++) for (const s of segs) out[s] = (out[s] ?? 0) + (J ? J[i] : m.contactImpulse(i));
+      });
+    if (rag.self) for (const rc of rag.self.arms) for (const t of rag.self.trunk) pair(rc.collider, t, [rc.segment]);
+    if (rag.selfLegs) for (const p of selfLegPairs(this.physics, rag)) pair(p.a.collider, p.b, p.seg ? [p.a.segment, p.seg] : [p.a.segment]);
     return out;
   }
 

@@ -2,7 +2,7 @@
 // controlled boundary (candidate build and validation, the transfer and its audit, the handoff record and events).
 import type { PlayerId } from './contracts';
 import { newLocoState } from './locomotion';
-import { buildCandidate, externalFromColliders, externalFromRagdoll, initEnvelope, ragdollPose, removeRagdoll, switchToRagdoll, validateCandidate, type CandidateEdit, type CandidateReport, type ExternalShape } from './ragdoll';
+import { buildCandidate, externalFromColliders, externalFromRagdoll, holdOverlappingSelfLegs, initEnvelope, ragdollPose, removeRagdoll, switchToRagdoll, validateCandidate, type CandidateEdit, type CandidateReport, type ExternalShape } from './ragdoll';
 import { vc, round } from './vec';
 import { legsOffInsideConverted } from './pose-runtime';
 import type { Simulation, HandoffRecord, PlayerRuntime } from './simulation';
@@ -185,6 +185,8 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
       pl.pose = ragdollPose(pl.rag!);
       // plan 09: the anatomical range starts with the ragdoll; the effort layer only after an accepted transfer
       initEnvelope(pl.rag!);
+      // ladder rung 9a: own-leg groups that start deeper inside each other than the skin stay out of the solve
+      holdOverlappingSelfLegs(host.physics, pl.rag!);
       if (host.fall && pl.handoff?.accepted) pl.fall = host.fall.begin(pl.id, pl.rag!, pl.setup.role, host.arms, host.carrySide(pl));
     }
   }

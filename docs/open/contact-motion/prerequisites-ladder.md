@@ -459,6 +459,27 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   The parked hip-stop, knee-stop and visible flips are applied (their scratch dirs kept). The 8l same-state twins ran
   L3/HC ragdolls without the shoulder envelope (the twin script's profile reset, fixed at 8m, see
   `assess-8l/tools/worktree-scratch/README.txt`); its whole-run twins and every repair's reading stand.
+- **9a** (`r9a-own-leg`) landed off: byte-identical, 342/342. `RagdollProfile.selfLegs` (SELF_LEGS_V1, `withSelfLegs`,
+  `withoutSelfLegs`; SELF_LEG_KEY in src/sim/ragdoll.ts): a ragdoll's legs meet each other, and its shins and shoes its
+  trunk, by plan 11's pattern. Each leg has three massless self shapes at its segments' origins (mass properties
+  bitwise): the thigh's distal half to the knee (its radius less the 1 cm skin, at most 11 cm), the shin from knee to
+  ankle (radius less the skin) and the shoe box less the skin, turning with the limp foot. No jointed pair (a thigh and
+  the trunk, one leg's own shapes). The pairs are grouped by their two segments; a group with any pair deeper than the
+  skin when the ragdoll is switched in stays out of the solve until none is (`holdOverlappingSelfLegs` at the
+  conversion, `releaseSelfLegs` every substep). The impact guard reads the pairs; their shape queries are culled by a
+  capsule about each shape. Why so: the skin leaves resting contact of the drawn shapes free of force (standing, the
+  authored body's thigh shapes are 7 cm apart; bew-v6's knees touch at its idle stance and take no force); the thigh
+  shape is distal and capped because bew-v6's mesh-fit thighs (14.6 cm) lie against each other from the hips down;
+  groups, not pairs, because holding single pairs let one pair of a crossed group take force while its neighbours
+  still overlapped, and legs switched in crossed stayed locked crossed (explored in `assess-9c/explore/`). Tests
+  (tests/self-legs.test.ts, capture `HC-F1-at0.9@53` before both conversions), each with its fault twin: no fixture
+  registers it; mass properties bitwise at the switch; the filter passes the pairs to their own ragdoll only and the
+  contact records never see them; a hip-driven crossing on the authored and the model body, either side, stops at the
+  skin with no injection (off: over 10 cm deep); the impact guard sees the pairs; standing and lying at rest take no
+  impulse; groups held at the switch give no kick and are released within the skin; no injection on the resumed
+  capture. With the flag on every L3/L4/HC ragdoll (exploration, matrices only; 9c measures it): deep own-body 326 ->
+  169 player-s, own-leg axes 108 -> 23, injecting solves 494 -> 458 (2243 -> 2032 J); highest query tick 4036
+  (L3-F1-phase4 reversed: the supported player's pose queries against the moved ragdoll).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e

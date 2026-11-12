@@ -666,6 +666,51 @@ export interface RagdollProfile {
    * rejected as before). Absent: a rejection is final (the falling proxy to the end).
    */
   conversionRetry?: ConversionRetryProfile;
+  /**
+   * Ladder rung 9a: the ragdoll's own legs meet each other and its own trunk (plan 11's pattern for the forearms):
+   * massless reduced self shapes on the thighs and shins and an explicit list of pairs, never jointed segments
+   * (`src/sim/ragdoll.ts`, SELF_LEG_KEY). Absent: every same-owner pair but plan 11's passes through (Gate 4).
+   */
+  selfLegs?: SelfLegProfile;
+}
+
+/**
+ * Ladder rung 9a: ragdoll own-leg contact. Each leg carries three massless self shapes: the distal thigh (a capsule
+ * about the bone from `thighFromFraction` of the thigh to the knee, the thigh capsule's radius less `toleranceM` but at
+ * most `thighMaxRadiusM`), the shin (about the bone from the knee to the ankle, the shin capsule's radius less
+ * `toleranceM`) and the shoe (the shoe box less `toleranceM`, turning with the limp foot). Pairs: any of one leg's
+ * shapes against any of the other's, and each shin and shoe against the own trunk (plan 11's trunk hull pieces on a
+ * measured body, the core's cuboids on an authored one). Never a thigh against the trunk (the hip joins them), never
+ * one leg's own shapes (the knee joins them). The pairs come in groups by their two segments (a shin with its shoe;
+ * or the trunk): when the ragdoll is switched in, a group with any pair overlapping deeper than `toleranceM` is left
+ * out of the solve until none is, so the conversion never pushes legs apart by more than the skin and segments
+ * switched in crossed are never held crossed by their other pairs. The thigh's shape is distal and capped because
+ * bew-v6's mesh-fit thighs (14.6 cm) lie against each other at rest from the hips down; at 0.5 and 11 cm a standing
+ * switch leaves the two thigh shapes 7 cm apart (the authored body's 8.5 cm thighs, 11 cm). bew-v6's knees touch at its
+ * idle stance (23 cm apart, shin shapes 11.4 cm), with no force between them.
+ */
+export interface SelfLegProfile {
+  id: string;
+  /**
+   * Skin left between the drawn shapes (m): the shapes are the segment colliders less this, as plan 11's forearms; also
+   * the deepest a pair may start in the solve.
+   */
+  toleranceM: number;
+  /** Where the thigh's shape starts, as a fraction of the hip-to-knee length from the hip (its segment's proximal end). */
+  thighFromFraction: number;
+  /** The largest radius of the thigh's shape (m). */
+  thighMaxRadiusM: number;
+}
+
+export const SELF_LEGS_V1: SelfLegProfile = { id: 'self-legs-v1', toleranceM: 0.01, thighFromFraction: 0.5, thighMaxRadiusM: 0.11 };
+
+/** Ladder rung 9a: the ragdoll profile with own-leg contact, under an id that names it. */
+export const withSelfLegs = (r: RagdollProfile, p: SelfLegProfile = SELF_LEGS_V1): RagdollProfile => ({ ...r, id: `${r.id}+${p.id}`, selfLegs: p });
+/** Ladder rung 9a: the ragdoll profile without own-leg contact, under the id it had before it. */
+export function withoutSelfLegs(r: RagdollProfile): RagdollProfile {
+  if (!r.selfLegs) return r;
+  const { selfLegs, ...rest } = r;
+  return { ...rest, id: r.id.replace(`+${selfLegs.id}`, '') };
 }
 
 /** Ladder rung 8j: the deferred conversion. */

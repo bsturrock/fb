@@ -4,7 +4,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide, ColliderRegion, PlayerId, SegmentId } from './contracts';
 import { CARRY_ARM, seatBallLocal, seatPalmLocal, type CarrySeat } from './carry';
-import type { PhysicsWorld } from './physics';
+import { boxSeg, cullGeom, geomNear, type CullGeom, type PhysicsWorld } from './physics';
 import { armSelfShapes, pelvisMidLocal, pitchShin, type PhysicalPose, type SegmentPose } from './pose';
 import { clampDirToEnvelope, swingExcess, swingExtentDeg } from './joint-cone';
 import { applyHipApproach, hipNeutralFrame, initHipStop, initKneeStop, ratchetHipStop, ratchetKneeStop, type HipStopRuntime, type KneeStopRuntime } from './joint-stops';
@@ -43,6 +43,11 @@ export interface RagdollJoint {
   /** Limb side and its measured sign along the core's X (absent on the neck). */
   side?: ArmSide;
   sideSign?: number;
+}
+
+/** Ladder rung 9a: a leg's self shape, with a capsule holding it in its body's frame (`cap`, which culls its queries). */
+export interface SelfLegShape extends RagdollCollider {
+  cap: { a: Vec3; b: Vec3; r: number };
 }
 
 /** Plan 09: one spherical joint's soft envelope state since the handoff. */
@@ -104,6 +109,12 @@ export interface Ragdoll {
   hipStops?: HipStopRuntime[];
   /** Ladder rung 8f: the knees' flexion stops since the build (absent: profile off). */
   kneeStops?: KneeStopRuntime[];
+  /**
+   * Ladder rung 9a (`RagdollProfile.selfLegs`): each leg's self shapes (distal thigh, shin, shoe; massless, not in
+   * `colliders`), the own trunk pieces they meet (plan 11's when it built them) and the pairs left out of the solve
+   * since the switch until their group is within the skin (`selfLegPair` keys). Absent: profile off.
+   */
+  selfLegs?: { legs: SelfLegShape[]; trunk: RAPIER.Collider[]; off: string[] };
 }
 
 /**
@@ -171,6 +182,102 @@ export function twistX(q: Quat): number {
 /** Arm self-clearance collider keys (tags): a trunk piece on the core, an arm self shape on a forearm. */
 export const SELF_TRUNK_KEY = 'selfTrunk:';
 export const SELF_ARM_KEY = 'selfArm:';
+/** Ladder rung 9a: a leg's self shape (`selfLeg:<side>Thigh|Shin|Shoe`). */
+export const SELF_LEG_KEY = 'selfLeg:';
+
+/**
+ * Ladder rung 9a: the pair key when two colliders (by their tags) are a pair of one ragdoll's own-leg contact, else null:
+ * one leg's self shape against the other leg's (any of the three on either), or a shin or shoe shape against the own
+ * trunk. Never a thigh against the trunk (jointed at the hip) or one leg's own shapes (jointed at the knee).
+ */
+export function selfLegPair(a: { playerId: PlayerId | null; key: string; region: ColliderRegion; side?: ArmSide }, b: { playerId: PlayerId | null; key: string; region: ColliderRegion; side?: ArmSide }): string | null {
+  if (a.playerId === null || a.playerId !== b.playerId) return null;
+  const la = a.key.startsWith(SELF_LEG_KEY);
+  const lb = b.key.startsWith(SELF_LEG_KEY);
+  const key = (): string => (a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`);
+  if (la && lb) return a.side !== undefined && b.side !== undefined && a.side !== b.side ? key() : null;
+  if (la && b.key.startsWith(SELF_TRUNK_KEY)) return a.region !== 'thigh' ? key() : null;
+  if (lb && a.key.startsWith(SELF_TRUNK_KEY)) return b.region !== 'thigh' ? key() : null;
+  return null;
+}
+
+/**
+ * Ladder rung 9a: every own-leg contact pair of a ragdoll, with its key: the leg shape `a`, the other shape `b` (`bLeg`
+ * when it is the other leg's) and the segment `b` is on (null: the trunk, on the core).
+ */
+export interface SelfLegPairRef {
+  a: SelfLegShape;
+  b: RAPIER.Collider;
+  bLeg: SelfLegShape | null;
+  seg: SegmentId | null;
+  key: string;
+}
+export function selfLegPairs(phys: PhysicsWorld, rag: Ragdoll): SelfLegPairRef[] {
+  const S = rag.selfLegs;
+  if (!S) return [];
+  const out: SelfLegPairRef[] = [];
+  const tag = (c: RAPIER.Collider) => phys.tags.get(c.handle)!;
+  S.legs.forEach((x, i) => {
+    for (const y of S.legs.slice(i + 1)) {
+      const k = selfLegPair(tag(x.collider), tag(y.collider));
+      if (k) out.push({ a: x, b: y.collider, bLeg: y, seg: y.segment, key: k });
+    }
+    for (const t of S.trunk) {
+      const k = selfLegPair(tag(x.collider), tag(t));
+      if (k) out.push({ a: x, b: t, bLeg: null, seg: null, key: k });
+    }
+  });
+  return out;
+}
+
+/** Cull bounds of a placed collider (`cullGeom`). */
+const cullOf = (c: RAPIER.Collider): CullGeom => cullGeom(c.shape, vc(c.translation()), { ...c.rotation() });
+/** Cull bounds of a leg's self shape: its capsule, placed (the collider is at its body's origin). */
+function legCull(s: SelfLegShape): CullGeom {
+  const P = { p: vc(s.collider.translation()), q: { ...s.collider.rotation() } };
+  const a = toWorld(P, s.cap.a);
+  const b = toWorld(P, s.cap.b);
+  return { c: scale(add(a, b), 0.5), r: len(sub(b, a)) / 2 + s.cap.r, seg: { a, b, r: s.cap.r } };
+}
+/** Ladder rung 9a: the pair's shapes may be within `prediction` (m) of each other (cull bounds only, no shape query). */
+export const selfLegNear = (p: SelfLegPairRef, prediction: number): boolean => geomNear(legCull(p.a), p.bLeg ? legCull(p.bLeg) : cullOf(p.b), prediction);
+
+/**
+ * Ladder rung 9a: the group of an own-leg pair, its two segments (`leftShin~rightThigh`, `leftShin~trunk`): a shin's
+ * shape and its shoe's are one group, as they are one body.
+ */
+export const selfLegGroup = (p: SelfLegPairRef): string => [p.a.segment, p.seg ?? 'trunk'].sort().join('~');
+/** The pair's shapes overlap deeper than `depth` (m). */
+function selfLegDeep(p: SelfLegPairRef, depth: number): boolean {
+  if (!selfLegNear(p, 0)) return false;
+  const r = p.a.collider.contactCollider(p.b, 0);
+  return r !== null && -r.distance > depth;
+}
+
+/**
+ * Ladder rung 9a: at the switch, every pair of a group (`selfLegGroup`) in which any pair's shapes overlap deeper than
+ * the skin (`SelfLegProfile.toleranceM`) is left out of the solve (`off`). The supported pose has no own-leg guard: a
+ * pair starting inside each other would be pushed apart by the first solve, and two segments switched in crossed would
+ * be held crossed by their other pairs. A pair within the skin of each other is in the solve from the start.
+ */
+export function holdOverlappingSelfLegs(phys: PhysicsWorld, rag: Ragdoll): void {
+  if (!rag.selfLegs) return;
+  const tol = rag.profile.selfLegs!.toleranceM;
+  const pairs = selfLegPairs(phys, rag);
+  const held = new Set(pairs.filter((p) => selfLegDeep(p, tol)).map(selfLegGroup));
+  rag.selfLegs.off = pairs.filter((p) => held.has(selfLegGroup(p))).map((p) => p.key);
+}
+
+/** Ladder rung 9a: before a solve, a group left out since the switch takes part again once none of its pairs is deeper. */
+export function releaseSelfLegs(phys: PhysicsWorld, rag: Ragdoll): void {
+  const S = rag.selfLegs;
+  if (!S || !S.off.length) return;
+  const tol = rag.profile.selfLegs!.toleranceM;
+  const held = selfLegPairs(phys, rag).filter((p) => S.off.includes(p.key));
+  const deep = new Set(held.filter((p) => selfLegDeep(p, tol)).map(selfLegGroup));
+  const out = new Set(held.filter((p) => !deep.has(selfLegGroup(p))).map((p) => p.key));
+  if (out.size) S.off = S.off.filter((k) => !out.has(k));
+}
 
 const SIDE_OF = (s: SegmentId): ArmSide | undefined => (s.startsWith('left') ? 'left' : s.startsWith('right') ? 'right' : undefined);
 
@@ -318,6 +425,50 @@ export function buildCandidate(
       }
     }
   }
+  // ladder rung 9a: own-leg contact, massless self shapes on the thighs and shins and the trunk they meet (plan 11's
+  // pieces when it built them; otherwise the measured trunk hull, or on an authored body the core's cuboids, as copies);
+  // like plan 11's they are not in `colliders` and meet only each other (the simulation's contact filter, `selfLegPair`).
+  // Each is a hull in its body's frame, the collider at the body origin with exactly zero mass properties, which Rapier
+  // leaves out of the body's sum: mass, centre of mass and inertia stay bitwise (an offset massless collider re-rounds
+  // them; rung 6's physical legs, `PhysicsWorld.addLegCollider`)
+  const SL = R.selfLegs;
+  let selfLegs: Ragdoll['selfLegs'];
+  if (SL) {
+    const sl: NonNullable<Ragdoll['selfLegs']> = { legs: [], trunk: [], off: [] };
+    selfLegs = sl;
+    const make = (seg: SegmentId, hull: { points: Vec3[]; r: number }, key: string, region: ColliderRegion): RAPIER.Collider => {
+      const f = new Float32Array(hull.points.flatMap((p) => [p.x, p.y, p.z]));
+      const desc = (hull.r > 0 ? RAPIER.ColliderDesc.roundConvexHull(f, hull.r) : RAPIER.ColliderDesc.convexHull(f))!
+        .setMassProperties(0, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0, w: 1 })
+        .setFriction(s.passiveFriction)
+        .setFrictionCombineRule(RAPIER.CoefficientCombineRule[s.passiveFrictionCombine])
+        .setRestitution(s.restitution)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule[s.restitutionCombine])
+        .setActiveHooks(RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS);
+      const c = phys.world.createCollider(desc, bodies[seg]);
+      phys.addTag(c, playerId, seg, region, key, SIDE_OF(seg));
+      return c;
+    };
+    if (selfCols) sl.trunk = selfCols.trunk;
+    else if (body.measured?.trunkHull) body.measured.trunkHull.forEach((pts, i) => sl.trunk.push(make('core', { points: pts, r: 0 }, `${SELF_TRUNK_KEY}${i}`, 'torso')));
+    else [g.torso, g.pelvis].forEach((part, i) => sl.trunk.push(make('core', boxHull({ p: part.center, q: qIdentity() }, part.halfExtents, 0), `${SELF_TRUNK_KEY}${i}`, i ? 'pelvis' : 'torso')));
+    const tol = SL.toleranceM;
+    for (const side of ['left', 'right'] as ArmSide[]) {
+      const leg = (seg: SegmentId, region: ColliderRegion, hull: { points: Vec3[]; r: number }, cap: SelfLegShape['cap']): void => {
+        sl.legs.push({ collider: make(seg, hull, `${SELF_LEG_KEY}${side}${region[0].toUpperCase()}${region.slice(1)}`, region), segment: seg, region, side, local: at(0, 0, 0), cap });
+      };
+      const capsule = (seg: SegmentId, region: ColliderRegion, a: Vec3, b: Vec3, r: number): void => leg(seg, region, capsuleHull(a, b, r), { a, b, r: r + SELF_HULL_EPS_M });
+      // the distal thigh: from `thighFromFraction` of the thigh to the knee, and the shin from the knee to the ankle, each
+      // rounded about its joint (the segment capsules end there): two knees or ankles meeting hold their joints a whole
+      // diameter apart however the bones meet, as a bone axis drawn to the joint reads them. The ends inside the same
+      // leg's other segment never meet it (no pair)
+      const rt = Math.min(R.radii.thigh - tol, SL.thighMaxRadiusM);
+      capsule(`${side}Thigh`, 'thigh', v3(0, -L.thigh * SL.thighFromFraction, 0), v3(0, -L.thigh, 0), rt);
+      capsule(`${side}Shin`, 'shin', v3(0, 0, 0), v3(0, -L.shin, 0), R.radii.shin - tol);
+      // the shoe: the shoe box less the skin, where the shoe is on the shin
+      leg(`${side}Shin`, 'shoe', boxHull(shoeLocal(side), R.shoe.halfExtents, tol), shoeCap(shoeLocal(side), R.shoe.halfExtents, tol));
+    }
+  }
   for (const id of SEGMENTS) bodies[id].recomputeMassPropertiesFromColliders();
   // joints: anchors from the same world landmarks expressed in both frames
   const joints: RagdollJoint[] = [];
@@ -370,7 +521,7 @@ export function buildCandidate(
     landmarks[`${side}Ankle`] = { seg: `${side}Shin`, local: v3(0, -L.shin, 0) };
     landmarks[`${side}Shoe`] = { seg: `${side}Shin`, local: shoeLocal(side).p };
   }
-  const rag: Ragdoll = { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false, ...(selfCols ? { self: selfCols } : {}) };
+  const rag: Ragdoll = { playerId, profile: R, bodies, colliders, joints, landmarks, massKg: segMass, enabled: false, ...(selfCols ? { self: selfCols } : {}), ...(selfLegs ? { selfLegs } : {}) };
   // ladder rung 8d: the hips' stops in their anatomical frame, widened to where the pose starts each hip
   const HS = R.hipStops;
   if (HS)
@@ -402,6 +553,27 @@ export function buildCandidate(
     landmarks.carriedBall = { seg: `${CARRY_ARM}Forearm`, local: seatBallLocal(pose.carry) };
   }
   return rag;
+}
+
+/** Hull half-width of a capsule's segment (m): the capsule is a thin box about it rounded by its radius less this. */
+const SELF_HULL_EPS_M = 2e-4;
+/** Ladder rung 9a: a capsule from `a` to `b` (radius `r`) as a rounded hull in its body's frame. */
+function capsuleHull(a: Vec3, b: Vec3, r: number): { points: Vec3[]; r: number } {
+  const E = SELF_HULL_EPS_M;
+  const d = norm(sub(b, a), v3(0, 1, 0));
+  const u = norm(cross(d, Math.abs(d.x) < 0.9 ? v3(1, 0, 0) : v3(0, 0, 1)), v3(0, 0, 1));
+  const w = cross(d, u);
+  const points: Vec3[] = [];
+  for (const e of [a, b]) for (const su of [-1, 1]) for (const sw of [-1, 1]) points.push(add(e, add(scale(u, su * E), scale(w, sw * E))));
+  return { points, r: r - E };
+}
+/** Ladder rung 9a: the capsule enclosing a box at `pose` (half extents `he` less `shrink`; `boxSeg`). */
+const shoeCap = (pose: Pose, he: Vec3, shrink: number): SelfLegShape['cap'] => boxSeg(pose.p, sub(he, v3(shrink, shrink, shrink)), pose.q);
+/** Ladder rung 9a: a box at `pose` (half extents `he` less `shrink`) as a hull in its body's frame. */
+function boxHull(pose: Pose, he: Vec3, shrink: number): { points: Vec3[]; r: number } {
+  const points: Vec3[] = [];
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) points.push(add(pose.p, qRot(pose.q, v3(sx * (he.x - shrink), sy * (he.y - shrink), sz * (he.z - shrink)))));
+  return { points, r: 0 };
 }
 
 /** The shoe box's pose on its shin at an ankle pitch (deg, positive toe down), in the shin frame. */
@@ -439,6 +611,13 @@ export function easeLimpFeet(rag: Ragdoll, dt: number, blocked?: (c: RagdollColl
     c.collider.setTranslationWrtParent(local.p);
     c.collider.setRotationWrtParent(local.q);
     c.local = local;
+    // ladder rung 9a: the shoe's self shape turns with it (its hull is in the shin frame)
+    const own = rag.selfLegs?.legs.find((x) => x.region === 'shoe' && x.side === side);
+    if (own && rag.profile.selfLegs) {
+      const tol = rag.profile.selfLegs.toleranceM;
+      own.collider.setShape(new RAPIER.ConvexPolyhedron(new Float32Array(boxHull(local, rag.profile.shoe.halfExtents, tol).points.flatMap((p) => [p.x, p.y, p.z])), undefined));
+      own.cap = shoeCap(local, rag.profile.shoe.halfExtents, tol);
+    }
     rag.landmarks[`${side}Shoe`].local = local.p;
     rag.bodies[`${side}Shin`].recomputeMassPropertiesFromColliders();
   }

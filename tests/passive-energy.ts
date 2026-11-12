@@ -104,8 +104,9 @@ function contactsOf(sim: Simulation, pid: string, rag: Ragdoll): { touched: bool
   const w = sim.physics.world;
   const tags = sim.physics.tags;
   const own = new Map<number, SegmentId>();
-  const cols: [RAPIER.Collider, SegmentId][] = [...rag.colliders, ...(rag.self?.arms ?? [])].map((c) => [c.collider, c.segment]);
-  for (const c of rag.self?.trunk ?? []) cols.push([c, 'core']);
+  // its own shapes: segment colliders, plan 11's self shapes and ladder rung 9a's (whose trunk may be plan 11's)
+  const cols: [RAPIER.Collider, SegmentId][] = [...rag.colliders, ...(rag.self?.arms ?? []), ...(rag.selfLegs?.legs ?? [])].map((c) => [c.collider, c.segment]);
+  for (const c of new Set([...(rag.self?.trunk ?? []), ...(rag.selfLegs?.trunk ?? [])])) cols.push([c, 'core']);
   for (const [c, seg] of cols) own.set(c.handle, seg);
   const ground = new Set<SegmentId>();
   const self = new Set<SegmentId>();
