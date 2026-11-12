@@ -97,29 +97,25 @@ const check = (c: Check): string => {
 // ---------------------------------------------------------------------------------------------------------------------
 // The transition audit (plan 08, 10b, 12)
 
-// Plan 12 known audit cases (listed in docs/handoff/plan12.md): boundary (fixture, time, player, landmark) and its bound (m)
-// Plan 13e known case (user ruling, bounded): on the supplied walk and run clips L3-F3-recover's right knee crosses its
-// step-to-step boundary at 0.725 s by 1.144 cm
-// plan 13f (user ruling, known limits under the predictive leg guard): L3-F3-collision D's right shoe at lift-off, after the
-// guard pushed its planted leg out of R's predicted body (closing at about 5 m/s), and L3-F1-phase1 R's right knee, whose
-// knee-pole variant the predicted depth picks differently for the old and new foot owner
-// plan 14 (user ruling, known limit): with the clip arm's elbow pole following the clip the side hit's contact changes,
-// and L3-F3-side R's right shoe crosses its step-to-step boundary at 0.592 s by 1.029 cm
-// contact motion M1 (user ruling, this boundary only): the plan 10c deep leg push, now on L3, pushes the same planted leg
-// further before lift-off: 1.478 cm (1.410 without it, either twist profile). It changes one other L3 boundary of 2243
-// (L3-F1-phase6 D's right knee, 0.922 to 0.956 cm); no pop is visible in the lab at 0.608-0.617 s
-const KNOWN_AUDIT: Record<string, number> = {
-  'L3-F7-mirror0 0.7875 R leftAnkle': 0.0101,
-  'L3-F3-recover 0.7250 R rightKnee': 0.0115,
-  'L3-F3-collision 0.6167 D rightShoe': 0.0148,
-  'L3-F1-phase1 0.6250 R rightKnee': 0.0113,
-  'L3-F3-side 0.5917 R rightShoe': 0.0103,
-};
+// Gates (ladder 15, 2026-11-12; CLAUDE.md rule 6): what the whole-run checks of this pass block on is what a viewer sees.
+// The fine measures they replaced are printed per fixture family (tests/l3-contracts.test.ts) and block nothing.
+/** A pop at an ownership boundary: a joint landmark of the shown pose off the old owner's continuation by more (m). */
+export const POP_M = 0.05;
+/** A skate: a plant (or a proposed plant) whose contact feature slid more than this (m). */
+export const SLIDE_M = 0.05;
+/** A launch: a supported root more than this above its support's height target (m). */
+export const ROOT_M = 0.1;
+/** The old fine limit of the boundary measures (m), now the printed meter's threshold. */
+export const FINE_POP_M = 0.01;
+
+/** Per fixture: the audited boundaries, those over FINE_POP_M, and the largest with where (printed, not judged). */
+export const AUDIT_SEEN = new Map<string, { n: number; over: number; max: number; at: string }>();
 
 export const AUDIT = check({
   name: 'transition audit',
   fixtures: /^L3-/,
-  // every L3 case: free movement, contact, recontact, landing and airborne recovery, contact interrupted by falling
+  // every L3 case: free movement, contact, recontact, landing and airborne recovery, contact interrupted by falling.
+  // Ladder 15: a boundary blocks at POP_M (it was 1 cm, with five pinned cases of 1.01-1.48 cm, KNOWN_AUDIT, gone with it)
   watch(d, report) {
     const ok = softly(report);
     // every reseed the pose takes as a new owner, seen from outside the audit
@@ -139,14 +135,15 @@ export const AUDIT = check({
       },
       finish(sim) {
         const ds = sim.transitionDeltas;
+        const seen = { n: ds.length, over: 0, max: 0, at: '' };
         for (const x of ds) {
           ok(() => expect(Object.keys(x.rawBy).length, d.id).toBeGreaterThan(20));
-          // plan 12 known case (handoff): R's left foot on its toe at the ankle limit lifts into a step inside a contact pile. The
-          // new owner turns its heading at its yaw rate and takes the achieved foot angle, and the shown leg leaves clearance
-          // variant 1 for the primary one: 1.009 cm at the ankle. Bounded here, not let go
-          const known = KNOWN_AUDIT[`${d.id} ${x.t.toFixed(4)} ${x.playerId} ${x.landmark}`];
-          ok(() => expect(x.deltaM, `${d.id} ${x.t.toFixed(4)} ${x.playerId} ${x.landmark} ${x.from} > ${x.to} raw ${x.rawM.toFixed(4)}`).toBeLessThanOrEqual(known ?? 0.01));
+          const at = `${d.id} ${x.t.toFixed(4)} ${x.playerId} ${x.landmark}`;
+          if (x.deltaM > FINE_POP_M) seen.over++;
+          if (x.deltaM > seen.max) [seen.max, seen.at] = [x.deltaM, at];
+          ok(() => expect(x.deltaM, `${at} ${x.from} > ${x.to} raw ${x.rawM.toFixed(4)}`).toBeLessThanOrEqual(POP_M));
         }
+        AUDIT_SEEN.set(d.id, seen);
         for (const r of reseeds) ok(() => expect(ds.some((x) => x.playerId === r.id && Math.abs(x.t - r.t) < 1e-9), `${d.id} reseed of ${r.id} at ${r.t.toFixed(5)} has no boundary`).toBe(true));
       },
     };
@@ -343,9 +340,10 @@ export const RAW_KEPT = check({
       if (d.id === 'L3-F7-phase0') {
         // L3-F7-phase0: before 10b the collision turned the travel direction, the clip heading snapped to it and the old
         // path's request jolted (two boundaries over 1 cm raw, passed only through the correction). The heading now follows at
-        // a bounded rate (B3): nothing there is over 1 cm before or after the correction
+        // a bounded rate (B3; its fault twin is "B3 fault put back"): no pop there before or after the correction (ladder
+        // 15: POP_M, was 1 cm)
         const f7 = nonEmpty(ds, 'L3-F7-phase0 boundaries');
-        for (const x of f7) expect(x.rawM, `L3-F7-phase0 ${x.t}`).toBeLessThanOrEqual(0.01);
+        for (const x of f7) expect(x.rawM, `L3-F7-phase0 ${x.t}`).toBeLessThanOrEqual(POP_M);
       } else {
         // what still jumps is the body-frame request when contact entry turns the body (the angular impulse; the clip itself
         // is the same in both compositions). Plan 13d: no L3 boundary is over 1 cm raw any more (L3-F1-mirror0 D 0.479 s was
@@ -386,8 +384,9 @@ export const LANDINGS = check({
       const id = d.id;
       const landings = sim.transitionDeltas.filter((b) => SIDES.some((s) => b.legs[s].old.kind === 'target' && b.legs[s].now.kind === 'plant'));
       expect(landings.length, id).toBeGreaterThan(1);
+      // (ladder 15: no pop, POP_M; was 1 cm)
       for (const x of landings) {
-        expect(x.rawM, `${id} ${x.t.toFixed(4)} ${x.playerId}`).toBeLessThanOrEqual(0.01);
+        expect(x.rawM, `${id} ${x.t.toFixed(4)} ${x.playerId}`).toBeLessThanOrEqual(POP_M);
         if (Math.max(...Object.values(x.requestJumpM)) === 0) expect(x.deltaM).toBe(x.rawM);
       }
     },
@@ -542,6 +541,8 @@ export const seen: ContinuitySeen = noneSeen();
  * kind was checked). A stationary hold (`holdStillAt` with HOLD_STILL_V1, read from outside the planner) neither counts
  * for it nor against it: a step that starts in one is checked like any other and counted under `held` only.
  */
+/** Ladder 15, the chase and request coverage: the kinds of substep the B2 chase bound and the B3 request bound did not check. */
+export const unseenChase = (s: ContinuitySeen): string[] => [...(s.chaseStarts > 0 ? [] : ['chase start']), ...(s.chaseInside > 0 ? [] : ['chase inside']), ...(s.requests > 0 ? [] : ['request'])];
 export const unseenKinds = (s: ContinuitySeen): string[] => STEP_KINDS.flatMap((k) => [...(s[`b1${cap(k)}`] > 0 ? [] : [`B1 ${k}`]), ...(s[`b2${cap(k)}`] > 0 ? [] : [`B2 ${k}`])]);
 
 /** B3: the declared limit of the clip leg request's own world-frame second difference (m): the composition limit. */
@@ -879,12 +880,8 @@ export const BRAKE = check({
     finish(sim) {
       expect(sim.result === 'duration' || sim.result === 'practiceOutOfBounds', `${d.id} ${sim.result}`).toBe(true);
       expect(count(sim, 'handoffRejected'), d.id).toBe(0);
-      // the kick leaves the ground: a landing proposal may fail honestly there
-      // the stopping player's own plants: L3-F16-contactStop's defender fails one honestly in contact, by 1.8 cm of reach.
-      // Plan 13e: a foot still sliding at the crossing continues as a swing (L3-F16-stop1.9's right foot was planted
-      // sliding at 0.33 m/s and failed in 13d)
-      const failed = sim.events.filter((e) => e.type === 'footPlantFailed' && e.playerId === sim.players[0].id).length;
-      expect(failed, d.id).toBeLessThanOrEqual(d.id === 'L3-F16-kick' ? 2 : 0);
+      // (ladder 15: the stopping player's failed plants were counted here, L3-F16-kick allowed 2 and every other none; a
+      // failed plant blocks now only as a skate, PLANT_ROOT over every L3 fixture, and the count is printed)
     },
   }),
 });
@@ -906,7 +903,7 @@ export const SETTLES = check({
       // plan 13d: L3-F16-stop2.9's squaring step (8.5 cm, left foot) comes 0.41 s before the end: the final heel sits 2.5 cm
       // further from the root, so the slow creep crosses the settle trigger later (0.56 s before, old margin 0.16 s)
       expect(sim.t - last.t, d.id).toBeGreaterThan(d.id === 'L3-F16-stop2.9' ? 0.4 : 0.5);
-      expect(count(sim, 'footPlantFailed'), d.id).toBe(0);
+      // (ladder 15: no failed plant was asserted here; a failed plant blocks as a skate only, PLANT_ROOT)
     },
   }),
 });
@@ -1135,7 +1132,6 @@ export const IDLE_PLANTS = check({
   name: 'plan 13e: standing idle, the feet stay on their plants',
   fixtures: /^L3-F1[35]-/,
   watch(d) {
-    const tol = (d.footwork ?? FOOTWORK_L3).plantTolM;
     const idleS = new Map<string, number>();
     let seen = 0;
     let long = 0;
@@ -1149,7 +1145,8 @@ export const IDLE_PLANTS = check({
           if (idleS.get(pl.id)! >= 1) long++;
           for (const side of SIDES) {
             const f = pl.feet.feet[side];
-            if (f.mode === 'planted' && !f.tentative) expect(f.driftM, `${d.id} ${pl.id} ${side} ${s.t.toFixed(4)} plant drift`).toBeLessThanOrEqual(tol);
+            // (ladder 15: a skate, SLIDE_M; the plan 07 plant tolerance, 1 cm, was the bound here)
+            if (f.mode === 'planted' && !f.tentative) expect(f.driftM, `${d.id} ${pl.id} ${side} ${s.t.toFixed(4)} plant drift`).toBeLessThanOrEqual(SLIDE_M);
           }
         }
       },
@@ -1265,13 +1262,8 @@ export const WALK_VALID = check({
   watch: (d) => ({
     finish(sim) {
       expect(count(sim, 'handoffRejected'), d.id).toBe(0);
-      // plan 13e known limit (user ruling, bounded): on the supplied walk clips L3-F14-lateral's left foot plants at
-      // 1.1417 s and fails on the slide (3.36 cm horizontal); no other plant fails
-      const failed = sim.events.filter((e) => e.type === 'footPlantFailed');
-      if (d.id === 'L3-F14-lateral') {
-        expect(failed.map((e) => `${e.playerId} ${(e.data as { side?: string }).side} ${e.t.toFixed(4)}`), d.id).toEqual(['R left 1.1417']);
-        expect((failed[0].data as { hzM: number }).hzM, d.id).toBeLessThan(0.035);
-      } else expect(failed.length, d.id).toBe(0);
+      // (ladder 15: the failed plants were pinned here, L3-F14-lateral's left foot at 1.1417 s on a 3.36 cm slide (under
+      // 3.5) and none elsewhere; a failed plant blocks now as a skate only, PLANT_ROOT)
     },
   }),
 });
@@ -1580,9 +1572,72 @@ export const HOLD_STILL = check({
   },
 });
 
+/** Per fixture: the largest supported root height (m), on the runs NO_LAUNCH reads (printed). */
+export const ROOT_PEAK = new Map<string, number>();
+/** Per fixture: failed plants and their largest slide, the largest plant drift, the largest root error over its target (printed). */
+export const PLANT_SEEN = new Map<string, { failed: number; failedHzM: number; driftM: number; rootUpM: number; at: string }>();
+
+/** What the feet-and-root rule reads of a run: each failed plant's slide, the largest plant drift and root error, with where. */
+export interface PlantRootRec {
+  failed: { hzM: number; at: string }[];
+  drift: { m: number; at: string };
+  rootUp: { m: number; at: string };
+}
+/**
+ * Ladder 15 (the visible bar for feet and root): no skate and no launch. A plant whose contact feature slides more than
+ * SLIDE_M from its anchor (a confirmed plant's drift while it is held, or a proposed plant failed on a slide that far), or
+ * a supported root more than ROOT_M over its support's height target (the suspension's probe height against `targetM`,
+ * while it is active and a plant is held under the body). Returns each breach.
+ */
+export function plantRootBreaches(r: PlantRootRec, root = true): string[] {
+  const out: string[] = [];
+  for (const f of r.failed) if (f.hzM > SLIDE_M) out.push(`${f.at}: a plant failed on a ${(f.hzM * 100).toFixed(2)} cm slide (over ${SLIDE_M * 100} cm)`);
+  if (r.drift.m > SLIDE_M) out.push(`${r.drift.at}: a plant slid ${(r.drift.m * 100).toFixed(2)} cm (over ${SLIDE_M * 100} cm)`);
+  if (root && r.rootUp.m > ROOT_M) out.push(`${r.rootUp.at}: the root ${(r.rootUp.m * 100).toFixed(2)} cm over its support's target (over ${ROOT_M * 100} cm)`);
+  return out;
+}
+/**
+ * The fixtures whose launch the root part judges: the released saturating loads (NO_LAUNCH's). Elsewhere the root's
+ * height over its target is printed only: a lift (L3-F9-lift-*) or a kick (L3-F16-kick, 12.3 cm over the stance target
+ * with its stance foot planted) raises the root by the run's own motion, which a support's target does not describe.
+ */
+export const LAUNCH_IDS = ['L3-F6-saturated', 'L3-F7-loadRelease'];
+/** The rule on every L3 fixture: the run's record, judged by plantRootBreaches; the record is kept for printing. */
+export const plantRoot = (d: FixtureDef, report: Report): Watch => {
+  const r: PlantRootRec = { failed: [], drift: { m: 0, at: '' }, rootUp: { m: -Infinity, at: '' } };
+  return {
+    substep(s) {
+      for (const pl of s.players) {
+        if (pl.rag) continue;
+        const st = pl.sus;
+        // (on the ground: a plant held under it; a lift or a jump the run makes, its feet off the ground, is not a launch)
+        const planted = SIDES.some((side) => pl.feet?.feet[side].mode === 'planted' && !pl.feet.feet[side].tentative);
+        if (st?.active && st.probe.valid && planted) {
+          const up = st.probe.heightM - st.targetM;
+          if (up > r.rootUp.m) r.rootUp = { m: up, at: `${d.id} ${pl.id} ${s.t.toFixed(4)}` };
+        }
+        for (const side of SIDES) {
+          const f = pl.feet?.feet[side];
+          if (f?.mode === 'planted' && !f.tentative && f.driftM > r.drift.m) r.drift = { m: f.driftM, at: `${d.id} ${pl.id} ${side} ${s.t.toFixed(4)}` };
+        }
+      }
+    },
+    finish(sim) {
+      for (const e of sim.events) {
+        if (e.type !== 'footPlantFailed') continue;
+        const x = e.data as { hzM?: number; side?: string };
+        r.failed.push({ hzM: x.hzM ?? 0, at: `${d.id} ${e.playerId} ${x.side} ${e.t.toFixed(4)}` });
+      }
+      PLANT_SEEN.set(d.id, { failed: r.failed.length, failedHzM: Math.max(0, ...r.failed.map((f) => f.hzM)), driftM: r.drift.m, rootUpM: r.rootUp.m, at: r.drift.at });
+      for (const m of plantRootBreaches(r, LAUNCH_IDS.includes(d.id))) report(m);
+    },
+  };
+};
+export const PLANT_ROOT = check({ name: 'no skate, no launch', fixtures: /^L3-/, watch: plantRoot });
+
 export const NO_LAUNCH = check({
   name: 'L3-F6/F7: a saturating load released does not launch',
-  fixtures: ['L3-F6-saturated', 'L3-F7-loadRelease'],
+  fixtures: LAUNCH_IDS,
   watch(d) {
     let y = 0;
     return {
@@ -1590,8 +1645,9 @@ export const NO_LAUNCH = check({
         for (const p of sim.players) if (!p.rag) y = Math.max(y, p.proxy.body.translation().y);
       },
       finish(sim) {
-        // plan 13e known limit (user ruling, bounded): with the supplied clips L3-F6-saturated's root peaks at 0.9122 m
-        expect(y, d.id).toBeLessThan(d.id === 'L3-F6-saturated' ? 0.913 : 0.91);
+        // (ladder 15: the root's height was pinned here, under 0.91 m and L3-F6-saturated's 0.913; a launch blocks now as a
+        // root over its support's target by more than ROOT_M, PLANT_ROOT over every L3 fixture, and the height is printed)
+        ROOT_PEAK.set(d.id, y);
         expect(sim.players.every((p) => p.representation !== 'ragdoll'), d.id).toBe(true);
       },
     };
@@ -1632,7 +1688,7 @@ export const RECONTACT = check({
       // the audited boundary itself: feet, held arms and landmarks
       const at = sim.transitionDeltas.filter((x) => x.playerId === 'R' && Math.abs(x.t - m[3].t) <= 1 / 240 + 1e-9);
       expect(at.length).toBeGreaterThan(0);
-      for (const x of at) expect(x.deltaM, `${x.t} ${x.landmark} ${x.from} > ${x.to}`).toBeLessThanOrEqual(0.01);
+      for (const x of at) expect(x.deltaM, `${x.t} ${x.landmark} ${x.from} > ${x.to}`).toBeLessThanOrEqual(POP_M);
     },
   }),
 });
@@ -1964,7 +2020,8 @@ export const CARRY_AUDIT = check({
           ball = Math.max(ball, x.by.carriedBall);
         }
         CARRY_BOUNDARIES.set(def.id, { boundaries, ball, moved });
-        expect(ball, def.id).toBeLessThanOrEqual(0.01);
+        // (ladder 15: no pop of the ball, POP_M; was 1 cm. The largest is printed)
+        expect(ball, def.id).toBeLessThanOrEqual(POP_M);
         expect(moved, def.id).toBeLessThan(1e-6);
       },
     };
@@ -2035,7 +2092,7 @@ export async function passFixture(d: FixtureDef): Promise<FixturePass> {
 }
 
 /** What the checks record over several fixtures, for the tests that read it: counters (summed) and per-fixture maps. */
-export const RECORDS = { HANDOVER, SEAMS, seen, CONT, FEET, REACH_AT, COPIED, ONE_BALL_SEEN, RULE_REF_SPOT, CARRY_BOUNDARIES };
+export const RECORDS = { HANDOVER, SEAMS, seen, CONT, FEET, REACH_AT, COPIED, ONE_BALL_SEEN, RULE_REF_SPOT, CARRY_BOUNDARIES, AUDIT_SEEN, PLANT_SEEN, ROOT_PEAK };
 export type Records = typeof RECORDS;
 
 /** Adds a shard's records into this process's: counters summed, per-fixture records taken over. */

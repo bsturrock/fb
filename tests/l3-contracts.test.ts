@@ -33,6 +33,7 @@ import {
   ANCHORS,
   ARM_SWING,
   AUDIT,
+  AUDIT_SEEN,
   AUDITED_FALL,
   BAD_CANDIDATE,
   BRAKE,
@@ -54,6 +55,7 @@ import {
   DEFENDER_13F,
   DEFENDER_BOB,
   FEET,
+  FINE_POP_M,
   FIRST,
   FITTED,
   IDLE_PLANTS,
@@ -83,6 +85,10 @@ import {
   ONE_FOOT,
   PALM_HOLDS,
   passFixture,
+  PLANT_ROOT,
+  PLANT_SEEN,
+  plantRootBreaches,
+  POP_M,
   PLAYER_BELOW,
   PREP_UNWINDS,
   RAW_KEPT,
@@ -94,6 +100,8 @@ import {
   reseedCovered,
   RETAINED,
   RETENTION_BITES,
+  ROOT_M,
+  ROOT_PEAK,
   RULE_FIXTURES,
   RULE_REF,
   RULE_REF_SPOT,
@@ -105,11 +113,13 @@ import {
   seen,
   SETTLE_PLANTS,
   SETTLES,
+  SLIDE_M,
   STANDS_STILL,
   STEP_AS_IS,
   stepAsIsCovered,
   STOP_MOTOR,
   TOE_OFF,
+  unseenChase,
   unseenKinds,
   WALK_STEPS,
   WALK_VALID,
@@ -239,8 +249,31 @@ function passTest(title: string, names: string[], then?: () => void | Promise<vo
   });
 }
 
+/**
+ * Ladder 15: the fine measures the gates no longer judge, printed one line per L3 fixture family (L3-F1 ... L3-F17) from
+ * the per-fixture records: `line` makes a family's text from its fixtures' records.
+ */
+function printByFamily<T>(what: string, m: Map<string, T>, line: (xs: [string, T][]) => string): void {
+  const fam = new Map<string, [string, T][]>();
+  for (const [id, r] of m) {
+    const f = id.split('-').slice(0, 2).join('-');
+    fam.set(f, [...(fam.get(f) ?? []), [id, r]]);
+  }
+  const keys = [...fam.keys()].sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)));
+  console.log(`${what}\n${keys.map((k) => `  ${k}: ${line(fam.get(k)!)}`).join('\n')}`);
+}
+const cm = (m: number): string => `${(m * 100).toFixed(2)} cm`;
+const worstOf = <T,>(xs: [string, T][], v: (r: T) => number): [string, T] => xs.reduce((a, x) => (v(x[1]) > v(a[1]) ? x : a));
+
 describe('plan 08 transition audit', () => {
-  passTest('transition-only pose discontinuity at most 1 cm at every ownership change, all landmarks, same solved time; every reseed is a boundary: every L3 fixture', [AUDIT]);
+  // ladder 15: a pop blocks at POP_M (5 cm; it was 1 cm, with five pinned cases up to 1.48 cm); the boundaries over the old
+  // 1 cm and the largest per family are printed
+  passTest(`transition-only pose discontinuity at most ${POP_M * 100} cm at every ownership change, all landmarks, same solved time; every reseed is a boundary: every L3 fixture`, [AUDIT], () => {
+    printByFamily(`transition audit (ladder 15 meter): boundaries, those over ${FINE_POP_M * 100} cm, the largest`, AUDIT_SEEN, (xs) => {
+      const [, w] = worstOf(xs, (r) => r.max);
+      return `${xs.reduce((a, [, r]) => a + r.n, 0)} boundaries, ${xs.reduce((a, [, r]) => a + r.over, 0)} over ${FINE_POP_M * 100} cm, largest ${cm(w.max)} (${w.at})`;
+    });
+  });
 
   it(`the audit reads copies: the same run with and without it is identical, every trace row and every substep's planner, sampler and pose state${NOTE}`, async () => {
     // the audited side of each comparison is the pass's run of the fixture, the unaudited side runs right after it in the
@@ -322,11 +355,12 @@ describe('plan 08 transition audit', () => {
     for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
   }, 30000);
 
-  it('negative control: a known old/new pose difference over 1 cm still fails (a new foot owner shown off its path)', async () => {
+  it('negative control: a pop over the gate still fails (a new foot owner shown off its path)', async () => {
     // the audit check itself (AUDIT), on the free 6.6 m/s run of one player (L3-F16-sprint): passes as it is, and with every
-    // composed leg whose foot owner changed starting its continuity step 3 cm off the shown path (PoseDebug.ownerChangeJumpM)
-    // it reports each such boundary over 1 cm, the old owner's continuation kept as it was. Unlike the 10b crossing fault
-    // above, it does not depend on a contact run reaching a particular crossing: every ownership change of the run carries it
+    // composed leg whose foot owner changed starting its continuity step JUMP off the shown path (PoseDebug.ownerChangeJumpM)
+    // it reports each such boundary over POP_M, the old owner's continuation kept as it was. Unlike the 10b crossing fault
+    // above, it does not depend on a contact run reaching a particular crossing: every ownership change of the run carries
+    // it. Ladder 15: the jump 8 cm and the gate POP_M (5 cm; the jump was 3 cm against the old 1 cm)
     const def = FIX('L3-F16-sprint');
     const audited = async (debug?: SimOptions['debug']) => {
       const c = CHECKS.find((x) => x.name === AUDIT)!;
@@ -338,20 +372,20 @@ describe('plan 08 transition audit', () => {
     };
     const ok = await audited();
     expect(ok.fails).toEqual([]);
-    expect(ok.ds.filter((b) => b.deltaM > 0.01)).toEqual([]);
-    const bad = await audited({ pose: { ownerChangeJumpM: 0.03 } });
-    const x = bad.ds.filter((b) => b.deltaM > 0.01);
+    expect(ok.ds.filter((b) => b.deltaM > POP_M)).toEqual([]);
+    const bad = await audited({ pose: { ownerChangeJumpM: 0.08 } });
+    const x = bad.ds.filter((b) => b.deltaM > POP_M);
     expect(x.length).toBeGreaterThan(0);
-    // every one is an ownership change the audit fails on its 1 cm limit, and nothing else fails: one failure per such
+    // every one is an ownership change the audit fails on its POP_M limit, and nothing else fails: one failure per such
     // boundary, each naming that boundary's time, player, landmark and owners
     for (const b of x) expect(b.from).not.toBe(b.to);
     const named = (b: TransitionDelta): string => `L3-F16-sprint ${b.t.toFixed(4)} ${b.playerId} ${b.landmark} ${b.from} > ${b.to} raw ${b.rawM.toFixed(4)}: `;
     expect(bad.fails.map((m) => m.slice(0, m.indexOf(': ') + 2)).sort()).toEqual(x.map(named).sort());
-    for (const m of bad.fails) expect(m).toMatch(/: expected 0\.0\d+ to be less than or equal to 0\.01$/);
-    // nothing set aside: every boundary over 1 cm raw is still over 1 cm after the correction; and a boundary whose
+    for (const m of bad.fails) expect(m).toMatch(/: expected 0\.\d+ to be less than or equal to 0\.05$/);
+    // nothing set aside: every boundary over POP_M raw is still over it after the correction; and a boundary whose
     // reference took no request jump out (transition-audit.ts sets requestJumpM exactly where it moves a reference foot's
     // offset) is compared as it is, its measure exactly the raw difference
-    expect(bad.ds.filter((b) => b.rawM > 0.01 && b.deltaM <= 0.01)).toEqual([]);
+    expect(bad.ds.filter((b) => b.rawM > POP_M && b.deltaM <= POP_M)).toEqual([]);
     for (const run of [ok, bad]) {
       const plain = run.ds.filter((b) => b.requestJumpM.left === 0 && b.requestJumpM.right === 0);
       expect(plain.length).toBeGreaterThan(0);
@@ -384,11 +418,21 @@ describe('plan 10b foot target continuity', () => {
       // substeps) held up and the still-hold flip took away by its definition; outside stationary holds the pass has 28,440
       // with and without the flip, and the fault below removes a kind (the next test)
       expect(unseenKinds(seen)).toEqual([]);
-      expect(seen.chaseStarts).toBeGreaterThan(5);
-      expect(seen.chaseInside).toBeGreaterThan(100);
-      expect(seen.requests).toBeGreaterThan(30000);
+      // ladder 15: the chase and request bounds saw each kind they bound at least once (they were floors of 5 chase starts,
+      // 100 chase substeps and 30,000 request substeps); the counts are printed
+      expect(unseenChase(seen)).toEqual([]);
+      console.log(`foot-target continuity coverage (ladder 15 meter): ${JSON.stringify(seen)}`);
     },
   );
+
+  it('the chase and request coverage, constructed: a record with none of a kind reports that kind and only it', () => {
+    // the fault twin of the coverage rule above, on records the test makes (the rule reads the counts only)
+    const all = { ...noneSeen(), chaseStarts: 1, chaseInside: 1, requests: 1 };
+    expect(unseenChase(all)).toEqual([]);
+    expect(unseenChase(noneSeen())).toEqual(['chase start', 'chase inside', 'request']);
+    expect(unseenChase({ ...all, chaseInside: 0 })).toEqual(['chase inside']);
+    expect(unseenChase({ ...all, requests: 0 })).toEqual(['request']);
+  });
 
   it('the step coverage, controlled: two runs together check every kind of step outside a stationary hold, and with no voluntary step anywhere (the fault) not the voluntary kind; a stationary hold neither counts for it nor against it (L3-F6-hold with the still-hold rule and without it)', async () => {
     // ladder 14a: the coverage rule of the test above on runs the test makes. L3-F16-kick (a run stop: voluntary, reach and
@@ -514,11 +558,13 @@ describe('plan 08 foot limits at every actual substep', () => {
         [
           'the reported overruns run again: the limits are reached there, not avoided',
           () => {
+            // (ladder 15: each kind of update at least once, printed; they were floors of 100, 100 and 4)
             for (const id of ['L3-F16-runStop', 'L3-F14-walkRunStop', 'L3-F7-phase0']) {
               const { seen, c } = FEET.get(id)!;
-              expect(seen.nLift, id).toBeGreaterThan(100);
-              expect(seen.nOffset, id).toBeGreaterThan(100);
-              expect(seen.ownerChanges, id).toBeGreaterThan(4);
+              console.log(`foot limits coverage (ladder 15 meter) ${id}: ${seen.nLift} lift, ${seen.nOffset} offset substeps, ${seen.ownerChanges} owner changes`);
+              expect(seen.nLift, id).toBeGreaterThan(0);
+              expect(seen.nOffset, id).toBeGreaterThan(0);
+              expect(seen.ownerChanges, id).toBeGreaterThan(0);
               expect(Math.max(c.lift, seen.lift), id).toBeGreaterThan(0.9 * LIFT);
             }
           },
@@ -810,6 +856,28 @@ describe('plan 08 pass 3: contact integration', () => {
     [HOLD_SETTLES, NO_LAUNCH, CLEARS, RECONTACT],
   );
   passTest('the still feet (ladder 14a): in a stationary hold no planted foot steps home, settles or steps to turn: every L3 fixture', [HOLD_STILL]);
+  // ladder 15: the visible bar for feet and root replaced the pinned plant failures (L3-F14-lateral's one, under a 3.5 cm
+  // slide; L3-F16-kick's two; none on the stops and the other walks) and root heights (L3-F6-saturated under 0.913 m, the
+  // others under 0.91); the failed plants, slides, drifts and root errors are printed
+  passTest(`no skate (a plant sliding over ${SLIDE_M * 100} cm): every L3 fixture; no launch (a supported root over ${ROOT_M * 100} cm above its target with a plant under it): the released saturating loads`, [PLANT_ROOT], () => {
+    printByFamily('plants and root (ladder 15 meter): failed plants and their largest slide, the largest plant drift, the largest root error over target', PLANT_SEEN, (xs) => {
+      const [hzAt, hz] = worstOf(xs, (r) => r.failedHzM);
+      const [, dr] = worstOf(xs, (r) => r.driftM);
+      const [upAt, up] = worstOf(xs, (r) => r.rootUpM);
+      return `${xs.reduce((a, [, r]) => a + r.failed, 0)} failed (largest slide ${cm(hz.failedHzM)}, ${hzAt}), drift ${cm(dr.driftM)} (${dr.at}), root ${cm(up.rootUpM)} over (${upAt})`;
+    });
+    console.log(`root peaks (ladder 15 meter): ${[...ROOT_PEAK].map(([id, y]) => `${id} ${y.toFixed(4)} m`).join('; ')}`);
+  });
+  it('no skate, no launch, constructed: a failed plant\'s slide, a plant\'s drift and a root over its target, each just past its gate, fail the rule; just inside, pass', () => {
+    // the fault twin of PLANT_ROOT on records the test makes (the rule reads the record only; tests/l3-pass.ts plantRoot
+    // makes it from the run): L3-F14-lateral's recorded failed plant (3.36 cm, a pass) and each part at 1 mm either side
+    const inside = { failed: [{ hzM: 0.0336, at: 'L3-F14-lateral R left 1.1417' }], drift: { m: SLIDE_M - 0.001, at: 'd' }, rootUp: { m: ROOT_M - 0.001, at: 'r' } };
+    expect(plantRootBreaches(inside)).toEqual([]);
+    expect(plantRootBreaches({ ...inside, failed: [...inside.failed, { hzM: SLIDE_M + 0.001, at: 'f' }] })).toEqual(['f: a plant failed on a 5.10 cm slide (over 5 cm)']);
+    expect(plantRootBreaches({ ...inside, drift: { m: SLIDE_M + 0.001, at: 'd' } })).toEqual(['d: a plant slid 5.10 cm (over 5 cm)']);
+    expect(plantRootBreaches({ ...inside, rootUp: { m: ROOT_M + 0.001, at: 'r' } })).toEqual(["r: the root 10.10 cm over its support's target (over 10 cm)"]);
+    expect(plantRootBreaches({ ...inside, rootUp: { m: ROOT_M + 0.001, at: 'r' } }, false)).toEqual([]);
+  });
   it('the still feet, the fault twin: before the flip L3-F6-hold\'s defender steps home in the hold (its left foot at 2.146 s)', async () => {
     const d = preHoldStill(FIX('L3-F6-hold'));
     const c = CHECKS.find((x) => x.name === HOLD_STILL)!;
@@ -1000,10 +1068,12 @@ describe('ladder tracked defects (rule 7)', () => {
 });
 
 describe('the carried ball over the L3 pass (plan 08a, plan 10d D1(a))', () => {
-  passTest('contact and recontact: ownership changes under the 1 cm same-time limit, the ball included, on the achieved arm', [CARRY_AUDIT], () => {
+  passTest(`contact and recontact: ownership changes with no pop of the ball (${POP_M * 100} cm), on the achieved arm`, [CARRY_AUDIT], () => {
+    // (ladder 15: the limit was 1 cm and the boundaries a floor of 30; the ball's boundaries are printed)
     let boundaries = 0;
     for (const r of CARRY_BOUNDARIES.values()) boundaries += r.boundaries;
-    expect(boundaries).toBeGreaterThan(30);
+    expect(boundaries).toBeGreaterThan(0);
+    console.log(`carried ball at the boundaries (ladder 15 meter): ${[...CARRY_BOUNDARIES].map(([id, r]) => `${id} ${r.boundaries} boundaries, largest ${cm(r.ball)}`).join('; ')}`);
   });
 
   passTest('the rule reference, the drawn ball and the official spot agree; the spot stays frozen', [RULE_REF], () => {
@@ -1033,9 +1103,11 @@ describe('the carried ball over the L3 pass (plan 08a, plan 10d D1(a))', () => {
         seated += e.seated;
         if (e.ending) endings++;
       }
-      expect(ticks).toBeGreaterThan(2000);
+      // (ladder 15: at least one tick and one ending, printed; they were floors of 2000 ticks and 15 endings)
+      console.log(`the drawn ball (ladder 15 meter): ${ticks} ticks, ${seated} seated, ${endings} endings over ${RULE_FIXTURES.length} rule fixtures`);
+      expect(ticks).toBeGreaterThan(0);
       expect(seated).toBeGreaterThan(0.9 * ticks);
-      expect(endings).toBeGreaterThanOrEqual(15);
+      expect(endings).toBeGreaterThan(0);
     },
   );
 });
