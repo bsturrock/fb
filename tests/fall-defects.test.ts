@@ -6,11 +6,11 @@ import type { Simulation } from '../src/sim/simulation';
 import { FIX, preOwnLegs } from './helpers';
 import { loadState, resumeState } from './state';
 
-// Ladder 9c, tracked defects (rule 7) of the fall response reached by own-leg contact's moved trajectories (the
-// exceptions in tests/falls.test.ts), each on a capture taken under the own-leg flip's registration, a little before
-// the defect. The twin with own-leg contact taken off every ragdoll from the same state (its self shapes stay in the
-// world, massless, and the filter passes none of their pairs) shows the same defect: reached, not made by it. Each test
-// fails once its defect is gone from that state; it is then to be turned into the fix's test.
+// Ladder 9c, defects (rule 7) of the fall response reached by own-leg contact's moved trajectories, each on a capture
+// taken under the own-leg flip's registration, a little before the defect. The twin with own-leg contact taken off
+// every ragdoll from the same state (its self shapes stay in the world, massless, and the filter passes none of their
+// pairs) shows the same defect: reached, not made by it. A tracked defect's test (its exception in tests/falls.test.ts)
+// fails once the defect is gone from that state; it is then turned into the fix's test, with the fault twin.
 
 /** Resume `cap`; `ownLegs: false` takes own-leg contact off every ragdoll from there (the profile as before it). */
 async function resume(file: string, ownLegs: boolean, opts = {}): Promise<Simulation> {
@@ -66,18 +66,18 @@ describe('tracked defect IMPACT_OVER_POWER (L4-F3-run-on, from 1.600 s)', () => 
   }, 120000);
 });
 
-// BRACE_EXPIRED_OBSTRUCTED: L4-F5-twoClamp-on, D's right brace is still seeking when its response's window ends (2.2
-// s) with its forearm on R's left shin: missed `expired`. falls.test.ts's rule (a miss is obstructed exactly when a
-// seeking brace pressed on another body within the shortest prediction horizon) reads it obstructed; the core-down path
-// would say so (it reads the response's own obstruction record, set in that same substep), the end-of-window path does
-// not read it. Before the flip the same miss had its last such contact 0.104 s before (outside the 0.1 s horizon).
-// Captured at the end of tick 126 (2.100 s). Twin, own-leg contact off from there: the same. Fault twin: the window's
-// end reading the obstruction as the core-down path does, and the rule holds.
-describe('tracked defect BRACE_EXPIRED_OBSTRUCTED (L4-F5-twoClamp-on, from 2.100 s)', () => {
+// BRACE_EXPIRED_OBSTRUCTED, fixed at ladder 9e: L4-F5-twoClamp-on, D's right brace is still seeking when its response's
+// window ends (2.2 s) with its forearm on R's left shin. falls.test.ts's rule (a miss is obstructed exactly when a
+// seeking brace pressed on another body within the shortest prediction horizon) reads it obstructed, and so does the
+// core-down path (from the response's own obstruction record, set in that same substep); the end-of-window path did not
+// read the record and missed it as `expired`. Before the own-leg flip the same miss had its last such contact 0.104 s
+// before (outside the 0.1 s horizon). Captured at the end of tick 126 (2.100 s), under the own-leg flip. Fault twin: the
+// end-of-window path as before 9e (an obstruction there missed as `expired`), with own-leg contact and without it.
+describe('BRACE_EXPIRED_OBSTRUCTED, fixed: a brace pressed on a body when the window ends is obstructed (L4-F5-twoClamp-on, from 2.100 s)', () => {
   const CAP = 'tests/data/state/L4-F5-twoClamp-on@126.json.gz';
   const W = FALL_L4.brace.horizonS[0];
 
-  async function rightMiss(ownLegs: boolean, readObstruction = false) {
+  async function rightMiss(ownLegs: boolean, fault = false) {
     let seek: number | undefined;
     const onSubstep = (x: Simulation) => {
       const p = x.byId.get('D')!;
@@ -93,10 +93,11 @@ describe('tracked defect BRACE_EXPIRED_OBSTRUCTED (L4-F5-twoClamp-on, from 2.100
       }
     };
     const sim = await resume(CAP, ownLegs, { onSubstep });
-    if (readObstruction) {
-      const F = sim.fall! as unknown as { missBrace: (ep: FallEpisode, a: { obstructedAtS: number | null }, reason: string) => void };
+    if (fault) {
+      // the end-of-window path (the episode is done when it misses a brace) without the obstruction record
+      const F = sim.fall! as unknown as { missBrace: (ep: FallEpisode, a: unknown, reason: string) => void };
       const miss = F.missBrace.bind(F);
-      F.missBrace = (ep, a, reason) => miss(ep, a, reason === 'expired' && a.obstructedAtS !== null && sim.t - a.obstructedAtS <= W + 1e-9 ? 'obstructed' : reason);
+      F.missBrace = (ep, a, reason) => miss(ep, a, ep.done && reason === 'obstructed' ? 'expired' : reason);
     }
     while (!sim.done) sim.stepTick();
     const m = sim.events.filter((e) => e.type === 'braceMiss' && e.playerId === 'D' && e.data?.arm === 'right');
@@ -104,8 +105,10 @@ describe('tracked defect BRACE_EXPIRED_OBSTRUCTED (L4-F5-twoClamp-on, from 2.100
     return m.map((e) => ({ t: +e.t.toFixed(4), reason: e.data?.reason, near: seek !== undefined && e.t - seek <= W + 1e-9 }));
   }
 
-  it('the right brace\'s window ends while it presses on R: missed as expired, with own-leg contact and without it; read as the core-down path reads it, obstructed', async () => {
-    for (const ownLegs of [true, false]) expect(await rightMiss(ownLegs), `own legs ${ownLegs}`).toEqual([{ t: 2.2, reason: 'expired', near: true }]);
-    expect(await rightMiss(true, true)).toEqual([{ t: 2.2, reason: 'obstructed', near: true }]);
+  it('the right brace\'s window ends while it presses on R: missed as obstructed, with own-leg contact and without it; the end-of-window path without the obstruction misses it as expired', async () => {
+    for (const ownLegs of [true, false]) {
+      expect(await rightMiss(ownLegs), `own legs ${ownLegs}`).toEqual([{ t: 2.2, reason: 'obstructed', near: true }]);
+      expect(await rightMiss(ownLegs, true), `fault, own legs ${ownLegs}`).toEqual([{ t: 2.2, reason: 'expired', near: true }]);
+    }
   }, 120000);
 });

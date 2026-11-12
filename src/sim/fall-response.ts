@@ -260,6 +260,11 @@ export class FallResponse {
     ep.stats.taskChanges++;
   }
 
+  /** Plan 10c C4: a seeking brace blocked by another body within its shortest prediction horizon is obstructed. */
+  private obstructed(a: ArmState): boolean {
+    return a.obstructedAtS !== null && this.host.t - a.obstructedAtS <= this.P.brace.horizonS[0] + 1e-9;
+  }
+
   private missBrace(ep: FallEpisode, a: ArmState, reason: BraceMissReason): void {
     a.brace = 'missed';
     this.host.emit('braceMiss', ep.playerId, { arm: a.side, reason, everReachable: a.everReachable });
@@ -305,10 +310,7 @@ export class FallResponse {
         a.refDirCore = this.dirCore(ep, `${side}UpperArm`);
         a.refElbowRad = rad(hingeAngles(ep.rag)[`${side}Elbow`]);
         this.host.emit('braceContact', ep.playerId, { arm: side, part, tS: round(this.host.t - ep.t0, 4), palm: rv(landmarkWorld(ep.rag, `${side}Palm`), 4) });
-      } else if (ep.coreDown) {
-        const obstructed = a.obstructedAtS !== null && this.host.t - a.obstructedAtS <= this.P.brace.horizonS[0] + 1e-9;
-        this.missBrace(ep, a, obstructed ? 'obstructed' : a.reachable ? 'late' : 'tooFar');
-      }
+      } else if (ep.coreDown) this.missBrace(ep, a, this.obstructed(a) ? 'obstructed' : a.reachable ? 'late' : 'tooFar');
     }
   }
 
@@ -326,7 +328,9 @@ export class FallResponse {
       ep.done = true;
       for (const side of SIDES) {
         const a = ep.arms[side];
-        if (a.task === 'brace' && a.brace === 'seek') this.missBrace(ep, a, 'expired');
+        // ladder 9e: a brace still seeking when the window ends is obstructed as on the core-down path (observe() above
+        // has read this substep's contacts), `expired` only when nothing blocked it within the horizon
+        if (a.task === 'brace' && a.brace === 'seek') this.missBrace(ep, a, this.obstructed(a) ? 'obstructed' : 'expired');
         this.setTask(ep, a, 'passive', 'windowEnded');
       }
       this.host.emit('fallResponseEnd', ep.playerId, { reason: 'windowEnded', positiveWorkJ: round(ep.stats.positiveWorkJ, 3), negativeWorkJ: round(ep.stats.negativeWorkJ, 3) });

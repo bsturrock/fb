@@ -550,6 +550,16 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   `IMPACT_OVER_POWER` entries, one query tick over 4000 (open defects). The lab's before-views run as the earlier
   registrations on all 195 L3/L4/HC ragdoll fixtures: `selfleg=off` as 9b, `hips=off&pgs=0&knees=off&retry=off&selfleg=off`
   as 8k (`r9d-own-leg-flip/lab-views.txt`).
+- **9e** (`r9e-brace-expired`) landed: `BRACE_EXPIRED_OBSTRUCTED` fixed. A brace still seeking when the response's
+  window ends is missed `obstructed` when its forearm or palm pressed on another body or an obstacle within the
+  shortest horizon (plan 10c C4), as on the core-down path; `expired` otherwise. No profile flag: the change is the
+  event's reason only (nothing reads it but the tests), and only two traces change (L4-F5-twoClamp-on and L4-F9-both,
+  D right at 2.2 s); summaries, every matrix and the query counts byte-identical. The capture test
+  (tests/fall-defects.test.ts, `L4-F5-twoClamp-on@126`) now passes as the fix's test, own-leg contact on and off; fault
+  twin, the window's end without the obstruction record, `expired`. The scoped exception in falls.test.ts is gone. One
+  constructed case moves with it, the raised deck of plan 10c C3 (`ground is the floor only`): its brace's forearm
+  presses on the deck, an obstacle, in the substep the window ends (`r9e-brace-expired/deck.txt`), so its miss is
+  `obstructed`, no longer `expired`; the test now reads the press and the rule (no brace contact, the C3 point, kept).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -580,10 +590,9 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   tests/falls.test.ts, capture tests in tests/fall-defects.test.ts), each reached by a moved trajectory, the same from
   the state just before with own-leg contact off; each wants its own fix step. `IMPACT_OVER_POWER`: L4-F3-run-on D (and
   L4-F9-free, the same run) lands at 1.625 s with its hip and knee effort acting, one substep over the power cap (183
-  W; off from 1.60 s 169 W), tagged an impact; held off in that substep, nothing is over. `BRACE_EXPIRED_OBSTRUCTED`:
-  L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the end-of-window
-  path in fall-response.ts does not read the obstruction the core-down path reads (8m: the last press 0.104 s before,
-  outside the 0.1 s horizon). Query peak: L3-F1-phase4 reversed, 4036 in the tick at 1.317 s (8m 3749), 2324 of them
+  W; off from 1.60 s 169 W), tagged an impact; held off in that substep, nothing is over. `BRACE_EXPIRED_OBSTRUCTED`
+  (resolved at 9e): L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the
+  end-of-window path did not read the obstruction the core-down path reads. Query peak: L3-F1-phase4 reversed, 4036 in the tick at 1.317 s (8m 3749), 2324 of them
   D's supported pose contact queries against R's ragdoll, none own-leg; off from 1.267 s the same 4036 (from 1.167 s
   3749). A full-check report row, not a suite invariant; no capture test in the patch yet.
 

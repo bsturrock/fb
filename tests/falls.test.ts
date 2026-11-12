@@ -26,14 +26,11 @@ import { loadedLimbMonitor } from './loaded-limb';
 const ALL = fallFixtures();
 
 // Ladder 9c, tracked defects (rule 7) reached by own-leg contact's moved trajectories, each with its capture test in
-// tests/fall-defects.test.ts and its own fix step: by fixture, player (and arm) and mechanism. L4-F9-free and L4-F9-both
-// run as L4-F3-run-on and L4-F5-twoClamp-on do (their summaries the same but for the id).
+// tests/fall-defects.test.ts and its own fix step: by fixture, player (and arm) and mechanism. L4-F9-free runs as
+// L4-F3-run-on does (their summaries the same but for the id).
 /** IMPACT_OVER_POWER: an impact through a falling body's legs while their fall effort acts realizes more than the
  * power cap in that substep (the audit tags it an impact; the guard did not hold the effort off). */
 const IMPACT_OVER_POWER: Record<string, string[]> = { 'L4-F3-run-on': ['D'], 'L4-F9-free': ['D'] };
-/** BRACE_EXPIRED_OBSTRUCTED: a seeking brace pressed on another body when the response's window ends is missed as
- * `expired`: the end-of-window path does not read the obstruction the core-down path reads. */
-const BRACE_EXPIRED_OBSTRUCTED: Record<string, string[]> = { 'L4-F5-twoClamp-on': ['D:right'], 'L4-F9-both': ['D:right'] };
 
 // ------------------------------------------------------------------ one run per fixture
 // Plan 13b: every fall fixture a test reads is simulated once, as `run(FIX(id))` gives it (the default options), and
@@ -957,14 +954,13 @@ describe('L4-F4 braces that fail stay failures', () => {
       for (const e of evs(s, 'braceMiss')) {
         const at = seek.get(`${e.playerId}:${e.data.arm}`);
         const near = at !== undefined && e.t - at <= W + 1e-9;
-        // the tracked defect (tests/fall-defects.test.ts): its window ended while it pressed on a body
-        if (near && e.data.reason === 'expired' && BRACE_EXPIRED_OBSTRUCTED[id]?.includes(`${e.playerId}:${e.data.arm}`)) continue;
         expect(e.data.reason === 'obstructed', `${d.id} ${e.playerId} ${e.data.arm} at ${e.t}`).toBe(near);
         if (near) obstructed++;
         else other++;
       }
     }
-    // (plan 12: 3, L4-F4-obstructed lands instead; plan 13d: 1, the twin's)
+    // (plan 12: 3, L4-F4-obstructed lands instead; plan 13d: 1, the twin's; ladder 9e: also L4-F5-twoClamp-on and
+    // L4-F9-both D right, pressed on R's shin when the window ends)
     expect(obstructed).toBeGreaterThanOrEqual(1);
     tw.dispose();
     expect(other).toBeGreaterThan(10);
@@ -1637,7 +1633,7 @@ describe('L4-F12 mirror, rates and resets', () => {
 // plan 10c C3 (U6): ragdoll grounding took any collider with the floor region, obstacles included, while the fall
 // response and the rules took the floor only. All three now share isGround: the floor only.
 describe('ground is the floor only', () => {
-  it('the floor alone is ground, so a fall onto a raised deck is never grounded and its brace expires', async () => {
+  it('the floor alone is ground, so a fall onto a raised deck is never grounded and its brace never lands', async () => {
     await checks([
       [
         'the predicate: the floor, not an obstacle (which carries the floor region) or a player',
@@ -1648,12 +1644,26 @@ describe('ground is the floor only', () => {
         },
       ],
       [
-        'a fall onto a raised deck touches the obstacle only: never grounded, no brace contact, the brace expires',
+        'a fall onto a raised deck touches the obstacle only: never grounded, no brace contact; the brace is missed at the window\'s end, obstructed by the deck',
         async () => {
           const base = FIX('L4-F3-forward-on');
           // (plan 12: 4 m; inside the shoulder range the fall carries the palm past a 2 m edge, onto the floor at 0.97 s)
           const deck: FixtureDef = { ...base, id: 'T-deck', obstacles: [{ id: 'deck', center: v3(0, 0.05, 0), halfExtents: v3(4, 0.05, 4) }] };
-          const s = await Simulation.create(deck, { trace: false });
+          // the last substep a seeking brace's forearm or palm pressed on the deck, per arm (plan 10c C4: an obstacle
+          // obstructs, the floor grounds)
+          const pressed = new Map<string, number>();
+          const onSubstep = (x: Simulation) => {
+            for (const p of x.players)
+              for (const c of x.contacts) {
+                if (c.impulse <= 0) continue;
+                for (const [own, o] of [[c.a, c.b], [c.b, c.a]] as const) {
+                  if (own.playerId !== p.id || !own.side || (own.region !== 'palm' && own.region !== 'forearm') || o.key !== 'obstacle:deck') continue;
+                  const a = p.fall?.arms[own.side];
+                  if (a?.task === 'brace' && a.brace === 'seek') pressed.set(own.side, x.t);
+                }
+              }
+          };
+          const s = await Simulation.create(deck, { trace: false, onSubstep });
           let onDeck = 0;
           while (!s.done) {
             s.stepTick();
@@ -1668,7 +1678,12 @@ describe('ground is the floor only', () => {
           expect(onDeck).toBeGreaterThan(100);
           expect(evs(s, 'grounded').filter((e) => e.data.representation === 'ragdoll')).toEqual([]);
           expect(evs(s, 'braceContact')).toEqual([]);
-          expect(evs(s, 'braceMiss').map((e) => e.data.reason)).toEqual(['expired']);
+          // (ladder 9e: `expired` before, the end-of-window path not reading the obstruction; the left forearm presses on
+          // the deck in the substep the window ends)
+          const end = evs(s, 'fallResponseEnd');
+          const miss = evs(s, 'braceMiss');
+          expect(miss.map((e) => [e.t, e.data.reason]), 'one miss, at the window\'s end').toEqual([[end[0].t, 'obstructed']]);
+          expect(miss[0].t - pressed.get(miss[0].data.arm as ArmSide)!).toBeLessThanOrEqual(FALL_L4.brace.horizonS[0] + 1e-9);
           s.dispose();
         },
       ],
