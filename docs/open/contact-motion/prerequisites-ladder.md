@@ -58,8 +58,8 @@ measure: what the owner sees. Player-seconds over every L3/L4/HC fixture, both o
 Ragdoll impossible time is almost all L3/HC hips with no limit; knee time past 150 is mostly L4. Measured, not landed:
 the 8i variant (hip stops with the approach zone, L4 backstop, knee stop 140, PGS 4) reads 5.4 impossible, 75.6
 implausible or worse (64.8 of it L4 hip adduction the L4 envelope admits), deep own-body 504; the 8d box with the same
-read 5.9 / 19.6 / 461 (8e, 8f). Own-leg contact (rung 9, assessed at 9c, its flip parked ready) takes the 8m
-registration's deep own-body 326 to 169 player-s and own-leg axes 108 to 23; what remains is mostly arms on the trunk.
+read 5.9 / 19.6 / 461 (8e, 8f). Own-leg contact (rung 9, registered at 9d) takes the 8m registration's deep own-body
+326 to 169 player-s and own-leg axes 108 to 23; what remains is mostly arms on the trunk.
 
 ## Morning review for the user
 
@@ -125,6 +125,45 @@ To look at and decide:
   fall changes from the conversion on), so judge this one view. Question: does the arm look twisted? If it does, a twist
   limit that holds overhead becomes a later step; if it looks natural, the measure stops reading shoulder twist
   overhead, as it already does not for the hip.
+
+Since 9d the links above also show the fallen players' legs meeting (below); add `&selfleg=off` as well to see a
+moment exactly as 8m left it.
+
+### 9d: fallen players' legs meet each other
+
+Before: add `&selfleg=off` to any link below.
+
+What visibly changes. A fallen player's legs no longer pass through each other or through its own body: they stop at
+each other and lie together. Where the legs were already crossed through each other at the moment the player went
+limp, they stay through each other until they come apart, then stay apart.
+
+- `?fixture=HC-F5-strictTransfer&order=rev&cam=side&speed=0.25&t=2.40`: the runner's shin went through its other thigh
+  from 1.6 s to the end.
+- `?fixture=L4-F9-transferFailed&cam=front&speed=0.25&t=1.40`: the runner's feet went through each other.
+- `?fixture=L4-F1-hipSwing&cam=front&speed=0.25&t=1.10`: the runner's feet were through each other for the whole fall.
+
+Who falls (the defender each time, moved by the runner's fall now that the runner's legs meet):
+
+- Now stays up: `?fixture=HC-F3-lowRunner&order=rev&cam=front&speed=0.25&t=1.85`,
+  `?fixture=HC-F3-mirror&cam=front&speed=0.25&t=1.65`, `?fixture=L3-F1-low&order=rev&cam=front&speed=0.25&t=1.85`,
+  `?fixture=L4-F10-elbow-on&cam=front&speed=0.25&t=0.70` (both orders).
+- Now falls: `?fixture=L3-F4-gripTarget&cam=front&speed=0.25&t=1.95`,
+  `?fixture=L4-F3-run-on&cam=front&speed=0.25&t=0.95` (both orders), `?fixture=L4-F9-free&cam=front&speed=0.25&t=0.95`
+  (both orders).
+
+To look at and decide:
+
+- `?fixture=L3-F3-collision&order=rev&cam=side&speed=0.25&t=1.90`: the defender comes to rest propped on its own leg,
+  its body 21 cm higher than before (before, its legs lay through each other). It is still, with no shaking. Question:
+  does it look like a body lying on its own leg, or held up?
+- `?fixture=L3-F9-noProbe-free&cam=side&speed=0.25&t=1.95`: the runner has come to rest when one leg slides off the
+  other and settles, still again by about 2.35 s (before, the legs lay through each other and nothing moved). Question:
+  does the slide look natural?
+- `?fixture=HC-F1-at0.9&cam=front&speed=0.25&t=1.25`: the defender's shins were crossed through each other when it went
+  limp; they stay through each other until they come apart at about 1.47 s, then lie together. In seven short falls the
+  run ends before the legs part (for example `?fixture=L3-F1-falling&order=rev&cam=front&speed=0.25&t=1.40`).
+  Question: is a crossing that lasts until the legs part acceptable, or should crossed legs be pushed apart (a later
+  step)?
 
 ## Status
 
@@ -502,7 +541,15 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   rest; L4's remaining axes time is thighs lying together 1 mm inside the meter's threshold (no proximal thigh shape).
   Building the shapes alone moves a run (8 new colliders reorder Rapier's contact graph: L4-F10-knee-on with every
   own-leg pair refused equals the variant, not 8m). Flip patch `.scratch/ladder/parked/own-leg-flip/` (345/345, its
-  full check equal to the variant's): ready to apply.
+  full check equal to the variant's): applied at 9d.
+- **9d** (`r9d-own-leg-flip`) landed: own-leg contact registered on every L3/L4/HC ragdoll (`ownLegFlip` after
+  `visibleFlip` in src/sim/fixtures; `preOwnLegs` in tests/runs.ts is the profile before it, `preFlip` before both),
+  PGS 4 kept, the parked patch as assessed. 345/345. Against the 9c assessment run every summary, trace and matrix is
+  byte-identical (`assess-9c/variant/`, `flip-patch/`); against 9b G/L1/L2/RH byte-identical, 128 summaries changed (L3
+  41, L4 66, HC 21), the 10 who-falls player-runs of 9c, leg matrix none over the ceiling, L4 matrix the 4
+  `IMPACT_OVER_POWER` entries, one query tick over 4000 (open defects). The lab's before-views run as the earlier
+  registrations on all 195 L3/L4/HC ragdoll fixtures: `selfleg=off` as 9b, `hips=off&pgs=0&knees=off&retry=off&selfleg=off`
+  as 8k (`r9d-own-leg-flip/lab-views.txt`).
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -517,7 +564,6 @@ order, not hunk-split.
 
 ## Parked
 
-- The own-leg flip (9c): ready, not applied. Patch and README `.scratch/ladder/parked/own-leg-flip/`.
 - `ARM_CLEARANCE_V1` and the arm sweep: dormant and untested in the old tree; M3 reworks the wrap arms.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
@@ -530,7 +576,7 @@ order, not hunk-split.
 
 To be reproduced on the first rung where they appear, then handled under rule 7:
 
-- Found at 9c, in the parked own-leg flip (tracked there: exceptions by fixture, player and mechanism in
+- Found at 9c, registered with the own-leg flip at 9d (exceptions by fixture, player and mechanism in
   tests/falls.test.ts, capture tests in tests/fall-defects.test.ts), each reached by a moved trajectory, the same from
   the state just before with own-leg contact off; each wants its own fix step. `IMPACT_OVER_POWER`: L4-F3-run-on D (and
   L4-F9-free, the same run) lands at 1.625 s with its hip and knee effort acting, one substep over the power cap (183

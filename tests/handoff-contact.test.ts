@@ -144,8 +144,8 @@ function supportCounters(sim: Simulation): { tick: () => void; result: () => { f
 /** The required cases checked over the first solved steps after acceptance (24 substeps). */
 /** Plan 13e: the substep after A's acceptance at which HC-F2-bothFall's A first touches B again, and A's part that does
  * (pinned below; 18 at 13e, 19 under the plan 13f leg guard, the right upper arm; 17 under the visible flip, the right
- * forearm). */
-const HC_F2_IMPACT = { k: 17, part: 'rightForearm' } as const;
+ * forearm; 18 with own-leg contact, ladder 9). */
+const HC_F2_IMPACT = { k: 18, part: 'rightForearm' } as const;
 const HC_F2_IMPACT_K = HC_F2_IMPACT.k;
 const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror', 'L3-F4-twoArm', 'L3-F9-convert-contact', 'L3-F9-noProbe-contact', 'L3-F9-defenderRising', 'L3-F10-both', 'L3-F10-defender'];
 /**
@@ -156,7 +156,8 @@ const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFe
  * Plan 13e (user ruling): HC-F2-bothFall's window ends at A's first new contact (pinned below): on the L3 locomotion A's
  * falling right upper arm meets B's head, a fall impact, not the switch. Plan 13f: the window is the substeps before
  * that contact, 18 (at 13e the contact substep, +18, was itself clean and the impact came on the next solve; under the
- * leg guard the contact comes at +19 and its own solve takes the impact; 16 under the visible flip, contact at +17).
+ * leg guard the contact comes at +19 and its own solve takes the impact; 16 under the visible flip, contact at +17; 17
+ * with own-leg contact, contact at +18).
  */
 const POST_N: Record<string, number> = { ...Object.fromEntries(POST_SWITCH.map((id) => [id, 24])), 'HC-F2-lift1.4': 1, 'HC-F2-bothFall': HC_F2_IMPACT_K - 1 };
 /** Limb-snap bounds of the required cases (the HC variants: 0.3 m, or a known case's bound). */
@@ -284,7 +285,8 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
     // that solve, which takes the impact (5.4 mm at the elbow, 13.1 body weights; through +18: 0.66 mm, 3.7). Pinned
     // here, so the window is re-measured when the fall changes. Re-measured at the visible flip (ladder 8l): its right
     // forearm meets B's head first, at +17, closing at 3.65 m/s (the hip stops, PGS and the knee stop each move it:
-    // +15, +18 and +20 with one of them off)
+    // +15, +18 and +20 with one of them off). Re-measured at own-leg contact (ladder 9): the right forearm first at +18,
+    // closing at 3.66 m/s
     const sim = await create(FIX('HC-F2-bothFall'));
     const S = sim as unknown as { stepSubstep: (i: number) => void };
     const orig = S.stepSubstep.bind(sim);

@@ -6,16 +6,20 @@ import { LEG_GUARD_V3, SELF_LEGS_V1, sideSignX, withoutHipStops, withSelfLegs, w
 import { poseOfRb, SEGMENTS, selfLegPair, selfLegPairs, type Ragdoll } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
 import { toWorld, v3, type Vec3 } from '../src/sim/vec';
-import { create, FIX, rows, runSim } from './helpers';
+import { create, FIX as REGISTERED, preOwnLegs, rows, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter } from './passive-energy';
 import { loadState, resumeState } from './state';
 
-// Ladder rung 9a: ragdoll own-leg contact (`RagdollProfile.selfLegs`, SELF_LEGS_V1; no fixture runs it). Gate 4's
+// Ladder rung 9a: ragdoll own-leg contact (`RagdollProfile.selfLegs`, SELF_LEGS_V1; every L3/L4/HC ragdoll since the
+// own-leg flip, ladder 9). Gate 4's
 // contact filter drops every same-owner pair but plan 11's forearm pairs, so a fallen player's legs pass through each
 // other and its own trunk. With the profile each leg carries massless self shapes (distal thigh, shin, shoe) that meet
 // the other leg's and, the shin's and the shoe's, the own trunk; a group of pairs overlapping deeper than the skin at
 // the switch stays out of the solve until none of its pairs is.
 
+// (the definitions as before the own-leg flip: each case switches it on itself, its twin runs without it, and the capture
+// was taken under rung 8m's registration)
+const FIX = (id: string): FixtureDef => preOwnLegs(REGISTERED(id));
 const on = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withSelfLegs(d.ragdoll!) });
 /** The summed contact impulse of a ragdoll's own-leg pairs in the last solve (N s). */
 function selfImpulse(sim: Simulation, rag: Ragdoll): number {
@@ -104,8 +108,11 @@ async function legRun(def: FixtureDef, each?: (sim: Simulation, rag: Ragdoll) =>
 }
 
 describe('own-leg contact: profile and shapes', () => {
-  it('no registered fixture runs it', () => {
-    for (const d of allFixtures()) expect(d.ragdoll?.selfLegs, d.id).toBeUndefined();
+  it('every L3, L4 and HC ragdoll runs it (the own-leg flip), no other fixture', () => {
+    const ragdolls = allFixtures().filter((d) => d.ragdoll);
+    for (const d of ragdolls) expect(d.ragdoll!.selfLegs, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) ? SELF_LEGS_V1 : undefined);
+    expect(ragdolls.filter((d) => d.ragdoll!.selfLegs).length).toBeGreaterThan(100);
+    expect(on(FIX('HC-F1-at0.9'))).toEqual(REGISTERED('HC-F1-at0.9'));
     expect(withoutSelfLegs(withSelfLegs(FIX('HC-F1-at0.9').ragdoll!))).toEqual(FIX('HC-F1-at0.9').ragdoll);
   });
 

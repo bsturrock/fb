@@ -25,6 +25,16 @@ import { loadedLimbMonitor } from './loaded-limb';
 
 const ALL = fallFixtures();
 
+// Ladder 9c, tracked defects (rule 7) reached by own-leg contact's moved trajectories, each with its capture test in
+// tests/fall-defects.test.ts and its own fix step: by fixture, player (and arm) and mechanism. L4-F9-free and L4-F9-both
+// run as L4-F3-run-on and L4-F5-twoClamp-on do (their summaries the same but for the id).
+/** IMPACT_OVER_POWER: an impact through a falling body's legs while their fall effort acts realizes more than the
+ * power cap in that substep (the audit tags it an impact; the guard did not hold the effort off). */
+const IMPACT_OVER_POWER: Record<string, string[]> = { 'L4-F3-run-on': ['D'], 'L4-F9-free': ['D'] };
+/** BRACE_EXPIRED_OBSTRUCTED: a seeking brace pressed on another body when the response's window ends is missed as
+ * `expired`: the end-of-window path does not read the obstruction the core-down path reads. */
+const BRACE_EXPIRED_OBSTRUCTED: Record<string, string[]> = { 'L4-F5-twoClamp-on': ['D:right'], 'L4-F9-both': ['D:right'] };
+
 // ------------------------------------------------------------------ one run per fixture
 // Plan 13b: every fall fixture a test reads is simulated once, as `run(FIX(id))` gives it (the default options), and
 // shared. A test that watches a fall as it goes registers its observer for its fixtures with `watch` while the file is
@@ -536,21 +546,37 @@ describe('L4 audits on every fixture', () => {
           for (const d of withResponse()) {
             const s = await sim(d.id);
             const P = d.fallResponse!.power;
+            const impactOver = new Map<string, number>();
             for (const [id, r] of Object.entries(exp(s).fallEffort ?? {}) as [string, any][]) {
               const label = `${d.id} ${id}`;
-              expect(r.overPowerSubsteps, label).toBe(0);
               expect(r.overWork, label).toBe(false);
               expect(r.positiveWorkJ, label).toBeLessThanOrEqual(P.maxPositiveWorkJ * (1 + P.toleranceFraction));
               expect(r.peakPredictedW, label).toBeLessThanOrEqual(P.maxPositiveW * P.planFraction * (1 + 1e-3));
+              if (IMPACT_OVER_POWER[d.id]?.includes(id)) {
+                // the tracked defect (tests/fall-defects.test.ts): every substep over the tolerance is an impact
+                // substep, none without one
+                expect(r.impactPowerSubsteps, label).toBe(r.overPowerSubsteps);
+                expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === id).every((e) => e.data.impact), label).toBe(true);
+                impactOver.set(id, r.overPowerSubsteps);
+                continue;
+              }
+              expect(r.overPowerSubsteps, label).toBe(0);
               // an impact is no excuse: any substep over the tolerance counts, and the impact tag only says why
               expect(r.impactPowerSubsteps, label).toBe(0);
               expect(r.peakImpactW, label).toBe(0);
               expect(evs(s, 'fallEffortOver').filter((e) => e.playerId === id).length, label).toBe(0);
             }
-            // the same audit, again from the ledger: every substep's realized positive power, each player apart
+            // the same audit, again from the ledger: every substep's realized positive power, each player apart (a
+            // tracked player's substeps over it are its impact substeps, as many as the audit counts)
             const bySubstep = new Map<string, number>();
             for (const e of s.fall!.ledger) bySubstep.set(`${e.owner}@${e.step}`, (bySubstep.get(`${e.owner}@${e.step}`) ?? 0) + Math.max(0, e.realizedW));
-            for (const [k, w] of bySubstep) expect(w, `${d.id} ${k}`).toBeLessThanOrEqual(P.maxPositiveW * (1 + P.toleranceFraction));
+            const over = new Map<string, number>();
+            for (const [k, w] of bySubstep) {
+              const owner = k.split('@')[0];
+              if (impactOver.has(owner) && w > P.maxPositiveW * (1 + P.toleranceFraction)) over.set(owner, (over.get(owner) ?? 0) + 1);
+              else expect(w, `${d.id} ${k}`).toBeLessThanOrEqual(P.maxPositiveW * (1 + P.toleranceFraction));
+            }
+            for (const [id, n] of impactOver) expect(over.get(id) ?? 0, `${d.id} ${id} ledger`).toBe(n);
           }
         },
       ],
@@ -931,6 +957,8 @@ describe('L4-F4 braces that fail stay failures', () => {
       for (const e of evs(s, 'braceMiss')) {
         const at = seek.get(`${e.playerId}:${e.data.arm}`);
         const near = at !== undefined && e.t - at <= W + 1e-9;
+        // the tracked defect (tests/fall-defects.test.ts): its window ended while it pressed on a body
+        if (near && e.data.reason === 'expired' && BRACE_EXPIRED_OBSTRUCTED[id]?.includes(`${e.playerId}:${e.data.arm}`)) continue;
         expect(e.data.reason === 'obstructed', `${d.id} ${e.playerId} ${e.data.arm} at ${e.t}`).toBe(near);
         if (near) obstructed++;
         else other++;

@@ -5,7 +5,7 @@ import { applyHipApproach, boxGradients, boxReading, clampDirToHipStops, hipStop
 import { initPhysics } from '../src/sim/physics';
 import { ENVELOPE_L4, HIP_APPROACH_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, HIP_STOPS_V2, hipStopsFor, withHipStops, withoutHipStops, type HipStopProfile } from '../src/sim/profiles';
 import { addScaled, dot, m3Add, m3Inverse, m3ParallelAxis, m3Vec, qFromAxisAngle, qFromUnitVectors, qMul, qRot, v3, type Mat3, type Quat, type Vec3 } from '../src/sim/vec';
-import { create, FIX, preFlip, runSim } from './helpers';
+import { create, FIX, preFlip, preOwnLegs, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter, type SolveEnergy } from './passive-energy';
 import { loadState, resumeState } from './state';
 
@@ -256,8 +256,10 @@ describe('ladder rung 8g: the L4 backstop', () => {
   it('on L4 the envelope takes the hips first: L4-F1-hipSwing, L4-F1-hipTwist and L4-F2-side-off under the backstop run as registered to the byte (the profile id aside), no band entered; under the 8d box (fault twin) each differs', async () => {
     const run = async (id: string, S?: HipStopProfile) => {
       // (the registered profile without its hip stops: since the visible flip the box with the zone is registered, so the
-      // backstop is compared with no stops at all)
-      const d = { ...FIX(id), ragdoll: withoutHipStops(FIX(id).ragdoll!) };
+      // backstop is compared with no stops at all; and as before own-leg contact, ladder 9: no fixture takes the
+      // backstop since 8k, and with own-leg contact L4-F1-hipTwist's legs press R's twisted hip 0.03 deg into the
+      // backstop's band at 3.12 s, so the backstop's contract is the profile it was built on)
+      const d = { ...FIX(id), ragdoll: withoutHipStops(preOwnLegs(FIX(id)).ragdoll!) };
       const s = await create(S ? { ...d, ragdoll: withHipStops(d.ragdoll!, S) } : d, { trace: true });
       await runSim(s);
       const depth = Math.max(0, ...s.players.flatMap((p) => p.rag?.hipStops?.map((h) => h.approach?.maxDepthDeg ?? 0) ?? []));

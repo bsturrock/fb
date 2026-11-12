@@ -7,7 +7,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { RAPIER } from '../src/sim/physics';
 import {
   HIP_STOPS_L4_V1, HIP_STOPS_V2, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
-  withoutPgsIterations, type HipStopProfile, type RagdollProfile,
+  withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
@@ -18,10 +18,16 @@ export const FIX = (id: string): FixtureDef => {
 };
 
 /**
- * Ladder 8i/8j: a ragdoll profile without the visible flip's parts (hip stops, additional PGS iterations, knee stop) and
- * without the deferred conversion (8j), under the id it had before them.
+ * Ladder 8i/8j: a ragdoll profile without the visible flip's parts (hip stops, additional PGS iterations, knee stop),
+ * without the deferred conversion (8j) and without own-leg contact (ladder 9, registered after them), under the id it
+ * had before them.
  */
-export const unflipped = (r: RagdollProfile): RagdollProfile => withoutConversionRetry(withoutKneeStop(withoutPgsIterations(withoutHipStops(r))));
+export const unflipped = (r: RagdollProfile): RagdollProfile => withoutConversionRetry(withoutKneeStop(withoutPgsIterations(withoutHipStops(withoutSelfLegs(r)))));
+/**
+ * Ladder 9: `d` with its ragdoll profile as before own-leg contact was registered (the visible flip kept): the profile a
+ * capture taken under rung 8m's registration, or a case "without the field", ran under.
+ */
+export const preOwnLegs = (d: FixtureDef): FixtureDef => (d.ragdoll ? { ...d, ragdoll: withoutSelfLegs(d.ragdoll) } : d);
 /**
  * Ladder 8l: `d` with its ragdoll profile as before the visible flip: the profile a state capture taken before it, a
  * case "without the field" or a natural sample was taken under (as LEG_GUARD_V1 pins those of ladder rung 7d).

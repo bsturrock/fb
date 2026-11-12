@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { hipStopsFor, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop } from '../profiles';
+import { hipStopsFor, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -23,6 +23,16 @@ const VISIBLE_FLIP = /^(L3|L4|HC)-/;
 function visibleFlip(d: FixtureDef): FixtureDef {
   if (!d.ragdoll || !VISIBLE_FLIP.test(d.id)) return d;
   return { ...d, ragdoll: withConversionRetry(withKneeStop(withAdditionalPgsIterations(withHipStops(d.ragdoll, hipStopsFor(d.ragdoll)), 4), 140)) };
+}
+
+/**
+ * Ladder 9, own-leg contact: every L3, L4 and HC ragdoll's legs meet each other, and its shins and shoes its own trunk
+ * (SELF_LEGS_V1, rung 9a), on top of the visible flip. G, L1, L2 and RH keep their profiles. The lab's `selfleg=off` is
+ * the view before it; tests/runs.ts `preOwnLegs` gives a definition as before it, `preFlip` as before both flips.
+ */
+function ownLegFlip(d: FixtureDef): FixtureDef {
+  if (!d.ragdoll || !VISIBLE_FLIP.test(d.id)) return d;
+  return { ...d, ragdoll: withSelfLegs(d.ragdoll) };
 }
 
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
@@ -53,6 +63,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip));
+  ].map(visibleFlip).map(ownLegFlip));
   return registry.slice();
 }

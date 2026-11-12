@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { JOINT_RANGE_V2 } from '../src/sim/profiles';
 import { envelopeMoments, externalTwistRad, swingTwistOf, type Ragdoll } from '../src/sim/ragdoll';
 import { add, qConj, qFromAxisAngle, qMul, qRot, sub, v3, vc, type Quat } from '../src/sim/vec';
+import { FIX, preOwnLegs } from './runs';
 import { loadState, resumeState } from './state';
 import { HUMAN_RANGES } from './visible';
 
@@ -40,7 +41,8 @@ interface Arm {
 
 /** R's right shoulder from the capture to the end, every drawn frame; `twin` changes the state at the capture first. */
 async function rightShoulder(twin?: (rag: Ragdoll) => void): Promise<Arm> {
-  const sim = await resumeState(loadState(CAPTURE));
+  // (captured under rung 8m's registration, before own-leg contact: resumed under the profile it ran under)
+  const sim = await resumeState(loadState(CAPTURE), { def: preOwnLegs(FIX('HC-F5-strictTransfer')) });
   const rag = sim.players.find((p) => p.id === 'R')!.rag!;
   twin?.(rag);
   const P = rag.profile.envelope!;
