@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { LEG_GUARD_V3, withAdditionalPgsIterations } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
-import { create, FIX, preFlip, preV3, stepWhile } from './helpers';
+import { create, FIX, preFlip, preHoldStill, preV3, stepWhile } from './helpers';
 import { INJECTION_J, passiveEnergyMeter, type SolveEnergy } from './passive-energy';
 import { loadState, resumeState } from './state';
 
@@ -33,8 +33,8 @@ async function solve(capture: string, def: FixtureDef, at: number, iterations: n
   return got;
 }
 // (both captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile they ran under)
-const pinch = (n: number) => solve('tests/data/state/L4-F9-contact~v3-rev@63.json.gz', { ...preFlip(FIX(ID)), legGuard: LEG_GUARD_V3 }, 270, n);
-const brace = (n: number) => solve('tests/data/state/L4-F9-contact@61.json.gz', preV3(preFlip(FIX(ID))), 251, n);
+const pinch = (n: number) => solve('tests/data/state/L4-F9-contact~v3-rev@63.json.gz', { ...preHoldStill(preFlip(FIX(ID))), legGuard: LEG_GUARD_V3 }, 270, n);
+const brace = (n: number) => solve('tests/data/state/L4-F9-contact@61.json.gz', preV3(preHoldStill(preFlip(FIX(ID)))), 251, n);
 
 describe('ladder rung 8a: additional PGS iterations on ragdoll segments', () => {
   it('a ragdoll built under the field asks them on every segment, and none without it', async () => {

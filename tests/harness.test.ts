@@ -34,13 +34,13 @@ import { assertUniqueIds, runFixtures } from '../scripts/fixture-runner';
 import { SHAPE_QUERY_BUDGET } from '../scripts/check/lib';
 import { g1f4, g1f8Cases, g1f9Fit } from '../src/sim/fixtures/gate1';
 import { asL3 } from '../src/sim/fixtures/transitions';
-import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
+import { FOOTWORK_L2, FOOTWORK_L3, HOLD_STILL_V1, withHoldStill } from '../src/sim/footwork';
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
 import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
-import { breathe, create, FIX, pace, preV3, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
+import { breathe, create, FIX, pace, preHoldStill, preV3, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 import { loadState, resumeState } from './state';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -165,8 +165,9 @@ const OPT_IN: Row[] = [
       for (const d of allFixtures()) {
         if (d.id.startsWith('L4-')) continue; // later than L3: its falls start from L3 fixtures, with their profiles
         if (d.id.startsWith('L3-') || d.id.startsWith('HC-')) {
-          // the player model plays the idle cycle; the authored body keeps the static fitted idle
-          expect(d.footwork, d.id).toBe(FOOTWORK_L3);
+          // the player model plays the idle cycle; the authored body keeps the static fitted idle (the planner with the
+          // stationary hold's still feet since rung 14a: the row below)
+          expect(d.footwork, d.id).toEqual(withHoldStill(FOOTWORK_L3));
           expect(d.locomotion, d.id).toBe(onModel(d) ? LOCOMOTION_L3_IDLE : LOCOMOTION_L3);
         } else {
           expect(d.locomotion, d.id).toBeUndefined();
@@ -242,6 +243,21 @@ const OPT_IN: Row[] = [
         const e = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
         expect(e.profileIds.legGuard, d.id).toBe(d.legGuard?.id);
         expect(e.profiles.legGuard, d.id).toEqual(d.legGuard);
+        sim.dispose();
+      }
+    },
+  ],
+  [
+    'ladder 14a: the stationary hold keeps its feet (HOLD_STILL_V1) on exactly the L3, L4 and HC foot planners, and the export records it; L2\'s planner has none',
+    async () => {
+      const planned = allFixtures().filter((d) => d.footwork);
+      expect(planned.some((d) => !/^(L3|L4|HC)-/.test(d.id))).toBe(true);
+      for (const d of planned) expect(d.footwork!.holdStill, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) ? HOLD_STILL_V1 : undefined);
+      for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
+        const sim = await Simulation.create(d);
+        const e = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
+        expect(e.profileIds.footwork, d.id).toBe(d.footwork!.id);
+        expect(e.profiles.footwork, d.id).toEqual(d.footwork);
         sim.dispose();
       }
     },
@@ -751,7 +767,7 @@ describe('plan 13a: contact-time shape queries', () => {
     let deferred = 0;
     // (captured before the ladder 10 leg-guard flip: resumed under the leg guard it ran under)
     const sim = await resumeState(loadState('tests/data/state/L3-F1-phase4~rev@76.json.gz'), {
-      def: preV3(FIX('L3-F1-phase4')),
+      def: preV3(preHoldStill(FIX('L3-F1-phase4'))),
       opts: {
         onSubstep: (s) => {
           const D = s.byId.get('D')!;

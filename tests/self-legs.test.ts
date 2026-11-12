@@ -6,7 +6,7 @@ import { LEG_GUARD_V3, SELF_LEGS_V1, sideSignX, withoutHipStops, withSelfLegs, w
 import { poseOfRb, SEGMENTS, selfLegPair, selfLegPairs, type Ragdoll } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
 import { toWorld, v3, type Vec3 } from '../src/sim/vec';
-import { create, FIX as REGISTERED, preOwnLegs, preV3, rows, runSim } from './helpers';
+import { create, FIX as REGISTERED, preHoldStill, preOwnLegs, preV3, rows, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter } from './passive-energy';
 import { loadState, resumeState } from './state';
 
@@ -127,7 +127,7 @@ describe('own-leg contact: profile and shapes', () => {
     };
     const cap = loadState('tests/data/state/HC-F1-at0.9@53.json.gz');
     // (captured before the ladder 10 leg-guard flip: resumed under the leg guard it ran under)
-    const base = preV3(FIX('HC-F1-at0.9'));
+    const base = preHoldStill(preV3(FIX('HC-F1-at0.9')));
     const sims = [await resumeState(cap, { def: on(base), variant: ['ragdoll'] }), await resumeState(cap, { def: base })];
     while (!sims.every((s) => s.players.every((p) => p.rag?.enabled))) for (const s of sims) s.stepTick();
     const [a, b] = sims;
@@ -322,7 +322,7 @@ describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the
 
   it('no kick: the held groups leave the legs as without the profile; armed at the switch (the fault) they kick D\'s legs apart', async () => {
     const cap = loadState(CAP);
-    const base = preV3(FIX('HC-F1-at0.9'));
+    const base = preHoldStill(preV3(FIX('HC-F1-at0.9')));
     const [off, held, fault] = [await resumeState(cap, { def: base }), await resumeState(cap, { def: on(base), variant: ['ragdoll'] }), await resumeState(cap, { def: on(base), variant: ['ragdoll'] })];
     const step = fault.physics.step;
     const armed = new Set<string>();
@@ -362,7 +362,7 @@ describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the
   }, 60000);
 
   it('a held group takes part once none of its pairs is deeper than the skin, and its contact acts from then', async () => {
-    const sim = await resumeState(loadState(CAP), { def: on(preV3(FIX('HC-F1-at0.9'))), variant: ['ragdoll'] });
+    const sim = await resumeState(loadState(CAP), { def: on(preHoldStill(preV3(FIX('HC-F1-at0.9')))), variant: ['ragdoll'] });
     const out = new Map<string, { released: number | null; after: number }>();
     await runSim(sim, Infinity, (s) => {
       for (const pl of s.players) {
@@ -384,7 +384,7 @@ describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the
     }
     sim.dispose();
     // the fault: D's held groups never released (its pairs left out as at the switch before every solve)
-    const kept = await resumeState(loadState(CAP), { def: on(preV3(FIX('HC-F1-at0.9'))), variant: ['ragdoll'] });
+    const kept = await resumeState(loadState(CAP), { def: on(preHoldStill(preV3(FIX('HC-F1-at0.9')))), variant: ['ragdoll'] });
     const step = kept.physics.step;
     let atSwitch: string[] | null = null;
     let J = 0;
@@ -404,7 +404,7 @@ describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the
 
   it('energy: no solve of either ragdoll injects to the end; armed at the switch (the fault) R injects', async () => {
     const run = async (fault: boolean) => {
-      const sim = await resumeState(loadState(CAP), { def: on(preV3(FIX('HC-F1-at0.9'))), variant: ['ragdoll'] });
+      const sim = await resumeState(loadState(CAP), { def: on(preHoldStill(preV3(FIX('HC-F1-at0.9')))), variant: ['ragdoll'] });
       if (fault) {
         const step = sim.physics.step;
         const armed = new Set<string>();

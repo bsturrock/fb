@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { SELF_CLEARANCE_V1, SELF_CLEARANCE_V2, type SelfClearanceProfile } from '../src/sim/profiles';
 import { dist, qInvRot, sub, vc, type Vec3 } from '../src/sim/vec';
-import { FIX } from './runs';
+import { FIX, preHoldStill } from './runs';
 import { loadState, resumeState } from './state';
 
 /** A palm move this large (m, body frame, one substep) is a visible jump; one undone to within this share the next substep went to and fro. */
@@ -31,7 +31,7 @@ describe('ladder 11d: the continuity push settles in an own-trunk seam', () => {
     const read = async (selfClearance: SelfClearanceProfile): Promise<{ substeps: number; undone: number }> => {
       const palms: (Vec3 | null)[] = [];
       const sim = await resumeState(cap, {
-        def: { ...FIX('L3-F9-convert-contact'), selfClearance },
+        def: { ...preHoldStill(FIX('L3-F9-convert-contact')), selfClearance },
         variant: ['selfClearance'],
         opts: {
           onSubstep: (s) => {

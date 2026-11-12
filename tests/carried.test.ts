@@ -3,7 +3,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { FALL_L4, LEG_GUARD_V3, type FallResponseProfile } from '../src/sim/profiles';
 import type { SegmentId } from '../src/sim/contracts';
 import { dot, sub, vc } from '../src/sim/vec';
-import { FIX, preFlip } from './helpers';
+import { FIX, preFlip, preHoldStill } from './helpers';
 import { loadState, resumeState } from './state';
 
 // Ladder rung 6c (fall response v6, `impactGuard.carried`). L4-F9-defenderFalling under the physical supported legs
@@ -43,7 +43,7 @@ interface Row {
 
 async function resumed(carried: boolean): Promise<Row[]> {
   // (captured before the visible flip: resumed under the profile it ran under)
-  const v3: FixtureDef = { ...preFlip(FIX(ID)), legGuard: LEG_GUARD_V3 };
+  const v3: FixtureDef = { ...preHoldStill(preFlip(FIX(ID))), legGuard: LEG_GUARD_V3 };
   const def = carried ? v3 : { ...v3, fallResponse: NO_CARRIED };
   const sim = await resumeState(loadState(CAPTURE), { def, variant: carried ? ['solver'] : ['solver', 'fallResponse'] });
   // (the private substep, wrapped to read the state before each solve and after it)

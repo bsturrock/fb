@@ -20,13 +20,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { SimOptions, TransitionDelta } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
-import { FOOTWORK_L2, FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, stepAccelLimits, withHoldStill, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
+import { FOOTWORK_L2, FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, stepAccelLimits, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
 import type { ArmSide } from '../src/sim/contracts';
 import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { breathe, FIX, preFlip, preV3, rows, run, runSim } from './helpers';
+import { breathe, FIX, preFlip, preHoldStill, preV3, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -67,6 +67,7 @@ import {
   HELD_LEG,
   HOLD_CLEARANCE_REPLANT,
   HOLD_SETTLES,
+  HOLD_STILL,
   KEEP_STEPPING,
   LANDINGS,
   LEG_IN_RAGDOLL,
@@ -402,10 +403,10 @@ describe('plan 10b foot target continuity', () => {
     const ok = await record(pair);
     expect(unseenKinds(ok)).toEqual([]);
     expect(unseenKinds(await record(pair, { debug: { foot: { noVoluntarySteps: true } } }))).toEqual(['B1 voluntary', 'B2 voluntary']);
-    // the hold: registered, the defender steps in it (counted as held, for no kind); with the rule it does not, and every
-    // kind's count is the same
-    const off = await record(['L3-F6-hold']);
-    const on = await record(['L3-F6-hold'], {}, (d) => ({ ...d, footwork: withHoldStill(d.footwork!) }));
+    // the hold: before the flip the defender steps in it (counted as held, for no kind); with the rule it does not, and
+    // every kind's count is the same
+    const off = await record(['L3-F6-hold'], {}, preHoldStill);
+    const on = await record(['L3-F6-hold']);
     expect(off.held).toBeGreaterThan(on.held);
     const kinds = (s: ContinuitySeen) => Object.fromEntries(Object.entries(s).filter(([k]) => /^b[12]/.test(k)));
     expect(kinds(on)).toEqual(kinds(off));
@@ -664,7 +665,7 @@ describe('plan 13e faults put back', () => {
     // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm). Ladder rung 7d:
     // pinned to LEG_GUARD_V1; under the physical legs the defender's core no longer holds that foot off its home. Ladder
     // 8l: and to the profile before the visible flip (under it the step home comes at 1.4000 s, each of its parts moving it)
-    const sim = await run({ ...preFlip(FIX('L3-F4-gripOwner')), legGuard: LEG_GUARD_V1 });
+    const sim = await run({ ...preHoldStill(preFlip(FIX('L3-F4-gripOwner'))), legGuard: LEG_GUARD_V1 });
     const steps = sim.events.filter((e) => e.type === 'footSwing' && e.playerId === 'R' && (e.data as { side?: string }).side === 'left' && (e.data as { reason?: string }).reason === 'step');
     sim.dispose();
     expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');
@@ -674,7 +675,7 @@ describe('plan 13e faults put back', () => {
     // the fault twin of the retired exception: the cycle it set aside, put back by the leg guard it was found under
     for (const id of ['L3-F6-hold', 'L3-F6-holdMirror']) {
       expect(await failsOf(HOLD_SETTLES, FIX(id), {}), id).toEqual([]);
-      expect((await failsOf(HOLD_SETTLES, preV3(FIX(id)), {})).join(' '), id).toMatch(new RegExp(`^${id}: expected [2-9] to be less than or equal to 1`));
+      expect((await failsOf(HOLD_SETTLES, preHoldStill(preV3(FIX(id))), {})).join(' '), id).toMatch(new RegExp(`^${id}: expected [2-9] to be less than or equal to 1`));
     }
   }, 120000);
 
@@ -808,6 +809,14 @@ describe('plan 08 pass 3: contact integration', () => {
     'hold and exit: a stationary hold settles (L3-F6); a saturating load released does not launch (L3-F6/F7); contact clears from every run phase and side (L3-F7); a recontact in exit is named and audited (L3-F8)',
     [HOLD_SETTLES, NO_LAUNCH, CLEARS, RECONTACT],
   );
+  passTest('the still feet (ladder 14a): in a stationary hold no planted foot steps home, settles or steps to turn: every L3 fixture', [HOLD_STILL]);
+  it('the still feet, the fault twin: before the flip L3-F6-hold\'s defender steps home in the hold (its left foot at 2.146 s)', async () => {
+    const d = preHoldStill(FIX('L3-F6-hold'));
+    const c = CHECKS.find((x) => x.name === HOLD_STILL)!;
+    const fails: string[] = [];
+    await runWatched(d, [{ w: c.watch(d, (m) => fails.push(m)), fail: (m) => fails.push(m) }]);
+    expect(fails).toContain('L3-F6-hold D left 2.1458 step');
+  }, 60000);
   passTest(
     'conversions: a player below stays a support-budget regression (L3-F9); either or both convert with retention (L3-F10); a genuine bad candidate is rejected with the safe fallback (L3-F11)',
     [PLAYER_BELOW, RETAINED, BAD_CANDIDATE],
@@ -833,7 +842,7 @@ describe('ladder tracked defects (rule 7)', () => {
   // without the fix, of rungs 6 and 7 resolving the same states (below).
   // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile they ran under)
   const resumed = async (capture: string, opts: SimOptions = {}) =>
-    runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preV3(preFlip(FIX(capture.split('@')[0]))), opts }));
+    runSim(await resumeState(loadState(`tests/data/state/${capture}.json.gz`), { def: preHoldStill(preV3(preFlip(FIX(capture.split('@')[0])))), opts }));
   it('a posed leg held inside the runner\'s ragdoll, the defender\'s conversion rejected for it (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off)', async () => {
     // captured with R a ragdoll and D supported beside it, 2 ticks before D's posed legs pass the conversion tolerance
     // (12 substeps from 1.200 s on the L3 fixtures, 8 from 1.271 s on L4-F10-wrap-off at rung 4b), D converting at 1.30 s
@@ -872,7 +881,7 @@ describe('ladder tracked defects (rule 7)', () => {
     // accepted. Measured (rung 6): no substep past the tolerance at all, 1.20 / 1.20 / 1.02 cm at most.
     await rows(['L3-F4-oneArm@70', 'L3-F1-phase2@70', 'L4-F10-wrap-off@74'], (c) => c, async (c) => {
       const id = c.split('@')[0];
-      const def = { ...preFlip(FIX(id)), legGuard: LEG_GUARD_V3 };
+      const def = { ...preHoldStill(preFlip(FIX(id))), legGuard: LEG_GUARD_V3 };
       const tol = def.ragdoll!.validation.penetrationTolM;
       let run0 = 0;
       let longest = 0;
@@ -933,7 +942,7 @@ describe('ladder tracked defects (rule 7)', () => {
     const caps = ['L3-F6-hold@216', 'L3-F6-holdMirror@210'];
     await rows(caps.flatMap((c) => (['V2', 'V3'] as const).flatMap((g) => [false, true].map((fault) => ({ c, g, fault })))), (x) => `${x.c} ${x.g}${x.fault ? ' noPlantedPole' : ''}`, async ({ c, g, fault }) => {
       const id = c.split('@')[0];
-      const def = { ...preFlip(FIX(id)), legGuard: g === 'V2' ? LEG_GUARD_V2 : LEG_GUARD_V3 };
+      const def = { ...preHoldStill(preFlip(FIX(id))), legGuard: g === 'V2' ? LEG_GUARD_V2 : LEG_GUARD_V3 };
       // per planted leg and substep: at a knee pole (pose memory index >= 10), the shown pole's turn (body frame), the plant's feature error
       let atPole = 0;
       let maxTurn = 0;

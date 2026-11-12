@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { buildProxyPose, CONT_FAST_MPS, CONT_L3_PLANT_MPS, CONT_L3_RADPS, footFrame, HARD_OK, poseLimbShapes, type FootRequest, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from '../src/sim/pose';
 import { initPhysics, RAPIER } from '../src/sim/physics';
 import { add, addScaled, dist, len, norm, qFromUnitVectors, qFromYaw, qRot, scale, sub, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preFlip } from './helpers';
+import { FIX, preFlip, preHoldStill } from './helpers';
 import { LEG_GUARD_V3 } from '../src/sim/profiles';
 import { runSim } from './runs';
 import { loadState, resumeState } from './state';
@@ -187,7 +187,7 @@ describe('rung 7b: a leg leaving a plant held in a body the legs meet (physical 
     const sim = await runSim(
       await resumeState(loadState(CAPTURE), {
         // (captured before the visible flip: resumed under the profile it ran under)
-        def: { ...preFlip(FIX(id)), legGuard: LEG_GUARD_V3 },
+        def: { ...preHoldStill(preFlip(FIX(id))), legGuard: LEG_GUARD_V3 },
         ...(fault ? { faults: { pose: { noHeldMetExit: true } } } : {}),
         opts: {
           onSubstep: (s) => {

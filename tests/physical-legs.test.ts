@@ -17,7 +17,7 @@ import { legHull, legMeets, legPointMove, legSurfaceAdvance, observePhysicalLegs
 import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromUnitVectors, qFromYaw, qInvRot, qMul, qRot, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, rows } from './helpers';
+import { FIX, preHoldStill, rows } from './helpers';
 import { loadState, resumeState } from './state';
 import { SEGMENTS } from '../src/sim/ragdoll';
 
@@ -377,7 +377,7 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
       let syncedRefused = false;
       const r = { refused: 0, live: 0, legNs: 0, kick: 0 };
       const sim = await resumeState(loadState('tests/data/state/L3-F9-noProbe-prep~v3@33.json.gz'), {
-        def: { ...FIX('L3-F9-noProbe-prep'), legGuard: LEG_GUARD_V3 },
+        def: { ...preHoldStill(FIX('L3-F9-noProbe-prep')), legGuard: LEG_GUARD_V3 },
         ...(fault ? { faults: { pose: { legsOnRefused: true } } } : {}),
         opts: {
           onSubstep: (s) => {

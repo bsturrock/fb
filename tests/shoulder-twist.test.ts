@@ -3,7 +3,7 @@ import { JOINT_RANGE_V2, SHOULDER_TWIST_ANAT_V1, withShoulderTwistLimit, type Jo
 import { anatomicalTwist, envelopeMoments } from '../src/sim/ragdoll';
 import { add, dot, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qMul, scale, v3, type Quat, type Vec3 } from '../src/sim/vec';
 import { loadedLimbMonitor, type LimbRecord } from './loaded-limb';
-import { FIX } from './runs';
+import { FIX, preHoldStill } from './runs';
 import { loadState, resumeState } from './state';
 import { HUMAN_RANGES, shoulderRotationDeg } from './visible';
 
@@ -175,9 +175,9 @@ interface ArmRun {
 
 /** R's right shoulder from the capture to the end, under the registered profile or with the anatomical twist limit. */
 async function rightArm(anatomical: boolean): Promise<ArmRun> {
-  const def = FIX('HC-F5-strictTransfer');
+  const def = preHoldStill(FIX('HC-F5-strictTransfer'));
   const m = loadedLimbMonitor();
-  const sim = await resumeState(loadState(CAPTURE), anatomical ? { def: { ...def, ragdoll: withShoulderTwistLimit(def.ragdoll!) }, variant: ['ragdoll'], opts: { onSubstep: m.substep } } : { opts: { onSubstep: m.substep } });
+  const sim = await resumeState(loadState(CAPTURE), anatomical ? { def: { ...def, ragdoll: withShoulderTwistLimit(def.ragdoll!) }, variant: ['ragdoll'], opts: { onSubstep: m.substep } } : { def, opts: { onSubstep: m.substep } });
   const rag = sim.players.find((p) => p.id === 'R')!.rag!;
   expect(rag.profile.shoulderTwistLimit).toEqual(anatomical ? SHOULDER_TWIST_ANAT_V1 : undefined);
   const P = rag.profile.envelope!;

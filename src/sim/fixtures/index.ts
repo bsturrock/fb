@@ -11,6 +11,7 @@ import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
 import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
+import { withHoldStill } from '../footwork';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -45,6 +46,15 @@ function legFlip(d: FixtureDef): FixtureDef {
   return d.legGuard ? { ...d, legGuard: LEG_GUARD_V3 } : d;
 }
 
+/**
+ * Ladder 14a, the still-feet flip (the rule of rung 13b): every L3, L4 and HC fixture with a foot planner keeps its feet planted in a
+ * stationary hold (HOLD_STILL_V1). L2's planner is unchanged. The lab's `holdstill=off` is the view before it;
+ * tests/runs.ts `preHoldStill` gives a definition as before it.
+ */
+function holdStillFlip(d: FixtureDef): FixtureDef {
+  return d.footwork && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withHoldStill(d.footwork) } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -73,6 +83,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip));
   return registry.slice();
 }

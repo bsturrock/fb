@@ -3,7 +3,7 @@ import type { FallEpisode } from '../src/sim/fall-response';
 import { FALL_L4, withSelfTrunkBody, type FallResponseProfile } from '../src/sim/profiles';
 import { isGround } from '../src/sim/contracts';
 import type { Simulation } from '../src/sim/simulation';
-import { FIX, preOwnLegs, preV3 } from './helpers';
+import { FIX, preHoldStill, preOwnLegs, preV3 } from './helpers';
 import { disablePhysicalLegs } from '../src/sim/pose-runtime';
 import { loadState, resumeState } from './state';
 
@@ -20,7 +20,7 @@ import { loadState, resumeState } from './state';
 async function resume(file: string, ownLegs: boolean, opts = {}, fall?: (p: FallResponseProfile) => FallResponseProfile): Promise<Simulation> {
   const cap = loadState(file);
   // (captured before the ladder 10 leg-guard flip: resumed under the leg guard it ran under)
-  let def = preV3(FIX(cap.fixture));
+  let def = preV3(preHoldStill(FIX(cap.fixture)));
   if (!ownLegs) def = preOwnLegs(def);
   if (fall) def = { ...def, fallResponse: fall(def.fallResponse!) };
   const variant = [...(ownLegs ? [] : ['ragdoll']), ...(fall ? ['fallResponse'] : [])];
@@ -104,7 +104,7 @@ describe('tracked defect IMPACT_OVER_POWER under the leg-guard flip (L4-F9-low r
   const STEP = 260;
 
   async function landing(o: { v1?: boolean; holdLegs?: boolean; selfTrunkBody?: boolean } = {}) {
-    let def = FIX('L4-F9-low');
+    let def = preHoldStill(FIX('L4-F9-low'));
     if (o.v1) def = preV3(def);
     if (o.selfTrunkBody) def = { ...def, fallResponse: withSelfTrunkBody(def.fallResponse!) };
     const variant = [...(o.v1 ? ['legGuard'] : []), ...(o.selfTrunkBody ? ['fallResponse'] : [])];

@@ -3,7 +3,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { GROUP_STATIC, interactionGroups } from '../src/sim/physics';
 import { ENVELOPE_L4, LEG_GUARD_V3, type RagdollEnvelope, type RagdollProfile } from '../src/sim/profiles';
 import type { Simulation } from '../src/sim/simulation';
-import { FIX, preFlip, runSim } from './helpers';
+import { FIX, preFlip, preHoldStill, runSim } from './helpers';
 import { loadedLimbMonitor, type LimbRecord } from './loaded-limb';
 import { loadState, resumeState } from './state';
 
@@ -23,7 +23,7 @@ type Twin = (s: Simulation) => void;
 /** The capture to its end, with `twin` applied to the state after the first substep at or past `at`. */
 async function resumed(twin?: Twin, at = 0): Promise<Record<string, LimbRecord>> {
   // (captured before the visible flip: resumed under the profile it ran under)
-  const def: FixtureDef = { ...preFlip(FIX(ID)), legGuard: LEG_GUARD_V3 };
+  const def: FixtureDef = { ...preHoldStill(preFlip(FIX(ID))), legGuard: LEG_GUARD_V3 };
   const sim = await resumeState(loadState(CAPTURE), { def });
   const declared = new Map<string, RagdollEnvelope>();
   for (const p of sim.players) if (p.rag?.profile.envelope) declared.set(p.id, p.rag.profile.envelope);

@@ -1548,6 +1548,38 @@ export const HOLD_SETTLES = check({
   }),
 });
 
+// Ladder 14a, the still-feet flip (rung 13b's rule, registered on every L3 planner): in a stationary hold (`holdStillAt`
+// with HOLD_STILL_V1, read as the planner reads it: this substep's retained grips and solved travel) no planted foot
+// steps home, settles or steps to turn. A foot that cannot keep its plant still steps (reach, a clearance solve, the
+// yaw release past yawReleaseDeg: a 'yaw' release carrying its yawErrDeg). The fault twin is the planner before the
+// flip (l3-contracts).
+const VOLUNTARY_RELEASES = ['step', 'settle', 'yaw'];
+export const HOLD_STILL = check({
+  name: 'no voluntary step in a stationary hold',
+  fixtures: /^L3-/,
+  watch(d, report) {
+    const heldAt = new Map<string, number>();
+    let evAt = 0;
+    return {
+      substep(s) {
+        const still = new Map<string, boolean>();
+        for (const pl of s.players) {
+          if (pl.rag || !pl.feet) continue;
+          if ((s as unknown as { retained(p: PlayerRuntime): boolean }).retained(pl)) heldAt.set(pl.id, s.t);
+          const v = pl.proxy.body.linvel();
+          still.set(pl.id, holdStillAt(HOLD_STILL_V1, heldAt.get(pl.id), s.t, Math.hypot(v.x, v.z)));
+        }
+        for (; evAt < s.events.length; evAt++) {
+          const e = s.events[evAt]!;
+          const ed = e.data as { side?: string; reason?: string; yawErrDeg?: number };
+          if (e.type !== 'footRelease' || !still.get(e.playerId!) || !VOLUNTARY_RELEASES.includes(ed.reason ?? '') || ed.yawErrDeg !== undefined) continue;
+          report(`${d.id} ${e.playerId} ${ed.side} ${e.t.toFixed(4)} ${ed.reason}`);
+        }
+      },
+    };
+  },
+});
+
 export const NO_LAUNCH = check({
   name: 'L3-F6/F7: a saturating load released does not launch',
   fixtures: ['L3-F6-saturated', 'L3-F7-loadRelease'],

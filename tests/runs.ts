@@ -4,6 +4,7 @@ import type { SimEvent } from '../src/sim/contracts';
 import { Simulation, type SimOptions, type TraceRow } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
+import { withoutHoldStill } from '../src/sim/footwork';
 import { RAPIER } from '../src/sim/physics';
 import {
   HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
@@ -39,6 +40,11 @@ export const preFlip = (d: FixtureDef): FixtureDef => (d.ragdoll ? { ...d, ragdo
  * before the flip, ran under. Composes with `preOwnLegs`, `preFlip` and `flip8i`, which leave the leg guard as given.
  */
 export const preV3 = (d: FixtureDef): FixtureDef => (d.legGuard ? { ...d, legGuard: LEG_GUARD_V1 } : d);
+/**
+ * Ladder 14a: `d` with its foot planner as before the still-feet flip (no `holdStill`): the planner every state capture
+ * and natural sample taken before the flip ran under. Composes with the other `pre*` helpers.
+ */
+export const preHoldStill = (d: FixtureDef): FixtureDef => (d.footwork?.holdStill ? { ...d, footwork: withoutHoldStill(d.footwork) } : d);
 /** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */
 export const hipStops8i = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
 /**

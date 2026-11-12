@@ -4,7 +4,7 @@
 // captures are in tests/l3-contracts.test.ts ("ladder tracked defects").
 import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
-import { create, FIX, preFlip, preV3, runSim } from './helpers';
+import { create, FIX, preFlip, preHoldStill, preV3, runSim } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
 import { ARM_G2, LEG_GUARD_V3 } from '../src/sim/profiles';
 
@@ -88,8 +88,8 @@ describe('full-state capture and resume', () => {
 
   it('a capture written against other profiles, another state layout, format or engine is refused, naming why', async () => {
     const cap = loadState('tests/data/state/L3-F4-oneArm@70.json.gz');
-    // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile it ran under)
-    const def = preV3(preFlip(FIX('L3-F4-oneArm')));
+    // (captured before the visible flip, the ladder 10 leg-guard flip and the 14a still feet: resumed under the profiles it ran under)
+    const def = preHoldStill(preV3(preFlip(FIX('L3-F4-oneArm'))));
     const refused = async (c: StateCapture, why: RegExp): Promise<void> => {
       await expect(resumeState(c, { def })).rejects.toThrow(/stale state capture \(L3-F4-oneArm at tick 70\)/);
       await expect(resumeState(c, { def })).rejects.toThrow(why);
@@ -110,8 +110,8 @@ describe('full-state capture and resume', () => {
 
   it('one capture resumes under a profile variant named by the test (the controlled twin), and only when it is named', async () => {
     const cap = loadState('tests/data/state/L3-F4-oneArm@70.json.gz');
-    // (captured before the visible flip and the ladder 10 leg-guard flip: resumed under the profile it ran under)
-    const def = preV3(preFlip(FIX('L3-F4-oneArm')));
+    // (captured before the visible flip, the ladder 10 leg-guard flip and the 14a still feet: resumed under the profiles it ran under)
+    const def = preHoldStill(preV3(preFlip(FIX('L3-F4-oneArm'))));
     const noGuard = { ...def, legGuard: undefined };
     await expect(resumeState(cap, { def: noGuard })).rejects.toThrow(/profile at legGuard is absent/);
     const on = await resumeState(cap, { def });

@@ -12,7 +12,7 @@ import { HIP_TWIST_SWING_DEG, hingeChain } from '../src/sim/pose';
 import { armTwistRad, fitThighTwist } from '../src/sim/joint-cone';
 import { ENVELOPE_L4, JOINT_RANGE_V2, JOINT_RANGE_V3, sideSignX } from '../src/sim/profiles';
 import { addScaled, dist, norm, qConj, qFromAxisAngle, qMul, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX } from './runs';
+import { FIX, preHoldStill } from './runs';
 import { loadState, resumeState } from './state';
 import { hipAngles } from './visible';
 
@@ -106,7 +106,7 @@ describe('ladder 11b: the supported thigh rotation', () => {
     // visible meter reads it (below HIP_TWIST_SWING_DEG of swing)
     const cap = loadState('tests/data/state/HC-F2-offset@24.json.gz');
     const read = async (jointRange: typeof JOINT_RANGE_V3): Promise<{ maxDeg: number; aRightMaxDeg: number; frames: number }> => {
-      const sim = await resumeState(cap, { def: { ...FIX('HC-F2-offset'), jointRange }, variant: ['jointRange', 'ragdoll'] });
+      const sim = await resumeState(cap, { def: { ...preHoldStill(FIX('HC-F2-offset')), jointRange }, variant: ['jointRange', 'ragdoll'] });
       let maxDeg = 0;
       let aRightMaxDeg = 0;
       let frames = 0;

@@ -20,7 +20,7 @@ import {
 import { add, dist, len, qRot, scale, sub, toLocal, v3, vc, type Vec3 } from '../src/sim/vec';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { lockedOutOfLocomotion, onModel } from '../src/sim/fixtures/with-locomotion';
-import { FOOTWORK_L3 } from '../src/sim/footwork';
+import { FOOTWORK_L3, withHoldStill } from '../src/sim/footwork';
 import { chestArm } from '../src/sim/run-clip';
 import { idleIntake } from '../scripts/model/idle-intake';
 import { pace, rows, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
@@ -205,7 +205,8 @@ describe('plan 13e idle cycle and coverage', () => {
         expect(d.notes, d.id).toMatch(/No locomotion set \(plan 13e\)/);
         continue;
       }
-      expect(d.footwork, d.id).toBe(FOOTWORK_L3);
+      // since rung 14a with the stationary hold's still feet
+      expect(d.footwork, d.id).toEqual(withHoldStill(FOOTWORK_L3));
       expect(d.locomotion, d.id).toBe(LOCOMOTION_L3_IDLE);
       expect(d.runClips?.walk, d.id).toBeDefined();
       expect(d.runClips!.clips.map((c) => c.id), d.id).toEqual(['walk', 'fast-run']);

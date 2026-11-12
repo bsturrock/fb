@@ -8791,7 +8791,7 @@
   "ticks": 300,
   "t": 5,
   "minPairGap": -0.0014,
-  "events": 1140,
+  "events": 1131,
   "players": {
    "D": {
     "p": [
@@ -8829,7 +8829,7 @@
   "ticks": 300,
   "t": 5,
   "minPairGap": -0.0015,
-  "events": 1268,
+  "events": 1263,
   "players": {
    "D": {
     "p": [
@@ -8867,7 +8867,7 @@
   "ticks": 300,
   "t": 5,
   "minPairGap": -0.0007,
-  "events": 1681,
+  "events": 1672,
   "players": {
    "D": {
     "p": [
@@ -11953,7 +11953,7 @@
   "ticks": 132,
   "t": 2.2,
   "minPairGap": -0.007,
-  "events": 61,
+  "events": 59,
   "players": {
    "D": {
     "p": [
