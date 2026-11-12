@@ -934,12 +934,22 @@ export function externalFromRagdoll(rag: Ragdoll): ExternalShape[] {
   return rag.colliders.map((c) => ({ key: `${rag.playerId}:${c.segment}:${c.region}`, shape: c.collider.shape, pose: colliderWorldPose(rag, c) }));
 }
 
-function depthAgainst(shape: RAPIER.Shape, pose: Pose, ext: ExternalShape[]): { depth: number; other: string; floor: number } {
+/** The prediction of a candidate's depth queries (only a negative distance, a depth, is read). */
+const DEPTH_QUERY_M = 0.05;
+
+/**
+ * The deepest penetration of `shape` at `pose` into the external shapes (`geoms`: their cull geometry, in order). Ladder
+ * 9g: a pair farther apart than the query's prediction returns nothing, so it is not queried (plan 13a's cull, exact).
+ */
+function depthAgainst(shape: RAPIER.Shape, pose: Pose, ext: ExternalShape[], geoms: CullGeom[]): { depth: number; other: string; floor: number } {
   let depth = 0;
   let other = '';
   let floor = 0;
-  for (const e of ext) {
-    const r = e.shape.contactShape(e.pose.p, e.pose.q, shape, pose.p, pose.q, 0.05);
+  const g = cullGeom(shape, pose.p, pose.q);
+  for (let i = 0; i < ext.length; i++) {
+    const e = ext[i];
+    if (!geomNear(geoms[i], g, DEPTH_QUERY_M)) continue;
+    const r = e.shape.contactShape(e.pose.p, e.pose.q, shape, pose.p, pose.q, DEPTH_QUERY_M);
     if (!r) continue;
     const d = Math.max(0, -r.distance);
     if (e.floor) floor = Math.max(floor, d);
@@ -1008,14 +1018,15 @@ export function validateCandidate(
   let worst: PenetrationRec | null = null;
   let maxNew = 0;
   let proxyCoreDepth = 0;
-  for (const cp of Object.values(counterparts)) if (cp) proxyCoreDepth = Math.max(proxyCoreDepth, depthAgainst(cp.shape, cp.pose, ext).depth);
+  const geoms = ext.map((e) => cullGeom(e.shape, e.pose.p, e.pose.q));
+  for (const cp of Object.values(counterparts)) if (cp) proxyCoreDepth = Math.max(proxyCoreDepth, depthAgainst(cp.shape, cp.pose, ext, geoms).depth);
   for (const c of rag.colliders) {
     const p = colliderWorldPose(rag, c);
-    const d = depthAgainst(c.collider.shape, p, ext);
+    const d = depthAgainst(c.collider.shape, p, ext, geoms);
     floorPen = Math.max(floorPen, d.floor);
     let base = 0;
     const cp = c.segment === 'core' || c.segment === 'head' ? counterparts[c.region] : undefined;
-    if (cp) base = depthAgainst(cp.shape, cp.pose, ext).depth;
+    if (cp) base = depthAgainst(cp.shape, cp.pose, ext, geoms).depth;
     const nd = Math.max(0, d.depth - base);
     if (nd > maxNew) {
       maxNew = nd;

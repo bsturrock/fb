@@ -165,6 +165,9 @@ To look at and decide:
   Question: is a crossing that lasts until the legs part acceptable, or should crossed legs be pushed apart (a later
   step)?
 
+Since 9d nothing visible has changed: 9e changes a recorded reason only, 9f's fix is off (its flip parked), 9g is
+byte-identical.
+
 ## Status
 
 Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each compared against the previous rung.
@@ -578,6 +581,14 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   still one substep over the cap (187.6 W). The hold first acts at 1.471 s, which moves the run; at 1.625 s it holds the
   body as intended, and the forearm's hit lands in the next solve, read at 1.62 m/s (under the body speed) while the
   solve takes 49.8 N s. From that state the hold off gives 180.5 W there: the same mechanism, reached.
+- **9g** (`r9g-housekeeping/check`) landed, byte-identical in every summary, trace and matrix, 346/346. `LEG_IN_RAGDOLL`'s
+  live exception in tests/l3-pass.ts (empty since 8m) is retired; its three captures' tests in l3-contracts stay, as the
+  pre-flip record of the rejection and the twin of rung 6's physical legs converting the same states. The query peak:
+  the candidate validation's depth queries (ragdoll.ts `depthAgainst`, 1344 of the 4036, run every substep while a
+  conversion is deferred) are culled as plan 13a's are (exact: a pair beyond the query's prediction returns nothing).
+  Every row's worst tick falls or stays (69 fall), none over 4000 (highest 3423, L3-F7-mirror50). Guard: a capture test
+  (harness, `L3-F1-phase4~rev@76`) runs D's deferred conversion beside R's ragdoll (ticks 78-81) and needs every tick
+  under the budget: 2771 at the old peak; fault twin, the cull removed, 4036.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -607,18 +618,17 @@ order, not hunk-split.
 
 To be reproduced on the first rung where they appear, then handled under rule 7:
 
-- Found at 9c, registered with the own-leg flip at 9d (exceptions by fixture, player and mechanism in
-  tests/falls.test.ts, capture tests in tests/fall-defects.test.ts), each reached by a moved trajectory, the same from
-  the state just before with own-leg contact off. `IMPACT_OVER_POWER` (open): L4-F3-run-on D (and L4-F9-free, the
-  same run) lands at 1.625 s with its hip and knee effort acting, one substep over the power cap (183 W; off from 1.60 s
-  169 W), tagged an impact; held off in that substep, nothing is over. The forearm's own-trunk hit is held as the arm's
-  only; 9f's `selfTrunkBody` (off) fixes that landing, but registered the run reaches the same hit one substep later,
-  read before the solve at 1.62 m/s against 49.8 N s taken (parked). Next: read an own-trunk hit from the pair's
-  penetration or pinning, not only its closing. `BRACE_EXPIRED_OBSTRUCTED`
-  (resolved at 9e): L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the
-  end-of-window path did not read the obstruction the core-down path reads. Query peak: L3-F1-phase4 reversed, 4036 in the tick at 1.317 s (8m 3749), 2324 of them
-  D's supported pose contact queries against R's ragdoll, none own-leg; off from 1.267 s the same 4036 (from 1.167 s
-  3749). A full-check report row, not a suite invariant; no capture test in the patch yet.
+- Found at 9c, registered with the own-leg flip at 9d (capture tests in tests/fall-defects.test.ts), each reached by a
+  moved trajectory, the same from the state just before with own-leg contact off. `IMPACT_OVER_POWER` (open; exception
+  by fixture, player and mechanism in tests/falls.test.ts): L4-F3-run-on D (and L4-F9-free, the same run) lands at 1.625
+  s with its hip and knee effort acting, one substep over the power cap (183 W; off from 1.60 s 169 W), tagged an
+  impact; held off in that substep, nothing is over. The forearm's own-trunk hit is held as the arm's only; 9f's
+  `selfTrunkBody` (off) fixes that landing, but registered the run reaches the same hit one substep later, read before
+  the solve at 1.62 m/s against 49.8 N s taken (parked). Next: read an own-trunk hit from the pair's penetration or
+  pinning, not only its closing. `BRACE_EXPIRED_OBSTRUCTED` (resolved at 9e): L4-F5-twoClamp-on D right (and L4-F9-both)
+  missed `expired` at 2.2 s while pressed on R's shin; the end-of-window path did not read the obstruction the core-down
+  path reads. Query peak (resolved at 9g): L3-F1-phase4 reversed, 4036 in the tick at 1.317 s (8m 3749), D's deferred
+  conversion validated unculled beside R's ragdoll.
 
 - Self-trunk pinch: a ragdoll forearm pressed into its own trunk by the floor gains 7.5 J in one solve
   (L4-F9-contact reversed R; read by the audit as 172 W). Suspected solver energy injection. Reached with V3 on at rung
@@ -640,8 +650,8 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   Reached with V3 on: L4-F3-run-on R right shoulder past the tolerance 0.2875 s (1.25-1.54 s, up to 7.6 deg) with R's
   right forearm and upper arm on the floor throughout; from 1.10 s (`L4-F3-run-on~v3@66`) all twins give the same run.
   The excess is the load's static deflection (190 / 1500 N m/rad); the loaded-limb rule passes it (L4-F9-free R too).
-- Posed leg held inside another player's ragdoll, the conversion then rejected (tracked from rung 3, `LEG_IN_RAGDOLL`
-  in tests/l3-pass.ts): D's posed legs 2-6.6 cm inside R's ragdoll core for 8-25 substeps before D's conversion,
+- Resolved by 8j and the 8l flip (exception retired at 9g): posed leg held inside another player's ragdoll, the
+  conversion then rejected (tracked from rung 3, `LEG_IN_RAGDOLL` in tests/l3-pass.ts): D's posed legs 2-6.6 cm inside R's ragdoll core for 8-25 substeps before D's conversion,
   rejected for external penetration: L3-F4-oneArm and L3-F1-phase2 (right thigh in R's pelvis, 4.28 cm at 1.304 s),
   L4-F10-wrap-off (right thigh in R's torso, 5.34 cm at 1.300 s). Controlled twin: rung 3's change off from 1.0 s (the
   same state) gives the same rejection to the last digit. Probably the deeper form of the L4-F10-wrap-on entry above.
@@ -654,8 +664,7 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   registered), HC-F5-strictTransfer D (right thigh in R's pelvis, 3 substeps, 3.37 cm at 1.288 s; V3 rejects too).
   The 8j deferred conversion converts all of them (registered captures and 8i captures), and under the 8l flip every
   one converts in its run; the tracked captures stay the pre-flip state (`preFlip`). Since 8m (the flip registered) no
-  registered run is rejected so, and the live exception (`LEG_IN_RAGDOLL` in tests/l3-pass.ts) excludes nothing: to
-  retire in its own step, with the captures' tests kept as the pre-flip record.
+  registered run is rejected so; the live exception was retired at 9g, the captures' tests kept as the pre-flip record.
 - A held player's planted foot released by its clearance solve (plant drift just over 1 cm on clearance variant 1) and
   planted again every 0.2-0.6 s in a stationary hold (tracked from rung 3, `HOLD_CLEARANCE_REPLANT`): L3-F6-hold R left
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s

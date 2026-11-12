@@ -41,6 +41,7 @@ import { suppliedRunClips } from '../src/sim/model/run-clips';
 import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
 import { breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
+import { loadState, resumeState } from './state';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
 /** Key-order independent serialization (deep equality of plain profile data). */
@@ -736,6 +737,43 @@ describe('plan 13a: contact-time shape queries', () => {
       q.restore();
     }
   }, 180000);
+
+  it('ladder 9g: a deferred conversion\'s validation is culled too: under 4,000 in every tick while D\'s conversion beside R\'s ragdoll is tried again (L3-F1-phase4 reversed, from 1.267 s)', async () => {
+    // The full check's worst tick at ladder 9d, 4036 at 1.317 s: D supported beside R's ragdoll, its conversion deferred
+    // (8j) and validated again each substep, D's pose contact queries against R's ragdoll (2324 of them) and the
+    // candidate's depth against every external shape (1344, not culled before 9g). Captured at the end of tick 76
+    // (1.267 s), as registered. With the cull, 2771 there. Fault twin (ragdoll.ts depthAgainst without the cull, run
+    // once): 4036 and 4035 in ticks 79 and 80, the test fails on them.
+    await initPhysics();
+    // per tick: the shape queries, and the substeps in it with D's conversion deferred while R is a ragdoll
+    const ticks: { tick: number; n: number; deferred: number }[] = [];
+    let deferred = 0;
+    const sim = await resumeState(loadState('tests/data/state/L3-F1-phase4~rev@76.json.gz'), {
+      opts: {
+        onSubstep: (s) => {
+          const D = s.byId.get('D')!;
+          if (D.deferred && !D.rag && s.byId.get('R')!.rag) deferred++;
+        },
+      },
+    });
+    const q = shapeQueryCounter();
+    try {
+      q.take();
+      while (!sim.done && !sim.byId.get('D')!.rag) {
+        deferred = 0;
+        sim.stepTick();
+        ticks.push({ tick: sim.tick, n: q.take(), deferred });
+        await pace();
+      }
+    } finally {
+      q.restore();
+      sim.dispose();
+    }
+    // the mechanism is reached: D's conversion deferred and tried again over several ticks, then accepted
+    expect(ticks.filter((t) => t.deferred > 0).map((t) => t.tick)).toEqual([78, 79, 80, 81]);
+    expect(ticks.at(-1)!.tick).toBe(81);
+    for (const t of ticks) expect(t.n, `tick ${t.tick} (${t.deferred} substeps deferred)`).toBeLessThan(SHAPE_QUERY_BUDGET);
+  }, 60000);
 });
 
 // ------------------------------------------------------------------------------------------- plan 10f debug switches
