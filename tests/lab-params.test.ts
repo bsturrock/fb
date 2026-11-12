@@ -3,13 +3,13 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import {
-  HIP_STOPS_L4_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutHipStops, withoutKneeStop,
-  withoutPgsIterations,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, withAdditionalPgsIterations, withConversionRetry, withHipStops, withKneeStop,
+  withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, runSim } from './helpers';
+import { create, FIX, flip8i, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs` and `knees` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees` and `retry` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -20,7 +20,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs and knees', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees and retry', () => {
   it('order=rev&legs=v3 runs the matrices\' reversed V3 row of the fixture (L3-F1-phase6), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v3'));
@@ -117,4 +117,31 @@ describe('lab URL parameters: order, legs, hips, pgs and knees', () => {
     expect(labRun(d, new URLSearchParams('pgs=-1&knees=150'))).toEqual({ def: d, opts: {}, label: 'pgs=-1 ignored · knees=150 ignored' });
     expect(labRun(d, new URLSearchParams('pgs=99'))).toEqual({ def: d, opts: {}, label: 'pgs=99 ignored' });
   });
+
+  // ladder rung 8j: retry=on|off, composed after the others
+  it('hips=on&pgs=4&knees=140&retry=on runs the 8i variant with the deferred conversion (HC-F3-falling reversed: D converts where the variant alone leaves it a falling proxy), named in the label; retry=off takes it off again; unknown values change nothing', async () => {
+    const id = 'HC-F3-falling';
+    const d = FIX(id);
+    const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
+    expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
+    const want = withConversionRetry(flip8i(d).ragdoll!);
+    expect(want.id).toBe(`${d.ragdoll!.id}+hip-stops-v2+pgs4+knee140+${CONVERSION_RETRY_V1.id}`);
+    expect(lab.def).toEqual({ ...d, ragdoll: want });
+    const outcomeOf = async (def: typeof d): Promise<string | undefined> => {
+      const s = await create(def, { reverseOrder: true });
+      await runSim(s);
+      const h = s.players.find((p) => p.id === 'D')!.handoff?.outcome;
+      s.dispose();
+      return h;
+    };
+    expect(await outcomeOf(lab.def)).toBe('accepted');
+    // the twin: the variant without it
+    const off = labRun(lab.def, new URLSearchParams('retry=off'));
+    expect(off.label).toBe('conversion retry off');
+    expect(off.def).toEqual(flip8i(d));
+    expect(await outcomeOf(off.def)).toBe('rejected');
+    expect(withoutConversionRetry(d.ragdoll!)).toBe(d.ragdoll);
+    expect(labRun(d, new URLSearchParams('retry=off'))).toEqual({ def: d, opts: {}, label: 'conversion retry off (registered)' });
+    expect(labRun(d, new URLSearchParams('retry=maybe'))).toEqual({ def: d, opts: {}, label: 'retry=maybe ignored' });
+  }, 120000);
 });

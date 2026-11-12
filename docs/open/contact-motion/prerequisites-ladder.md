@@ -326,7 +326,23 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   Who falls: 18 runs over 13 fixtures change (README), 4 of them a conversion now rejected, the player left a rigid
   falling proxy (HC-F3-falling reversed D, HC-F5-strictTransfer D both orders, L3-F1-phase4 reversed D), each a posed
   leg in R's ragdoll at D's conversion and each rejected the same by the registered profile from the same state. Open for the user: the L4 envelope's
-  range against the human one (keep it with the backstop, narrow it, or the box on L4).
+  range against the human one (keep it with the backstop, narrow it, or the box on L4). User (lab review): the fixed
+  joints look much better; the changed outcomes, the onePalm hold loss included, accepted; knee stop 140.
+- **8j** (`r8j-thigh-met`) landed off: byte-identical, 329/329. Mechanism (`THIGH_MET_AT_CONVERSION`, below): a
+  conversion is tried once; a rejected player is never queued again (`!pl.rag && !pl.handoff`) and stays the falling
+  proxy to the end, and with a handoff record its shown pose is no longer guarded (`handoffPossible` false), so its legs
+  sink 2-9 cm into R and out again. An unguarded candidate is valid 5-22 substeps later. Fix:
+  `RagdollProfile.conversionRetry` (CONVERSION_RETRY_V1: reasons `externalPenetration` only, window 0.25 s, about 3x the
+  longest measured clearance): such a candidate is deferred (`handoffDeferred`, `PlayerRuntime.deferred`, no handoff
+  yet, so the pose guard keeps working) and tried again at each substep boundary with its own trigger; past the window
+  the rejection is final, recorded with `deferred: {t, step, tries}`. Structural reasons (anchors, landmarks, hinges,
+  floor) stay final at once. Not a tolerance change: the accepted candidate passes the same 1.5 cm check. On the four
+  8i captures (`tests/conversion-retry.test.ts`, `--flip8i` captures): HC-F3-falling reversed accepted after 1 retry
+  (cand 1.18 cm, depth after 1.11), L3-F1-phase4 reversed after 11 (1.20 / 0.96), HC-F5-strictTransfer both orders
+  transferFailed as registered after 6 and 4 (the strict audit, its intent: D's rejection was not its contract); D and R
+  passive energy after the switch at most -0.03 J; the fault twin (tolerance 0.1) converts the first candidate, 1.56-3.41
+  cm deep. Under the registered profile it also converts the three `LEG_IN_RAGDOLL` captures (1.313-1.333 s). Lab
+  `retry=on|off`.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -389,6 +405,7 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   state: L3-F1-phase4 reversed D (right thigh in R's pelvis, 6 substeps, 2.71 cm at 1.300 s; V3 converts),
   HC-F5-strictTransfer reversed D (left shin in R's right thigh, 13 substeps, 3.42 cm at 1.246 s; V3 transferFailed as
   registered), HC-F5-strictTransfer D (right thigh in R's pelvis, 3 substeps, 3.37 cm at 1.288 s; V3 rejects too).
+  The 8j deferred conversion converts all of them (registered captures and 8i captures).
 - A held player's planted foot released by its clearance solve (plant drift just over 1 cm on clearance variant 1) and
   planted again every 0.2-0.6 s in a stationary hold (tracked from rung 3, `HOLD_CLEARANCE_REPLANT`): L3-F6-hold R left
   (2 plants after 3.5 s), L3-F6-holdMirror R right (3) and D left (1). Controlled twin: rung 3's change off from 3.0 s
@@ -449,5 +466,6 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   thigh 1.57 cm in R's left forearm (palm), past the tolerance in one substep only. From 1.150 s
   (`HC-F3-falling~rev@69`, in the patch) the registered profile rejects the same (1.58 cm) and V3 converts; from
   1.100 s the registered profile and the flip without PGS 4 convert. The patch's regression test resumes that capture.
+  Mechanism and fix at 8j (the deferred conversion, off): to flip with the visible flip.
 - Rapier's correction at a combined pose is not along the reading's gradient: at flexion 110 the Y stop's correction
   turns mostly Z, so Y overruns by 11 deg until the Z stop also holds (seen in the 8g probes, not in a fixture).

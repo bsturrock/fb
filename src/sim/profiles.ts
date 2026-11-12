@@ -658,6 +658,42 @@ export interface RagdollProfile {
    * a stop widened to where it is, closing with it (`src/sim/joint-stops.ts`). Absent: the hinge's own limit.
    */
   kneeFlexionStopDeg?: number;
+  /**
+   * Ladder rung 8j: a conversion whose candidate fails validation only for overlapping another body (external penetration
+   * past `validation.penetrationTolM`) is deferred, not rejected: the player stays the falling proxy and the same
+   * conversion is tried again at every following substep boundary, with its shown pose still guarded for validity (it
+   * can still convert), until a candidate is accepted, a try fails for any other reason, or the window has passed (then
+   * rejected as before). Absent: a rejection is final (the falling proxy to the end).
+   */
+  conversionRetry?: ConversionRetryProfile;
+}
+
+/** Ladder rung 8j: the deferred conversion. */
+export interface ConversionRetryProfile {
+  id: string;
+  /** The window, s from the first rejected try; a try at or past it that is rejected is final. */
+  windowS: number;
+  /** A rejected try is deferred when every one of its reasons (`CandidateReport.reasons`) is one of these. */
+  reasons: string[];
+}
+
+/**
+ * Ladder rung 8j. External penetration only: an overlap with another body moves as the bodies move, the structural
+ * reasons (anchors, lengths, hinges, landmarks, mass) do not; the floor's reason stays final as well (a falling proxy
+ * only gets closer to it). Window 0.25 s: the overlaps that rejected a conversion under the 8i variant (a posed leg
+ * 1.6-3.4 cm inside another player's ragdoll) cleared within 5-22 substeps (21-92 ms) of the rejection with the pose
+ * unguarded, within 1-11 tries guarded; the window is about three times the longest, so a tangle that does not clear
+ * ends as the falling proxy it was, a quarter second later.
+ */
+export const CONVERSION_RETRY_V1: ConversionRetryProfile = { id: 'conversion-retry-v1', windowS: 0.25, reasons: ['externalPenetration'] };
+
+/** Ladder rung 8j: the ragdoll profile with the deferred conversion, under an id that names it. */
+export const withConversionRetry = (r: RagdollProfile, p: ConversionRetryProfile = CONVERSION_RETRY_V1): RagdollProfile => ({ ...r, id: `${r.id}+${p.id}`, conversionRetry: p });
+/** Ladder rung 8j: the ragdoll profile without the deferred conversion, under the id it had before it (the lab's `retry=off`). */
+export function withoutConversionRetry(r: RagdollProfile): RagdollProfile {
+  if (!r.conversionRetry) return r;
+  const { conversionRetry, ...rest } = r;
+  return { ...rest, id: r.id.replace(`+${conversionRetry.id}`, '') };
 }
 
 /**

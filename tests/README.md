@@ -12,7 +12,7 @@ profile variant (only the paths named in `variant` may differ from the capture's
 ## Capture
 
 ```sh
-npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2]
+npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i]
 ```
 
 Runs the fixture with the fixture export's defaults (ledgers off; `--ledgers` for a test that reads them, about twice
@@ -23,7 +23,9 @@ definition, `{ def: { ...FIX(id), legGuard: LEG_GUARD_V3 } }`. `--audit` runs it
 kept in the capture's options, so the resumed run audits too) and adds `-audit` to the suffix (`<fixture>~v3-audit@<tick>`). `--rev`
 runs the reversed body order (suffix `rev`). `--hips=v1|v2` runs the fixture's ragdoll under the hip stops `HIP_STOPS_V1`
 (ladder 8d) or `HIP_STOPS_V2` (8g, with the approach zone), suffix `hipsv1` / `hipsv2`; a test resumes it with
-`{ def: { ...FIX(id), ragdoll: withHipStops(FIX(id).ragdoll!, HIP_STOPS_V2) } }`. Captures are between ticks (a tick is the fixture's
+`{ def: { ...FIX(id), ragdoll: withHipStops(FIX(id).ragdoll!, HIP_STOPS_V2) } }`. `--flip8i` runs it under the ladder 8i
+visible flip (`flip8i` in `tests/runs.ts`: the hip stops, PGS 4, knee stop 140), suffix `flip8i`; a test resumes it with
+`{ def: flip8i(FIX(id)) }`. Captures are between ticks (a tick is the fixture's
 `solver.substeps` physics substeps). They are 170-230 KB; a later tick is larger (the trace and events so far are part
 of the state).
 

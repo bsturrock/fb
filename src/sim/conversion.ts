@@ -32,7 +32,9 @@ export type ConversionHost = Pick<
  * One boundary operation for every player converting now: build all candidates (disabled), validate them together
  * (other converting players are checked as candidates, everyone else as active colliders), then switch the
  * accepted ones atomically and remap their relationships once. Rejected candidates are removed and the player
- * continues as the Gate 3 falling proxy with a recorded handoffRejected reason.
+ * continues as the Gate 3 falling proxy with a recorded handoffRejected reason. Ladder rung 8j
+ * (`RagdollProfile.conversionRetry`): a candidate rejected only for external penetration is deferred instead
+ * (`handoffDeferred` at the first try, `PlayerRuntime.deferred`), tried again at the next boundary within the window.
  */
 export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; reason: HandoffRecord['reason']; edit?: CandidateEdit }[]): void {
   const R = host.def.ragdoll!;
@@ -75,7 +77,28 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
     if (accepted.includes(c)) continue;
     removeRagdoll(host.physics, c.rag);
     const rep = c.report!;
-    c.pl.handoff = { accepted: false, outcome: 'rejected', t: host.t, step: host.steps, reason: c.reason, report: rep };
+    const prior = c.pl.deferred;
+    // ladder rung 8j (`RagdollProfile.conversionRetry`): a candidate rejected only for the profile's reasons (overlapping
+    // another body) is tried again at the next substep boundary, within the window from the first rejected try; the
+    // player stays the falling proxy meanwhile, its shown pose guarded for validity (no handoff yet: it can still convert)
+    const W = R.conversionRetry;
+    if (W && rep.reasons.every((r) => W.reasons.includes(r)) && host.t - (prior?.t ?? host.t) < W.windowS - 1e-9) {
+      if (prior) prior.tries++;
+      else {
+        c.pl.deferred = { reason: c.reason, ...(c.edit ? { edit: c.edit } : {}), t: host.t, step: host.steps, tries: 1 };
+        host.emit('handoffDeferred', c.pl.id, {
+          reasons: rep.reasons.join(','),
+          trigger: c.reason,
+          windowS: W.windowS,
+          maxNewExternalPenetrationM: round(rep.maxNewExternalPenetrationM, 5),
+          worstExternal: rep.worstExternal,
+        });
+      }
+      continue;
+    }
+    const deferred = prior ? { t: prior.t, step: prior.step, tries: prior.tries } : undefined;
+    if (prior) delete c.pl.deferred;
+    c.pl.handoff = { accepted: false, outcome: 'rejected', t: host.t, step: host.steps, reason: c.reason, report: rep, ...(deferred ? { deferred } : {}) };
     if (host.rules && c.pl.id === host.rules.runnerId) host.rules.disable('invalidHandoff', { reasons: rep.reasons.join(',') });
     host.emit('handoffRejected', c.pl.id, {
       reasons: rep.reasons.join(','),
@@ -89,6 +112,7 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
       hingeDeg: Object.fromEntries(Object.entries(rep.hingeDeg).map(([k, v]) => [k, round(v, 2)])),
       maxLandmarkErrM: round(rep.maxLandmarkErrM, 5),
       fallback: 'fallingProxy',
+      ...(deferred ? { deferred } : {}),
     });
   }
   const captured = host.arms?.captureRelations(accepted.map((c) => c.pl.id)) ?? new Map();
@@ -109,7 +133,20 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
     pl.representation = 'ragdoll';
     const after = host.bodyCount(pl.id);
     const proxyRemoved = !host.physics.world.bodies.contains(oldHandle) || !host.physics.world.getRigidBody(oldHandle)?.isEnabled();
-    pl.handoff = { accepted: audit.ok, outcome: audit.ok ? 'accepted' : 'transferFailed', t: host.t, step: host.steps, reason: c.reason, report: c.report!, audit, activeBodies: { before, after, proxyRemoved } };
+    const prior = pl.deferred;
+    const deferred = prior ? { t: prior.t, step: prior.step, tries: prior.tries } : undefined;
+    if (prior) delete pl.deferred;
+    pl.handoff = {
+      accepted: audit.ok,
+      outcome: audit.ok ? 'accepted' : 'transferFailed',
+      t: host.t,
+      step: host.steps,
+      reason: c.reason,
+      report: c.report!,
+      audit,
+      activeBodies: { before, after, proxyRemoved },
+      ...(deferred ? { deferred } : {}),
+    };
     pl.ragStats = { maxAnchorErrM: c.report!.maxAnchorErrM, maxFloorPenM: 0, maxSpeed: 0, maxHingeOverDeg: 0, hingeOverJoint: null, maxHingeReverseDeg: 0, hingeReverseJoint: null };
     switched.push(pl.id);
     host.emit('representation', pl.id, {
@@ -128,6 +165,7 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
         hingeDeg: Object.fromEntries(Object.entries(c.report!.hingeDeg).map(([k, v]) => [k, round(v, 2)])),
         straightFallback: pl.pose?.straightFallback ?? [],
       },
+      ...(deferred ? { deferred } : {}),
     });
     if (!audit.ok) {
       // The proxy is already gone (the audit reads the switched engine state); the assembly remains as diagnostic

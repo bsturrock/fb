@@ -5,12 +5,32 @@ import { Simulation, type SimOptions, type TraceRow } from '../src/sim/simulatio
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { RAPIER } from '../src/sim/physics';
+import {
+  hipStopsFor, withAdditionalPgsIterations, withHipStops, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations,
+  type RagdollProfile,
+} from '../src/sim/profiles';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
 export const FIX = (id: string): FixtureDef => {
   const f = allFixtures().find((d) => d.id === id);
   if (!f) throw new Error(`no fixture ${id}`);
   return f;
+};
+
+/**
+ * Ladder 8i/8j: a ragdoll profile without the visible flip's parts (hip stops, additional PGS iterations, knee stop) and
+ * without the deferred conversion (8j), under the id it had before them.
+ */
+export const unflipped = (r: RagdollProfile): RagdollProfile => withoutConversionRetry(withoutKneeStop(withoutPgsIterations(withoutHipStops(r))));
+/**
+ * Ladder 8i: `d` with the visible flip as the 8i assessment ran it (the hip stops `hipStopsFor` gives, 4 additional PGS
+ * iterations, the knee stop at 140) on its profile without them: the profile a capture taken under that variant ran
+ * under (`scripts/capture-state.ts --flip8i`).
+ */
+export const flip8i = (d: FixtureDef): FixtureDef => {
+  if (!d.ragdoll) return d;
+  const r = unflipped(d.ragdoll);
+  return { ...d, ragdoll: withKneeStop(withAdditionalPgsIterations(withHipStops(r, hipStopsFor(r)), 4), 140) };
 };
 
 /** An event with its data read loosely (tests read event-specific fields). */

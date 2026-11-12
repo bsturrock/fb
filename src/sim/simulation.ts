@@ -158,6 +158,11 @@ export interface PlayerRuntime {
   feet: FootPlan | null;
   /** Gate 4 handoff outcome (accepted with audits, or rejected with reasons). */
   handoff: HandoffRecord | null;
+  /**
+   * Ladder rung 8j (`RagdollProfile.conversionRetry`): a conversion deferred on an overlap, tried again at every substep
+   * boundary while this is set (no handoff yet: the player can still convert). Absent otherwise.
+   */
+  deferred?: DeferredConversion;
   /** Ragdoll running audits (max joint anchor separation, max floor penetration) since the handoff. */
   ragStats: RagStats | null;
   /** Plan 09: active fall response of an accepted ragdoll (null otherwise). */
@@ -196,6 +201,19 @@ export interface HandoffRecord {
   report: CandidateReport;
   audit?: TransferAudit;
   activeBodies?: { before: number; after: number; proxyRemoved: boolean };
+  /** Ladder rung 8j: the conversion was deferred first (when, and how many tries were rejected before this outcome). */
+  deferred?: { t: number; step: number; tries: number };
+}
+
+/** Ladder rung 8j: a conversion deferred on an overlap (`RagdollProfile.conversionRetry`), tried again each substep. */
+export interface DeferredConversion {
+  reason: HandoffRecord['reason'];
+  edit?: CandidateEdit;
+  /** The first rejected try's time and substep count (the window runs from it). */
+  t: number;
+  step: number;
+  /** Rejected tries so far. */
+  tries: number;
 }
 
 export interface PlayerTraceRow {
@@ -846,6 +864,11 @@ export class Simulation {
           }
         }
       });
+      // ladder rung 8j: a deferred conversion is tried again with its own trigger
+      if (!reason && pl.deferred && !pl.rag && !pl.handoff) {
+        reason = pl.deferred.reason;
+        edit = pl.deferred.edit;
+      }
       if (!reason) continue;
       if (pl.controlMode === 'supported') {
         pl.controlMode = 'falling';
