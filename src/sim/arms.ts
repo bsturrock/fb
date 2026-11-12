@@ -16,7 +16,7 @@ import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
 import { armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
-import { cullGeom, geomNear, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
+import { cullGeom, geomNear, isSupportedLeg, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
   relPose, round, rv, scale, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
@@ -159,19 +159,29 @@ export interface ArmHost {
   reverseOrder: boolean;
   /** Solved manifolds of the last step (physical forearm classification for ragdoll owners). */
   contacts(): ContactRec[];
+  /**
+   * Contact motion arm clearance (absent = off): every supported, still-convertible player's published limbs (world
+   * shapes of its last pose), keyed by player; the arm tasks meet the other players' limbs as obstacles.
+   */
+  publishedLimbs?(): Map<PlayerId, { key: string; shape: RAPIER.Shape; pose: Pose }[]>;
+  /** Contact motion arm clearance (with `publishedLimbs`): the shapes the owner's pose shows for an arm chain. */
+  shownArmShapes?(side: ArmSide, shoulder: Vec3, elbow: Vec3, wrist: Vec3, palm: Vec3): { shape: RAPIER.Shape; pose: Pose }[];
 }
 
 interface Obstacle {
   playerId: PlayerId;
   part: BodyPartId;
   region: ColliderRegion;
-  collider: RAPIER.Collider;
+  /** Absent for a published limb (`limb`): a shape only. */
+  collider?: RAPIER.Collider;
   shape: RAPIER.Shape;
   /** Collider pose relative to its body. */
   local: Pose;
   rb: RAPIER.RigidBody;
   /** Arm self-clearance: a piece of the owner's own measured trunk (never a grip, clamp or touch target). */
   self?: true;
+  /** Contact motion arm clearance: a supported player's published limb (a limb region: never a grip or clamp surface). */
+  limb?: true;
 }
 
 interface Hit {
@@ -224,8 +234,6 @@ interface ArmRt {
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
-/** Contact motion M1: the arm-task twist window widths tried, in steps of the profile's rate. */
-const TWIST_WIDEN = [1, 3, 9];
 const ELIGIBLE: ColliderRegion[] = ['torso', 'pelvis', 'support', 'capsule'];
 
 
@@ -237,7 +245,15 @@ export class ArmSystem {
   keepLedger = false;
   readonly wrap = new Map<PlayerId, { status: WrapStatus; target: PlayerId | null; azimuthDeg: Partial<Record<ArmSide, number>>; basis: { near: Vec3; side: Vec3 } | null; reasons: string[] }>();
   private readonly arms = new Map<PlayerId, Record<ArmSide, ArmRt>>();
+  /**
+   * Contact motion M1: the arm-task substep (counted by preStep, so a substep's reach and its post-step solve share it)
+   * and each arm's twist when the substep began: every solve of a substep is windowed around that one twist, so the
+   * twist turns at most one rate step per substep however often the arm is solved and committed within it.
+   */
+  private twSubstep = 0;
+  private readonly twAnchor = new Map<string, { substep: number; rad: number | null }>();
   private obstacles = new Map<PlayerId, Obstacle[]>();
+  private readonly limbObstacles = new Map<PlayerId, Obstacle[]>();
   /** Arm self-clearance: each owner's measured trunk pieces (body frame), when the profile is on. */
   private readonly trunk = new Map<PlayerId, { pieces: TrunkPiece[]; obstacles: Obstacle[] }>();
   /** Body poses at the start of the substep, keyed by engine body handle (proxy or ragdoll segment). */
@@ -366,7 +382,31 @@ export class ArmSystem {
   private opponents(owner: PlayerId): Obstacle[] {
     const out: Obstacle[] = [];
     for (const [id, obs] of this.obstacles) if (id !== owner) out.push(...obs);
+    for (const [id, obs] of this.limbObstacles) if (id !== owner) out.push(...obs);
     return out;
+  }
+
+  /**
+   * Contact motion arm clearance: this substep's published limbs of every supported player as obstacles on its body (the
+   * limbs were posed at the body's pose of the last solve, which is its pose now, before this substep's solve).
+   */
+  private buildLimbObstacles(): void {
+    this.limbObstacles.clear();
+    const L = this.host.publishedLimbs?.();
+    if (!L) return;
+    for (const pl of this.host.players()) {
+      const ls = L.get(pl.id);
+      if (!ls?.length || pl.ragdoll) continue;
+      const bp = this.prePose(pl.rb);
+      const obs: Obstacle[] = [];
+      for (const e of ls) {
+        const k = e.key.slice(e.key.indexOf(':') + 1);
+        const region: ColliderRegion = k.endsWith('UpperArm') ? 'upperArm' : k.endsWith('Forearm') ? 'forearm' : k.endsWith('Thigh') ? 'thigh' : k.endsWith('Shin') ? 'shin' : k.endsWith('Shoe') ? 'shoe' : 'palm';
+        const part = (region === 'palm' ? k.replace(/Palm.*|Hand.*|Fingers.*/, 'Forearm') : region === 'shoe' ? k.replace('Shoe', 'Shin') : k) as BodyPartId;
+        obs.push({ playerId: pl.id, part, region, shape: e.shape, local: relPose(bp, e.pose), rb: pl.rb, limb: true });
+      }
+      this.limbObstacles.set(pl.id, obs);
+    }
   }
 
   private obstaclePose(o: Obstacle, bodyPose?: Pose): Pose {
@@ -421,18 +461,23 @@ export class ArmSystem {
     let best: ArmPoseSolve | null = null;
     let bestDepth = Infinity;
     let bestOver = Infinity;
-    // contact motion M1 (a twist profile): each pole's elbow is first turned about the shoulder-to-palm line into the
-    // twist window (the range, within one step of the last committed twist; then within 3 and 9 steps), then into the
-    // range alone, and only then taken as the pole gives it, so the twist never makes a collision-valid arm (or a grip's
-    // pose) invalid, and an obstacle that blocks the window widens it gradually instead of releasing the twist at once
+    // contact motion M1 (a twist profile): each pole's elbow is turned about the shoulder-to-palm line into the twist
+    // window: the range, within one step of the last committed twist (the range alone before there is one). Nothing
+    // outside it is tried: collision-free end poses do not make a continuous path between them, so a palm the window
+    // cannot reach validly gets the least bad pose inside it, and the callers' obstruction handling stalls or retreats
+    // the reach (`reach`, the post-step push-out) or releases a held hand (`invalidPose`), instead of the elbow turning
+    // around the obstacle in one step
     const TW = J?.shoulderTwist;
     const wins: ({ mid: number; lo: number; hi: number } | null)[] = [];
     if (TW) {
-      const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? armTwistRad(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
-      if (prev !== null) for (const k of TWIST_WIDEN) wins.push(twistWindow(J!.shoulder, TW, prev, k * this.host.dt));
-      wins.push(twistWindow(J!.shoulder, TW, null, 0));
-    }
-    wins.push(null);
+      const key = `${pl.id}:${a.side}`;
+      let anchor = this.twAnchor.get(key);
+      if (!anchor || anchor.substep !== this.twSubstep) {
+        const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? armTwistRad(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
+        this.twAnchor.set(key, (anchor = { substep: this.twSubstep, rad: prev }));
+      }
+      wins.push(twistWindow(J!.shoulder, TW, anchor.rad, this.host.dt));
+    } else wins.push(null);
     // fitted poles often land on the same elbow (the window's edge): each elbow is judged once
     const tried: Vec3[] = [];
     // and within a pass the elbow nearest the last committed one is judged first, so a pass that has to leave the window
@@ -452,12 +497,21 @@ export class ArmSystem {
         tried.push(r.mid);
       }
       const wrist = add(r.mid, scale(sub(r.end, r.mid), P.forearmM / (P.forearmM + P.palmExtensionM)));
-      const up = this.segmentHit(sW, r.mid, P.upperArmRadiusM, obstacles, tol + 0.01, poses);
-      const fa = this.segmentHit(r.mid, wrist, P.forearmRadiusM, obstacles, tol + 0.01, poses);
-      const pc = this.query(this.palmBall, this.palmCenter(r.end, wrist), { x: 0, y: 0, z: 0, w: 1 }, obstacles, tol + 0.01, poses);
+      // contact motion arm clearance: other players' limbs are met by this arm's shown shapes (the pose's, which the other
+      // player's guard and a conversion check), the active colliders by the arm task's own
+      const SQ = this.host.shownArmShapes;
+      const body = SQ ? obstacles.filter((o) => !o.limb) : obstacles;
+      const up = this.segmentHit(sW, r.mid, P.upperArmRadiusM, body, tol + 0.01, poses);
+      const fa = this.segmentHit(r.mid, wrist, P.forearmRadiusM, body, tol + 0.01, poses);
+      const pc = this.query(this.palmBall, this.palmCenter(r.end, wrist), { x: 0, y: 0, z: 0, w: 1 }, body, tol + 0.01, poses);
       const self = this.selfHit(pl, ownerPose, r.mid, wrist, r.end);
+      const limbHits: (Hit | null)[] = [];
+      if (SQ && body.length < obstacles.length) {
+        const lo = obstacles.filter((o) => o.limb);
+        for (const sh of SQ(a.side, sW, r.mid, wrist, r.end)) limbHits.push(this.query(sh.shape, sh.pose.p, sh.pose.q, lo, tol + 0.01, poses));
+      }
       let worst: Hit | null = null;
-      for (const h of [up, fa, pc, self]) if (h && (!worst || h.distance < worst.distance)) worst = h;
+      for (const h of [up, fa, pc, self, ...limbHits]) if (h && (!worst || h.distance < worst.distance)) worst = h;
       // plan 12: an upper arm past the shoulder cone (owner core frame) is invalid, as a hit is
       const over = J ? swingExcess(J.shoulder, qInvRot(ownerPose.q, norm(sub(r.mid, sW), v3(0, -1, 0))), a.sx).rad : 0;
       const valid = (!worst || worst.distance >= -tol) && over <= 0;
@@ -522,6 +576,7 @@ export class ArmSystem {
 
   // ---------------------------------------------------------------- stage 5-7: before the solve
   preStep(): void {
+    this.twSubstep++;
     const host = this.host;
     const dt = host.dt;
     const P = this.profile;
@@ -533,6 +588,7 @@ export class ArmSystem {
       this.prePoses.set(pl.rb.handle, poseOfRb(pl.rb));
       if (pl.ragdoll) for (const rb of Object.values(pl.ragdoll.bodies)) this.prePoses.set(rb.handle, poseOfRb(rb));
     }
+    this.buildLimbObstacles();
     const order = players; // already reversed by the simulation when reverseOrder is set
     const sides = host.reverseOrder ? [...SIDES].reverse() : SIDES;
     for (const pl of order) {
@@ -671,7 +727,7 @@ export class ArmSystem {
           const tpPart = this.prePose(h.obstacle.rb);
           const sW = toWorld(ownerPose, shoulderLocal(pl.body, side));
           // anchor = the target surface point under the achieved palm-contact landmark
-          const proj = h.obstacle.collider.projectPoint(sol.palm, false);
+          const proj = h.obstacle.collider!.projectPoint(sol.palm, false);
           const anchor = proj ? vc(proj.point) : h.pointTarget;
           const L = len(sub(anchor, sW));
           const palmDir = norm(sub(sol.palm, sol.wrist));
@@ -1243,6 +1299,9 @@ export class ArmSystem {
       for (const [own, other] of [[c.a, c.b], [c.b, c.a]] as const) {
         if (own.playerId !== pl.id || own.side !== side || (own.region !== 'forearm' && own.region !== 'palm')) continue;
         if (!other.playerId || other.playerId === pl.id) continue;
+        // a supported proxy's physical leg is not a grip surface: a grip anchors on the proxy's body, which the shown leg
+        // moves across, so the hand would hold a point the leg has left
+        if (isSupportedLeg(other)) continue;
         if (c.impulse < minImp) continue;
         let pt = c.points[0].pointWorld;
         let bi = -1;
@@ -1319,7 +1378,7 @@ export class ArmSystem {
         let best: { o: Obstacle; d: number } | null = null;
         for (const o of this.obstacles.get(tgt.id) ?? []) {
           if (!ELIGIBLE.includes(o.region)) continue;
-          const pr = o.collider.projectPoint(cap.anchor, false);
+          const pr = o.collider!.projectPoint(cap.anchor, false);
           if (!pr) continue;
           const d = len(sub(vc(pr.point), cap.anchor)) * (pr.isInside ? -1 : 1);
           if (!best || Math.abs(d) < Math.abs(best.d)) best = { o, d };

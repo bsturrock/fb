@@ -277,6 +277,24 @@ export const FLOOR_HALF_M = 40;
 
 /** Collision-group membership bit of static ground (turf and obstacles) when a suspension player exists. */
 export const GROUP_STATIC = 0x0001;
+/** Contact motion experiment (`LegGuardProfile.physicalLegs`): a supported proxy's physical leg colliders. */
+export const GROUP_LEGS = 0x0002;
+/** Tag key prefix of a physical leg collider (not a contact record: its contacts are read by the leg ledger). */
+export const PHYS_LEG_KEY = 'physLeg';
+/**
+ * A leg shape as a convex hull in its body's frame: points and a rounding radius. A capsule is a thin box around its
+ * segment (half-width `LEG_HULL_EPS_M`) rounded by the radius less that width; a box its eight corners.
+ */
+export interface LegHull {
+  points: Float32Array;
+  r: number;
+}
+export const LEG_HULL_EPS_M = 2e-4;
+/**
+ * A supported proxy's physical leg collider (contact motion). Its contacts are ordinary contact records (fall response,
+ * contact observation, rules, evidence all see them); a consumer that must not use one says so where it filters.
+ */
+export const isSupportedLeg = (tag: { key: string }): boolean => tag.key.startsWith(PHYS_LEG_KEY);
 /** Rapier interaction groups: 16 membership bits (high half) and 16 filter bits (low half), unsigned. */
 export const interactionGroups = (membership: number, filter: number): number => ((((membership & 0xffff) << 16) | (filter & 0xffff)) >>> 0);
 
@@ -472,6 +490,34 @@ export class PhysicsWorld {
     }
     body.recomputeMassPropertiesFromColliders();
     return { body, colliders, support, supportShape, guard };
+  }
+
+  /**
+   * Contact motion: one massless physical leg collider on a supported proxy's body. Its shape carries the pose shape's
+   * geometry in the body frame (`legHull`), the collider itself at the body origin with zero mass properties: Rapier
+   * skips exactly-zero mass properties in a body's sum, so the body's mass, centre of mass and inertia stay bitwise what
+   * they were (an offset or rotated massless collider re-rounds the f32 inertia). It meets other players' bodies only:
+   * GROUP_LEGS excludes other leg colliders (and ground a suspension marks static); the simulation's contact hook
+   * excludes the floor and obstacles in every fixture, support guards, and other proxies' support capsules (a supported
+   * proxy's stand-in for its legs: leg on leg stays the pose guard's).
+   * Colliders of one body never meet each other, so the proxy's own trunk is excluded too. Reshaped by `syncPhysicalLegs`.
+   */
+  addLegCollider(body: RAPIER.RigidBody, playerId: PlayerId, part: BodyPartId, region: ColliderRegion, hull: LegHull, key: string): RAPIER.Collider {
+    const desc = (hull.r > 0 ? RAPIER.ColliderDesc.roundConvexHull(hull.points, hull.r) : RAPIER.ColliderDesc.convexHull(hull.points))!;
+    const c = this.world.createCollider(
+      this.colliderDesc(desc, 0, false)
+        .setMassProperties(0, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0, w: 1 })
+        .setCollisionGroups(interactionGroups(GROUP_LEGS, 0xffff & ~GROUP_STATIC & ~GROUP_LEGS))
+        .setActiveHooks(RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS),
+      body,
+    );
+    this.addTag(c, playerId, part, region, `${PHYS_LEG_KEY}:${key}`);
+    return c;
+  }
+
+  /** A leg collider's new geometry (body frame). */
+  reshapeLeg(c: RAPIER.Collider, hull: LegHull): void {
+    c.setShape(hull.r > 0 ? new RAPIER.RoundConvexPolyhedron(hull.points, undefined, hull.r) : new RAPIER.ConvexPolyhedron(hull.points, undefined));
   }
 
   /** Static ground (turf, obstacles) joins GROUP_STATIC so a suspension support capsule can exclude it. */

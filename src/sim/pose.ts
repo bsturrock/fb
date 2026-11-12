@@ -49,6 +49,11 @@ export interface PhysicalPose {
    * clamp of the request (m, the part of the residual reach clamping explains). Plan 12 (a joint-range profile): the floor
    * lift's rise (m) when the shoe is at its dorsiflexion limit (the foot on its toe, the heel lifted).
    */
+  /**
+   * Contact motion arm clearance (`armSweep`): a procedural arm whose ordinary step failed its sweep this pose: `step`
+   * (another, feasible step was shown) or `obstructed` (no feasible step: the last shown arm is held).
+   */
+  armPath?: Partial<Record<ArmSide, 'step' | 'obstructed'>>;
   legInfo?: Partial<Record<ArmSide, { variant: number; request: Vec3; liftM: number; rangeLiftM?: number; softM: number; rollF?: number; edgeX?: number; soleBase?: number; soleAngle?: number }>>;
   /**
    * Plan 08a (carry profile, ball carrier): the hand and ball on the achieved right forearm (carry.ts). The palm landmark is
@@ -73,7 +78,7 @@ export function carriedBall(pose: PhysicalPose | null | undefined): Pose | null 
  * - `offset`: the ordinary procedural / clip request shifted by a world offset (a released foot rejoining it).
  */
 export type FootRequest =
-  | ({ kind: 'plant'; heelW: Vec3; headingRad: number; rollF: number; toeZ: number; edgeX?: number } & FootBlend)
+  | ({ kind: 'plant'; heelW: Vec3; headingRad: number; rollF: number; toeZ: number; edgeX?: number; /** footwork's plant tolerance (m): a shown foot further off its anchor is released */ tolM?: number } & FootBlend)
   | ({ kind: 'target'; ankleW: Vec3; headingRad: number } & FootBlend)
   | ({ kind: 'offset'; offsetW: Vec3; headingRad?: number } & FootBlend);
 
@@ -304,6 +309,8 @@ export interface PoseClearance {
    */
   body?(shapes: PoseShape[]): number;
   bodyPush?(shapes: PoseShape[]): Vec3;
+  /** Contact motion arm clearance: `external`'s depth per external shape, in the same order on every call. */
+  externalEach?(shapes: PoseShape[]): number[];
   /**
    * Plan 07: the separating move (world, m) for shapes penetrating the external shapes: per pose shape its deepest
    * contact's outward normal times the depth beyond `toleranceM` (default 0), summed. Zero within that tolerance.
@@ -314,7 +321,24 @@ export interface PoseClearance {
    * against the other bodies where they will be after the profile's prediction time; `push` separates from whichever
    * is deeper. Absent: the legs use `external` and `push` as the arms do.
    */
-  legs?: { external(shapes: PoseShape[]): number; push(shapes: PoseShape[], toleranceM?: number): Vec3 };
+  legs?: {
+    external(shapes: PoseShape[]): number;
+    push(shapes: PoseShape[], toleranceM?: number): Vec3;
+    /**
+     * Contact motion prerequisite: depth against physical colliders only (what a conversion validates: active colliders
+     * and obstacles, not another supported player's published limbs), the deeper of where they stand and the prediction;
+     * `plain` where they stand only.
+     */
+    physical(shapes: PoseShape[]): number;
+    plain(shapes: PoseShape[]): number;
+    /**
+     * Contact motion (`LegGuardProfile.physicalLegs`): depth against the bodies the physical legs meet in the solve (the
+     * deeper of where they stand and the prediction), and the push that clears those to `metToleranceM` (every other
+     * shape to `toleranceM`). A physical leg left inside one is a contact the solver resolves on the whole proxy at once.
+     */
+    met?(shapes: PoseShape[]): number;
+    pushMet?(shapes: PoseShape[], toleranceM: number, metToleranceM: number): Vec3;
+  };
 }
 
 /** Penetration below the floor plane Y = 0 (analytic, m >= 0). */
@@ -465,6 +489,10 @@ export interface ProxyPoseInput {
    * advanced for validity (the push-out still applies). Absent: true.
    */
   handoffPossible?: boolean;
+  /** Contact motion prerequisite (`LegGuardProfile.sweep`): the supported legs' achieved step is swept and may take another placement. */
+  legSweep?: boolean;
+  /** Contact motion arm clearance (`ArmClearanceProfile.armPathSweep`): a procedural arm's step is judged along its motion. */
+  armSweep?: boolean;
   /** Plan 08 locomotion composition (free arms); absent: the plan 07 arms. */
   loco?: {
     profile: LocomotionProfile;
@@ -545,6 +573,15 @@ const LEG_ALTS = (sx: number): { off: Vec3; pole: Vec3 }[] => [
   { off: v3(0, 0.12, -0.38), pole: v3(0, 0.2, 1) },
 ];
 
+/**
+ * Contact motion (`legSweep`): the distinct knee poles of LEG_ALTS other than the primary's (authored frame). A placement
+ * at another pole keeps its ankle target: for a plant the foot stays on its anchor.
+ */
+const LEG_POLES = (sx: number): Vec3[] => {
+  const all = LEG_ALTS(sx).map((v) => v.pole);
+  return all.filter((p, i) => all.findIndex((q) => dist(p, q) < 1e-9) === i && dist(p, all[0]) > 1e-9);
+};
+
 /** Run-clip ball-carry hold (authored frame, x outward): the palm beside the chest at shoulder width, clear of the torso. */
 const CLIP_CARRY = v3(0.34, 0.24, 0.2);
 /** Sampled-arm clearance: bracket step and the largest move away from the body (m). */
@@ -614,6 +651,17 @@ const CONT_FLOOR_OK = 0.003;
 const CONT_PUSH_IT = 4;
 /** Largest total push-out of one pose (m): a deeper contact is not followed (the step falls back toward the candidate). */
 const CONT_PUSH_MAX_M = 0.05;
+/**
+ * Contact motion (physical legs): the depth a physical leg may be left at in a body it meets in the solve. The pose-only
+ * tolerance (HARD_OK) is a presentation allowance; a physical leg held there is a penetration the solver resolves on the
+ * whole proxy in one substep (a body on the floor behind it gives way to nothing: L3-F1-mirror0 E1, 285.8 N s).
+ */
+const PHYS_LEG_OK = 0.001;
+/**
+ * Contact motion prerequisite: largest move (m, departure or knee arc) between two samples of the leg sweep. A body
+ * part is several centimetres across, so a step that crosses one shows an intermediate overlap at this spacing.
+ */
+const LEG_SWEEP_M = 0.01;
 /**
  * A primary planted foot within this distance (m) of the shown departure is shown exactly (the plant must hold its
  * anchor within the 0.01 m drift contract; touchdown corrections are a few cm). Farther: it blends like any switch.
@@ -775,13 +823,27 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const ext = (shapes: PoseShape[]): number => (inp.clearance ? inp.clearance.external(shapes) : 0);
   // plan 13f (a leg-guard profile): the legs are also judged against where the other bodies will be next substep
   const legs = inp.clearance?.legs;
-  const extL = (shapes: PoseShape[]): number => (legs ? legs.external(shapes) : ext(shapes));
+  // the leg queries are asked of the same solved leg several times in one pose (candidate, continuity step, the legSweep
+  // checks): its shapes are never changed after the solve, and the bodies stand still within the pose, so each answer is kept
+  const legQ = (fn: (shapes: PoseShape[]) => number): ((shapes: PoseShape[]) => number) => {
+    const m = new WeakMap<PoseShape[], number>();
+    return (shapes) => {
+      let v = m.get(shapes);
+      if (v === undefined) m.set(shapes, (v = fn(shapes)));
+      return v;
+    };
+  };
+  const extL = legQ((shapes) => (legs ? legs.external(shapes) : ext(shapes)));
+  const physL = legQ((shapes) => (legs ? legs.physical(shapes) : ext(shapes)));
+  const metL = legQ((shapes) => legs!.met!(shapes));
+  const physMet = !!legs?.met && !process.env.D1_OFF;
   const softExt = (shapes: PoseShape[]): number => (inp.clearance?.soft ? inp.clearance.soft(shapes) : 0);
   // a sampled request at weight 0 still routes the legs through the continuous sampled solve (procedural targets)
   const smp = inp.sampled ?? null;
   const targetResidualM: Record<string, number> = {};
   const anklePitchDeg: Partial<Record<ArmSide, number>> = {};
   const legInfo: NonNullable<PhysicalPose['legInfo']> = {};
+  const armPath: NonNullable<PhysicalPose['armPath']> = {};
   /** Blend of a procedural request toward a sampled one (unit poles are blended as directions). */
   const toward = (a: Vec3, b: Vec3, w: number): Vec3 => lerp(a, b, clamp(w, 0, 1));
   const towardDir = (a: Vec3, b: Vec3, w: number): Vec3 => norm(toward(norm(a), norm(b), w), norm(a));
@@ -1016,6 +1078,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         if (last) setMemVec(mem, `${k}:s`, last);
         const pb = memVec(mem, `${k}:b`);
         const handed = !!pb && !!last2 && dist(palm0, pb) > CONT_BASE_MPS * dt;
+        // contact motion arm clearance (`armSweep`): the last shown target (body frame), read before the request is recorded
+        const shown0 = inp.armSweep ? contShown(mem, k) : null;
         const dp0 = contPrev(mem, k, palm0, dt);
         const dp = handed ? sub(sub(scale(last!, 2), last2!), palm0) : dp0;
         // plan 14: a clip arm on a composed pose turns its shown pole with the request's own pole, as the departure is
@@ -1065,9 +1129,106 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           const shownPushed = al < 1 || ext(chosen.shapes) > HARD_OK;
           if (shownPushed) a = atM(al);
           if (P?.trace) contDbg = { ...(P.contLast ?? { a0: al, dd: 0 }), al, push: dist(a.tgtL!, add(palm0, lerp(dp, dc, al))) };
+          let shownD = shownPushed ? sub(a.tgtL!, palm0) : dc;
+          let shownP = al < 1 ? towardDir(pp, pc, al) : pc;
+          // contact motion arm clearance (`armSweep`): the step is judged along its motion, from the last shown arm (its
+          // target and pole, body frame, solved at the body's pose now) to the new one, in samples at most LEG_SWEEP_M
+          // apart with the elbow re-solved (twist window and shoulder cone included). No external shape (another body,
+          // another player's limb or arm-task arm), nor the floor or the own trunk, may go past the larger of HARD_OK
+          // and its depth at the start: a step makes no new collision and deepens none. An arm that starts past HARD_OK
+          // (trapped) must also end less deep. A failed ordinary step tries, from the shown arm, the rate-limited step
+          // toward each candidate (the chosen one first; the alternates are the existing elbow/pole placements), half
+          // of it, each also pushed out (the ordinary push and cap), and the ordinary step's swept prefix: the clear step
+          // nearest the chosen target, else the least deep. With none feasible the shown arm is held and reported.
+          if (inp.armSweep && guard && shown0 && pp0 && inp.clearance?.externalEach) {
+            const EE = inp.clearance.externalEach;
+            const vecOf = (c: ArmC): number[] => [...EE(c.shapes), floorDepth(c.shapes), c.body ?? 0];
+            const held0 = procedural(shown0, pp0)();
+            const e0 = vecOf(held0);
+            const lim = e0.map((x) => Math.max(HARD_OK, x) + 1e-4);
+            const d0 = Math.max(...e0);
+            const trapped = d0 > HARD_OK + 1e-9;
+            if ((globalThis as any).SELFTRADE && trapped) lim[lim.length - 1] = Infinity;
+            if ((globalThis as any).ARMDBG) (globalThis as any).ARMDBG({ k: `${inp.playerId}:${k}`, start: e0.map((x, j) => (x > 0.001 ? `${j}:${(x * 100).toFixed(1)}` : '')).filter(Boolean).join(' '), n: e0.length });
+            const angOf = (p: Vec3): number => Math.acos(clamp(dot(norm(pp0), norm(p)), -1, 1));
+            const sweep = (tL: Vec3, poleL: Vec3, end: ArmC): number | null => {
+              const n = Math.max(1, Math.ceil(Math.max(dist(shown0, tL), angOf(poleL) * R.lengths.upperArm) / LEG_SWEEP_M));
+              let e = 0;
+              for (let i = 1; i <= n; i++) {
+                const v = vecOf(i === n ? end : procedural(lerp(shown0, tL, i / n), towardDir(pp0, poleL, i / n))());
+                for (let j = 0; j < v.length; j++) if (v[j] > lim[j]) return null;
+                if (i === n) e = Math.max(...v);
+              }
+              return !trapped || e < d0 - 1e-4 ? e : null;
+            };
+            if (sweep(a.tgtL!, shownP, a) === null) {
+              const mps = lo ? CONT_L3_MPS : CONT_ARM_MPS;
+              const rad = lo ? CONT_L3_RADPS : CONT_POLE_RADPS;
+              const goal = chosen.tgtL!;
+              let best: { c: ArmC; t: Vec3; p: Vec3; e: number; prog: number } | null = null;
+              const DBG = (globalThis as any).ARMDBG as ((r: Record<string, unknown>) => void) | undefined;
+              const consider = (c: ArmC, t: Vec3, p: Vec3): void => {
+                const e = sweep(t, p, c);
+                if (DBG) { const v = vecOf(c); DBG({ k: `${inp.playerId}:${k}`, e, end: v.map((x, j) => (x > lim[j] ? `${j}:${(x * 100).toFixed(1)}>${(lim[j] * 100).toFixed(1)}` : '')).filter(Boolean).join(' '), endMax: Math.max(...v) }); }
+                if (e === null) return;
+                const clear = e <= HARD_OK + 1e-9;
+                const prog = dist(t, goal);
+                const bestClear = !!best && best.e <= HARD_OK + 1e-9;
+                if (!best || (clear && (!bestClear || prog < best.prog - 1e-6)) || (!clear && !bestClear && e < best.e - 1e-6)) best = { c, t, p, e, prog };
+              };
+              const pushed = (t0: Vec3, pl: Vec3): { c: ArmC; t: Vec3 } => {
+                let t = t0;
+                let c = procedural(t, pl)();
+                for (let i = 0; i < CONT_PUSH_IT && c.depth > HARD_OK && inp.clearance?.push; i++) {
+                  const pw = inp.clearance.push(c.shapes);
+                  const pv = qInvRot(pose.q, c.selfShapes && inp.clearance.bodyPush ? add(pw, inp.clearance.bodyPush(c.selfShapes)) : pw);
+                  const m = len(pv);
+                  if (m < 1e-6) break;
+                  t = add(t0, clampLen(sub(addScaled(t, pv, 1 + 0.001 / m), t0), CONT_PUSH_MAX_M));
+                  c = procedural(t, pl)();
+                }
+                return { c, t };
+              };
+              for (const j of [r.index, ...cands.keys()].filter((v, i, arr) => arr.indexOf(v) === i)) {
+                const cj = cands[j]();
+                const dd = dist(shown0, cj.tgtL!);
+                const ang = angOf(cj.poleL!);
+                const f1 = Math.min(1, dd > 1e-9 ? (mps * dt) / dd : 1, ang > 1e-9 ? (rad * dt) / ang : 1);
+                for (const f of [f1, f1 / 2]) {
+                  const t0 = lerp(shown0, cj.tgtL!, f);
+                  const pl = towardDir(pp0, cj.poleL!, f);
+                  const c0 = procedural(t0, pl)();
+                  consider(c0, t0, pl);
+                  if (c0.depth > HARD_OK) {
+                    const ps = pushed(t0, pl);
+                    consider(ps.c, ps.t, pl);
+                  }
+                }
+              }
+              for (const f of [0.75, 0.5, 0.25]) {
+                const t = lerp(shown0, a.tgtL!, f);
+                const pl = towardDir(pp0, shownP, f);
+                consider(procedural(t, pl)(), t, pl);
+              }
+              const b = best as { c: ArmC; t: Vec3; p: Vec3 } | null;
+              if (b) {
+                a = b.c;
+                shownD = sub(b.t, palm0);
+                shownP = b.p;
+                armPath[s] = 'step';
+                if (P?.on) P.armSteps = (P.armSteps ?? 0) + 1;
+              } else {
+                a = held0;
+                shownD = sub(shown0, palm0);
+                shownP = pp0;
+                armPath[s] = 'obstructed';
+                if (P?.on) P.armHolds = (P.armHolds ?? 0) + 1;
+              }
+            }
+          }
           // the shown target (with its push-out) is the next pose's start: each step then only needs a shallow push
-          setMemVec(mem, `${k}:d`, shownPushed ? sub(a.tgtL!, palm0) : dc);
-          setMemVec(mem, `${k}:p`, al < 1 ? towardDir(pp, pc, al) : pc);
+          setMemVec(mem, `${k}:d`, shownD);
+          setMemVec(mem, `${k}:p`, shownP);
         } else {
           setMemVec(mem, `${k}:d`, dc);
           setMemVec(mem, `${k}:p`, pc);
@@ -1119,6 +1280,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     else if (fr?.kind === 'offset') base = add(base, qInvRot(pose.q, fr.offsetW));
     const frHeading = fr?.headingRad;
     const frPole = fr && frHeading !== undefined && (fr.kind !== 'offset' || (fr.poleW ?? 0) > 0) ? v3(Math.sin(frHeading), 0.2, Math.cos(frHeading)) : null;
+    // an authored knee pole (x across, z along) in the foot heading frame: LEG_ALTS[0]'s pole there is frPole
+    const headingPole = (p: Vec3, h: number): Vec3 => v3(p.x * Math.cos(h) + p.z * Math.sin(h), p.y, -p.x * Math.sin(h) + p.z * Math.cos(h));
     const hip = W(hipL);
     // plan 07a (ground-relative legs): the previous shown knee keeps the bend plane when the pole degenerates
     const prevKneeL = gr ? memVec(mem, `${s}Leg:e`) : null;
@@ -1186,11 +1349,13 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       };
       return { solve, hdir };
     };
-    const variant = (o: Vec3, poleL: Vec3) => (): LegC => {
+    // `atPole`: the primary placement at the knee pole `poleL` (LEG_POLES), in the foot heading frame where the foot has one
+    const variant = (o: Vec3, poleL: Vec3, atPole = false) => (): LegC => {
       let target = W(add(base, o));
       const primary = len(o) < 1e-9;
       const ordinary = (): Vec3 => qRot(pose.q, sl ? towardDir(poleL, sl.poleLocal, smp!.weight) : poleL);
-      const pole = frPole && primary ? (fr?.poleW === undefined ? frPole : towardDir(ordinary(), frPole, fr.poleW)) : ordinary();
+      const hp = atPole && frPole ? headingPole(poleL, frHeading!) : null;
+      const pole = hp ? (fr?.poleW === undefined ? hp : towardDir(ordinary(), hp, fr.poleW)) : frPole && primary ? (fr?.poleW === undefined ? frPole : towardDir(ordinary(), frPole, fr.poleW)) : ordinary();
       if (sl || gr) {
         // Sampled legs, all continuous in the clip phase (no searches or switches): the solve above, stance foot IK, then
         // a fixed-point floor lift for what is left (a pitch at the ankle range limit, a blend toward the procedural gait).
@@ -1291,9 +1456,39 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     // the primary leg is tried first, an offset on top would add that correction twice
     const own = fr?.poleW === undefined ? 0 : fr.carried && mem[`${k}:own`] !== undefined ? mem[`${k}:own`] : (fr.kind === 'plant' ? 1 : fr.kind === 'target' ? 2 : 3) + 4 * (fr.seed ?? 0);
     const rebased = own !== 0 && mem[`${k}:own`] !== undefined && mem[`${k}:own`] !== own;
-    const r = pick(LEG_ALTS(sx).map((v) => variant(v.off, v.pole)), rebased ? 0 : mem[k], !!sl || !!gr, !!gr);
+    const alts = LEG_ALTS(sx);
+    const once = (fn: () => LegC): (() => LegC) => {
+      let c: LegC | undefined;
+      return () => (c ??= fn());
+    };
+    const cands = alts.map((v) => once(variant(v.off, v.pole)));
+    // contact motion (`legSweep`): index alts.length + j is the primary placement at knee pole LEG_POLES[j]
+    const kneePoles = inp.legSweep && gr ? LEG_POLES(sx) : [];
+    const poleCands = kneePoles.map((p) => once(variant(v3(), p, true)));
+    const candAt = (i: number): (() => LegC) => (i < alts.length ? cands[i] : poleCands[i - alts.length]);
+    const prevV = rebased ? 0 : mem[k];
+    // footwork's plant test on a shown leg (observeFoot): its contact feature on the anchor across the ground and the shoe's
+    // lowest corner on it, within the plant tolerance
+    const plantKept = (x: LegC, p: FootRequest & { kind: 'plant' }): boolean => {
+      const rf = x.rollF ?? p.rollF;
+      const ex = x.edgeX ?? p.edgeX ?? 0;
+      const dir = v3(Math.sin(p.headingRad), 0, Math.cos(p.headingRad));
+      const lat = v3(Math.cos(p.headingRad), 0, -Math.sin(p.headingRad));
+      const anchor = addScaled(addScaled(p.heelW, dir, p.toeZ * rf), lat, ex);
+      const feat = add(x.ankle, qRot(pitchShin(x.chain.frameB, x.pitch), v3(ex, -soleUp, p.toeZ * rf)));
+      const shoe = x.shapes[2] as Extract<PoseShape, { kind: 'box' }>;
+      let low = Infinity;
+      for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) low = Math.min(low, shoe.c.y + qRot(shoe.q, v3(a * shoe.he.x, b * shoe.he.y, c * shoe.he.z)).y);
+      return Math.hypot(Math.hypot(feat.x - anchor.x, feat.z - anchor.z), low - p.heelW.y) <= (p.tolM ?? 0.01) + 1e-9;
+    };
+    const ordinaryR = pick(cands, prevV !== undefined && prevV >= alts.length ? 0 : prevV, !!sl || !!gr, !!gr);
+    // a leg step (`r`: the chosen placement) and whether it is clear (`ok`): no external shape past the larger of
+    // HARD_OK and its depth at the start, and (physical legs) no met body past the larger of PHYS_LEG_OK and its start
+    const legStep = (r: { best: LegC; index: number }): { r: { best: LegC; index: number }; l: LegC; contDbg: Record<string, number> | null; ok: boolean; keptOn: boolean } => {
+    const primaryAt = r.index === 0 || r.index >= alts.length;
     mem[k] = r.index;
     let l = r.best;
+    let ok = true;
     // plan 07 continuity (ground-relative legs): the ankle target's departure from the ordinary request (variant offset,
     // plant correction, floor lift) and the knee pole move toward the chosen candidate at a bounded rate
     let contDbg: Record<string, number> | null = null;
@@ -1310,41 +1505,53 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const shownPrev = rebased && last ? (last2 ? sub(scale(last, 2), last2) : last) : null;
       const dp0 = contPrev(mem, k, base, dt);
       if (rebased) setMemVec(mem, `${k}:b`, base);
-      const dp = shownPrev ? sub(shownPrev, base) : dp0;
+      const dp0r = shownPrev ? sub(shownPrev, base) : dp0;
+      // fault (PoseDebug.ownerChangeJumpM): a new owner's step starts off the shown path
+      const dp = rebased && dp0r && inp.debug?.ownerChangeJumpM ? add(dp0r, v3(0, inp.debug.ownerChangeJumpM, 0)) : dp0r;
       const pp = memVec(mem, `${k}:p`);
       const poleStep = pp && inp.loco ? dist(norm(pp), norm(pc)) : 0;
-      const exactPlant = fr?.kind === 'plant' && r.index === 0 && !!dp && dist(dp, dc) <= (rebased ? CONT_L3_PLANT_MPS * (inp.dtS ?? 0) : CONT_PLANT_EXACT_M) && poleStep <= CONT_L3_RADPS * (inp.dtS ?? 0);
+      // (contact motion D6, `legSweep`: a physical plant shown in a met body past PHYS_LEG_OK is not exact: it takes the
+      // pushed step every other owner takes there. Exempt, a plant crept up to 12 mm into a closing body unpushed (L3-F4-
+      // gripTarget D, 152 substeps), then jumped 4.5 cm in one substep at HARD_OK, and a released one jumped by the whole
+      // push its new owner took (L3-F4-gripOwner R left 1.654 s: 8 mm deep, 1.1 cm))
+      const exactPlant = fr?.kind === 'plant' && primaryAt && !!dp && dist(dp, dc) <= (rebased ? CONT_L3_PLANT_MPS * (inp.dtS ?? 0) : CONT_PLANT_EXACT_M) && poleStep <= CONT_L3_RADPS * (inp.dtS ?? 0) && !(inp.legSweep && physMet && metL(l.shapes) > PHYS_LEG_OK);
       if (dp && pp && dt > 0 && !exactPlant) {
         const chosen = l;
-        const floorC = floorDepth(chosen.shapes);
-        const extOk = Math.max(HARD_OK, chosen.depth) + 1e-9;
-        const floorOk = Math.max(CONT_FLOOR_OK, floorC) + 1e-9;
         // the blended target, pushed out along the contact normals (and up off the floor) while it penetrates
         // plan 12 (a joint-range profile): a continuing plant's shown leg, its knee pole still blending in, keeps its sole
         // point on the anchor at the blended pole. With the shoe at the ankle range limit the foot turns with the shin
         // about that point (the heel lifts as the shin leans past the range), and the ankle moves with it as fast as the
         // shin turns; blended at the plant rate it would drag the sole point off its anchor (L3-F1-mirror0: D's toe, 1.2 cm)
-        const pivot = !!inp.jointRange && fr?.kind === 'plant' && r.index === 0 && !rebased && chosen.rollF !== undefined && dist(dp, dc) <= CONT_PLANT_EXACT_M ? fr : null;
-        const at = (al: number, deep = false): LegC & { good: boolean; rank: number } => {
-          const sol = legSolver(qRot(pose.q, towardDir(pp, pc, al)));
-          const t0 = pivot ? plantIk(sol.solve, W(add(base, lerp(dp, dc, al))), pivot, chosen.rollF!, chosen.edgeX ?? 0) : W(add(base, lerp(dp, dc, al)));
+        const pivot = !!inp.jointRange && fr?.kind === 'plant' && primaryAt && !rebased && chosen.rollF !== undefined && dist(dp, dc) <= CONT_PLANT_EXACT_M ? fr : null;
+        // the step toward a target placement (departure `dcT`, pole `pcT`, candidate `ch`): the chosen one, or (feasibility
+        // check) another placement
+        const atTo = (dcT: Vec3, pcT: Vec3, ch: LegC, pv: typeof pivot, al: number, deep = false): LegC & { good: boolean; rank: number } => {
+          const extOk = Math.max(HARD_OK, ch.depth) + 1e-9;
+          const floorOk = Math.max(CONT_FLOOR_OK, floorDepth(ch.shapes)) + 1e-9;
+          const sol = legSolver(qRot(pose.q, towardDir(pp, pcT, al)));
+          const t0 = pv ? plantIk(sol.solve, W(add(base, lerp(dp, dcT, al))), pv, ch.rollF!, ch.edgeX ?? 0) : W(add(base, lerp(dp, dcT, al)));
           let t = t0;
           let c = sol.solve(t);
           let de = extL(c.shapes);
+          const metD = (x: LegC): number => (physMet ? metL(x.shapes) : 0);
+          let dm = metD(c);
           // pushed toward validity (HARD_OK), also when no candidate is valid (tangled with another body)
           const G = deep ? inp.ragdoll.poseGuard : undefined;
-          for (let i = 0; i < (G ? G.deepPushIterations : CONT_PUSH_IT) && (de > HARD_OK || c.depth > floorOk) && inp.clearance?.push; i++) {
+          for (let i = 0; i < (G ? G.deepPushIterations : CONT_PUSH_IT) && (de > HARD_OK || c.depth > floorOk || dm > PHYS_LEG_OK) && inp.clearance?.push; i++) {
             // Correct only the excess depth: a full push at the validity threshold jumps by the whole tolerance.
-            const pv = legs ? legs.push(c.shapes, inp.loco ? HARD_OK - 0.001 : 0) : inp.clearance.push(c.shapes, inp.loco ? HARD_OK - 0.001 : 0);
+            const tol = inp.loco ? HARD_OK - 0.001 : 0;
+            const pv = physMet ? legs!.pushMet!(c.shapes, tol, 0) : legs ? legs.push(c.shapes, tol) : inp.clearance.push(c.shapes, tol);
             if (c.depth > floorOk) pv.y += inp.loco ? c.depth - floorOk + 0.001 : c.depth;
             const m = len(pv);
             if (m < 1e-6) break;
             t = add(t0, clampLen(sub(addScaled(t, pv, inp.loco ? 1 : 1 + 0.001 / m), t0), G ? G.deepPushM : CONT_PUSH_MAX_M));
             c = sol.solve(t);
             de = extL(c.shapes);
+            dm = metD(c);
           }
-          return { ...c, depth: de, soft: softExt(c.shapes), req: t, ik: chosen.ik, rollF: chosen.rollF, edgeX: chosen.edgeX, good: de <= extOk && c.depth <= floorOk, rank: Math.max(de, c.depth) };
+          return { ...c, depth: de, soft: softExt(c.shapes), req: t, ik: ch.ik, rollF: ch.rollF, edgeX: ch.edgeX, good: de <= extOk && c.depth <= floorOk, rank: Math.max(de, c.depth) };
         };
+        const at = (al: number, deep = false): ReturnType<typeof atTo> => atTo(dc, pc, chosen, pivot, al, deep);
         const guard = inp.handoffPossible !== false;
         const memo = new Map<number, ReturnType<typeof at>>();
         const atM = (x: number): ReturnType<typeof at> => {
@@ -1352,14 +1559,16 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           if (!c) memo.set(x, (c = at(x)));
           return c;
         };
-        const al = continuityAlpha(dp, pp, dc, pc, dt, inp.loco ? (fr?.kind === 'plant' ? CONT_L3_PLANT_MPS : CONT_L3_MPS) : CONT_LEG_MPS, inp.loco ? CONT_L3_RADPS : CONT_POLE_RADPS, (x) => {
+        const mpsL = inp.loco ? (fr?.kind === 'plant' ? CONT_L3_PLANT_MPS : CONT_L3_MPS) : CONT_LEG_MPS;
+        const radL = inp.loco ? CONT_L3_RADPS : CONT_POLE_RADPS;
+        const al = continuityAlpha(dp, pp, dc, pc, dt, mpsL, radL, (x) => {
           const c = atM(x);
           return { good: !guard || c.good, depth: c.rank };
         }, P);
         if (P?.on && P.contLast) P.cont[`${inp.playerId}:${k}`] = P.contLast;
         // plan 07a: a chosen candidate that itself penetrates another body (no clear variant: tangled) is shown pushed
         // out as well, also once the blend toward it is complete (HC-F2-lowCarrier: A's shoe stood 13 cm in B's head)
-        const shownPushed = al < 1 || extL(chosen.shapes) > HARD_OK;
+        const shownPushed = al < 1 || extL(chosen.shapes) > HARD_OK || (physMet && metL(chosen.shapes) > PHYS_LEG_OK);
         if (shownPushed) l = atM(al);
         // plan 10c (C6, RagdollProfile.poseGuard): a convertible player's shown leg still past HARD_OK after the ordinary
         // push (4 iterations: reversed HC-F2-bothFallL2, B's ragdoll forearm 8 cm into A's thigh, where moving the ankle
@@ -1370,14 +1579,142 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           if (dl.rank < atM(al).rank) l = dl;
         }
         if (P?.trace) contDbg = { ...(P.contLast ?? { a0: al, dd: 0 }), al, push: dist(Lw(l.req!), add(base, lerp(dp, dc, al))) };
+        let shownD = shownPushed ? sub(Lw(l.req!), base) : dc;
+        let shownP = al < 1 ? towardDir(pp, pc, al) : pc;
+        // Contact motion prerequisite (`legSweep`): the achieved step is what the next pose starts from and what a conversion
+        // would start from, so it is judged itself, against the physical bodies (where they stand and, with the 13f
+        // prediction, where they will be). (1) A step still past HARD_OK after the guard tries the other placements: the
+        // same rate-limited, pushed step from the shown pose toward each clear one; the first clear step wins and becomes
+        // the chosen placement. (2) The step from the shown pose to the new one is swept: a move that would pass through a
+        // body (an intermediate depth past HARD_OK and past both ends) stops at its last clear point
+        const phys = physL;
+        if (inp.legSweep && guard) {
+          // the step's start: the last shown leg carried with the body (its shown ankle request and pole, body frame)
+          const qPrev = memVec(mem, `${k}:q`);
+          const start = legSolver(qRot(pose.q, pp)).solve(W(qPrev ?? add(base, dp)));
+          // physical legs: the met bodies' depth there
+          const metStart = physMet ? metL(start.shapes) : 0;
+          const metBad = (x: LegC): boolean => physMet && metL(x.shapes) > Math.max(PHYS_LEG_OK, metStart) + 1e-4;
+          const bad = (x: LegC): boolean => phys(x.shapes) > HARD_OK + 1e-9 || metBad(x);
+          // (1) only a shown leg past HARD_OK changes placement; a step that only takes a met body deeper (physical legs) is
+          // held by the sweep below. Trying every placement for that too (each a full rate-limited step) cost L4-F10-wrap-on
+          // 5495 shape queries in one tick (its legs wrapped, every placement 2-21 cm deep); the sweep holds such a step instead
+          // ... except a met-only step the sweep cannot start: its first sample from the carried start already takes the met
+          // body deeper, so the sweep would hold the leg where it stands for as long as the bodies stay (L3-F4-gripOwner
+          // reversed, R's left leg after its settle release at 1.654 s: 130 substeps held to the end of the run). That step
+          // tries the primary placement at the other knee poles only (the ankle target kept: the leg turns out of the contact)
+          const hard = phys(l.shapes) > HARD_OK + 1e-9;
+          const stuck = (): boolean => {
+            const d0s = physMet && qPrev ? sub(qPrev, base) : dp;
+            const ns = Math.max(1, Math.ceil(Math.max(dist(d0s, shownD), Math.acos(clamp(dot(norm(pp), norm(shownP)), -1, 1)) * R.lengths.thigh) / LEG_SWEEP_M));
+            return metBad(legSolver(qRot(pose.q, towardDir(pp, shownP, 1 / ns))).solve(W(add(base, lerp(d0s, shownD, 1 / ns)))));
+          };
+          if (hard || (physMet && metBad(l) && stuck())) {
+            // the knee poles of the primary placement first (a plant keeps its anchor), then the other placements (a
+            // plant's offset leaves its anchor: footwork releases it)
+            const order = [...kneePoles.map((_, j) => alts.length + j), ...(hard ? alts.keys() : [])];
+            for (const j of order) {
+              if (!bad(l)) break;
+              if (j === r.index) continue;
+              const cj = candAt(j)();
+              if (!cj.req || !cj.pole || cj.depth > HARD_OK || bad(cj)) continue;
+              const dcj = sub(Lw(cj.req), base);
+              const pcj = qInvRot(pose.q, cj.pole);
+              const pvj = j >= alts.length && !!inp.jointRange && fr?.kind === 'plant' && !rebased && cj.rollF !== undefined && dist(dp, dcj) <= CONT_PLANT_EXACT_M ? fr : null;
+              const mj = new Map<number, ReturnType<typeof atTo>>();
+              const atj = (x: number): ReturnType<typeof atTo> => {
+                let c = mj.get(x);
+                if (!c) mj.set(x, (c = atTo(dcj, pcj, cj, pvj, x)));
+                return c;
+              };
+              const alj = continuityAlpha(dp, pp, dcj, pcj, dt, mpsL, radL, (x) => ({ good: atj(x).good, depth: atj(x).rank }));
+              let sj = atj(alj);
+              if (inp.ragdoll.poseGuard && sj.depth > HARD_OK) {
+                const dl = atTo(dcj, pcj, cj, pvj, alj, true);
+                if (dl.rank < sj.rank) sj = dl;
+              }
+              if (sj.good && !bad(sj)) {
+                l = sj;
+                mem[k] = j;
+                shownD = sub(Lw(sj.req!), base);
+                shownP = alj < 1 ? towardDir(pp, pcj, alj) : pcj;
+                if (P?.on) P.legAlts = (P.legAlts ?? 0) + 1;
+              }
+            }
+          }
+          // the sweep: the departure and pole from the shown pose to the new one, in steps of at most LEG_SWEEP_M; physical
+          // legs: the step stops before a met body takes it deeper (its end included, however short the step)
+          // (physical legs: from the last shown leg carried with the body, `start`: the request base moves with the step, so
+          // the last departure from it is not where the leg stands, and stopping there would carry the leg on)
+          const d0 = physMet && qPrev ? sub(qPrev, base) : dp;
+          const n0 = Math.ceil(Math.max(dist(d0, shownD), Math.acos(clamp(dot(norm(pp), norm(shownP)), -1, 1)) * R.lengths.thigh) / LEG_SWEEP_M);
+          const n = physMet ? Math.max(1, n0) : n0;
+          const top = physMet ? n : n - 1;
+          if (n > 1 || (physMet && metBad(l))) {
+            const sampleAt = (f: number): LegC => {
+              const c = legSolver(qRot(pose.q, towardDir(pp, shownP, f))).solve(W(add(base, lerp(d0, shownD, f))));
+              return { ...c, depth: extL(c.shapes), req: W(add(base, lerp(d0, shownD, f))) };
+            };
+            const ends = Math.max(HARD_OK, phys(sampleAt(0).shapes), phys(l.shapes)) + 1e-4;
+            let last = 0;
+            for (let i = 1; i <= top; i++) {
+              const smpI = sampleAt(i / n);
+              if (phys(smpI.shapes) > ends || metBad(smpI)) break;
+              last = i;
+            }
+            if (last < top) {
+              const f = last / n;
+              l = { ...sampleAt(f), ik: l.ik };
+              shownD = lerp(d0, shownD, f);
+              shownP = towardDir(pp, shownP, f);
+              if (P?.on) P.legSweeps = (P.legSweeps ?? 0) + 1;
+            }
+          }
+          ok = !bad(l) || (phys(l.shapes) <= Math.max(HARD_OK, phys(start.shapes)) + 1e-4 && !metBad(l));
+        }
         // the shown target (with its push-out) is the next pose's start: each step then only needs a shallow push
-        setMemVec(mem, `${k}:d`, shownPushed ? sub(Lw(l.req!), base) : dc);
-        setMemVec(mem, `${k}:p`, al < 1 ? towardDir(pp, pc, al) : pc);
+        setMemVec(mem, `${k}:d`, shownD);
+        setMemVec(mem, `${k}:p`, shownP);
       } else {
         setMemVec(mem, `${k}:d`, dc);
         setMemVec(mem, `${k}:p`, pc);
       }
     }
+    if (kneePoles.length) setMemVec(mem, `${k}:q`, Lw(l.req ?? W(base)));
+    return { r, l, contDbg, ok, keptOn: fr?.kind === 'plant' ? plantKept(l, fr) : true };
+    };
+    // D6 (`legSweep`): a plant whose primary pick gives up (past HARD_OK) tries the primary at the knee poles first, the
+    // foot kept on its anchor, before any offset. That step is taken only when it is clear and keeps the plant within the
+    // footwork tolerance; otherwise the pose memory is put back and the ordinary choice runs, offsets included
+    // (physical legs: also a plant whose primary leg is in a met body past PHYS_LEG_OK: the first of the kept placements,
+    // the knee pole it holds first, clear of the met bodies is tried; with none clear the primary takes the pushed step)
+    let res: ReturnType<typeof legStep> | null = null;
+    const metHit = physMet && metL(cands[0]().shapes) > PHYS_LEG_OK;
+    if (kneePoles.length && fr?.kind === 'plant' && !rebased && (ordinaryR.index !== 0 || metHit) && (prevV === undefined || prevV === 0 || prevV >= alts.length)) {
+      const keep = [cands[0], ...poleCands];
+      const prevK = prevV === undefined ? undefined : prevV === 0 ? 0 : prevV - alts.length + 1;
+      let rk: { best: LegC; index: number } | null = null;
+      if (ordinaryR.index !== 0) rk = pick(keep, prevK, true, true);
+      else
+        for (const i of [...(prevK ? [prevK] : []), ...keep.keys()]) {
+          const c = keep[i]();
+          if (c.depth <= HARD_OK && metL(c.shapes) <= PHYS_LEG_OK) {
+            rk = { best: c, index: i };
+            break;
+          }
+        }
+      if (rk && rk.index !== 0 && rk.best.depth <= HARD_OK) {
+        const saved = { ...mem };
+        const tr = legStep({ best: rk.best, index: rk.index === 0 ? 0 : alts.length + rk.index - 1 });
+        if (tr.ok && tr.keptOn) res = tr;
+        else {
+          for (const key of Object.keys(mem)) if (!(key in saved)) delete mem[key];
+          Object.assign(mem, saved);
+        }
+      }
+    }
+    res ??= legStep(ordinaryR);
+    const { r, l, contDbg } = res;
     if (P?.trace) P.trace(`${inp.playerId}:${k}`, { cont: contDbg, v: r.index, base, dc: l.req ? sub(Lw(r.best.req!), base) : null, shown: l.req ? sub(Lw(l.req), base) : null, ankle: Lw(l.ankle), knee: Lw(l.knee), poleC: r.best.pole ? qInvRot(pose.q, r.best.pole) : null, pole: l.pole ? qInvRot(pose.q, l.pole) : null, fb: l.chain.fallback, chosenAnkle: Lw(r.best.ankle), depth: l.depth, chosenDepth: r.best.depth });
     if (sl || gr) targetResidualM[k] = dist(l.ankle, l.req ?? W(base));
     lm[`${s}Hip`] = hip;
@@ -1396,7 +1733,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     if (l.chain.fallback) straightFallback.push(`${s}Knee`);
     limbClearance[`${s}Leg`] = l.depth;
     if (sl || gr) anklePitchDeg[s] = (l.pitch * 180) / Math.PI;
-    if (inp.feet) legInfo[s] = { variant: r.index, request: l.req ?? W(base), liftM: l.ik && l.req ? dist(l.req, l.ik) : 0, ...(JA && l.ik && l.req && l.pitch <= -dorsi + 1e-6 ? { rangeLiftM: Math.max(0, l.req.y - l.ik.y) } : {}), softM: l.softM, soleBase: sl ? (fr?.soleW ?? 1) * smp!.weight * sl.footPitch : 0, soleAngle: l.soleAngle, ...(l.rollF !== undefined ? { rollF: l.rollF, edgeX: l.edgeX ?? 0 } : {}) };
+    if (inp.feet) legInfo[s] = { variant: r.index >= alts.length ? 0 : r.index, request: l.req ?? W(base), liftM: l.ik && l.req ? dist(l.req, l.ik) : 0, ...(JA && l.ik && l.req && l.pitch <= -dorsi + 1e-6 ? { rangeLiftM: Math.max(0, l.req.y - l.ik.y) } : {}), softM: l.softM, soleBase: sl ? (fr?.soleW ?? 1) * smp!.weight * sl.footPitch : 0, soleAngle: l.soleAngle, ...(l.rollF !== undefined ? { rollF: l.rollF, edgeX: l.edgeX ?? 0 } : {}) };
   }
   const out: PhysicalPose = { playerId: inp.playerId, segments: segs, jointLandmarksWorld: lm, hingeDeg, straightFallback, limbClearance };
   if (seat) out.carry = seat;
@@ -1405,5 +1742,6 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     out.anklePitchDeg = anklePitchDeg;
   }
   if (inp.feet) out.legInfo = legInfo;
+  if (Object.keys(armPath).length) out.armPath = armPath;
   return out;
 }

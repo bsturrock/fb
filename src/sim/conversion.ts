@@ -49,7 +49,15 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
         if (o === c.pl) continue;
         const oc = accepted.find((x) => x.pl === o);
         if (oc) ext.push(...externalFromRagdoll(oc.rag));
-        else ext.push(...externalFromColliders(host.activeColliders(o), (cc) => `${o.id}:${host.physics.tags.get(cc.handle)?.key ?? '?'}`));
+        else {
+          ext.push(...externalFromColliders(host.activeColliders(o), (cc) => `${o.id}:${host.physics.tags.get(cc.handle)?.key ?? '?'}`));
+          // contact motion experiment: another supported player's physical legs are bodies the candidate must clear
+          // (those in the solve: a leg kept off is inside a body the solver never sees it against)
+          if (o.legs?.enabled) {
+            const on = o.legs.colliders.filter((_, i) => o.legs!.on[i]);
+            ext.push(...externalFromColliders(on, (cc) => `${o.id}:${host.physics.tags.get(cc.handle)?.key ?? '?'}`));
+          }
+        }
       }
       const cp: Parameters<typeof validateCandidate>[3] = {};
       for (const pc of c.pl.proxy.colliders) {
@@ -88,6 +96,8 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
     const pl = c.pl;
     const before = host.bodyCount(pl.id);
     const oldHandle = pl.proxy.body.handle;
+    // contact motion experiment: the physical legs leave with the proxy body (removed with its colliders)
+    pl.legs = undefined;
     const audit = switchToRagdoll(host.physics, pl.proxy.body, c.rag);
     pl.rag = c.rag;
     // plan 08: an accepted conversion ends the locomotion composition (a rejected one keeps it: falling already cleared it)

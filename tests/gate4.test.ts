@@ -1066,21 +1066,34 @@ describe('plan 10e: rules revision 2', () => {
   });
 
   it('E1: after the ending players keep their stance request and yaw effort through the settle window', async () => {
-    // L3-F1-mirror0 with the defender wrapping in a lowered stance: both profiles end at the same substep and the defender
-    // is still a supported proxy for a while after it (the runner, a ragdoll by then, asks for full yaw effort). Plan 13d:
-    // was L3-F1-phase0, whose defender after Fast Run's contact timing has settled before the ending (no rise to compare)
+    // A defender standing in a lowered stance (0.78 m) on its suspension when the play ends: both profiles end at the same
+    // substep and the defender is still a supported proxy, carried by its suspension, through the window; the runner asks
+    // for full yaw effort. Controlled: the ending is the runner's foot over a line across its path (the sideline rule with
+    // its plane turned to face the run), 3.85 m from the defender, which nothing touches, so the ending's time and the
+    // defender's support do not hang on how a tackle goes. The players, profiles and runner are L3-F1-mirror0's.
+    // (Was L3-F1-mirror0's wrap in a lowered stance, and before plan 13d L3-F1-phase0. Since the physical supported legs
+    // that defender is falling through the window, its suspension unloaded (it pushes on 0 to 7 of the window's substeps,
+    // the core in free fall), and since contact motion D4-D6 it converts 19 substeps after the ending: the stance request
+    // reaches the body only through the suspension, so there was no rise to compare)
     const base = allFixtures().find((d) => d.id === 'L3-F1-mirror0')!;
+    const LINE_X = 2;
+    const STANCE = { heightM: 0.78 };
     const variant = (rules: RuleProfile): FixtureDef => ({
       ...base,
       id: `test-E1-${rules.revision ?? 1}`,
-      rules,
-      players: base.players.map((p) => (p.id === 'D' && p.controller.kind === 'wrapAttempt' ? { ...p, controller: { ...p.controller, stance: { heightM: 0.78 } } } : p)),
+      durationS: 3,
+      rules: { ...rules, sideline: { ...rules.sideline, enabled: true, outwardNormal: v3(1, 0, 0), offsetM: LINE_X } },
+      players: base.players.map((p) =>
+        p.id === 'D'
+          ? { ...p, initial: { x: 0, z: 3.85, yawDeg: 180, stance: { ...STANCE } }, controller: { kind: 'script' as const, segments: [{ fromS: 0, velocity: v3(), facing: v3(0, 0, -1), stance: { ...STANCE } }] } }
+          : p,
+      ),
     });
     const hist: RuleProfile = { ...base.rules!, revision: undefined, id: `${base.rules!.id}+historical` };
-    type Run = { stance: (number | null)[]; runner: { h: number | null; yaw: number | null }[]; h: number[] };
+    type Run = { stance: (number | null)[]; runner: { h: number | null; yaw: number | null }[]; h: number[]; pushN: number[]; kind?: string };
     const runs: Record<string, Run> = {};
     for (const [k, rules] of [['hist', hist], ['rev2', base.rules!]] as const) {
-      const out: Run = { stance: [], runner: [], h: [] };
+      const out: Run = { stance: [], runner: [], h: [], pushN: [] };
       let endT = NaN;
       const sim = await Simulation.create(variant(rules), {
         onSubstep: (s) => {
@@ -1088,6 +1101,7 @@ describe('plan 10e: rules revision 2', () => {
           // the ending substep ran on the intent decided before it; the override starts with the next one
           if (Number.isNaN(endT)) {
             endT = s.t;
+            out.kind = `${s.ending.kind} ${s.t.toFixed(4)}`;
             return;
           }
           const R = s.players.find((p) => p.id === 'R')!;
@@ -1096,15 +1110,23 @@ describe('plan 10e: rules revision 2', () => {
           if (D.representation !== 'proxy' || D.controlMode !== 'supported' || s.t > endT + 0.15) return;
           out.stance.push(D.intent.locomotion.stance?.heightM ?? null);
           out.h.push(s.poseOf(D).p.y);
+          out.pushN.push(D.sus?.appliedN ?? 0);
         },
       });
       await runSim(sim);
       expect(sim.ending, k).not.toBeNull();
+      // the defender is untouched: no contact of its own, no handoff
+      expect(sim.events.filter((e) => e.playerId === 'D' && /^contact|^representation$/.test(e.type)).map((e) => `${e.type} ${e.t.toFixed(4)}`), k).toEqual([]);
       sim.dispose();
       runs[k] = out;
     }
+    // the sample: both end at the same substep, on the line, and the defender is a supported proxy through the whole window,
+    // its suspension pushing on every substep of it (the stance request reaches the body only through the suspension)
+    expect(runs.rev2.kind).toBe(runs.hist.kind);
+    expect(runs.rev2.kind).toMatch(/^sidelineOut /);
     expect(runs.rev2.stance.length).toBeGreaterThan(20);
     expect(runs.hist.stance.length).toBeGreaterThan(20);
+    for (const k of ['hist', 'rev2']) expect(Math.min(...runs[k].pushN), k).toBeGreaterThan(0);
     // revision 2: the requests they stood in; the historical profile drops both for the profile's standing height
     expect(new Set(runs.rev2.stance)).toEqual(new Set([0.78]));
     expect(new Set(runs.rev2.runner.map((r) => `${r.h}/${r.yaw}`))).toEqual(new Set(['null/1']));

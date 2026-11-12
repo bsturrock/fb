@@ -4,7 +4,7 @@
 // runs the pass (split over shard processes, tests/l3-shard.ts) and holds one test per contract over every fixture it
 // covers. No vitest import here: the shards run outside vitest, so the checks use tests/plain-expect.ts.
 import { createHash } from 'node:crypto';
-import type { PlayerRuntime, Simulation, SimOptions, TraceRow, TransitionDelta } from '../src/sim/simulation';
+import type { PlayerRuntime, Simulation, SimOptions, TraceRow } from '../src/sim/simulation';
 import { capturePose, drawnBall, lerpPose, type PoseKey } from '../src/lab/render-pose';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { carriedBall, type PhysicalPose } from '../src/sim/pose';
@@ -153,46 +153,161 @@ export const AUDIT = check({
   },
 });
 
-/** A watch that keeps the run's audited boundaries for a finish that reads them. */
-const onDeltas =
-  (f: (ds: TransitionDelta[], sim: Simulation) => void): Check['watch'] =>
-  () => ({ finish: (sim) => f(sim.transitionDeltas, sim) });
+// Contact motion test repairs: the two boundary records below lost their natural samples (no L3 run has a plant reseeded
+// with its mode and source kept, nor a step that loses support, since contact motion D4-D6), so each is shown on a
+// situation the test sets up, found in the run itself rather than at a pinned time: a first run finds the moment, a
+// second makes the event there. Both runs are identical up to it. Not pass checks (the pass runs registered fixtures only).
 
-export const RESEED = check({
-  name: 'a reseed that keeps mode and source',
-  fixtures: ['L3-F7-phase75'],
-  // L3-F7-phase75: R's right foot, planted on the ball of the foot, is released by clearance and planted again in the next
-  // substep with no change of mode or source: the pose takes it as a new owner, so the old owner's continuation has to be
-  // what the live foot is compared with. (Before plan 12: L3-F1-phase5, D's right foot reseeded three times early in the
-  // run; with the ankle range and heel lift those proposals no longer fail.)
-  watch: onDeltas((all) => {
-    const ds = all.filter((x) => x.playerId === 'R');
-    for (const t of [0.541667]) {
-      const x = ds.find((b) => Math.abs(b.t - t) < 1e-5);
-      expect(x, `no boundary at ${t}`).toBeTruthy();
-      expect(x!.from.replace(/#\d+/g, ''), `${t}`).toBe(x!.to.replace(/#\d+/g, ''));
-      expect(x!.from, `${t}`).not.toBe(x!.to);
-      expect(dist(x!.legs.right.old.request, x!.legs.right.now.request), `${t}`).toBeGreaterThan(0);
+/** The substeps (index, t * 240) of one run of `def` where `on` holds, as runs of consecutive substeps. */
+async function substepRuns(def: FixtureDef, on: (pl: PlayerRuntime) => boolean, keep?: (s: Simulation) => void): Promise<{ a: number; n: number }[]> {
+  const out: { a: number; n: number }[] = [];
+  let cur: { a: number; n: number } | null = null;
+  const sim = await create(def, {
+    onSubstep: (s) => {
+      keep?.(s);
+      const k = Math.round(s.t * 240);
+      if (on(s.players[0])) {
+        if (cur && cur.a + cur.n === k) cur.n++;
+        else out.push((cur = { a: k, n: 1 }));
+      } else cur = null;
+    },
+  });
+  try {
+    while (!sim.done) {
+      sim.stepTick();
+      await pace();
     }
-  }),
-});
+  } finally {
+    sim.dispose();
+  }
+  return out;
+}
 
-export const STEP_AS_IS = check({
-  name: 'a step compared with its old path as it is',
-  fixtures: ['L3-F4-twoArm'],
-  // A step that loses support (first L3-F1-low: D's step out of time). Before 10b the reference carried a timed-out step's
-  // stored motion on (stepStopM) because the old path stopped dead; the step now slows within its limit, so there is
-  // nothing to carry on. L3-F4-twoArm: the run's only supported-to-airborne boundary of D, 1.36 s (plan 12: L3-F1-low's
-  // D no longer loses support on a step, its boundary at 1.65 s is gone; plan 13d: nor does L3-F1-phase5's at 1.55 s, so
-  // it was L3-F1-phase6's at 1.26 s; plan 14, with the clip arms as the clip shows them, no L3-F1 run has one)
-  watch: onDeltas((ds) => {
-    const x = ds.find((b) => b.playerId === 'D' && b.to.includes('airborne') && !b.from.includes('airborne'));
-    expect(x).toBeTruthy();
-    expect(x!.legs.right.old.kind).toBe('target');
-    expect(x!.deltaM).toBe(x!.rawM);
-    expect('stepStopM' in x!).toBe(false);
-  }),
-});
+/** What each controlled run made (for a report; no check reads it). */
+export const COVERED: string[] = [];
+const said = (x: TransitionDeltaOf): string => `${x.playerId} ${x.t.toFixed(5)} ${x.landmark} ${x.deltaM.toFixed(5)} raw ${x.rawM.toFixed(5)} ${x.from} > ${x.to} left ${x.legs.left.old.kind}>${x.legs.left.now.kind} right ${x.legs.right.old.kind}>${x.legs.right.now.kind}`;
+type TransitionDeltaOf = Simulation['transitionDeltas'][number];
+
+export const RESEED = 'a reseed that keeps mode and source';
+/**
+ * A plant released by its solve and planted again in the next substep with no change of mode or source: the pose takes
+ * it as a new owner, so the old owner's continuation has to be what the live foot is compared with. (Natural samples:
+ * L3-F1-phase5 D's right foot before plan 12, L3-F7-phase75 R's right foot at 0.5417 s until contact motion D4-D6.)
+ * Controlled: on the free 6.6 m/s run (L3-F16-sprint, one player) the solve in the middle of a right plant of at least
+ * 10 substeps releases it as a clearance solve does (FootDebug.releasePlantAt); the stance is still on, so the planner
+ * rejoins the request from the achieved ankle and proposes the plant again in the next plan. Returns the failures.
+ */
+export async function reseedCovered(): Promise<string[]> {
+  const fails: string[] = [];
+  const ok = softly((m) => fails.push(m));
+  const def = FIX('L3-F16-sprint');
+  const side = 'right' as const;
+  const plants = await substepRuns(def, (pl) => !pl.rag && pl.feet?.feet[side].mode === 'planted' && !pl.feet.feet[side].tentative);
+  const p = plants.find((x) => x.n >= 10);
+  expect(p, `${def.id}: a ${side} plant of 10 substeps`).toBeTruthy();
+  const T = (p!.a + Math.floor(p!.n / 2)) / 240;
+  const seeds = new Map<string, number>();
+  const reseeds: { t: number; id: string; side: string }[] = [];
+  const sim = await create(def, {
+    transitionAudit: true,
+    debug: { foot: { releasePlantAt: { t: T, side } } },
+    onSubstep: (s) => {
+      for (const pl of s.players)
+        for (const sd of SIDES) {
+          const f = pl.feet?.feet[sd];
+          if (!f || pl.rag) continue;
+          const k = `${pl.id}:${sd}`;
+          const was = seeds.get(k);
+          if (was !== undefined && was !== f.seeds) reseeds.push({ t: s.t, id: pl.id, side: sd });
+          seeds.set(k, f.seeds);
+        }
+    },
+  });
+  try {
+    while (!sim.done) {
+      sim.stepTick();
+      await pace();
+    }
+    const id = def.players[0].id;
+    const ds = sim.transitionDeltas;
+    // the release the switch made, and the reseed right after it
+    ok(() => expect(sim.events.some((e) => e.type === 'footRelease' && e.playerId === id && Math.abs(e.t - T) < 0.5 / 240 && (e.data as { side?: string; reason?: string }).side === side && (e.data as { reason?: string }).reason === 'clearance'), `${def.id}: released at ${T.toFixed(5)}`).toBe(true));
+    const r = reseeds.find((x) => x.id === id && x.side === side && x.t > T - 1e-9);
+    ok(() => expect(r && r.t <= T + 1.5 / 240, `${def.id}: ${side} reseeded in the next substep after ${T.toFixed(5)} (got ${r?.t.toFixed(5)})`).toBe(true));
+    if (r) {
+      const x = ds.find((b) => b.playerId === id && Math.abs(b.t - r.t) < 1e-9);
+      if (x) COVERED.push(`${RESEED}: release at ${T.toFixed(5)}: ${said(x)}`);
+      ok(() => {
+        expect(x, `no boundary at ${r.t.toFixed(5)}`).toBeTruthy();
+        expect(x!.from.replace(/#\d+/g, ''), `${r.t.toFixed(5)}`).toBe(x!.to.replace(/#\d+/g, ''));
+        expect(x!.from, `${r.t.toFixed(5)}`).not.toBe(x!.to);
+        expect(dist(x!.legs[side].old.request, x!.legs[side].now.request), `${r.t.toFixed(5)}`).toBeGreaterThan(0);
+      });
+    }
+    // and, as the audit requires of every run, every reseed of this one is a boundary
+    for (const q of reseeds) ok(() => expect(ds.some((x) => x.playerId === q.id && Math.abs(x.t - q.t) < 1e-9), `reseed of ${q.id} ${q.side} at ${q.t.toFixed(5)} has no boundary`).toBe(true));
+  } finally {
+    sim.dispose();
+  }
+  return fails;
+}
+
+export const STEP_AS_IS = 'a step compared with its old path as it is';
+/**
+ * A step that loses support. Before 10b the reference carried a timed-out step's stored motion on (stepStopM) because
+ * the old path stopped dead; the step now slows within its limit, so there is nothing to carry on: the step's old path
+ * is compared as it is. (Natural samples: L3-F1-low D at 1.65 s before plan 12, L3-F1-phase5 1.55 s before 13d,
+ * L3-F1-phase6 1.26 s before plan 14, L3-F4-twoArm D 1.36 s until contact motion M1.) Controlled: on the run start
+ * (L3-F17-runStart, one player, moving along +X) the probe loses its support in the middle of a supported right step of
+ * at least 24 substeps: a 15 cm non-turf strip (L3-F9-noProbe's kind) laid with its near edge between the probe's two
+ * positions there. Returns the failures.
+ */
+export async function stepAsIsCovered(): Promise<string[]> {
+  const fails: string[] = [];
+  const ok = softly((m) => fails.push(m));
+  const def0 = FIX('L3-F17-runStart');
+  const side = 'right' as const;
+  const xs = new Map<number, Vec3>();
+  const steps = await substepRuns(
+    def0,
+    (pl) => {
+      const f = pl.feet?.feet[side];
+      return !!f && f.mode === 'swing' && f.source === 'step' && !f.wait && pl.controlMode === 'supported' && !!pl.sus?.probe.valid;
+    },
+    (s) => {
+      const p = s.players[0].proxy.body.translation();
+      xs.set(Math.round(s.t * 240), v3(p.x, p.y, p.z));
+    },
+  );
+  const st = steps.find((x) => x.n >= 24);
+  expect(st, `${def0.id}: a supported ${side} step of 24 substeps`).toBeTruthy();
+  const k = st!.a + Math.floor(st!.n / 2);
+  const p0 = xs.get(k - 1)!;
+  const p1 = xs.get(k)!;
+  expect(p1.x - p0.x, `${def0.id}: moving along +X at ${(k / 240).toFixed(5)}`).toBeGreaterThan(0.002);
+  const edge = (p0.x + p1.x) / 2;
+  const def: FixtureDef = { ...def0, id: `${def0.id}-probeLoss`, obstacles: [...(def0.obstacles ?? []), { id: 'noTurf', center: v3(edge + 0.075, 0.02, p1.z), halfExtents: v3(0.075, 0.02, 0.7) }] };
+  const sim = await create(def, { transitionAudit: true });
+  try {
+    while (!sim.done && sim.t < k / 240 + 0.05) {
+      sim.stepTick();
+      await pace();
+    }
+    const id = def.players[0].id;
+    ok(() => {
+      const x = sim.transitionDeltas.find((b) => b.playerId === id && b.to.includes('airborne') && !b.from.includes('airborne'));
+      if (x) COVERED.push(`${STEP_AS_IS}: strip edge at x ${edge.toFixed(4)} (${(k / 240).toFixed(5)}): ${said(x)}`);
+      expect(x, `${def.id}: no supported-to-airborne boundary`).toBeTruthy();
+      expect(Math.abs(x!.t - k / 240), `${def.id}: the boundary at ${x!.t.toFixed(5)} is the support the strip took at ${(k / 240).toFixed(5)}`).toBeLessThanOrEqual(1.5 / 240);
+      expect(x!.legs[side].old.kind).toBe('target');
+      expect(x!.deltaM).toBe(x!.rawM);
+      expect('stepStopM' in x!).toBe(false);
+    });
+  } finally {
+    sim.dispose();
+  }
+  return fails;
+}
 
 export const RAW_KEPT = check({
   name: 'the raw difference and what was set aside',

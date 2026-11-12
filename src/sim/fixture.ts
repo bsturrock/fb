@@ -1,7 +1,7 @@
 // Fixture definition: starting conditions and requests, never post-contact trajectories.
 import type { CarryProfile } from './carry';
 import type { ArmSide, PlayerId, Role, StanceRequest } from './contracts';
-import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, FallResponseProfile, JointRangeProfile, LegGuardProfile, MotorProfile, RagdollProfile, RuleProfile, SelfClearanceProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
+import type { ArmClearanceProfile, ArmProfile, ArmSetup, BalanceProfile, BodyProfile, FallResponseProfile, JointRangeProfile, LegGuardProfile, MotorProfile, RagdollProfile, RuleProfile, SelfClearanceProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
 import type { CandidateEdit } from './ragdoll';
 import type { FootworkProfile } from './footwork';
 import type { LocomotionProfile } from './locomotion';
@@ -90,6 +90,11 @@ export interface FixtureDef {
    * are also held clear of where other bodies will be at the next substep, where a conversion checks them.
    */
   legGuard?: LegGuardProfile;
+  /**
+   * Contact motion arm clearance (absent = an arm task's queries meet other players' active colliders only): an arm
+   * task also meets every other supported, still-convertible player's published limbs, as that player's own pose does.
+   */
+  armClearance?: ArmClearanceProfile;
   /**
    * Plan 07: per-foot plant / swing planner (absent = the plan 06/06a pose path unchanged). Pose only; requires the
    * suspension support (the planner reads its probed ground).

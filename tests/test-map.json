@@ -105,27 +105,27 @@
  },
  {
   "from": "transitions-audit\\.test\\.ts > .* > a reseed that keeps mode and source.*",
-  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
+  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records, controlled: a reseed that keeps mode and source is a boundary; a step that loses support is compared with its old path as it is"
  },
  {
   "from": "transitions-audit\\.test\\.ts > .* > a step is compared with its old path.*",
-  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
+  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records, controlled: a reseed that keeps mode and source is a boundary; a step that loses support is compared with its old path as it is"
  },
  {
   "from": "transitions-audit\\.test\\.ts > .* > the audit keeps the raw difference.*",
-  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
+  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a landing is compared with its old path as it is; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
  },
  {
   "from": "transitions-audit\\.test\\.ts > .* > a jump the old owner's offset.*",
-  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
+  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a landing is compared with its old path as it is; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
  },
  {
   "from": "transitions-audit\\.test\\.ts > .* > a landing is compared.*",
-  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
+  "to": "l3-contracts.test.ts > plan 08 transition audit > the boundary records: a landing is compared with its old path as it is; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice"
  },
  {
   "from": "transitions-audit\\.test\\.ts > .* > negative control: a known old\\/new.*",
-  "to": "l3-contracts.test.ts > plan 08 transition audit > negative control: a known old/new pose difference over 1 cm still fails (the 10b crossing heading fault put back)"
+  "to": "l3-contracts.test.ts > plan 08 transition audit > negative control: a known old/new pose difference over 1 cm still fails (a new foot owner shown off its path)"
  },
  {
   "from": "transitions-audit\\.test\\.ts > .* > a held leg handed to a step.*",

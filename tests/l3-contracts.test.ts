@@ -17,11 +17,11 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { availableParallelism, setPriority } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { SimOptions } from '../src/sim/simulation';
+import type { SimOptions, TransitionDelta } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { FOOTWORK_L2, FOOTWORK_L3, stepAccelLimits } from '../src/sim/footwork';
-import { breathe, FIX, rows, run } from './helpers';
+import { breathe, FIX, rows } from './helpers';
 import { L3 } from './transitions-shared';
 import {
   ANCHORS,
@@ -80,6 +80,7 @@ import {
   RECONTACT,
   type Records,
   RESEED,
+  reseedCovered,
   RETAINED,
   RETENTION_BITES,
   RULE_FIXTURES,
@@ -95,12 +96,18 @@ import {
   SETTLES,
   STANDS_STILL,
   STEP_AS_IS,
+  stepAsIsCovered,
   STOP_MOTOR,
   TOE_OFF,
   WALK_STEPS,
   WALK_VALID,
   type Watch,
 } from './l3-pass';
+import type { ArmSide } from '../src/sim/contracts';
+import type { FootDebug } from '../src/sim/debug';
+import { initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlan, type FootPlanInput } from '../src/sim/footwork';
+import type { FootRequest, PhysicalPose } from '../src/sim/pose';
+import { add, v3, type Vec3 } from '../src/sim/vec';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The pass
@@ -245,9 +252,25 @@ describe('plan 08 transition audit', () => {
   }, 300000);
 
   passTest(
-    'the boundary records: a reseed that keeps mode and source is a boundary; a step and a landing are compared with their old paths as they are; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice',
-    [RESEED, STEP_AS_IS, RAW_KEPT, NOT_TWICE, LANDINGS],
+    'the boundary records: a landing is compared with its old path as it is; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice',
+    [RAW_KEPT, NOT_TWICE, LANDINGS],
   );
+
+  it('the boundary records, controlled: a reseed that keeps mode and source is a boundary; a step that loses support is compared with its old path as it is', async () => {
+    // no L3 run has either any more (tests/l3-pass.ts reseedCovered, stepAsIsCovered): each is made where its run shows the
+    // situation, a plant mid-stance released by its solve, a step mid-swing over a strip the probe finds no support on
+    await rows(
+      [
+        [RESEED, reseedCovered],
+        [STEP_AS_IS, stepAsIsCovered],
+      ] as const,
+      ([n]) => n,
+      async ([, f]) => {
+        const fails = await f();
+        expect(fails, fails.join('\n')).toEqual([]);
+      },
+    );
+  }, 120000);
 
   passTest(
     "the planner's handovers: a held leg handed to a step keeps the old owner's request, a support loss keeps a step on its path; a request seam goes into the offset; a fresh plant is not stepped from the moment it lands",
@@ -261,20 +284,46 @@ describe('plan 08 transition audit', () => {
     },
   );
 
-  it('negative control: a known old/new pose difference over 1 cm still fails (the 10b crossing heading fault put back)', async () => {
-    // L3-F7-loadRelease with the composed crossing setting a following foot's heading to the body's, as before 10b: D's
-    // left knee pole turns 19 degrees in one substep at contact entry and the leg takes another clearance variant, while
-    // the old owner keeps its heading. The audit has to report that boundary, with nothing set aside. (The plan 08 control,
-    // the handover check switched off in L3-F7-phase25, no longer gives one: with 10b's bounded step paths no handover in
-    // L3 departs by over 1 cm without it.) Plan 12: run without the joint-range profile; with it, D's run into the contact
-    // changes and the faulted crossing there stays under 1 cm
-    const sim = await run({ ...FIX('L3-F7-loadRelease'), jointRange: undefined }, { transitionAudit: true, debug: { foot: { crossingBodyHeading: true } } });
-    const ds = sim.transitionDeltas;
-    sim.dispose();
-    const x = ds.filter((b) => b.deltaM > 0.01);
-    expect(x.map((b) => `${b.playerId} ${b.t.toFixed(4)} ${b.landmark}`)).toEqual(['D 0.5750 leftAnkle']);
-    for (const b of x) expect(b.deltaM).toBeCloseTo(b.rawM, 10);
-  }, 30000);
+  it('negative control: a known old/new pose difference over 1 cm still fails (a new foot owner shown off its path)', async () => {
+    // the audit check itself (AUDIT), on the free 6.6 m/s run of one player (L3-F16-sprint): passes as it is, and with every
+    // composed leg whose foot owner changed starting its continuity step 3 cm off the shown path (PoseDebug.ownerChangeJumpM)
+    // it reports each such boundary over 1 cm, the old owner's continuation kept as it was. (Before contact motion D4-D6 the
+    // control was the 10b crossing heading fault put back on L3-F7-loadRelease, D's left ankle 1.30 cm at 0.575 s: D's left
+    // foot is no longer a following foot at that crossing, and the fault moves no boundary there past 0.65 cm. The pose's
+    // composed continuity bounds a departure to 0.875 cm a substep, so a fault in a foot request alone no longer shows.)
+    const def = FIX('L3-F16-sprint');
+    const audited = async (debug?: SimOptions['debug']) => {
+      const c = CHECKS.find((x) => x.name === AUDIT)!;
+      const fails: string[] = [];
+      let ds: TransitionDelta[] = [];
+      const rep = (m: string): void => void fails.push(m);
+      await runWatched(def, [{ w: c.watch(def, rep), fail: rep }, { w: { finish: (s) => void (ds = s.transitionDeltas) }, fail: rep }], { transitionAudit: true, ...(debug ? { debug } : {}) });
+      return { fails, ds };
+    };
+    const ok = await audited();
+    expect(ok.fails).toEqual([]);
+    expect(ok.ds.filter((b) => b.deltaM > 0.01)).toEqual([]);
+    const bad = await audited({ pose: { ownerChangeJumpM: 0.03 } });
+    const x = bad.ds.filter((b) => b.deltaM > 0.01);
+    expect(x.length).toBeGreaterThan(0);
+    // every one is an ownership change the audit fails on its 1 cm limit, and nothing else fails: one failure per such
+    // boundary, each naming that boundary's time, player, landmark and owners
+    for (const b of x) expect(b.from).not.toBe(b.to);
+    const named = (b: TransitionDelta): string => `L3-F16-sprint ${b.t.toFixed(4)} ${b.playerId} ${b.landmark} ${b.from} > ${b.to} raw ${b.rawM.toFixed(4)}: `;
+    expect(bad.fails.map((m) => m.slice(0, m.indexOf(': ') + 2)).sort()).toEqual(x.map(named).sort());
+    for (const m of bad.fails) expect(m).toMatch(/: expected 0\.0\d+ to be less than or equal to 0\.01$/);
+    // nothing set aside (user ruling 2026-11-10): every boundary over 1 cm raw is still over 1 cm after the correction; and
+    // a boundary whose reference took no request jump out (transition-audit.ts sets requestJumpM exactly where it moves a
+    // reference foot's offset) is compared as it is, its measure exactly the raw difference. Under this fault a new owner's
+    // step can also carry a 0.2-3 mm request jump, which the reference takes out, so those measures differ from raw
+    expect(bad.ds.filter((b) => b.rawM > 0.01 && b.deltaM <= 0.01)).toEqual([]);
+    for (const run of [ok, bad]) {
+      const plain = run.ds.filter((b) => b.requestJumpM.left === 0 && b.requestJumpM.right === 0);
+      expect(plain.length).toBeGreaterThan(0);
+      for (const b of plain) expect(b.deltaM, `${b.t.toFixed(4)} ${b.landmark}`).toBe(b.rawM);
+    }
+    expect(x.filter((b) => b.requestJumpM.left === 0 && b.requestJumpM.right === 0).length).toBeGreaterThan(0);
+  }, 60000);
 });
 
 describe('plan 10b foot target continuity', () => {
@@ -445,20 +494,154 @@ describe('plan 13e faults put back', () => {
     return fails;
   };
 
-  it('an inherited foot settling over one substep plants while it still moves, and the plant fails (L3-F7-phase50 D left 0.575 s)', async () => {
-    // the 13e fix measures an inherited foot's settling over an arrival (C.arriveS), not one substep: before it, a shoe
-    // still sliding passed the plant tolerance in one substep and planted. Plan 14 moved the case: with the clip arms
-    // shown as the clip has them, L3-F1-phase4 no longer shows it; L3-F7-phase50 does, beside its own plant
-    // failure at 0.567 s (there with or without the fault, and before plan 14)
-    const fails = async (debug?: SimOptions['debug']): Promise<string[]> => {
-      const sim = await run(FIX('L3-F7-phase50'), debug ? { debug } : {});
-      const out = sim.events.filter((e) => e.type === 'footPlantFailed').map((e) => `${e.playerId} ${(e as { side?: string }).side ?? (e.data as { side?: string })?.side} ${e.t.toFixed(4)}`);
-      sim.dispose();
-      return out;
+  // ------------------------------------------------------------------- planner substeps on constructed input (no physics)
+  // Plan 13e's planner rules guarded on constructed planner input, the L3 planner (FOOTWORK_L3) on an L3 fixture's ragdoll
+  // and shoe: what the rule decides does not depend on any run reaching the case (the natural samples, L3-F7-phase50 D left
+  // 0.575 s and L3-F6-hold / L3-F4-gripOwner, are gone since contact motion M1 and D4-D6 changed those runs). The solve
+  // is synthetic: flat shoes at the requested ankles, except where a row says what the shown leg does instead.
+  const R = FIX('L3-F6-hold').ragdoll!;
+  const SOLE = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
+  const TOE = R.shoe.forwardM + 0.5 * R.shoe.halfExtents.z;
+  const DT = 1 / 240;
+  const I = { x: 0, y: 0, z: 0, w: 1 };
+  const HOME: Record<ArmSide, Vec3> = { left: v3(-0.12, SOLE, 0), right: v3(0.12, SOLE, 0) };
+  const P = FOOTWORK_L3;
+  type Ev = FootEvent & { t: number };
+  /** A still body standing over `home`, hips 0.75 m above it. */
+  const input = (t: number, o: { home?: Record<ArmSide, Vec3>; request?: Partial<Record<ArmSide, Vec3>>; clip?: FootPlanInput['clip']; contactHold?: boolean; others?: Vec3[]; debug?: FootDebug }): FootPlanInput => {
+    const home = o.home ?? HOME;
+    return {
+      t,
+      dt: DT,
+      core: { p: v3(0, SOLE + 0.85, 0), q: I },
+      vel: v3(),
+      yawRate: 0,
+      supported: true,
+      falling: false,
+      ragdoll: false,
+      groundY: 0,
+      hips: { left: add(home.left, v3(0, 0.75, 0)), right: add(home.right, v3(0, 0.75, 0)) },
+      home,
+      request: { left: o.request?.left ?? { ...home.left }, right: o.request?.right ?? { ...home.right } },
+      clip: o.clip ?? null,
+      contactHold: o.contactHold,
+      soleM: SOLE,
+      toeM: TOE,
+      rightW: v3(1, 0, 0),
+      sideSign: { left: -1, right: 1 },
+      others: o.others,
+      debug: o.debug,
     };
-    expect(await fails()).toEqual(['D left 0.5667']);
-    expect(await fails({ foot: { settleOneSubstep: true } })).toEqual(['D left 0.5667', 'D left 0.5750']);
-  }, 60000);
+  };
+  /** A synthetic solve: flat shoes (shin frame = identity) at `ankles`, each leg on the given clearance variant (0: primary). */
+  const pose = (ankles: Record<ArmSide, Vec3>, variant: Partial<Record<ArmSide, number>> = {}): PhysicalPose => {
+    const seg = (id: string) => ({ segmentId: id, originWorld: v3(), rotationWorld: I });
+    const li = (s: ArmSide) => ({ variant: variant[s] ?? 0, request: ankles[s], liftM: 0, softM: 0 });
+    return {
+      playerId: 'T',
+      segments: { leftShin: seg('leftShin'), rightShin: seg('rightShin') } as unknown as PhysicalPose['segments'],
+      jointLandmarksWorld: { leftAnkle: { ...ankles.left }, rightAnkle: { ...ankles.right } } as unknown as PhysicalPose['jointLandmarksWorld'],
+      hingeDeg: {},
+      straightFallback: [],
+      limbClearance: {},
+      legInfo: { left: li('left'), right: li('right') },
+    } as unknown as PhysicalPose;
+  };
+  /** The ankle an exact solve of each request reaches. */
+  const exact = (out: Record<ArmSide, FootRequest>, inp: FootPlanInput): Record<ArmSide, Vec3> => {
+    const a = {} as Record<ArmSide, Vec3>;
+    for (const s of ['left', 'right'] as const) {
+      const r = out[s];
+      a[s] = r.kind === 'plant' ? add(r.heelW, v3(0, SOLE, 0)) : r.kind === 'target' ? { ...r.ankleW } : add(inp.request[s], r.offsetW);
+    }
+    return a;
+  };
+  /** One substep: plan, solve (`solve` from the exact ankles), observe; the events go into `all`. */
+  const substep = (plan: FootPlan, inp: FootPlanInput, all: Ev[], solve: (a: Record<ArmSide, Vec3>, out: Record<ArmSide, FootRequest>) => PhysicalPose = (a) => pose(a)): Record<ArmSide, FootRequest> => {
+    const ev: FootEvent[] = [];
+    const out = planFeet(plan, inp, ev);
+    observeFeet(plan, solve(exact(out, inp), out), SOLE, 0, ev, inp.t);
+    for (const e of ev) all.push({ ...e, t: inp.t });
+    return out;
+  };
+  const hzLen = (v: Vec3): number => Math.hypot(v.x, v.z);
+
+  it('an inherited foot settling over one substep plants while it still moves, and the plant fails (constructed crossing; was L3-F7-phase50 D left 0.575 s)', async () => {
+    // the 13e fix measures an inherited foot's settling over an arrival (C.arriveS), not one substep: before it, a shoe
+    // still sliding passed the plant tolerance in one substep and planted (L3-F16-stop1.9's right foot at 0.33 m/s;
+    // L3-F7-phase50 D's left at the contact-entry crossing, 1.78 m/s, its plant failed on the slide at 0.575 s). Since
+    // contact motion M1 D's left foot is planted at that crossing (no inherited foot, no proposal either way), so the
+    // crossing is constructed: a left foot leaves its clip stance and follows a request sliding along the ground at v0;
+    // then a contact hold takes the clip away (the clip-to-procedural crossing) while the shoe still slides. The shown
+    // shoe under a plant request stops no faster than the planner's own step acceleration limit (C.stepAccelMps2): the
+    // leg does not stop a sliding foot in one substep (which an exact solve would)
+    const C = P.compose!;
+    const A = C.stepAccelMps2;
+    const slide = (v0: number, debug?: FootDebug) => {
+      const plan = newFootPlan(P, R);
+      const all: Ev[] = [];
+      const contact = { weight: 1, rollF: 0, toeZ: TOE };
+      const clip = (left: boolean): FootPlanInput['clip'] => ({ weight: 1, headingRad: 0, stance: { left, right: true }, contact: { left: left ? contact : null, right: contact } });
+      // the left starts 14 cm behind its home: the slide ends about there (no settle trigger in the way)
+      const start = add(HOME.left, v3(0, 0, -0.14));
+      let t = 0;
+      initFeet(plan, pose({ left: start, right: HOME.right }), input(t, { request: { left: start }, clip: clip(true), debug }), []);
+      let req = { ...start };
+      let v = 0;
+      let shown: Vec3 | null = null;
+      let shownV = v3();
+      let cross = { t: -1, v: 0, proposed: false };
+      for (let k = 0; k < 240; k++) {
+        t += DT;
+        // stance for longer than landWithinS (a younger plant is held), then the left's request slides, reaching v0 by
+        // the crossing at substep 60
+        const inStance = k < 40;
+        if (!inStance && k < 60) {
+          v = Math.min(v0, v + 40 * DT);
+          req = add(req, v3(0, 0, v * DT));
+        }
+        const hold = k >= 60;
+        const f = plan.feet.left;
+        const before = { inherited: f.mode === 'swing' && f.source === 'follow', v: hzLen(f.ankleV) };
+        substep(plan, input(t, { request: { left: req }, clip: clip(inStance), contactHold: hold, debug }), all, (a, out) => {
+          if (out.left.kind === 'plant' && shown) {
+            const sp = hzLen(shownV);
+            const nv = Math.max(0, sp - A * DT);
+            shownV = sp > 0 ? v3((shownV.x / sp) * nv, 0, (shownV.z / sp) * nv) : v3();
+            a.left = v3(shown.x + shownV.x * DT, SOLE, shown.z + shownV.z * DT);
+          } else if (shown) shownV = v3((a.left.x - shown.x) / DT, 0, (a.left.z - shown.z) / DT);
+          shown = a.left;
+          return pose(a);
+        });
+        if (k === 60) cross = { t, v: before.v, proposed: before.inherited && all.some((e) => e.t === t && e.side === 'left' && (e.type === 'footPlant' || e.type === 'footPlantFailed')) };
+      }
+      const left = all.filter((e) => e.side === 'left' && e.t > 0.01);
+      return { cross, left, plants: left.filter((e) => e.type === 'footPlant'), slid: left.filter((e) => (e.type === 'footRelease' || e.type === 'footPlantFailed') && (e.data as { reason?: string }).reason === 'slide') };
+    };
+    await rows(
+      [1.5, 1.8, 2.2],
+      (v0) => `v0 ${v0} m/s`,
+      (v0) => {
+        // the shoe is still moving faster than the plant tolerance over an arrival (and within it over one substep)
+        const fixed = slide(v0);
+        expect(fixed.cross.v * C.arriveS).toBeGreaterThan(P.plantTolM);
+        expect(fixed.cross.v * DT).toBeLessThanOrEqual(P.plantTolM);
+        // the fix: no proposal at the crossing, the swing continues as a step; the foot plants once it has arrived, and no
+        // plant fails on a slide
+        expect(fixed.cross.proposed, `a plant proposed at the crossing, the shoe at ${fixed.cross.v.toFixed(2)} m/s`).toBe(false);
+        expect(fixed.left.some((e) => e.t === fixed.cross.t && e.type === 'footSwing' && (e.data as { reason?: string }).reason === 'continue')).toBe(true);
+        expect(fixed.slid.map((e) => `${e.type} ${e.t.toFixed(4)}`), 'plants failed on a slide').toEqual([]);
+        expect(fixed.plants.length).toBeGreaterThan(0);
+        // the fault put back: it plants at the crossing while it slides, and that plant fails on the slide within an arrival
+        const fault = slide(v0, { settleOneSubstep: true });
+        expect(fault.cross.v).toBeCloseTo(fixed.cross.v, 9);
+        expect(fault.cross.proposed).toBe(true);
+        expect(fault.slid.length).toBeGreaterThan(0);
+        expect(fault.slid[0].t - fault.cross.t).toBeGreaterThanOrEqual(0);
+        expect(fault.slid[0].t - fault.cross.t).toBeLessThanOrEqual(C.arriveS);
+      },
+    );
+  });
 
   it('the idle sway in the planner home takes a late settle step at the end of a stop (L3-F16-stop2.9)', async () => {
     // the 13e fix leaves the integrated sway out of the home: with it in, the swaying root drags the home past the
@@ -468,22 +651,114 @@ describe('plan 13e faults put back', () => {
     expect((await failsOf(SETTLES, def, { debug: { foot: { swayInHome: true } } })).join(' ')).toMatch(/expected 0\.1\d+ to be greater than 0\.4/);
   }, 60000);
 
-  it('a foot held off its home by another body re-steps toward it in a stationary hold (L3-F6-hold)', async () => {
-    // the 13e fix keeps the home the held-off step could not reach: the planted foot takes no step or settle step toward
-    // it while it stays there. Without it the defender's right foot re-steps into the runner about every 0.3 s
-    // (L3-F6-holdMirror until contact motion M1: with the arms' twist kept in range the fault there plants twice after
-    // 3.5 s, one each; on L3-F6-hold D re-steps three times, at 3.58, 3.78 and 3.98 s)
-    const def = FIX('L3-F6-hold');
-    expect(await failsOf(HOLD_SETTLES, def, {})).toEqual([]);
-    expect((await failsOf(HOLD_SETTLES, def, { debug: { foot: { noBlockedMemory: true } } })).join(' ')).toMatch(/expected \d+ to be less than or equal to 1/);
-    // and lets it go once the body that held it moves off: L3-F4-gripOwner's runner plants its held-off left foot at
-    // 1.325 s and steps home at 1.392 s (1.3875 s under the plan 13f leg guard), when the defender's core is 9 cm from
-    // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm)
-    const sim = await run(FIX('L3-F4-gripOwner'));
-    const steps = sim.events.filter((e) => e.type === 'footSwing' && e.playerId === 'R' && (e.data as { side?: string }).side === 'left' && (e.data as { reason?: string }).reason === 'step');
-    sim.dispose();
-    expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');
-  }, 60000);
+  it('a foot held off its home by another body re-steps toward it in a stationary hold, and steps home once that body moves off (constructed hold; was L3-F6-hold and L3-F4-gripOwner)', async () => {
+    // the 13e fix keeps the home the held-off step could not reach (FootState.blockedW): the planted foot takes no step or
+    // settle step toward it while the home and the body that held it stay put, and lets it go when either moves more than
+    // settleTriggerM. Without it a defender's foot re-stepped into the runner about every 0.3 s, each step landing about
+    // where it started (L3-F6-holdMirror before M1, then L3-F6-hold). The natural fault run now shows it only in part:
+    // with noBlockedMemory L3-F6-hold's defender re-steps (footRelease 'step') at 2.54, 3.03, 3.30 and 4.80 s, but two of
+    // its three plants after 3.5 s follow planted-leg clearance releases (3.875 s, 4.475 s), a pose path contact motion
+    // D6 changes; and L3-F4-gripOwner's runner no longer has a held-off step at all since M1 (its left steps at 1.67 s
+    // after a clearance release). So the hold is constructed, on the planner alone: a still body whose right home moves
+    // 28 cm toward another player's core (over stepTriggerM); the shown right leg cannot pass that body's near side (a
+    // request past it is solved on clearance variant 1, the leg stopped at it). The re-steps are counted by their reason:
+    // a plant released for a 'step' trigger (not a clearance release, not a settle step)
+    const wallX = 0.2;
+    const homeR = v3(0.4, SOLE, 0);
+    const blocked = (o: { debug?: FootDebug; blockerMoveM?: number; homeMoveM?: number }) => {
+      const plan = newFootPlan(P, R);
+      const all: Ev[] = [];
+      const stands: { t: number; at: Vec3 }[] = [];
+      let blocker = v3(0.55, 0, 0);
+      let home = { left: HOME.left, right: homeR };
+      let t = 0;
+      initFeet(plan, pose({ ...HOME }), input(t, { others: [blocker], debug: o.debug }), []);
+      const MOVE = 240 * 3;
+      for (let k = 0; k < 240 * 4; k++) {
+        t += DT;
+        // after 3 s the body that held the leg moves off along the side line (taking its near side along), or the home moves
+        if (k === MOVE && o.blockerMoveM) blocker = add(blocker, v3(0, 0, o.blockerMoveM));
+        if (k === MOVE && o.homeMoveM) home = { left: HOME.left, right: add(homeR, v3(0, 0, o.homeMoveM)) };
+        const wall = k >= MOVE && (o.blockerMoveM ?? 0) > P.settleTriggerM ? Infinity : wallX;
+        const n = all.length;
+        substep(plan, input(t, { home, others: [blocker], debug: o.debug }), all, (a) => {
+          const r = { ...a.right };
+          const held = r.x > wall;
+          if (held) r.x = wall;
+          return pose({ left: a.left, right: r }, { right: held ? 1 : 0 });
+        });
+        // where each right plant stands (its heel: the footprint the home is measured from)
+        if (all.slice(n).some((e) => e.side === 'right' && e.type === 'footPlant')) stands.push({ t, at: { ...plan.feet.right.heelW! } });
+      }
+      const right = all.filter((e) => e.side === 'right' && e.t > 0.01);
+      const reason = (e: Ev): string | undefined => (e.data as { reason?: string }).reason;
+      return {
+        // the planted foot's re-steps: released for a step trigger after the first (held-off) step has landed
+        firstPlant: right.find((e) => e.type === 'footPlant'),
+        steps: (from: number, to: number) => right.filter((e) => e.type === 'footRelease' && reason(e) === 'step' && e.t > from && e.t < to),
+        others: right.filter((e) => e.type === 'footRelease' && reason(e) !== 'step'),
+        plants: stands.filter((p) => p.t > 0.01),
+        moveT: MOVE * DT,
+      };
+    };
+    const records: [string, () => void][] = [
+      [
+        'held off: one step lands where the leg got to, then no re-step while the home and the body stay put; the fault re-steps into it about every 0.36 s, each landing where it started',
+        () => {
+          const fixed = blocked({});
+          expect(fixed.firstPlant, 'the held-off step lands').toBeDefined();
+          const t0 = fixed.firstPlant!.t;
+          // it landed where the leg got to, at the body's near side: short of its home by more than the step trigger
+          const at0 = fixed.plants[0].at;
+          expect(fixed.plants[0].t).toBe(t0);
+          expect(Math.abs(at0.x - wallX)).toBeLessThanOrEqual(P.plantTolM);
+          expect(homeR.x - at0.x).toBeGreaterThan(P.stepTriggerM);
+          expect(fixed.steps(t0, 4).map((e) => e.t.toFixed(4)), 're-steps (reason step) toward the blocked home').toEqual([]);
+          expect(fixed.others).toEqual([]);
+          expect(fixed.plants).toHaveLength(1);
+          // the fault put back: the same held-off landing, then re-steps. Only re-steps with reason 'step' are counted (a
+          // plant released for a step trigger): the fault alone gives them, about one every 0.36 s
+          const fault = blocked({ debug: { noBlockedMemory: true } });
+          expect(fault.plants[0]).toEqual(fixed.plants[0]);
+          const re = fault.steps(t0, 4);
+          expect(re.length).toBeGreaterThan(5);
+          expect(fault.others).toEqual([]);
+          // unnecessary: every re-step lands within the plant tolerance of where the held-off step had landed
+          expect(fault.plants.length).toBeGreaterThanOrEqual(re.length);
+          for (const p of fault.plants) expect(Math.hypot(p.at.x - at0.x, p.at.z - at0.z), p.t.toFixed(4)).toBeLessThanOrEqual(P.plantTolM);
+        },
+      ],
+      [
+        'the body that held it moves off by more than settleTriggerM: the foot steps home at once and plants there',
+        () => {
+          const r = blocked({ blockerMoveM: 0.2 });
+          const after = r.steps(r.moveT - 1e-9, 4);
+          expect(after.length).toBe(1);
+          expect(after[0].t - r.moveT).toBeLessThanOrEqual(2 * DT + 1e-9);
+          const last = r.plants[r.plants.length - 1];
+          expect(last.t).toBeGreaterThan(after[0].t);
+          expect(Math.hypot(last.at.x - homeR.x, last.at.z - homeR.z)).toBeLessThan(P.settleTriggerM);
+        },
+      ],
+      [
+        'the body moves by less than settleTriggerM: the home stays blocked, no step',
+        () => {
+          const r = blocked({ blockerMoveM: 0.05 });
+          expect(r.steps(r.firstPlant!.t, 4)).toEqual([]);
+        },
+      ],
+      [
+        'the home itself moves on by more than settleTriggerM: the memory goes, and the foot steps toward the new home',
+        () => {
+          const r = blocked({ homeMoveM: 0.2 });
+          const after = r.steps(r.moveT - 1e-9, 4);
+          expect(after.length).toBeGreaterThan(0);
+          expect(after[0].t - r.moveT).toBeLessThanOrEqual(2 * DT + 1e-9);
+        },
+      ],
+    ];
+    await rows(records, ([n]) => n, ([, f]) => f());
+  });
 });
 
 describe('plan 08 pass 2: idle and walking', () => {

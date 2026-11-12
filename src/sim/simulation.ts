@@ -6,7 +6,7 @@ import type {
 import type { Controller } from './controllers/base';
 import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
-import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
+import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, PHYS_LEG_KEY, PhysicsWorld, RAPIER, type MassReport, type ProxyBody } from './physics';
 import {
   ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, sideSignX, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
@@ -15,12 +15,12 @@ import {
   clipHeightModel, composeTarget, newSuspensionRuntime, runHeight, type ClipHeightModel, type RunHeight,
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
-import { advanceGait, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type ProxyPoseInput } from './pose';
+import { advanceGait, armShapes, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type ProxyPoseInput } from './pose';
 import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newLocoState, sampleIdle, type LocoState } from './locomotion';
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import {
-  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
+  applyEnvelope, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, SEGMENTS, SELF_ARM_KEY, SELF_TRUNK_KEY, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll,
   type RagdollCollider, type TransferAudit,
 } from './ragdoll';
 import {
@@ -33,7 +33,7 @@ import {
 } from './run-clip';
 import { RuleObserver, type EndingKind, type RuleEnding, type RuleTraceRow } from './rules';
 import type { ArmSide } from './contracts';
-import { type Pose, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg } from './vec';
+import { type Pose, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg, qInvRot } from './vec';
 import { fixtureExport, limitReportOf, recordTrace, summaryOf } from './sim-evidence';
 import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
@@ -41,7 +41,7 @@ import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { convertPlayers } from './conversion';
 import { observeContacts } from './contact-observation';
-import { carrySideOf, footInputOf, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses } from './pose-runtime';
+import { carrySideOf, disablePhysicalLegs, footInputOf, legPointMove, observePhysicalLegs, poseClearanceOf, poseShapeToRapier, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
 import { EMPTY_APPLIED, applyMotors } from './motor-step';
 export type { AuditLeg, TransitionDelta } from './transition-audit';
 
@@ -151,6 +151,8 @@ export interface PlayerRuntime {
   /** Bulk vertical velocity after the last solve (diagnostic `when` conversions). */
   lastVy: number;
   poseMemory: PoseMemory;
+  /** Contact motion experiment (`LegGuardProfile.physicalLegs`): the supported proxy's physical leg colliders. */
+  legs?: PhysicalLegs;
   /**
    * Plan 07: per-foot plant / swing state (pose only; never read by support, drive, balance, friction or rules); null
    * without a footwork profile or the suspension. Reset with the player.
@@ -352,6 +354,8 @@ export class Simulation {
   trace: TraceRow[] = [];
   contacts: ContactRec[] = [];
   contactObs: Record<PlayerId, PlayerContactObs[]> = {};
+  /** Contact motion experiment: each player's physical-leg contact ledger (`observePhysicalLegs`). */
+  legLedger = new Map<PlayerId, LegLedger>();
   /** Plan 08 evidence (SimOptions.transitionAudit). */
   transitionDeltas: TransitionDelta[] = [];
   auditPrev = new Map<PlayerId, AuditPrev>();
@@ -492,6 +496,11 @@ export class Simulation {
           return a.playerId !== null && a.playerId === b.playerId && ta !== tb && (ta ? b : a).key.startsWith(SELF_ARM_KEY);
         if (sameOwner && a.playerId !== null && a.playerId === b.playerId) return false;
         if ((a.key === 'supportGuard' && b.playerId !== null) || (b.key === 'supportGuard' && a.playerId !== null)) return false;
+        // contact motion: a physical leg meets other players' bodies only: not the floor or an obstacle (GROUP_STATIC covers
+        // them only where a suspension marks them static), not another proxy's support capsule (its legs)
+        const la = a.key.startsWith(PHYS_LEG_KEY);
+        const lb = b.key.startsWith(PHYS_LEG_KEY);
+        if ((la && (b.playerId === null || b.key === 'support')) || (lb && (a.playerId === null || a.key === 'support'))) return false;
         return true;
       });
     }
@@ -641,7 +650,8 @@ export class Simulation {
         },
         gravity: Math.abs(def.solver.gravityY),
         emit: (type, id, data) => sim.emit(type, id, data),
-        closingSpeeds: (rag, lookaheadS, predictionM, skinM) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM),
+        closingSpeeds: (rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints) => sim.closingSpeeds(rag, lookaheadS, predictionM, skinM, jointResidual, manifoldPoints),
+        carriedImpacts: (rag, lookaheadS, predictionM, skinM, speed, closeMPerS) => sim.carriedImpacts(rag, lookaheadS, predictionM, skinM, speed, closeMPerS),
         selfImpulses: (rag) => sim.selfImpulses(rag),
       });
       if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
@@ -772,6 +782,19 @@ export class Simulation {
       emit: (type, id, data) => sim.emit(type, id, data),
       reverseOrder: !!this.opts.reverseOrder,
       contacts: () => sim.contacts,
+      // contact motion arm clearance: the limbs a supported, still-convertible player's own pose guard counts as physical
+      ...(this.def.armClearance?.publishedLimbs
+        ? {
+            publishedLimbs: () => {
+              const L = publishedLimbs(sim);
+              for (const p of sim.players) if (p.rag || p.handoff) L.delete(p.id);
+              return L;
+            },
+          }
+        : {}),
+      ...(this.def.armClearance?.shownLimbQuery && this.def.ragdoll
+        ? { shownArmShapes: (side, sh, el, wr, pa) => armShapes(this.def.ragdoll!, side, sh, el, wr, pa).map(poseShapeToRapier).filter((x) => !!x) }
+        : {}),
     };
   }
 
@@ -837,6 +860,8 @@ export class Simulation {
         // suspension is disabled before any falling force (it requires the supported control mode).
         this.physics.setSupportFriction(pl.proxy.support, false);
         if (pl.proxy.guard) this.physics.setSupportFriction(pl.proxy.guard, false);
+        // contact motion experiment: the physical legs are a supported proxy's only (the conversion starts from the pose)
+        disablePhysicalLegs(pl);
         if (pl.sus) Object.assign(pl.sus, { active: false, commandedN: 0, appliedN: 0, pivotN: 0, comN: 0, tipTorqueNm: v3(), saturated: 'none', approachLimitMps: NaN, authority: 0, powerW: 0 });
         this.emit('controlMode', pl.id, { mode: 'falling', reason, armBudgetFraction: this.arms?.hasArms(pl.id) ? this.balanceProfile.fallingArmBudgetFraction : undefined });
       }
@@ -928,6 +953,7 @@ export class Simulation {
       if (pl.rag) auditEnvelope(pl.rag, this.physics.dt);
       if (pl.fall) this.fall!.audit(pl.fall);
     }
+    if (this.def.legGuard?.physicalLegs) observePhysicalLegs(this);
     // 8. read solved state; 9-10. reconstruct arms against solved roots, release failures, classify wraps
     observeContacts(this, false);
     this.arms?.postStep();
@@ -1188,14 +1214,40 @@ export class Simulation {
     return false;
   }
 
+  /** World velocity of a physical leg point from its last pose step (previous to current placement, over one substep). */
+  private legPlacementVelocity(o: PlayerRuntime, i: number, pw: Vec3): Vec3 {
+    const bp = vc(o.proxy.body.translation());
+    const bq = { ...o.proxy.body.rotation() };
+    return scale(qRot(bq, legPointMove(o.legs!, i, qInvRot(bq, sub(pw, bp)))), 1 / this.physics.dt);
+  }
   /**
    * Plan 09 impact guard: per segment of a ragdoll, the fastest closing speed of a contact its geometry meets within
    * `lookaheadS` (floor, obstacles, other players' active colliders), read before the solve. Observation only.
    */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number): Partial<Record<SegmentId, number>> {
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual = false, manifoldPoints = false): Partial<Record<SegmentId, number>> {
     const out: Partial<Record<SegmentId, number>> = {};
+    // `impactGuard.jointResidual`: per child segment, the parent's velocity at their joint pivot less the child's (zero
+    // for a solved joint). The next solve passes what the last one left unsatisfied into the child, and through a contact
+    // the child rests on into that contact, so the contact also closes at its own closing plus this residual
+    const residual = new Map<SegmentId, Vec3>();
+    if (jointResidual)
+      for (const j of rag.joints) {
+        const pivot = toWorld(poseOfRb(rag.bodies[j.child]), j.anchorChildLocal);
+        residual.set(j.child, sub(vc(rag.bodies[j.parent].velocityAtPoint(pivot)), vc(rag.bodies[j.child].velocityAtPoint(pivot))));
+      }
     const others: RAPIER.Collider[] = [this.physics.floorCollider, ...this.obstacleColliders];
-    for (const o of this.players) if (o.id !== rag.playerId) others.push(...this.activeColliders(o));
+    // contact motion: a supported proxy's physical legs are hit like its body; a leg point moves with the body plus the
+    // pose's last placement step (the solver sees that step as the leg's motion)
+    const legOf = new Map<RAPIER.Collider, { o: PlayerRuntime; i: number }>();
+    for (const o of this.players) {
+      if (o.id === rag.playerId) continue;
+      others.push(...this.activeColliders(o));
+      if (o.legs?.enabled) o.legs.colliders.forEach((c, i) => {
+        if (!o.legs!.on[i]) return;
+        others.push(c);
+        legOf.set(c, { o, i });
+      });
+    }
     // plan 13a: a pair farther apart than the prediction returns nothing, so it is not queried; the query runs between the
     // colliders themselves (no shape conversion)
     const geoms = others.map((c) => cullGeom(c.shape, c.translation(), c.rotation()));
@@ -1209,9 +1261,39 @@ export class Simulation {
         const r = c.contactCollider(own, predictionM);
         if (!r) continue;
         const other = c.parent();
-        const vRel = sub(vc(body.velocityAtPoint(r.point2)), other ? vc(other.velocityAtPoint(r.point1)) : v3());
-        const closing = -dot(vRel, vc(r.normal1));
-        if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+        const leg = legOf.get(c);
+        const res = residual.get(rc.segment);
+        // closing at a point pair: own point `pOwn`, the other's `pOther`, `n` the other's outward normal toward own
+        const test = (pOwn: Vec3, pOther: Vec3, n: Vec3, distance: number): void => {
+          const vOther = other ? (leg ? add(vc(other.velocityAtPoint(pOther)), this.legPlacementVelocity(leg.o, leg.i, pOther)) : vc(other.velocityAtPoint(pOther))) : v3();
+          const vRel = sub(vc(body.velocityAtPoint(pOwn)), vOther);
+          const ownClosing = -dot(vRel, n);
+          const closing = res ? Math.max(ownClosing, ownClosing - dot(res, n)) : ownClosing;
+          if (closing > 0 && distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
+        };
+        test(vc(r.point2), vc(r.point1), vc(r.normal1), r.distance);
+        if (!manifoldPoints) continue;
+        // `impactGuard.manifoldPoints`: the closest pair is one point of a face or edge contact. A segment turning on
+        // its contact (a core rocking on a torso corner) closes at its far points while the closest one, the pivot,
+        // separates, and the solve resolves every point of the pair's manifold. Each point of the last narrow phase's
+        // manifold (collider-local, so it moves with both colliders) is tested at its current gap
+        this.physics.world.contactPair(c, own, (m, flipped) => {
+          // shape 1 is `c` unless flipped; local normal 1 is shape 1's outward normal
+          const P1 = this.physics.colliderPose(flipped ? own : c);
+          const P2 = this.physics.colliderPose(flipped ? c : own);
+          const n1 = qRot(P1.q, vc(m.localNormal1()));
+          const n = flipped ? neg(n1) : n1;
+          for (let k = 0; k < m.numContacts(); k++) {
+            const l1 = m.localContactPoint1(k);
+            const l2 = m.localContactPoint2(k);
+            if (!l1 || !l2) continue;
+            const p1 = toWorld(P1, vc(l1));
+            const p2 = toWorld(P2, vc(l2));
+            const pOwn = flipped ? p1 : p2;
+            const pOther = flipped ? p2 : p1;
+            test(pOwn, pOther, n, dot(sub(pOwn, pOther), n));
+          }
+        });
       }
     }
     // plan 11: a forearm's self shapes closing on the player's own trunk pieces
@@ -1229,6 +1311,40 @@ export class Simulation {
           if (closing > 0 && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, closing);
         }
       }
+    }
+    return out;
+  }
+
+  /**
+   * Contact motion (D3): segments of `rag` closing on another ragdoll one of whose segments closes on static ground (floor,
+   * obstacles) faster than `speed` within the lookahead, valued at that landing speed. A segment counts only when it
+   * closes on the landing body faster than `closeMPerS` within the lookahead (the `closingSpeeds` test, against that
+   * body): mere proximity within the skin, a resting touch that carries no load, held effort off (L4-F5-twoClamp-on D 3.6%
+   * less work, and in reverse L4-F9-defenderFalling a brace that ends in contact only with the hold), and the hit that
+   * matters there is R's core closing on D's thigh at 1.49 m/s. Read before the solve, like `closingSpeeds`.
+   */
+  carriedImpacts(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, speed: number, closeMPerS: number): Partial<Record<SegmentId, number>> {
+    const out: Partial<Record<SegmentId, number>> = {};
+    const ground: RAPIER.Collider[] = [this.physics.floorCollider, ...this.obstacleColliders];
+    for (const o of this.players) {
+      if (!o.rag || o.rag === rag) continue;
+      let land = 0;
+      for (const rc of o.rag.colliders)
+        for (const g of ground) {
+          const r = g.contactCollider(rc.collider, predictionM);
+          if (!r) continue;
+          const closing = -dot(vc(o.rag.bodies[rc.segment].velocityAtPoint(r.point2)), vc(r.normal1));
+          if (closing > speed && r.distance - closing * lookaheadS < skinM) land = Math.max(land, closing);
+        }
+      if (!land) continue;
+      for (const rc of rag.colliders)
+        for (const oc of o.rag.colliders) {
+          const r = oc.collider.contactCollider(rc.collider, predictionM);
+          if (!r) continue;
+          const vRel = sub(vc(rag.bodies[rc.segment].velocityAtPoint(r.point2)), vc(o.rag.bodies[oc.segment].velocityAtPoint(r.point1)));
+          const closing = -dot(vRel, vc(r.normal1));
+          if (closing > closeMPerS && r.distance - closing * lookaheadS < skinM) out[rc.segment] = Math.max(out[rc.segment] ?? 0, land);
+        }
     }
     return out;
   }

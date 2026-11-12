@@ -126,8 +126,17 @@ export interface FallHost {
   readonly steps: number;
   readonly gravity: number;
   emit(type: string, playerId: PlayerId | undefined, data: Record<string, unknown>): void;
-  /** Per segment, the fastest closing speed (m/s) of a contact its geometry meets within `lookaheadS`, if any. */
-  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number): Partial<Record<SegmentId, number>>;
+  /**
+   * Per segment, the fastest closing speed (m/s) of a contact its geometry meets within `lookaheadS`, if any; with
+   * `manifoldPoints`, at every point of the pair's last contact manifold as well as the closest one.
+   */
+  closingSpeeds(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, jointResidual?: boolean, manifoldPoints?: boolean): Partial<Record<SegmentId, number>>;
+  /**
+   * Contact motion (D3, `impactGuard.carried`): per segment of `rag` closing faster than `closeMPerS` (within the lookahead)
+   * on another ragdoll that is itself about to land on static ground faster than `speedMPerS`, the landing speed.
+   * Observation only.
+   */
+  carriedImpacts(rag: Ragdoll, lookaheadS: number, predictionM: number, skinM: number, speedMPerS: number, closeMPerS: number): Partial<Record<SegmentId, number>>;
   /** Plan 11: per forearm, the summed contact impulse (N s) on its own trunk in the solve just read (never a contact record). */
   selfImpulses(rag: Ragdoll): Partial<Record<SegmentId, number>>;
 }
@@ -362,11 +371,27 @@ export class FallResponse {
     }
     // plan 11: a forearm on its own trunk is an impact on that arm (the core, far heavier, is not held for it)
     for (const [seg, j] of Object.entries(this.host.selfImpulses(ep.rag)) as [SegmentId, number][]) if (j > G.impulseNs) out.add(LIMB_OF[seg]);
-    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM);
+    // v5 (`jointResidual`): a contact also closes at what the segment's own joint still owes it from the last solve.
+    // L4-F9-low (intermediate pose): R's head lands (9.98 N s, under the impulse) and is at rest, but the solve left the
+    // core descending 1.08 m/s at the neck; the next solve takes 54.4 N s through the resting head, the core's jolt
+    // swings both elbows and they realize 180.3 W against 157.5. Its closing with the residual is 1.08: the body holds
+    // v6 (`manifoldPoints`): every point of a contact closes, not only the closest. Tipped oblique fall (4 m/s, 10 deg,
+    // 4 rad/s): R's core rocks on a torso corner at 7.5 rad/s; that corner, the closest point, separates at 0.12 m/s,
+    // the far corner 12 mm off the floor closes at 5.8 m/s and the solve takes 284 N s through it; the left knee
+    // realizes 157.6 W against a predicted 13.9. Its closing over the manifold is 5.8: the body holds
+    const closing = this.host.closingSpeeds(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, !!G.jointResidual, !!G.manifoldPoints);
     // plan 14: a segment jointed to the core passes a hard hit straight into it, and the core parents every other limb
     const onCore = (seg: SegmentId): boolean => ep.rag.joints.some((j) => j.child === seg && j.parent === 'core');
     for (const [seg, v] of Object.entries(closing) as [SegmentId, number][])
       if (v > G.closingMPerS) out.add(v > G.bodyClosingMPerS && onCore(seg) ? 'body' : LIMB_OF[seg]);
+    // contact motion (D3): a landing carried through a closing contact. A segment closing on another ragdoll that lands
+    // hard takes that landing with the hit, though its own closing speed is under the body speed (L4-F9-defenderFalling:
+    // R's core closes on D's right thigh at 1.49 m/s while R lands, 80 N s in one solve; held as a leg only, D's left hip
+    // and right shoulder realize 179.8 W against 157.5). The closing segment is held as a hit of the landing's speed, the
+    // core and its children hold the whole body
+    if (G.carried && !process.env.D3_OFF)
+      for (const seg of Object.keys(this.host.carriedImpacts(ep.rag, G.lookaheadSubsteps * this.host.dt, G.predictionM, G.skinM, G.bodyClosingMPerS, G.closingMPerS)) as SegmentId[])
+        out.add(seg === 'core' || onCore(seg) ? 'body' : LIMB_OF[seg]);
     return out;
   }
 

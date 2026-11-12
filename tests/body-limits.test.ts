@@ -14,7 +14,9 @@
 //
 // Plan 13f: the predictive leg guard. Under the opt-in profile (the L3, L4 and HC fixtures) the supported pose's leg guard
 // measures and pushes legs against other bodies where they are now and where they will be one physics substep on, so a
-// candidate built from the pose stays inside the conversion's penetration tolerance while another player closes in.
+// candidate built from the pose stays inside the conversion's penetration tolerance while another player closes in. Its
+// coverage is the constructed closing body (the 13f describe); the production fixtures show the physical legs' collision
+// protection, not the prediction's benefit.
 import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import type { FixtureDef } from '../src/sim/fixture';
@@ -23,10 +25,10 @@ import { armSelfShapes, hingeChain, twoBone, type PoseShape } from '../src/sim/p
 import { RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V2, SELF_CLEARANCE_V1, sideSignX } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf } from '../src/sim/ragdoll';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
-import { add, addScaled, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qMul, qRot, scale, sub, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
+import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qMul, qRot, scale, sub, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, rows, runSim } from './helpers';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -80,6 +82,38 @@ function depthObserver(def: FixtureDef): { out: Record<Src, { d: number; at: str
 }
 
 const without = (def: FixtureDef): FixtureDef => ({ ...def, id: `${def.id}-noSelf`, selfClearance: undefined });
+
+// The ragdoll negative control's deliberate drive (contact motion test repair): from the substep a player's ragdoll takes
+// over, for PULL_S, each forearm's palm is pulled toward its own core by an equal and opposite PULL_N pair (on the forearm
+// at the palm, on the core at the same point: internal, so the body's momentum is unchanged). Every converted forearm is
+// then driven into its own trunk, whatever the run before the switch did, so the profile and its twin meet the same load:
+// with the profile the trunk pieces stop it, without them it passes through. Runs listed with `pulled` take it.
+const PULL_N = 300;
+const PULL_S = 0.3;
+const PULLED = new Set<string>();
+const pulled = (def: FixtureDef): FixtureDef => {
+  const d = { ...def, id: `${def.id}-pulled` };
+  PULLED.add(d.id);
+  return d;
+};
+function pullForearms(): (s: Simulation) => void {
+  const from = new Map<string, number>();
+  return (s) => {
+    for (const pl of s.players) {
+      if (!pl.rag || !pl.pose) continue;
+      if (!from.has(pl.id)) from.set(pl.id, s.t);
+      if (s.t - from.get(pl.id)! > PULL_S) continue;
+      const core = pl.rag.bodies.core;
+      const c = core.translation();
+      for (const side of ['left', 'right'] as const) {
+        const palm = pl.pose.jointLandmarksWorld[`${side}Palm`];
+        const j = scale(norm(sub(v3(c.x, c.y, c.z), palm)), PULL_N * s.physics.dt);
+        pl.rag.bodies[`${side}Forearm`].applyImpulseAtPoint(j, palm, true);
+        core.applyImpulseAtPoint(scale(j, -1), palm, true);
+      }
+    }
+  };
+}
 
 // ------------------------------------------------------------------ plan 12: the joint-range probe
 /** Plan 09's persistence limit (s), which the ragdoll envelope under the profile keeps. */
@@ -173,7 +207,7 @@ const watched = (def: FixtureDef): Promise<{ depth?: Record<Src, { d: number; at
   return runs.get(def.id)!;
 };
 async function runWatched(def: FixtureDef): Promise<{ depth?: Record<Src, { d: number; at: string }>; range: Probe }> {
-  const sim = await Simulation.create(def);
+  const sim = await Simulation.create(def, PULLED.has(def.id) ? { onSubstep: pullForearms() } : {});
   const depth = DEPTH.has(def.id) ? depthObserver(def) : null;
   const range = rangeObserver();
   await runSim(sim, Infinity, (s) => {
@@ -268,17 +302,23 @@ describe('arm self-clearance: supported and arm-task arms stay out of the own tr
 
 describe('arm self-clearance: ragdoll forearms collide with their own trunk', () => {
   const RAGDOLL = ['HC-F1-low', 'L3-F3-recover', 'L3-F16-handoff'];
-  // contact motion M1: the twin also takes plan 12's joint-range-v1: with the twist kept in range L3-F3-recover's runner
-  // converts with its forearm clear of the trunk, so without self-clearance alone it no longer crosses (0 cm)
-  const withoutV1 = (def: FixtureDef): FixtureDef => ({ ...without(def), id: `${def.id}-noSelf-v1`, jointRange: JOINT_RANGE_V1 });
-  measureDepth(RAGDOLL.flatMap((id) => [FIX(id), withoutV1(FIX(id))]));
+  // The negative control is driven (`pulled`), not left to where the run puts the forearms. Its natural sample went: from
+  // contact motion M1 (the arms' twist kept in range) L3-F3-recover's runner converts with its forearms clear of the trunk,
+  // and its twin without self-clearance crossed by 0 cm (plan 12's joint-range-v1 twin later by 2.98 cm, R.right at
+  // 1.750 s), under the 5 cm the control needs. The pulled pair: the same fixture with and without the profile under the
+  // same deliberate pull of each converted forearm into its own trunk
+  measureDepth(RAGDOLL.flatMap((id) => [FIX(id), pulled(FIX(id)), pulled(without(FIX(id)))]));
 
   it('ragdoll forearms stay out of the trunk; without the profile they pass through, on every ragdoll fixture listed', async () => {
     await rows(RAGDOLL, (id) => id, async (id) => {
       const w = await worstBySource(FIX(id));
       expect(w.ragdoll.d, w.ragdoll.at).toBeLessThanOrEqual(0.025);
-      const off = await worstBySource(withoutV1(FIX(id)));
-      expect(off.ragdoll.d, off.ragdoll.at).toBeGreaterThan(0.05);
+      // a forearm pulled into its trunk: the profile's trunk pieces stop it, within the same bound
+      const on = await worstBySource(pulled(FIX(id)));
+      expect(on.ragdoll.d, `pulled ${on.ragdoll.at}`).toBeLessThanOrEqual(0.025);
+      // the twin without the profile under the same pull: it passes through
+      const off = await worstBySource(pulled(without(FIX(id))));
+      expect(off.ragdoll.d, `pulled twin ${off.ragdoll.at}`).toBeGreaterThan(0.05);
     });
   }, 240000);
 
@@ -462,31 +502,118 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
     return { outcome: h.outcome, t: h.t.toFixed(4), newM: h.report.maxNewExternalPenetrationM, reasons: h.report.reasons.join(',') };
   };
 
-  it('converts where the guard without prediction (and the twin without the profile) is rejected for external penetration', async () => {
-    // the reversed L3-F9-noProbe-contact D (13e): its left thigh in R's right shoe, 1.74 cm (1.64 before plan 14).
-    // Tolerance 1.5 cm.
-    // (HC-F3-phase75 D, 13e's other case, converts without the prediction too since plan 14 shows the clip arms as the
-    // clip has them, so it no longer tells the guard from the fault)
-    const CASES: [string, boolean, number][] = [['L3-F9-noProbe-contact', true, 0.01736]];
-    await rows(
-      CASES,
-      ([id, rev]) => `${id}${rev ? ' reversed' : ''}`,
-      async ([id, rev, beforeM]) => {
-        const o = rev ? { reverseOrder: true } : {};
-        const on = await handoffOf(FIX(id), o);
-        expect(on.outcome, id).toBe('accepted');
-        expect(on.newM, id).toBeLessThan(0.012);
-        // the fault put back: the guard measuring other bodies where they are now only, and the twin without the profile.
-        // Both also without the plan 10c deep push that contact motion M1 adds to L3 (it clears this case on its own)
-        const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
-        for (const off of [await handoffOf(noDeep(FIX(id)), { ...o, debug: { pose: { noLegAhead: true } } }), await handoffOf(noDeep({ ...FIX(id), id: `${id}-noGuard`, legGuard: undefined }), o)]) {
-          expect(off.outcome, id).toBe('rejected');
-          expect(off.reasons, id).toContain('externalPenetration');
-          expect(off.newM, id).toBeCloseTo(beforeM, 4);
+  // The negative control on a constructed closing body (contact motion test repair). Its natural sample went: the
+  // reversed L3-F9-noProbe-contact D used to convert with its left thigh in R's right shoe (1.71 cm with the fault, 1.73
+  // cm on the twin, tolerance 1.5 cm). Under the contact motion prerequisites R's fall runs past D 0.6 m further on (its
+  // right shin 0.6 m ahead of where it was at D's switch, 0.7167 s), the fault and the twin convert with R's legs nowhere
+  // near D's (0.06 cm, R's torso on D's upper arm) and with the same report: no closing body is left to tell them apart.
+  // The constructed case: L3-F9-convert-free with D (running, free) converting by label at THROW.atS and R (converted by
+  // label at 0.15 s) thrown at D's leg two substeps before: R's ragdoll is moved rigidly so its head lies outside D's
+  // most protruding thigh, 60 % of the way to the knee, along the direction square to the thigh and to its motion, and
+  // given D's velocity plus THROW.mps toward it. The gap is one substep of travel plus 1 cm: after the first substep the
+  // head is 1 cm clear of the thigh, where only the prediction finds it in the leg (3.2 cm deep a substep on), and the
+  // switch comes after the second, with the head in where the leg was. The target is taken from D's pose when R is
+  // thrown, so the case does not depend on where D's run puts its legs. Measured (s14, cm new penetration): production
+  // 0.00, V2 with its prediction 1.12, the fault and the twin 2.09; across D's stride (switch at 0.30-0.45 s, 9-10 m/s)
+  // the fault and the twin stay at 1.67-2.24 and production at 0.06 or under.
+  // What each kind of evidence covers (user ruling 2026-11-10): this constructed case is the evidence that the prediction
+  // works, V2 with and without it on the same closing body. The production fixtures are not: under the production profile
+  // (V3, physical legs) the prediction makes no measurable difference there (V3 with noLegAhead also converts, 0.05-0.39
+  // cm), because the physical leg colliders stop the closing body on D's thigh before the pose needs predicting. They
+  // show collision protection, not the prediction's benefit, and the prediction stays: those cases mask it, they don't
+  // show it unneeded.
+  const THROW = { atS: 0.4, mps: 10, along: 0.6, clearM: 0.01 };
+  const vecOf = (v: { x: number; y: number; z: number }): Vec3 => v3(v.x, v.y, v.z);
+  const thrownAt = async (def: FixtureDef, opts: SimOptions = {}) => {
+    const d: FixtureDef = { ...def, id: `${def.id}-thrown`, durationS: THROW.atS + 0.05, diagnostics: { conversions: [{ playerId: 'R', atS: 0.15 }, { playerId: 'D', atS: THROW.atS }] } };
+    let thrown = false;
+    let prev: Partial<Record<Side, Vec3>> = {};
+    const segR = d.ragdoll!.radii.thigh;
+    const sim = await Simulation.create(d, {
+      ...opts,
+      onSubstep: (s) => {
+        const D = s.players.find((p) => p.id === 'D')!;
+        const R = s.players.find((p) => p.id === 'R')!;
+        if (!D.pose || D.rag || D.handoff) return;
+        const lm = D.pose.jointLandmarksWorld;
+        const root = vecOf(D.proxy.body.translation());
+        const at = (sd: Side): Vec3 => add(lm[`${sd}Hip`], scale(sub(lm[`${sd}Knee`], lm[`${sd}Hip`]), THROW.along));
+        const now = { left: sub(at('left'), root), right: sub(at('right'), root) };
+        if (!thrown && R.rag && s.t >= THROW.atS - 2 * s.physics.dt - 1e-9) {
+          thrown = true;
+          const out = (sd: Side): number => Math.hypot(now[sd].x, now[sd].z);
+          const sd: Side = out('left') > out('right') ? 'left' : 'right';
+          let u = norm(cross(norm(sub(lm[`${sd}Knee`], lm[`${sd}Hip`])), sub(now[sd], prev[sd] ?? now[sd])));
+          if (u.x * now[sd].x + u.z * now[sd].z < 0) u = scale(u, -1);
+          const hc = R.rag.bodies.head.collider(0);
+          const head = vecOf(hc.translation());
+          const q = qFromUnitVectors(norm(sub(vecOf(R.rag.bodies.core.translation()), head)), u);
+          const to = add(at(sd), scale(u, (hc.shape as RAPIER.Ball).radius + segR + THROW.mps * s.physics.dt + THROW.clearM));
+          const v = add(vecOf(D.proxy.body.linvel()), scale(u, -THROW.mps));
+          for (const b of Object.values(R.rag.bodies)) {
+            b.setTranslation(add(to, qRot(q, sub(vecOf(b.translation()), head))), true);
+            b.setRotation(qMul(q, b.rotation()), true);
+            b.setLinvel(v, true);
+            b.setAngvel(v3(), true);
+          }
         }
+        prev = now;
       },
-    );
-  }, 120000);
+    });
+    await runSim(sim);
+    const h = sim.players.find((p) => p.id === 'D')!.handoff!;
+    sim.dispose();
+    expect(thrown, 'R was thrown').toBe(true);
+    return { outcome: h.outcome, t: h.t, newM: h.report.maxNewExternalPenetrationM, reasons: h.report.reasons.join(','), worst: `${h.report.worstExternal?.own} in ${h.report.worstExternal?.other}` };
+  };
+
+  it('converts where the guard without prediction (and the twin without the profile) is rejected for external penetration', async () => {
+    // the production profile on the reversed L3-F9-noProbe-contact D (13e: its left thigh beside R's falling right shoe)
+    const nat = await handoffOf(FIX('L3-F9-noProbe-contact'), { reverseOrder: true });
+    expect(nat.outcome).toBe('accepted');
+    expect(nat.newM).toBeLessThan(0.012);
+    // the constructed closing body (THROW). The fault variant runs without the physical supported legs (LEG_GUARD_V3 less
+    // `physicalLegs` is LEG_GUARD_V2): with them R's head meets D's thigh physically and stops whether the guard predicts
+    // or not. All three off-production variants also run without the plan 10c deep push that contact motion M1 adds to L3
+    const base = FIX('L3-F9-convert-free');
+    const noDeep = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: { ...d.ragdoll!, poseGuard: undefined } });
+    const tol = base.ragdoll!.validation.penetrationTolM;
+    await checks([
+      [
+        'the production profile converts beside the thrown body',
+        async () => {
+          const on = await thrownAt(base);
+          expect(on.outcome, on.worst).toBe('accepted');
+          expect(on.newM, on.worst).toBeLessThan(0.012);
+        },
+      ],
+      [
+        'the guard with its prediction (V2, no physical legs) converts beside it',
+        async () => {
+          const v2 = await thrownAt(noDeep({ ...base, legGuard: LEG_GUARD_V2 }));
+          expect(v2.outcome, `${v2.worst} ${v2.newM}`).toBe('accepted');
+        },
+      ],
+      ...(
+        [
+          ['the fault put back (the guard measuring other bodies where they are now only) is rejected for external penetration', noDeep({ ...base, legGuard: LEG_GUARD_V2 }), { debug: { pose: { noLegAhead: true } } }],
+          ['the twin without the profile is rejected for external penetration', noDeep({ ...base, id: `${base.id}-noGuard`, legGuard: undefined }), {}],
+        ] as [string, FixtureDef, SimOptions][]
+      ).map(
+        ([name, d, o]): Check => [
+          name,
+          async () => {
+            const off = await thrownAt(d, o);
+            expect(off.outcome, off.worst).toBe('rejected');
+            expect(off.reasons).toContain('externalPenetration');
+            expect(off.newM).toBeGreaterThan(tol);
+            // the thrown head in the thigh it was thrown at
+            expect(off.worst).toMatch(/^(left|right)Thigh:thigh in R:head:head$/);
+          },
+        ],
+      ),
+    ]);
+  }, 240000);
 });
 
 // ------------------------------------------------------------------ contact motion M1: upper-arm twist
@@ -647,10 +774,15 @@ describe('contact motion M1: upper-arm twist', () => {
     });
   }, 240000);
 
-  it('arm-task arms stay inside the twist range; ragdolls start their shoulders less far outside it than the twins', async () => {
+  it('arm-task arms stay inside the twist range and turn at most the rate per tick; ragdolls start their shoulders less far outside it than the twins', async () => {
+    const tick = ((TW.maxRateRadPs / 60) * 180) / Math.PI;
     await rows(['L3-F4-twoArm', 'HC-F3-phase0', 'L3-F6-hold', 'HC-F1-low', 'L4-F5-twoClamp-on'], (id) => id, async (id) => {
       const on = await twistRun(FIX(id));
       expect(on.armTask.over, `${id} ${on.armTask.at}`).toBeLessThanOrEqual(-2 + 0.5);
+      // M1 follow-up: collision-free end poses do not make a continuous path between them. A wrap arm whose palm cannot be
+      // reached within the rate stalls or retreats (reach), or a held one is released (invalidPose), instead of turning
+      // its elbow around the obstacle (L3-F4-twoArm D.left turned 55.6 deg in one tick at 0.867 s)
+      expect(on.armTask.jump, `${id} ${on.armTask.jat}`).toBeLessThanOrEqual(tick + 1);
       const off = await twistRun(v1(FIX(id)));
       expect(on.startOutside, id).toBeLessThanOrEqual(off.startOutside + 1);
     });

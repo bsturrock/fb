@@ -37,7 +37,7 @@ import { FOOTWORK_L2, FOOTWORK_L3 } from '../src/sim/footwork';
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
-import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
+import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
 import { breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 
@@ -228,10 +228,12 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 13f: the leg guard is on for exactly the L3, L4 and HC fixtures, and the export records it',
+    'plan 13f + contact motion: the leg guard (v3: swept step, physical legs) is on for exactly the L3, L4 and HC fixtures, and the export records it',
     async () => {
-      for (const d of allFixtures()) expect(d.legGuard, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? LEG_GUARD_V1 : undefined);
+      for (const d of allFixtures()) expect(d.legGuard, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? LEG_GUARD_V3 : undefined);
       expect(LEG_GUARD_V1).toEqual({ id: 'leg-guard-predictive-v1', aheadS: 1 / 240 });
+      expect(LEG_GUARD_V2).toEqual({ id: 'leg-guard-sweep-v2', aheadS: 1 / 240, sweep: true });
+      expect(LEG_GUARD_V3).toEqual({ id: 'leg-guard-physical-v3', aheadS: 1 / 240, sweep: true, physicalLegs: true });
       for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
         const sim = await Simulation.create(d);
         const e = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };

@@ -151,3 +151,77 @@ Before: `2e5344a`; after: this commit. In the lab (`?fixture=<id>&cam=front|side
 - `.scratch/cm1/` (untracked): `twist.ts`, `twsum.ts` (the table), `out-v1.txt` / `out-v2pg.txt` (outcomes in both
   orders), `legdepth.ts` (the deep push), `auditall.ts` with `audit-nopg.txt` / `audit-pg.txt`, `expo*.ts` and `div.ts`
   (hold exposure), `pin.ts` / `pin2.ts` (pinned shoulder), `test-e.log` (the closing run), `fixtures.log`.
+
+## Contact-motion prerequisites (before M2; in progress, not yet accepted)
+
+The physical-leg, arm-clearance and guard repairs the user ruled must land before M2. The full write-up comes with
+acceptance; recorded here so far: the coverage note the user asked for and the known issues found on the way.
+
+### 13f coverage: what proves the prediction
+
+The predictive leg guard's evidence is the constructed closing body in the 13f describe (`tests/body-limits.test.ts`):
+on the same thrown body, V2 with the prediction converts (1.12 cm new penetration) and V2 without it (`noLegAhead`) and
+the twin without the guard are rejected (2.09 cm). The production fixtures do not show the prediction's benefit: under
+the production profile (V3, physical legs) the prediction makes no measurable difference there (V3 with `noLegAhead`
+also converts, 0.05-0.39 cm), because the physical leg colliders stop the closing body on the defender's thigh first.
+They show collision protection. The prediction stays (user ruling 2026-11-10): those cases mask it, they don't show it
+unneeded.
+
+### D4 and D5 reverted (user ruling 2026-11-10)
+
+D4 (a plant at its reach limit keeps its pivot against the clip's roll toward the heel) and D5 (a step too far from the
+request lands at any clip weight) are reverted together. D5 only repaired what D4 broke on L3-F7-loadRelease.
+
+- **Why:** D4 made L3-F1-phase6 D's right plant release for slide at 0.525 s, not for reach at 0.5625 s. Its next step
+  became a drag step that never touched down: it hovered until support was lost at 1.342 s, with neither of D's feet
+  down from 0.525 s. The hover mechanism is old (see the known issues), but D4 brought it to this fixture.
+- **What D4 still bought on the current tree:** one substep. L3-F7-phase50 R's left plant releases for reach at 1.7208 s
+  without it, 1.7250 s with it, and phase50's off-ground time is 0.150 s either way. In s10, before D4, it was 0.333 s;
+  later changes did the rest.
+- **After the revert:**
+  - L3-F1-phase6 D's right step lands at 0.958 s, as in s10. That plant then slides off at 1.008 s, where s10 holds it
+    to 1.146 s. This is during R's contact with the leg, which runs from 1.02 s. The next step, due at 1.243 s, is held
+    off for cause: from 1.18 s its path runs within 0-8 cm of R's ragdoll, and the leg takes clearance variant 9 with
+    its ankle 0.4-0.58 m up. D converts at 1.471 s (s10: 1.446 s, the drag step also in the air).
+  - L3-F7-loadRelease off-ground time is 0.117 s. It was 0.150 s with D4 and D5, and 0.217 s with D4 alone.
+  - Fixture summaries: G/L1/L2/RH identical, 72 L3/L4/HC summaries changed.
+  - Suite: no new failure. The palm transition row passes again (a trajectory change, not a fix). The leg-placement
+    fixture sample (L3-F1-phase6 forward D) no longer reaches 100 N s; its swap is in progress.
+- **Leg matrix against s10:**
+  - 527 of 610 player rows are identical, and who-falls matches s10 except two runs that already differed in s15:
+    L4-F9-crowded forward D and HC-F3-phase75 reversed D, both supported.
+  - The runs over 50 N s are s10's set plus L3-F1-phase0 reversed D, which was already over in s15.
+- **Two peaks rise, for visual review:**
+  - **L3-F1-phase0 reversed D:** 17.9 N s in s10, 62.6 in s15, 94.3 now. D, still supported at 4.6 m/s, runs its legs
+    into R's fallen pelvis at 1.196-1.213 s: about 149 N s over the event in s15, 199 now. From 1.25 s it is held up on
+    R's body (support probe obstructed on player:R, 0.39 m), and it converts on the recovery envelope at 1.333 s. The
+    run diverges from s10 by 1.04 s: there D re-enters contact at 1.042 s and tips over on the recovery envelope at
+    1.200 s, before reaching the pelvis. The divergence is already in s13, so it is not from the revert. No rule converts
+    a supported player on leg impulse; the fall response's impact guard acts on a ragdoll's segments.
+  - **HC-F3-phase75 forward D:** 55.2 N s in s10 (an early event at 0.504 s), 79.5 now. A new late event at 1.5458 s:
+    D, supported at 1.6 m/s, steps into R's fallen torso, and one solve lifts D's proxy 0.8 m/s. Injected energy is
+    small (0.028 J for the run). In s15, D converted at 1.433 s, before this.
+
+### Known issues (tracked, not M1 blockers; user ruling 2026-11-10)
+
+- **A late planner step can hover while its body runs on.** Footwork defect, resolved on L3-F1-phase6 by the D4
+  revert but not in `footwork.ts`. Recorded from L3-F1-phase6 D's right foot under D4 (s15):
+  - **Clear but not resuming:** R obstructs the step only at 0.67-0.75 s (R supported; clearance variants 1/3/9),
+    1.02-1.05 s and from 1.28 s. From 0.87 to 1.10 s the leg is on its primary placement, R's ragdoll is at least 16 cm
+    from it, and the straight path from ankle to destination is 37-82 cm clear.
+  - **Moving destination:** each late stretch (`arriveS`, 0.05 s) holds the destination still. The next one moves it
+    0.2-0.33 m, because D runs at about 6 m/s and the destination sits at the leg's reach (hip to destination 0.76-1.02
+    m against 0.843 m). The target gets within 3 cm and is moved again. The shown ankle trails its target by 5-40 cm.
+  - **Touchdown conditions never met:** `advanceStep` needs the target within 1 mm of the destination, or a `little`
+    step whose ankle is `settled` (it and its path move no more than the plant tolerance a substep). The plan 10b
+    `settled` clause covers this hover for a still foot (the L3-F4-twoArm case it cites), not for a running one.
+  - **s10:** the same right step is not a drag step (0.39 s, 2.15 m). It lands on time at 0.958 s, on its destination.
+  - Probes: `.scratch/b2/` (untracked): `held.ts`, `held2.ts`, with their logs on s15 and s10.
+- **The clip's roll toward the heel can take a plant past its reach (L3-F7-phase50 R's left foot, 1.7208 s).** The
+  mechanism D4 targeted, left in place by the revert. A plant at its reach limit takes the clip's roll. The pivot jumps
+  from the ball of the foot to the clip's, which lowers the ankle the hip already barely reaches: before D4, rollF went
+  1.69 to 1.00, the ankle 4.6 cm lower, 0.893 m needed against the 0.843 m reach. The plant is then released for reach.
+  phase50's off-ground time (0.150 s) is within the 0.25 s limit.
+- **D's left foot never lands in L3-F1-phase6 (older, separate).** Its 2.59 m continued clip swing starts at 0.479 s
+  and is still swinging when D goes ragdoll: 1.475 s after the revert, 1.342 s under D4, 1.45 s on s10. It is present with
+  and without D4.

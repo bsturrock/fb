@@ -770,9 +770,59 @@ export interface LegGuardProfile {
   id: string;
   /** Prediction time (s): one physics substep. */
   aheadS: number;
+  /**
+   * Contact motion prerequisite (thigh tangle): the supported legs' achieved step is judged, not only its target. A step
+   * past the clearance tries the other leg placements, and a step that would pass through a body stops at its last clear
+   * point (absent: unchanged).
+   */
+  sweep?: true;
+  /**
+   * Contact motion: the supported proxy's legs are physical. Massless thigh, shin and shoe colliders on the proxy's own
+   * body follow the achieved pose each substep, so another body's contact on a shown leg reaches the proxy through the
+   * solver (equal and opposite, once). They meet other players' proxy torso, pelvis and head and every ragdoll collider
+   * (ragdoll legs included); not another supported proxy's physical legs, support capsules or support guards, static
+   * ground, or their own body. Removed with the proxy at conversion.
+   */
+  physicalLegs?: true;
 }
 
+/**
+ * Contact motion arm clearance: an arm task's arm (arms.ts) and another supported player's procedural limbs (pose.ts) are
+ * neither one a collider, and each side used to meet the other as something other than what is shown:
+ * - the arm task's solve met only active colliders, so another supported player's arms and legs were not there;
+ * - that player's pose guard met the arm as the arm task's thin query capsules (soft: ranking only), and as hard only
+ *   through last substep's published shapes.
+ * With this profile both sides meet the shapes the pose shows (`armShapes` / `poseLimbShapes`, the ragdoll radii, which
+ * become the colliders at a conversion):
+ * - `publishedLimbs`: an arm-task solve meets every other supported, still-convertible player's published limbs, carried
+ *   with its body, by the shown shapes of the arm it is judging (`shownLimbQuery`). Its validity rule is unchanged
+ *   (surfaceTolM). They are never grip or clamp surfaces.
+ * - `armTaskShapes`: a supported player's pose guard meets another player's enabled arm-task arm as its shown shapes
+ *   this substep (solved before the pose), hard, in place of that arm's published shapes from the substep before.
+ */
+export interface ArmClearanceProfile {
+  id: string;
+  publishedLimbs: true;
+  shownLimbQuery: true;
+  armTaskShapes: true;
+  /**
+   * A supported procedural arm's step is judged along its motion (pose.ts, `armSweep`): from the last shown arm (body
+   * frame, at the body's pose now) to the new one, swept in steps of at most 1 cm with the elbow re-solved. A step may not
+   * take any external shape past the larger of HARD_OK and its depth at the start (no new collision, no deeper one); an
+   * arm that starts past HARD_OK (trapped) must also end less deep. A failed ordinary step tries the same rate-limited,
+   * pushed steps from the shown arm toward each candidate (the chosen one first) and the swept prefix of the ordinary
+   * step; with none feasible the shown arm is held and the pose reports `obstructed`.
+   */
+  armPathSweep: true;
+}
+
+export const ARM_CLEARANCE_V1: ArmClearanceProfile = { id: 'arm-clearance-shown-v1', publishedLimbs: true, shownLimbQuery: true, armTaskShapes: true, armPathSweep: true };
+
 export const LEG_GUARD_V1: LegGuardProfile = { id: 'leg-guard-predictive-v1', aheadS: 1 / 240 };
+/** Contact motion prerequisite: plan 13f's prediction with the swept leg step (`sweep`). */
+export const LEG_GUARD_V2: LegGuardProfile = { ...LEG_GUARD_V1, id: 'leg-guard-sweep-v2', sweep: true };
+/** Contact motion prerequisite: `LEG_GUARD_V2` with physical supported legs (`physicalLegs`). */
+export const LEG_GUARD_V3: LegGuardProfile = { ...LEG_GUARD_V2, id: 'leg-guard-physical-v3', physicalLegs: true };
 
 /**
  * Plan 12: the ragdoll under a joint-range profile. The envelope's shoulder is the profile's (an L4 envelope keeps its
@@ -837,7 +887,32 @@ export interface FallResponseProfile {
    * `closingMPerS` within `lookaheadSubsteps`, or after a solve that gave it a contact impulse over `impulseNs`. A
    * segment jointed to the core (thigh, upper arm) closing faster than `bodyClosingMPerS` holds the whole body.
    */
-  impactGuard: { closingMPerS: number; bodyClosingMPerS: number; impulseNs: number; lookaheadSubsteps: number; predictionM: number; skinM: number };
+  impactGuard: {
+    closingMPerS: number;
+    bodyClosingMPerS: number;
+    impulseNs: number;
+    lookaheadSubsteps: number;
+    predictionM: number;
+    skinM: number;
+    /**
+     * Contact motion (D3): a segment closing faster than `closingMPerS` on another ragdoll that is about to land on static
+     * ground faster than `bodyClosingMPerS` is held too, the core or a segment jointed to it holding the whole body
+     * (absent: off).
+     */
+    carried?: true;
+    /**
+     * A contact's closing speed also counts the parent joint's velocity residual along the contact normal: what the
+     * last solve left unsatisfied at the segment's own joint, which the next solve passes through the segment into what
+     * it rests on (absent: off).
+     */
+    jointResidual?: true;
+    /**
+     * A contact closes at every point of its pair's last contact manifold (moved with both colliders to their current
+     * poses), not only at the closest point: a segment turning on a face or edge contact separates at its pivot while
+     * its far points close, and the solve resolves them all (absent: the closest point only).
+     */
+    manifoldPoints?: true;
+  };
   enable: { knee: boolean; hip: boolean; arms: boolean };
 }
 
@@ -853,8 +928,19 @@ export interface FallResponseProfile {
  * `L4-F9-defenderFalling` the runner's core met the defender's right thigh at 3.0 m/s; the guard held only that leg, and
  * the kick through the hip into the core drove the right shoulder to 44.6 W against its predicted 20.0, 171 W in all.
  */
+/**
+ * v4 (contact motion D3): a landing carried through a closing contact holds the closing segment (`impactGuard.carried`).
+ */
+/**
+ * v5: a contact's closing speed counts its segment's joint residual (`impactGuard.jointResidual`): a joint the last solve
+ * left unsatisfied passes the rest through the segment into what it rests on in the next one.
+ */
+/**
+ * v6: a contact's closing speed is read at every point of its manifold (`impactGuard.manifoldPoints`): a core rocking
+ * on one torso corner closes at the others while the closest point, the pivot, separates.
+ */
 export const FALL_L4: FallResponseProfile = {
-  id: 'fall-response-l4-v3',
+  id: 'fall-response-l4-v6',
   timing: { delayS: 0.04, rampS: 0.08, fadeStartS: 0.8, fadeS: 0.2 },
   ceilingsNm: { shoulder: 15, elbow: 10, hip: 18, knee: 22 },
   gains: { shoulder: { kp: 60, kd: 6 }, elbow: { kp: 35, kd: 3 }, hip: { kp: 45, kd: 6 }, knee: { kp: 40, kd: 5 } },
@@ -874,7 +960,7 @@ export const FALL_L4: FallResponseProfile = {
     envelopeMarginDeg: 8,
   },
   power: { maxPositiveW: 150, maxPositiveWorkJ: 100, toleranceFraction: 0.05, planFraction: 0.9, impactOmegaRadPerS: 1 },
-  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002 },
+  impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002, carried: true, jointResidual: true, manifoldPoints: true },
   enable: { knee: true, hip: true, arms: true },
 };
 
