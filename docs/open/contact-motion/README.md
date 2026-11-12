@@ -11,6 +11,26 @@ land before M2 (hard ragdoll joint stops, own-leg contact, physical supported le
 ([handoff](../../handoff/contact-motion-prerequisites.md); what is still open, with the user's review list:
 [prerequisites ladder](prerequisites-ladder.md)). M2 starts from that branch after the user's review.
 
+## Direction (user-approved 2026-11-12; supersedes conflicting text below and in the milestone files)
+
+The prerequisites ladder ended at 14b. Its remaining rungs (shoulder twist rebound, upper arm in chest, the parked
+flips) are tracked defects in the prerequisites handoff, worked only when they are seen in the lab.
+
+1. **Rough whole tackle first.** Build brace (M2), wrap and finish (M3) and ground contact (M4) end to end in rough
+   form, then polish what looks worst in the lab. Do not perfect one layer before the next exists.
+2. **Arms in three stages:** an authored source pose, one task on top (reach, wrap, carry), one final pass (joint
+   limits, stay out of the own trunk, pelvis and head). New arm behaviour goes into this shape; per-case guards are
+   deleted as it replaces them, and no new per-case guard is added.
+3. **Authored poses.** Brace, wrap and carry are short authored clips or keyed poses (Blender, or ported from
+   `../football-sim-6`), blended and aimed by rules, not built from stacked procedural rules.
+4. **Ragdoll rather than fall stiff.** A conversion is refused only when grossly impossible. The tolerance is a
+   simulation rule, so loosening it is its own flagged step with a lab look.
+5. **Gates on the visible bar** (`CLAUDE.md` rule 6); audit of the fine limits that parked steps:
+   `.scratch/ladder/gate-audit.md`. Every parked flag is later flipped or deleted; old families retire after M4.
+
+Unchanged: posed legs and running, physics decides who falls, small flagged steps, lab review at milestones.
+Rejected: physically driven arms (map of the cost: `.scratch/ladder/physical-arms-map.md`), a move to Godot.
+
 Implement in this order, one reviewable milestone at a time:
 
 1. [Anatomical limb rotation](01-limb-rotation.md): establish valid joints and continuous poses before tuning force.

@@ -29,8 +29,13 @@ uncommitted stack of changes cannot be judged or bisected, and cost 17 rounds wi
    `scripts/capture-state.ts`, `tests/README.md`) and resume it with the change on and off. A failure blocks a step
    only if the step introduces or worsens the mechanism. A mechanism that already existed and was merely reached by a
    moved trajectory becomes a capture-based regression test plus a tracked defect with its own fix step.
-6. **Never raise a limit or re-pin an expectation to pass.** Exceptions for tracked defects are scoped by fixture and
-   mechanism, never by a number. Prefer checking a rule over pinning a list of fixtures that happen to trigger it.
+6. **Gates express what a viewer sees; fine tolerances are meters.** A check blocks a step only for the visible bar
+   (a limb passing through a body, a visibly impossible joint, a snap or jump, a skate, energy from nowhere, a player
+   falling stiff instead of as a ragdoll) or real correctness (determinism, conservation identities, crashes, older
+   families byte-identical). Millimetre and centimetre overlaps, few-degree excesses and fractions of a joule are
+   printed as trend columns and block nothing. Within that: never raise a gate or re-pin an expectation to pass;
+   exceptions for tracked defects are scoped by fixture and mechanism, never by a number; prefer checking a rule over
+   pinning a list of fixtures that happen to trigger it.
 7. **Every test has a fault twin:** it fails for the intended reason with the fault and passes without. Prefer
    constructed cases and state captures over samples from whole fixture runs.
 8. **A step that cannot pass alone is parked** with its patch and evidence, not carried forward.
@@ -46,7 +51,11 @@ uncommitted stack of changes cannot be judged or bisected, and cost 17 rounds wi
   work. Decide, record the reason in the plan or handoff doc, proceed.
 - Status updates in plain terms: what players visibly do now compared with before, how far along, what is risky.
   Fixture IDs, watts and test names go in the docs, not in updates.
-- Changed fall outcomes ("who falls") are shown to the user, not silently accepted or rejected.
+- Changed fall outcomes ("who falls") are shown to the user, not silently accepted or rejected. Odd-looking ragdoll
+  outcomes are acceptable and do not block; a player falling stiff is a defect.
+- The user's bar (2026-11-12): it must look real. A natural, anatomically possible pose comes first, no limb through
+  a body second; incidental overlap does not matter. A guard that trades overlap for an odd or impossible pose is a
+  regression. Build systems rough and end to end first; polish what looks worst in the lab afterwards.
 
 ## Docs
 
