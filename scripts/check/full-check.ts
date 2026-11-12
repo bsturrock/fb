@@ -3,18 +3,20 @@
 // directory.
 //   npx vite-node scripts/check/full-check.ts <result dir>
 // Env: CHECK_JOBS (parallel workers after the suite, default 6), CHECK_SKIP (comma list of
-// typecheck,build,suite,fixtures,legmx,l4mx,energymx,visiblemx; a skipped part is recorded as skipped).
+// typecheck,build,suite,fixtures,legmx,l4mx,energymx,visiblemx; a skipped part is recorded as skipped), CHECK_REUSE
+// (a previous result directory: its export and matrices are taken when the pass's inputs are unchanged, README "Reuse").
 // The leg matrix's runs also write the shape-query budget (queries.jsonl).
 // The suite runs first and alone (no competing load, so no induced timeouts); then every fixture runs once per body
 // order it is needed in, with the meters of every part it feeds attached (scripts/check/meters.ts), in a pool of
 // worker processes (pass.ts) that take the runs longest first. Every compared file is deterministic: no timestamps,
 // stable order. Timings go to meta.json and logs/.
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { allFixtures } from '../../src/sim/fixtures/index';
 import { familyOf, visibleHeadline, type VisRow } from './lib';
+import { passInputDigest } from './inputs';
 import { PARTS, partsOf, type Part, type PassRows } from './meters';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -139,6 +141,44 @@ else {
 }
 ms.beforePool = Date.now() - t0;
 
+// 3a. reuse: a previous result whose pass ran on the same inputs (every file the runs execute or read, the installed
+// packages, Node) is this tree's pass, byte for byte (README "Reuse"); its files are taken and status.json says so
+const PASS_PARTS: string[] = [...PARTS];
+const PASS_FILES = ['summary.json', 'traces.sha256', 'traces-rev.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl', 'energymx.jsonl', 'visiblemx.jsonl'];
+const inputs = passInputDigest(ROOT);
+meta.passInputs = { digest: inputs.digest, files: inputs.files, ...(inputs.unresolved.length ? { unresolved: inputs.unresolved } : {}) };
+function reuseRefusal(prev: string): string | null {
+  if (!inputs.digest) return `an import does not resolve: ${inputs.unresolved.join('; ')}`;
+  const pm = existsSync(join(prev, 'meta.json')) ? (JSON.parse(readFileSync(join(prev, 'meta.json'), 'utf8')) as { passInputs?: { digest?: string }; skipped?: string[] }) : null;
+  const ps = existsSync(join(prev, 'status.json')) ? (JSON.parse(readFileSync(join(prev, 'status.json'), 'utf8')) as Record<string, unknown>) : null;
+  if (!pm || !ps) return 'no meta.json or status.json there';
+  if (pm.passInputs?.digest !== inputs.digest) return `the pass inputs changed (${pm.passInputs?.digest?.slice(0, 16) ?? 'none recorded'} -> ${inputs.digest.slice(0, 16)})`;
+  if (PASS_PARTS.some((p) => SKIP.has(p))) return 'this check skips a part of the pass';
+  if ((pm.skipped ?? []).some((p) => PASS_PARTS.includes(p))) return 'that check skipped a part of the pass';
+  if (JSON.stringify(ps.shardsFailed) !== '[]') return 'runs failed there';
+  const missing = PASS_FILES.filter((f) => !existsSync(join(prev, f)));
+  if (missing.length) return `missing there: ${missing.join(', ')}`;
+  return null;
+}
+if (process.env.CHECK_REUSE) {
+  const prev = resolve(process.env.CHECK_REUSE);
+  const why = reuseRefusal(prev);
+  if (why) {
+    meta.reuseRefused = why;
+    console.log(`CHECK_REUSE ${prev}: not reused (${why}); running the pass`);
+  } else {
+    for (const f of PASS_FILES) copyFileSync(join(prev, f), join(OUT, f));
+    const ps = JSON.parse(readFileSync(join(prev, 'status.json'), 'utf8')) as Record<string, unknown>;
+    const committed = join(ROOT, 'evidence/summary.json');
+    status.shardsFailed = ps.shardsFailed;
+    status.fixtures = { ...(ps.fixtures as object), sameAsCommittedSummary: existsSync(committed) && readFileSync(committed, 'utf8') === readFileSync(join(OUT, 'summary.json'), 'utf8') };
+    for (const part of ['legmx', 'l4mx', 'energymx', 'visiblemx']) status[part] = ps[part];
+    status.passReused = { from: basename(prev), inputs: inputs.digest };
+    meta.passReusedFrom = prev;
+    finish([]);
+  }
+}
+
 // 3. the export and the matrices: one run per fixture and body order with every meter it feeds, in a pool of workers
 const all = allFixtures();
 interface Run {
@@ -165,6 +205,7 @@ const twinSha = new Map<number, string>();
 /** Every run's rows by part, and the runs that threw (`<part>:<fixture>[:rev]`, one per part the run fed). */
 const got = new Map<Part | 'queries', { k: number; rev: boolean; line: string }[]>();
 const exportRows: { k: number; id: string; summary: unknown; sha256: string }[] = [];
+const revRows: { k: number; id: string; sha256: string }[] = [];
 const threw: { id: string; message: string }[] = [];
 const shardFailed: string[] = [];
 const runMs: Record<string, number> = {};
@@ -195,6 +236,7 @@ if (runs.length) {
           } else {
             const r = m.rows!;
             if (r.fixtures) exportRows.push({ k: m.k, id, summary: r.fixtures.summary, sha256: r.fixtures.sha256 });
+            if (r.revSha256) revRows.push({ k: m.k, id, sha256: r.revSha256 });
             for (const part of [...PARTS, 'queries'] as const) {
               const line = part === 'fixtures' ? undefined : r[part];
               if (line !== undefined) (got.get(part) ?? got.set(part, []).get(part)!).push({ k: m.k, rev: m.rev, line });
@@ -265,6 +307,15 @@ else {
     sameAsCommittedSummary: existsSync(committed) && readFileSync(committed, 'utf8') === summary,
   };
 }
+// the reversed runs' traces (every matrix fixture), hashed as the export hashes the forward ones
+if (['legmx', 'l4mx', 'energymx', 'visiblemx'].some((p) => !SKIP.has(p)))
+  write(
+    'traces-rev.sha256',
+    revRows
+      .sort((a, b) => a.k - b.k)
+      .map((t) => `${t.sha256}  ${t.id}.json\n`)
+      .join(''),
+  );
 for (const part of ['legmx', 'l4mx', 'energymx', 'visiblemx'] as const) {
   if (SKIP.has(part)) {
     status[part] = 'skipped';
@@ -283,21 +334,25 @@ if (!SKIP.has('legmx')) {
   const rows = linesOf('queries').map((l) => JSON.parse(l) as { k: number; rev: boolean });
   write('queries.jsonl', rows.map(({ k: _k, ...r }) => JSON.stringify(r) + '\n').join(''));
 }
-write('status.json', json(status));
-ms.total = Date.now() - t0;
-write('meta.json', json(meta));
-rmSync(WORK, { recursive: true, force: true });
+finish(shardFailed);
 
-const suite = SKIP.has('suite') ? null : (JSON.parse(readFileSync(join(OUT, 'suite.json'), 'utf8')) as { total: number; passed: number; failed: number });
+/** Write status.json and meta.json, print the headline and exit (1 when a run failed). */
+function finish(failed: string[]): never {
+  write('status.json', json(status));
+  ms.total = Date.now() - t0;
+  write('meta.json', json(meta));
+  rmSync(WORK, { recursive: true, force: true });
+  const suite = SKIP.has('suite') ? null : (JSON.parse(readFileSync(join(OUT, 'suite.json'), 'utf8')) as { total: number; passed: number; failed: number });
 console.log(
   [
-    `full check -> ${OUT} (${(ms.total / 1000).toFixed(0)} s, ${JOBS} jobs)`,
+    `full check -> ${OUT} (${(ms.total / 1000).toFixed(0)} s, ${JOBS} jobs)${status.passReused ? `; export and matrices reused from ${meta.passReusedFrom} (pass inputs unchanged)` : ''}`,
     `typecheck ${JSON.stringify(status.typecheck)}  build ${JSON.stringify(status.build)}`,
     suite ? `suite ${suite.passed}/${suite.total} passed, ${suite.failed} failed` : 'suite skipped',
     `fixtures ${JSON.stringify(status.fixtures)}`,
     `legmx ${JSON.stringify(status.legmx)}  l4mx ${JSON.stringify(status.l4mx)}  energymx ${JSON.stringify(status.energymx)}`,
     `visiblemx ${typeof status.visiblemx === 'string' ? status.visiblemx : `${(status.visiblemx as { rows: number }).rows} rows`}`,
-    shardFailed.length ? `RUNS FAILED: ${shardFailed.join(', ')} (see logs/pass-*.log)` : 'all runs ok',
+    failed.length ? `RUNS FAILED: ${failed.join(', ')} (see logs/pass-*.log)` : 'all runs ok',
   ].join('\n'),
-);
-process.exit(shardFailed.length ? 1 : 0);
+  );
+  process.exit(failed.length ? 1 : 0);
+}

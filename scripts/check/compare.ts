@@ -30,7 +30,7 @@ const ma = readJson<{ head: string; dirtyFiles: number }>(A, 'meta.json');
 const mb = readJson<{ head: string; dirtyFiles: number }>(B, 'meta.json');
 say(`A ${A}  (${ma?.head?.slice(0, 7) ?? '?'}${ma?.dirtyFiles ? `, ${ma.dirtyFiles} dirty` : ''})`);
 say(`B ${B}  (${mb?.head?.slice(0, 7) ?? '?'}${mb?.dirtyFiles ? `, ${mb.dirtyFiles} dirty` : ''})`);
-const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl', 'energymx.jsonl', 'visiblemx.jsonl'];
+const files = ['status.json', 'suite.json', 'summary.json', 'traces.sha256', 'traces-rev.sha256', 'legmx.jsonl', 'l4mx.jsonl', 'queries.jsonl', 'energymx.jsonl', 'visiblemx.jsonl'];
 const same = files.filter((f) => read(A, f) != null && read(A, f) === read(B, f));
 say(`files byte-identical: ${same.length}/${files.length}${same.length < files.length ? ` (differ or missing: ${files.filter((f) => !same.includes(f)).join(', ')})` : ''}`);
 
@@ -43,6 +43,11 @@ for (const k of ['typecheck', 'build']) {
   say(`${k}: ${x === y ? y : `${x} -> ${y}`}${okB === false ? '  WARN: fails in B' : ''}`);
 }
 if (JSON.stringify(sb.shardsFailed ?? []) !== '[]') say(`WARN: B shards failed: ${JSON.stringify(sb.shardsFailed)}`);
+// a check that took its export and matrices from an earlier result (full-check CHECK_REUSE, README "Reuse")
+for (const [n, st] of [['A', sa], ['B', sb]] as const) {
+  const r = st.passReused as { from: string; inputs: string } | undefined;
+  if (r) say(`${n}: export and matrices REUSED from ${r.from} (pass inputs ${r.inputs.slice(0, 16)} unchanged; not run on this tree)`);
+}
 
 // ------------------------------------------------------------------------------------------------ suite
 interface Failure {
@@ -123,9 +128,9 @@ else {
   const byB = new Map(fb.map((s) => [s.fixtureId, s]));
   const ids = [...new Set([...byA.keys(), ...byB.keys()])];
   const changedIds = ids.filter((id) => JSON.stringify(byA.get(id)) !== JSON.stringify(byB.get(id)));
-  const traceMap = (dir: string): Map<string, string> =>
+  const traceMap = (dir: string, file = 'traces.sha256'): Map<string, string> =>
     new Map(
-      (read(dir, 'traces.sha256') ?? '')
+      (read(dir, file) ?? '')
         .split('\n')
         .filter(Boolean)
         .map((l) => l.split(/\s+/))
@@ -146,6 +151,17 @@ else {
   }
   say(`  by family (changed/total): ${row.join(', ')}`);
   const frozen = [...new Set([...changedIds, ...traceDiff.map((x) => x.replace(/\.json$/, ''))])].filter((id) => FROZEN_FAMILIES.includes(fam(id)));
+  // the reversed runs (the matrices' second order): their traces, hashed as the export's
+  if (read(A, 'traces-rev.sha256') == null || read(B, 'traces-rev.sha256') == null) say(`  reversed traces: ${read(A, 'traces-rev.sha256') == null ? 'A' : 'B'} has no traces-rev.sha256 (not compared)`);
+  else {
+    const [ra, rb] = [traceMap(A, 'traces-rev.sha256'), traceMap(B, 'traces-rev.sha256')];
+    const keys = [...new Set([...ra.keys(), ...rb.keys()])];
+    const diff = keys.filter((f) => ra.get(f) !== rb.get(f));
+    const per = FAMILIES.map((f) => [f, keys.filter((x) => fam(x.replace(/\.json$/, '')) === f), diff.filter((x) => fam(x.replace(/\.json$/, '')) === f)] as const)
+      .filter(([, all]) => all.length)
+      .map(([f, all, ch]) => `${f} ${ch.length}/${all.length}`);
+    say(`  reversed traces changed (changed/total): ${per.join(', ')}${diff.length && diff.length <= 30 ? ` (${diff.map((x) => x.replace(/\.json$/, '')).join(', ')})` : ''}`);
+  }
   say(`  G/L1/L2/RH byte-identical: ${frozen.length ? 'FAIL' : 'PASS'}${frozen.length ? ` (${frozen.length}: ${frozen.slice(0, 20).join(', ')}${frozen.length > 20 ? ', ...' : ''})` : ''}`);
   if (frozen.length) hard.push(`${frozen.length} G/L1/L2/RH fixture(s) changed`);
   const res: string[] = [];

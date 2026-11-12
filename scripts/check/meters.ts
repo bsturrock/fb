@@ -31,6 +31,8 @@ export function partsOf(d: FixtureDef, rev: boolean): Part[] {
 /** What one run gives each part it fed (JSON lines without their newline; `k` the registry index, for the merge). */
 export interface PassRows {
   fixtures?: { summary: Record<string, unknown>; sha256: string };
+  /** A reversed run: the sha256 of its trace file's text (the export's form; `traces-rev.sha256`). */
+  revSha256?: string;
   legmx?: string;
   queries?: string;
   l4mx?: string;
@@ -176,10 +178,12 @@ export async function runPass(ctx: PassContext, k: number, d: FixtureDef, rev: b
     }
     energy?.restore();
     const out: PassRows = {};
-    if (parts.has('fixtures')) {
+    const sha = (): { summary: Record<string, unknown>; sha256: string } => {
       const s = sim.summary();
-      out.fixtures = { summary: s, sha256: createHash('sha256').update(traceFileOf(sim, s)).digest('hex') };
-    }
+      return { summary: s, sha256: createHash('sha256').update(traceFileOf(sim, s)).digest('hex') };
+    };
+    if (parts.has('fixtures')) out.fixtures = sha();
+    if (rev) out.revSha256 = sha().sha256;
     if (leg) {
       out.queries = JSON.stringify({ k, id: d.id, rev, worstTickQueries: worst.n, at: round(worst.t) });
       out.legmx = leg.row(sim, k, d, rev);

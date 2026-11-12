@@ -21,7 +21,9 @@ depend on load). Other heavy processes on the machine during the suite still mat
 machine.
 
 Environment: `CHECK_JOBS=<n>` pool size; `CHECK_SKIP=suite,legmx,...` skips parts (typecheck, build, suite, fixtures,
-legmx, l4mx, energymx, visiblemx), recorded as skipped, for a quick look only (a rung is judged on a full run).
+legmx, l4mx, energymx, visiblemx), recorded as skipped, for a quick look only (a rung is judged on a full run);
+`CHECK_REUSE=<previous result dir>` takes the export and the matrices from there when nothing the pass runs has
+changed (Reuse, below).
 
 ### One pass
 
@@ -44,6 +46,30 @@ The pool's workers (`pass.ts`, IPC) take runs longest first (substeps times play
 The one pass replaced shards of a separate run per matrix (each fixture and order replayed four times, five forward):
 the same files byte for byte (`compare.ts` against `r13-docs`), the pool 241 s to 74 s.
 
+### Reuse
+
+`CHECK_REUSE=<previous result dir>` takes the pass (summary.json, traces.sha256, traces-rev.sha256 and the five matrix
+files, with their status.json entries) from a previous result instead of running it, when nothing the pass runs has
+changed: `meta.json` `passInputs.digest` is a sha256 over every file the runs execute or read (`inputs.ts`: the static
+import closure of `pass.ts` and `full-check.ts`, relative imports of any extension, so src/, the clips and model records
+src/ imports, the meters in tests/ and the check's scripts; with vite.config.ts and tsconfig.json), the installed
+packages (`node_modules/.package-lock.json`) and the Node version. The runs are deterministic (two checks of a tree are
+byte-identical), so equal inputs give the same pass. Refused, and the pass run, when the digests differ or one cannot be
+made (an import that does not resolve), when either check skips a part of the pass, or when runs failed there or a file
+is missing; `meta.json` `reuseRefused` says why. A reused result says so in status.json (`passReused: {from, inputs}`,
+the one key by which it differs from a run's) and compare.ts prints it; `sameAsCommittedSummary` is recomputed on this
+tree. It fits a step that changes none of those files: docs, test files (`*.test.ts`), test data. Fault twins (ladder
+14-speed): a changed trajectory (a fall fixture's `durationS` in src/sim/fixtures/falls.ts) and a changed meter
+(`VIS_M` in tests/visible.ts) each refuse with "the pass inputs changed"; the unchanged tree reuses (status.json then
+differs from the source's by `passReused` alone, every other file byte-identical).
+
+Not built: reusing the matrices of a flag-off step (src/ changed) because every trace hash is unchanged. The matrices
+read what no trace holds (published poses, contact records, the leg ledger, the fall-response stats, the Rapier query
+count), all made by src/ code that a step can change without moving a trajectory (a field added to the fall stats, a
+shape query whose answer goes unused), so equal traces do not give equal matrices; and the hashes need the runs, which
+are about 90 % of the pass (the meters add about 10 %: 17 sampled runs, 18.0 s bare, 19.8 s with the visible meter, the
+others within noise), so it would save some 7 s of a 75 s pass.
+
 ## Outputs
 
 Compared files (deterministic: stable order, no timestamps):
@@ -54,13 +80,15 @@ Compared files (deterministic: stable order, no timestamps):
 | `suite.json` | test counts; every failing test (and every file that failed outside a test) with its file, full name, kind (`TIMEOUT` when the first line says it timed out, else `REAL`), first message line and the message up to its stack |
 | `summary.json` | the fixture export of every registered fixture: byte for byte what `npm run fixtures` writes to `evidence/summary.json` (the same run, summary and trace text as `scripts/fixture-runner.ts`, merged in registry order) |
 | `traces.sha256` | sha256 of every fixture's trace file the export writes (`evidence/traces/<id>.json`; the traces themselves are not kept) |
+| `traces-rev.sha256` | the same for every reversed run (the matrices' second order: every L3, L4 and HC fixture with `reverseOrder`), the text the export would write for it |
 | `legmx.jsonl` | leg matrix (`legmx.ts`): every fixture with a leg-guard profile, both body orders. Per row: fixture, order, leg-guard id, result; per player: conversion time, end mode, largest one-substep player-player contact impulse on the player and on its leg colliders (thigh, shin, shoe) with when, and the leg ledger (largest one-substep leg impulse and when, ungrounded impulse substeps, totals), `"absent"` on a tree without one |
 | `l4mx.jsonl` | L4 matrix (`l4mx.ts`): every fixture with a fall-response profile, both body orders. Per player: conversion time, end mode and every scalar of its fall-response stats (`peakPositiveW` the peak audited power, `overPowerSubsteps` / `overWork` the ceiling breaches, `heldSubsteps` / `heldBodySubsteps` the impact guard, ...) |
 | `energymx.jsonl` | passive-energy matrix (`energymx.ts`, `tests/passive-energy.ts`): every L3, L4 and HC fixture with a ragdoll profile, both body orders. Per player whose ragdoll ran: its solves; the solves no other player touches (no contact impulse, solved or raw, with one) that gain more than `INJECTION_J` (0.5 J) of kinetic plus potential energy beyond the work of every applied force and torque (drives, envelope, response), as `injecting` and their total `injectedJ`; the largest such gain `maxJ`, its solve `maxStep`, time `maxAt` and the segments touching static ground and one of the ragdoll's own shapes there (`maxPinch`, the self-trunk pinch); the largest gain of a solve with no contact at all (`quietMaxJ`, read to 0.01 J: gravity's integration reads under 0; a gain there is a segment moved off its velocity's path, mostly CCD holding it back before its first contact); every injecting solve as `[solve, J, pinch segments, largest loss of the tick before, 1 if any contact impulse else 0]` (`over`: a rebound follows an impact). `status.json` carries the headline per family (runs, runs and solves injecting, total J, largest) |
 | `visiblemx.jsonl` | visible-quality matrix (`visiblemx.ts`, `tests/visible.ts`): every L3, L4 and HC fixture with a ragdoll profile, both body orders, every drawn frame. Per row: duration, ragdoll and supported player-seconds (`ragS`, `supS`); for ragdoll frames (`rag`) and supported or falling-proxy frames (`sup`) the seconds past the implausible (`impl`) and impossible (`imp`) margin by `Joint.dof`, the own bone-axis crossing seconds (`selfAx`: `legLeg`, `legTrunk`) and the joint snaps (`snap60`, joint-frames); for ragdolls also the own-body overlap seconds past 1 cm (`self`) and in events past 10 cm (`selfDeep`) by class, and the knee seconds past 150 (`kneeStop`); cross-player leg overlap seconds by pair kind (`cross`); each conversion's player, time and the hips at its last supported frame (`conv`: `[flex, abd, rot]` left, right); the worst event of each column (`worst`: `[player, what, peak, peak time, start, end, severity]`). Definitions below. `status.json` carries the headline per family |
 | `queries.jsonl` | shape-query budget (the leg matrix's runs, so every L3, L4 and HC fixture in both orders): the most Rapier shape queries in one tick (`worstTickQueries`, counted as plan 13a's budget test counts them) and when (`at`) |
 
-Not compared: `meta.json` (commit, dirty file count, timings, pool size, each run's ms, the meters' twins) and `logs/`
+Not compared: `meta.json` (commit, dirty file count, timings, pool size, each run's ms, the meters' twins, the pass
+inputs' digest, a reuse's source or why one was refused) and `logs/`
 (each step's output, `pass-<n>.log` per worker, the raw vitest JSON report).
 
 The matrices run each fixture with default options (ledgers off, as `npm run fixtures`) and `reverseOrder` for the
@@ -77,7 +105,9 @@ their registry index `k`): `ONLY=<regex>` limits it to some fixtures and `LEGV2=
 - typecheck and build status;
 - suite failures matched by message (kind + first line), not by name: added (hard), changed message (same test, new
   first line), removed, and same message with different detail;
-- fixture summaries and trace hashes changed per family (G, L1, L2, RH, L3, L4, HC), an explicit
+- a result that reused an earlier one's pass (`CHECK_REUSE`): `REUSED from <dir>`;
+- fixture summaries and trace hashes changed per family (G, L1, L2, RH, L3, L4, HC), the reversed runs' traces changed
+  per family (`traces-rev.sha256`), an explicit
   `G/L1/L2/RH byte-identical: PASS|FAIL` line (hard), and every result or end-representation change (who falls)
   listed per fixture;
 - per matrix: rows that vanished or are new, new over-ceiling entries (a field named `over*` that rises), result,
