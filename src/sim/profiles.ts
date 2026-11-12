@@ -977,6 +977,22 @@ export interface JointRangeProfile {
   limpFoot: { pitchDeg: number; easeS: number };
   /** Contact motion M1 (absent: the supported and arm-task upper arms' twist is free, as before). */
   shoulderTwist?: ShoulderTwistProfile;
+  /** Ladder 11b (absent: the supported thigh's axial rotation is free, as before). */
+  hipTwist?: HipTwistProfile;
+}
+
+/**
+ * Ladder 11b: the supported (ground-relative) thigh's axial rotation. The knee is placed from a pole, so its rotation
+ * about the thigh was whatever the pole and the ankle target gave: past 90 degrees, the knee facing sideways or back,
+ * when the target came close beside or above the hip (HC-F2-offset A's right foot held up on B as its hip drops, the
+ * hinge turning 20 degrees a frame until the knee faces back), and a ragdoll made from that pose starts there. The shin
+ * turns about the thigh (the thigh kept, the ankle off its target), so the rotation stays inside `envelope.twistDeg` less
+ * `marginDeg`, reaching that range and leaving it at most `maxRateRadPs` from the previous shown rotation
+ * (`fitThighTwist`). (Turning the knee about the hip-to-ankle line first, the ankle kept, traded the rotation for hip
+ * extension and fold past their ranges: `.scratch/ladder/assess-11b`.) Engineering settings, not measured ranges.
+ */
+export interface HipTwistProfile extends ShoulderTwistProfile {
+  envelope: JointEnvelope;
 }
 
 /**
@@ -1002,6 +1018,9 @@ export const JOINT_RANGE_V1: JointRangeProfile = {
 
 /** Contact motion M1: plan 12's ranges, with the upper arm's twist kept in range and continuous (`shoulderTwist`). */
 export const JOINT_RANGE_V2: JointRangeProfile = { ...JOINT_RANGE_V1, id: 'joint-range-v2', shoulderTwist: { marginDeg: 2, maxRateRadPs: 12 } };
+
+/** Ladder 11b: V2 with the supported thigh's rotation kept in the ragdoll hip's twist range and continuous (`hipTwist`). */
+export const JOINT_RANGE_V3: JointRangeProfile = { ...JOINT_RANGE_V2, id: 'joint-range-v3', hipTwist: { envelope: ENVELOPE_L4.hip, marginDeg: 5, maxRateRadPs: 12 } };
 
 /**
  * Plan 13f leg guard (absent = the guard measures other bodies where they stand): the supported pose's leg guard also

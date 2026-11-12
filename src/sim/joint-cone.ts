@@ -175,3 +175,34 @@ export function turnForearmTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow:
   // shoulder-to-elbow axis raises the external twist by dl
   return add(elbow, qRot(qFromAxisAngle(axis, -sideSign * dl), sub(end, elbow)));
 }
+
+/**
+ * Ladder 11b: the ankle turned about the thigh (hip to knee) until the thigh's axial rotation (`armTwistRad`'s measure:
+ * the hinge chain's frames are the same for an arm and a leg) is inside the envelope's twist range less `marginDeg`: the
+ * thigh unchanged, the ankle off its target. A rotation inside the range is unchanged, unless the previous shown leg was
+ * turned (`held`): then it is reached from `prevRad` (the previous shown rotation) at most `maxRateRadPs * dtS` per call,
+ * so a leg let go by the range turns back at that rate. One outside is read on its branch within half a turn of
+ * `prevRad`, so a rotation near half a turn from the range's middle goes to the edge it left by rather than to the edge
+ * its sign gives that step, and is brought to the range at most `maxRateRadPs * dtS` from `prevRad`. `held` in the
+ * result: the ankle was turned.
+ */
+export function fitThighTwist(E: JointEnvelope, T: ShoulderTwistProfile, coreQ: Quat, hip: Vec3, knee: Vec3, ankle: Vec3, sideSign: number, prevRad: number | null, held: boolean, dtS: number): { ankle: Vec3; held: boolean } {
+  const t0 = armTwistRad(E, coreQ, hip, knee, ankle, sideSign);
+  if (t0 === null) return { ankle, held: false };
+  const mid = (((E.twistDeg[0] + E.twistDeg[1]) / 2) * Math.PI) / 180;
+  const h = (((E.twistDeg[1] - E.twistDeg[0]) / 2 - T.marginDeg) * Math.PI) / 180;
+  let u0 = wrapPi(t0 - mid);
+  if (Math.abs(u0) <= h && !(held && prevRad !== null)) return { ankle, held: false };
+  let target = clamp(u0, -h, h);
+  if (prevRad !== null) {
+    const r = wrapPi(prevRad - mid);
+    u0 = r + wrapPi(u0 - r);
+    target = clamp(u0, -h, h);
+    if (dtS > 0) target = clamp(target, r - T.maxRateRadPs * dtS, r + T.maxRateRadPs * dtS);
+  }
+  const dl = target - u0;
+  if (Math.abs(dl) < 1e-9) return { ankle, held: false };
+  const axis = norm(sub(knee, hip), v3(0, -1, 0));
+  // as `turnForearmTwist`: a turn of -side * dl about the hip-to-knee axis raises the external rotation by dl
+  return { ankle: add(knee, qRot(qFromAxisAngle(axis, -sideSign * dl), sub(ankle, knee))), held: true };
+}

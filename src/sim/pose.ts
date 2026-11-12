@@ -10,7 +10,7 @@ import { CARRY_ARM, carryRequest, seatBallCapsule, seatBallLocal, seatBallWorld,
 import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type IdleSample, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangeProfile, type RagdollProfile } from './profiles';
-import { armTwistRad, behindDeg, clampDirToEnvelope, fitElbowTwist, turnForearmTwist, twistWindow } from './joint-cone';
+import { armTwistRad, behindDeg, clampDirToEnvelope, fitElbowTwist, fitThighTwist, turnForearmTwist, twistWindow } from './joint-cone';
 import type { PoseDebug, PoseProbe } from './debug';
 import {
   add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qFromUnitVectors, qInvRot, qMul, qRot, qSlerp, scale, sub, toWorld, upOf, v3,
@@ -626,6 +626,9 @@ const ANKLE_PLANTAR = (50 * Math.PI) / 180;
 export const CONT_LEG_MPS = 2.5;
 const CONT_ARM_MPS = 3.0;
 const CONT_POLE_RADPS = 8;
+/** Ladder 11b: the thigh rotation range (`hipTwist`) applies below this swing from hanging (deg); past it the rotation is ill-defined. */
+export const HIP_TWIST_SWING_DEG = 150;
+const HIP_TWIST_SWING_COS = Math.cos((HIP_TWIST_SWING_DEG * Math.PI) / 180);
 /** Plan 08: a composed pose's departures and poles: within the transition limit (0.01 m) of one physics substep. */
 const CONT_L3_MPS = 2.1;
 export const CONT_L3_PLANT_MPS = 1;
@@ -1191,7 +1194,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const prevReachL = gr ? memVec(mem, `${s}Leg:r`) : null;
     const prevReach = prevReachL ? qRot(pose.q, prevReachL) : null;
     const prevReachLimited = !!gr && mem[`${s}Leg:reachLimited`] === 1;
-    type LegC = { knee: Vec3; ankle: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; soleAngle?: number; req?: Vec3; ik?: Vec3; softM: number; pitch: number; rollF?: number; edgeX?: number; pole?: Vec3; held?: Vec3; reachLimited?: boolean };
+    type LegC = { knee: Vec3; ankle: Vec3; chain: HingeChain; shapes: PoseShape[]; depth: number; soft: number; soleAngle?: number; req?: Vec3; ik?: Vec3; softM: number; pitch: number; rollF?: number; edgeX?: number; pole?: Vec3; held?: Vec3; reachLimited?: boolean; hipHeld?: boolean };
     // Sampled / ground-relative leg solve for a knee pole: soft reach (the target eases in below the reach limit, which
     // keeps a minimum knee flexion, so the knee never snaps straight and its hinge axis never flips) and the clip's foot
     // pitch at the ankle (the shoe keeps the clip foot's angle to the floor within the ankle range, so a planted foot
@@ -1214,6 +1217,10 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       }
       return p;
     };
+    // ladder 11b: the last shown thigh rotation (the next window's start)
+    const HT = gr ? inp.jointRange?.hipTwist : undefined;
+    const hipPrev = HT ? (mem[`${s}Leg:hr`] ?? null) : null;
+    const hipHeld = !!HT && mem[`${s}Leg:hrHeld`] === 1;
     // `free`: the knee where the pole puts it, not turned from the shown knee by at most the continuity bound
     const legSolver = (pole: Vec3, free = false) => {
       const hdir = norm(v3(pole.x, 0, pole.z), fwd);
@@ -1231,7 +1238,13 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const sr = stableReach(hip, soft(t), prevReach, kneeMin, CONT_FAST_MPS * (inp.dtS ?? 0), prevReachLimited);
         const st = sr.target;
         const r = twoBone(hip, st, a, b, stablePole(hip, st, pole, free ? null : prevKnee, CONT_LEG_MPS * (inp.dtS ?? 0), CONT_FAST_MPS * (inp.dtS ?? 0), !!inp.loco), reach, kneeMin);
-        const chain = hingeChain(hip, r.mid, [r.end], [neg(fwd), neg(upB)], straight);
+        // ladder 11b: the shin turns about the thigh into the rotation window (the thigh kept, the ankle moves). Past
+        // HIP_TWIST_SWING_DEG of swing the rotation from hanging is ill-defined (the visible meter does not read it there)
+        // and the leg is as solved
+        const mid = r.mid;
+        const ft = HT && -dot(norm(sub(mid, hip), upB), upB) > HIP_TWIST_SWING_COS ? fitThighTwist(HT.envelope, HT, pose.q, hip, mid, r.end, sx, hipPrev, hipHeld, inp.dtS ?? 0) : null;
+        const end = ft ? ft.ankle : r.end;
+        const chain = hingeChain(hip, mid, [end], [neg(fwd), neg(upB)], straight);
         const ankle = chain.ends[0];
         // pitch about the shin hinge axis that gives the shoe the clip foot's sagittal angle (toe up positive)
         const zw = qRot(chain.frameB, v3(0, 0, 1));
@@ -1240,14 +1253,14 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const wc = sl ? smp!.weight : 0;
         const want = Math.atan2(zw.y, dot(zw, hdir)) - (gr ? (fr?.soleW ?? 1) * wc * (sl?.footPitch ?? 0) + (fr?.soleO ?? 0) : sl!.footPitch);
         const pitch = (gr ? 1 : wc) * clamp(Math.atan2(Math.sin(want), Math.cos(want)), -(gr ? dorsi : ANKLE_DORSI_LEGACY), gr ? plantar : ANKLE_PLANTAR);
-        const shapes = legShapes(R, s, hip, r.mid, ankle, chain.frameB, pitchShin(chain.frameB, pitch));
+        const shapes = legShapes(R, s, hip, mid, ankle, chain.frameB, pitchShin(chain.frameB, pitch));
         const zs = qRot(pitchShin(chain.frameB, pitch), v3(0, 0, 1));
         // plan 12 (a joint-range profile): the achieved angle in the measure the next solve applies it in, the shin frame's
         // angle less the pitch. The shoe's own projected angle differs from it when the shin frame lies across the heading
         // (L3-F11-invalid: D's falling left leg, its shin frame 50 degrees across, 25 degrees apart), and a new owner seeded
         // from that would turn the shoe by the difference in one substep
         const soleAngle = JA ? Math.atan2(Math.sin(Math.atan2(zw.y, dot(zw, hdir)) - pitch), Math.cos(Math.atan2(zw.y, dot(zw, hdir)) - pitch)) : Math.atan2(zs.y, dot(zs, hdir));
-        return { knee: r.mid, ankle, chain, shapes, depth: floorDepth(shapes), soft: 0, softM: dist(t, soft(t)), pitch, pole, held: sr.held, reachLimited: sr.limited, soleAngle };
+        return { knee: mid, ankle, chain, shapes, depth: floorDepth(shapes), soft: 0, softM: dist(t, soft(t)), pitch, pole, held: sr.held, reachLimited: sr.limited, soleAngle, ...(ft ? { hipHeld: ft.held } : {}) };
       };
       return { solve, hdir };
     };
@@ -1661,6 +1674,12 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       setMemVec(mem, `${s}Leg:e`, qInvRot(pose.q, sub(l.knee, pose.p)));
       setMemVec(mem, `${s}Leg:r`, qInvRot(pose.q, l.held ?? norm(sub(l.ankle, hip))));
       mem[`${s}Leg:reachLimited`] = l.reachLimited ? 1 : 0;
+      // ladder 11b: the shown thigh rotation is the next pose's start
+      if (HT) {
+        const hr = armTwistRad(HT.envelope, pose.q, hip, l.knee, l.ankle, sx);
+        if (hr !== null) mem[`${s}Leg:hr`] = hr;
+        mem[`${s}Leg:hrHeld`] = l.hipHeld ? 1 : 0;
+      }
     }
     lm[`${s}Ankle`] = l.ankle;
     const shoe = l.shapes[2] as Extract<PoseShape, { kind: 'box' }>;
