@@ -10,9 +10,9 @@
 //
 // L3_CONTRACTS=<regex> narrows the pass to the matching fixtures (to iterate on one): every test name then says so, a
 // test whose checks cover none of them is skipped, and the assertions over several fixtures together are not made.
-// L3_SHARDS=<n> sets the number of shard processes (default: a quarter of the cores, at most 4; on the 8-core M2 two
-// shards gave the shortest suite, 74-78 s, against 80-81 s with three and 84 s with four); 0 runs the pass in this
-// process (to debug a check).
+// L3_SHARDS=<n> sets the number of shard processes (default: half the cores, at most 4; on the 8-core M2, with the
+// suite at 950 s of CPU, four shards gave the shortest suite, 141 s, against 153-155 s with two, where this file's own
+// tests waited for a pass that ended at 100 s, and 145 s with six); 0 runs the pass in this process (to debug a check).
 import { fork, type ChildProcess } from 'node:child_process';
 import { availableParallelism, setPriority } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -119,7 +119,7 @@ import {
 const FILTER = process.env.L3_CONTRACTS ? new RegExp(process.env.L3_CONTRACTS) : null;
 const NOTE = FILTER ? ` (narrowed: L3_CONTRACTS=${process.env.L3_CONTRACTS})` : '';
 const PASS = L3(/^L3-/).filter((d) => !FILTER || FILTER.test(d.id));
-const SHARDS = Math.min(PASS.length, process.env.L3_SHARDS !== undefined ? Number(process.env.L3_SHARDS) : Math.max(1, Math.min(4, Math.floor(availableParallelism() / 4))));
+const SHARDS = Math.min(PASS.length, process.env.L3_SHARDS !== undefined ? Number(process.env.L3_SHARDS) : Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2))));
 const results = new Map<string, { fixtures: string[]; failures: string[] }>();
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
