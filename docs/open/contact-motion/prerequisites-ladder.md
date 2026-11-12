@@ -747,6 +747,55 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   `HC-F2-offset@24`: every supported thigh within 45 deg; twin (V2) A's right above 170. Flip assessed
   (`assess-11b`): HC supported impossible 4.22 -> 0.05 s, ragdoll 2.48 -> 0.73, L3 0.95 -> 0.65; parked on 3 who-falls
   changes, each reached by a moved trajectory (twins), and leg-crossing columns that rise (Parked).
+- **11c** (`r11c-own-legs`) landed off: `LEG_GUARD_V4` (`ownLegs`), no fixture uses it; byte-identical, 356/356. Rung 7's
+  planted pose and the sweep take the primary at another knee pole, the inward one first, without reading the other
+  leg: L3-F6-hold R's left knee went behind the right knee from 3.90 s to the end. Under V4 a knee-pole placement
+  whose bone axes come nearer the other leg's (as last shown) than the primary's do is not taken. Capture test
+  `L3-F6-hold@231`: no shown knee-pole placement crosses; twin (V3) 60 crossing frames. Flip assessed (`assess-11c`):
+  only L3-F6-hold and -saturated move, no who-falls change, supSelfLegAxS L3 12.84 -> 10.44; parked: the refused pole
+  leaves L3-F6-hold R no clear placement, its foot steps out and plants again (a second plant in the stationary hold).
+- **11d (iii)** (`r11d-palm-seam`) landed off: `SELF_CLEARANCE_V2` (`seamSettle`), no fixture uses it; byte-identical,
+  358/358. Re-derived from s17 `palm.patch`. A supported arm's continuity target is pushed out up to four times; across
+  the seam between two own trunk pieces each push went fully into the other piece and the pushed target is the next
+  start, so the palm went to and fro every substep. Under V2 the own trunk's share is halved each time it turns against
+  the one before. Capture test `L3-F9-convert-contact@36`: no undone palm jump; twin (V1) 20 of 1.2-1.5 cm. Flip
+  assessed (`assess-11d/seam-variant`): palms going to and fro L3 3027 -> 1683, L4 225 -> 26 (what is left is other
+  mechanisms), who falls unchanged; parked on supSnap60 L3 16 -> 19 and passive energy HC 423 -> 478 J, not twinned.
+- **11d (ii)** (`r11d-overhead-twist`) landed off: `JOINT_RANGE_V4` (`shoulderTwist.anatomical`), no fixture uses it;
+  byte-identical. Re-derived from s17 `arm.patch` (the overhead part only). M1 reads the upper arm's twist as the
+  envelope does, the swing the shortest arc from hanging: straight up that arc turns with the arm's azimuth and a small
+  move of the arm changes the number up to tan(swing / 2) times as much, so a rate window in it held a number while the
+  arm turned over. `limbAnatomicalTwistRad` is the envelope's measure at and below horizontal and blends above it into
+  the twist after the swing from a reference 35 deg forward of hanging (singular only 35 deg behind straight up,
+  outside the shoulder cone); the window, elbow fit and forearm turn work in it (pose and arm tasks), and
+  `guardEnvelopeTwist` keeps the envelope's own twist in range where the two part. Unit tests: equal below horizontal;
+  inside the cone at most 4 rad per rad of arm rotation, the envelope's over 15 within 6 deg of vertical; an elbow
+  fitted over the top moves 0.26 cm a step, the envelope's twin 30 cm. Flip assessed with scratch probes only
+  (`assess-11d`): with 11d (iii) the to-and-fro palms go (L3 3027 -> 325, HC 375 -> 31, L4 225 -> 6) and the overhead
+  snaps go, but new ones come (L3-F1 and HC-F3 D's raised clip arm held higher, then dropping; HC snaps 1 -> 4); parked.
+  One measure for both uses: the same function read on a ragdoll arm is SHOULDER_POLE_TWIST's. From its capture
+  (HC-F5-strictTransfer@165) R's right upper arm lies 2.9 deg off vertical to the end; the envelope's measure and the
+  visible meter read -141 deg (41 past the human 100, the impossible margin 30), the anatomical one +78 (inside). So the
+  meter's reading there is the singularity's, if the arm does not look twisted (the user's question, Morning review 8m). Proposed,
+  not taken: the visible meter reads the anatomical twist; the ragdoll envelope's twist limit in it instead of fading
+  by cos(swing / 2) at the pole (a ragdoll change: its own parked step).
+- **11d (i)** (`assess-11d/snaps*.txt`): every supported snap at the tip (45 frames: L3 16, L4 28, HC 1) is on a
+  procedural limb (a pose trace on the frame), none at an arm task's handover. L4 (28): players without suspension
+  pose without ground, so the plan 07 continuity (arms and legs) is off: a blocked arm switches alternatives in one
+  frame (L4-F9-crowded D's right arm, alternatives 3 to 5, hanging back to overhead, 177 deg, and back 0.15 s later;
+  L4-F9-transferFailed R 2 -> 3 -> 7 -> 2), the knee likewise (alternative 2 -> 0, 58-61 deg: L4-F9-transferFailed,
+  L4-F10-knee). L3 (16): overhead arms under the envelope-measure window (11d ii: L3-F6-holdMirror R 5, L3-F5-drag
+  and -dragMirror R 6, L3-F9-noProbe D 3) and clip elbows (2). Not built: the L4 fix is the continuity on poses
+  without ground (behind a flag; L4 only), open defect below.
+- **11e** (`assess-11e/armtrunk-src.txt`), closed without a build: material, but not a salvage. A supported arm's own
+  trunk overlap past the idle baseline, measured bodies only (as the meter), per arm part, player-s (the upper arm per
+  side): L3 of 750 supported s, upper arm past 1 / 2 / 5 cm 554 / 303 / 160, forearm 93 / 52 / 2, palm 5 / 0.1 / 0;
+  L4 of 69, upper arm 47 / 32 / 20; HC of 107, 31 / 26 / 15. The meter's supported armTrunk column (L3 557 s) is
+  almost all the upper arm, which plan 11 does not keep out (its known limit). Worst 13.6 cm (L3-F5-drag and
+  -dragMirror R at 1.55-1.95 s, the carry arm), 11.8 cm at 0.617 s on D's left arm in the L3-F7/F8/F9 and L4-F9 runs
+  that share the approach. Past 2 cm by source: a sampled clip arm L3 252, L4 28, HC 6; an arm task L3 41, L4 9, HC
+  20; procedural L3 33, HC 4. So it is mostly the clips' own elbows inside the measured trunk: keeping the upper arm
+  out moves the clip's look on every L3/L4/HC run, a look question for the user (Open defects) before a plan, not a ladder rung.
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -768,6 +817,18 @@ order, not hunk-split.
   in 3 player-runs (HC-F3-phase0 rev D stands, L3-F1-phase0 rev D falls, L3-F1-phase7 D stands: the three 10a moved,
   each undone), every one from a placement the guard tried and did not show; crossLegSupRag L3 0.45 -> 0.8, HC 0.2 ->
   0.4 not yet twinned. Needs the user's who-falls review first. Patch and README `.scratch/ladder/parked/hip-twist-flip/`.
+- 11c's flip, `LEG_GUARD_V4` on L3/L4/HC: removes L3-F6's crossed knees (supSelfLegAxS L3 12.84 -> 10.44) but L3-F6-hold
+  R then steps out of the hold once, a second plant after 3.5 s (`HOLD_SETTLES`); crossLegSupSup on L3-F6-saturated
+  +0.15 and +0.12 s and a 1.22 cm transition on it are not twinned. The crossing starts where footwork plants the foot
+  (by the midline); the fix is there, or the step is accepted as the look. Patch and README
+  `.scratch/ladder/parked/own-legs-flip/`.
+- 11d (iii)'s flip, `SELF_CLEARANCE_V2` on L3/L4/HC: stops the seam's to-and-fro palms, but the arms freed go on to
+  one-frame turns (supSnap60 L3 16 -> 19) and HC-F1-mirror's ragdolls gain energy (HC 423 -> 478 J), not twinned. s17
+  saw the same: the overhead twist (11d ii) turned the freed arm over. Patch and README
+  `.scratch/ladder/parked/palm-seam-flip/`.
+- 11d (ii)'s flip, `JOINT_RANGE_V4` on L3/L4/HC (best taken with 11d iii's): the palms stop trembling and the overhead
+  snaps go, but a raised clip arm on L3-F1 and HC-F3 is held higher and then drops in one frame (HC snaps 1 -> 4).
+  Scratch-probed only. Patch and README `.scratch/ladder/parked/overhead-twist-flip/`.
 
 ## Open defects to test on the ladder
 
@@ -909,6 +970,24 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   impossible margin, inside the tolerance after the persistence limit. Fix rung to choose after the lab review (the
   user: does the overhead arm look twisted?): if it does, a twist limit that holds at the pole (rung 9's overhead-twist
   singularity, for the ragdoll); if not, the visible meter stops reading shoulder twist at the pole, as it already does
-  not read hip rotation past 150 deg of swing.
+  not read hip rotation past 150 deg of swing. 11d (ii) gives both one measure: `limbAnatomicalTwistRad` reads this arm
+  +78 deg (inside the range) where the envelope's reads -141; if the arm does not look twisted, the meter reads that
+  measure; if it does, the ragdoll's twist limit is taken in it instead of fading at the pole (its own parked step).
 - Rapier's correction at a combined pose is not along the reading's gradient: at flexion 110 the Y stop's correction
   turns mostly Z, so Y overruns by 11 deg until the Z stop also holds (seen in the 8g probes, not in a fixture).
+- Supported limbs posed without ground switch placement in one frame (11d i): L4's supported players have no
+  suspension, so the pose has no `ground` and no plan 07 continuity; 28 of L4's supported snaps are an arm or knee
+  changing alternative between frames (L4-F9-crowded D's right arm hanging to overhead, 177 deg; L4-F9-transferFailed;
+  L4-F10-knee). Fix: continuity on poses without ground, behind a flag, L4 only.
+- A raised clip arm held higher under the anatomical twist window, then dropping in one frame (blocks 11d ii's flip):
+  L3-F1-phase0/3/7, -mirror4 and HC-F3-mirror/-lowRunner D. Mechanism not found; where the measures part (horizontal
+  to the blend's top) the window reads the anatomical twist while `guardEnvelopeTwist` holds the envelope's.
+- Footwork plants a held player's foot by the midline (11c): L3-F6-hold R at 3.70 s; the inward knee pole then tucks
+  the knee behind the other (V3), or under V4 the pole is refused and the foot steps out and plants again. Fix in
+  footwork's stance width, or the step accepted as the look (user question).
+- Palms still going to and fro with 11d (ii) and (iii) both on (L3 325 substeps, HC 31, L4 6): L3-F4-gripTarget D
+  (161, both orders) and L3-F6-saturated reversed (95); not traced.
+- A supported upper arm inside its own trunk (plan 11's known limit, 11e): past 5 cm L3 160 of 750 supported player-s,
+  mostly sampled clip arms (L3 past 2 cm: clip 252, arm task 41, procedural 33); worst 13.6 cm on L3-F5-drag's carry
+  arm. Needs the user's look call (does the elbow show inside the chest?) before a fix: the upper arm in the self
+  shapes, which would move the clips' arms.
