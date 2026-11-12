@@ -58,7 +58,8 @@ measure: what the owner sees. Player-seconds over every L3/L4/HC fixture, both o
 Ragdoll impossible time is almost all L3/HC hips with no limit; knee time past 150 is mostly L4. Measured, not landed:
 the 8i variant (hip stops with the approach zone, L4 backstop, knee stop 140, PGS 4) reads 5.4 impossible, 75.6
 implausible or worse (64.8 of it L4 hip adduction the L4 envelope admits), deep own-body 504; the 8d box with the same
-read 5.9 / 19.6 / 461 (8e, 8f). The rest of own-body overlap needs ragdoll own-leg contact (next rung).
+read 5.9 / 19.6 / 461 (8e, 8f). Own-leg contact (rung 9, assessed at 9c, its flip parked ready) takes the 8m
+registration's deep own-body 326 to 169 player-s and own-leg axes 108 to 23; what remains is mostly arms on the trunk.
 
 ## Morning review for the user
 
@@ -483,6 +484,25 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
 - **9b** (`r9b-lab-selfleg`) landed: byte-identical, 343/343; lab only. `selfleg=on|off` (own-leg contact,
   SELF_LEGS_V1), composed after `retry` and named last in the label and the id: `?fixture=HC-F1-at0.9&selfleg=on` is
   the 9c variant (tests/lab-params.test.ts).
+- **9c** (`assess-9c`, README there; not applied): own-leg contact on every L3/L4/HC ragdoll, PGS 4 kept. Against 8m,
+  player-s impossible 8.71 -> 5.01, implausible or worse 17.66 -> 12.24, deep own-body 326 -> 169 (leg on leg 161 ->
+  18; arms on the trunk 114 -> 102 remain), own-leg axes 108 -> 23; injecting solves 494 -> 458, 2243 -> 2032 J
+  (largest 80.1). PGS 2 and 8 with it read implausible 19.5 and 19.9, energy 2687 and 2287 J: PGS 4 kept. G/L1/L2/RH
+  byte-identical, 128 summaries changed; leg matrix none over the ceiling; L4 matrix 4 entries over (the power defect
+  below); one query tick over 4000 (below); CPU +6%. Who falls: 10 player-runs, all D, each moved by R's fall (list and
+  lab links in the README and the parked patch's morning-review text). Suite under the variant 315/343: 24 by
+  construction (captures and `preFlip` samples now carrying own-leg contact, registration tests), 4 behaviour, each
+  twinned from the variant's state with own-leg contact on and off (the twin script checks every resumed ragdoll's
+  profile): two defects reached (`IMPACT_OVER_POWER`, `BRACE_EXPIRED_OBSTRUCTED`, below), HC-F2-bothFall's window
+  re-measured (+18, the same contact), hip-approach's backstop case run on `preOwnLegs` (no fixture takes the L4
+  backstop since 8k; with own legs L4-F1-hipTwist's legs press the twisted hip 0.03 deg into its band at 3.12 s). Every
+  large new injection is the same from a state just before it with own-leg contact off. Seen in the runs: legs switched
+  in crossed stay through each other until they part (7 short L3 runs end first); L3-F3-collision reversed D comes to
+  rest propped on its own leg, 21 cm higher; on a resting L3-F9-noProbe-free R a leg slides off the other; no jitter at
+  rest; L4's remaining axes time is thighs lying together 1 mm inside the meter's threshold (no proximal thigh shape).
+  Building the shapes alone moves a run (8 new colliders reorder Rapier's contact graph: L4-F10-knee-on with every
+  own-leg pair refused equals the variant, not 8m). Flip patch `.scratch/ladder/parked/own-leg-flip/` (345/345, its
+  full check equal to the variant's): ready to apply.
 - **8** (next). Triage with V3 on every L3/L4/HC leg-guard fixture at rung 7 (information,
   `.scratch/ladder/r7-triage/`, README there): 17 suite failures, 7 by construction, 4 natural samples or fault
   controls moved (3 of them by rung 7: the RESEED sample is the clearance re-plant rung 7 removes; the 10b and 13e
@@ -497,6 +517,7 @@ order, not hunk-split.
 
 ## Parked
 
+- The own-leg flip (9c): ready, not applied. Patch and README `.scratch/ladder/parked/own-leg-flip/`.
 - `ARM_CLEARANCE_V1` and the arm sweep: dormant and untested in the old tree; M3 reworks the wrap arms.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
@@ -508,6 +529,17 @@ order, not hunk-split.
 ## Open defects to test on the ladder
 
 To be reproduced on the first rung where they appear, then handled under rule 7:
+
+- Found at 9c, in the parked own-leg flip (tracked there: exceptions by fixture, player and mechanism in
+  tests/falls.test.ts, capture tests in tests/fall-defects.test.ts), each reached by a moved trajectory, the same from
+  the state just before with own-leg contact off; each wants its own fix step. `IMPACT_OVER_POWER`: L4-F3-run-on D (and
+  L4-F9-free, the same run) lands at 1.625 s with its hip and knee effort acting, one substep over the power cap (183
+  W; off from 1.60 s 169 W), tagged an impact; held off in that substep, nothing is over. `BRACE_EXPIRED_OBSTRUCTED`:
+  L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the end-of-window
+  path in fall-response.ts does not read the obstruction the core-down path reads (8m: the last press 0.104 s before,
+  outside the 0.1 s horizon). Query peak: L3-F1-phase4 reversed, 4036 in the tick at 1.317 s (8m 3749), 2324 of them
+  D's supported pose contact queries against R's ragdoll, none own-leg; off from 1.267 s the same 4036 (from 1.167 s
+  3749). A full-check report row, not a suite invariant; no capture test in the patch yet.
 
 - Self-trunk pinch: a ragdoll forearm pressed into its own trunk by the floor gains 7.5 J in one solve
   (L4-F9-contact reversed R; read by the audit as 172 W). Suspected solver energy injection. Reached with V3 on at rung
