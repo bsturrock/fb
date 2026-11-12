@@ -10,7 +10,7 @@
 // Off-run cost nothing: the meter only reads a Simulation after each `stepTick`.
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { FixtureDef } from '../src/sim/fixture';
-import { swingExcess } from '../src/sim/joint-cone';
+import { limbAnatomicalTwistRad, swingExcess } from '../src/sim/joint-cone';
 import { poseLimbShapes, type PhysicalPose } from '../src/sim/pose';
 import { DEFAULT_POSE_PROFILE, JOINT_RANGE_V2, sideSignX, type BodyProfile, type RagdollProfile } from '../src/sim/profiles';
 import { externalTwistRad, swingTwistOf } from '../src/sim/ragdoll';
@@ -54,12 +54,24 @@ export function hipAngles(q: Quat, sideSign: number): { flex: number; abd: numbe
 }
 
 /**
+ * Ladder 13a: the shoulder's axial rotation (deg, positive external, 0 at the neutral: the forearm bending forward from a
+ * hanging arm, behind the head from an arm raised overhead) from the core-to-upper-arm rotation: the anatomical twist
+ * (`limbAnatomicalTwistRad`, ladder 11d), the upper arm's -Y its direction and X its elbow axis. Up to horizontal it is
+ * plan 09's swing-twist twist from the hanging arm; above, it is taken after the shortest arc from a reference 35 deg
+ * forward of hanging, so it stays regular overhead, where plan 09's reads any value (its swing axis turns with the arm's
+ * azimuth: an arm straight up with the forearm bent to the face read 0, the forearm behind the head 180).
+ */
+export function shoulderRotationDeg(coreToUpperArm: Quat, sideSign: number): number {
+  return limbAnatomicalTwistRad(JOINT_RANGE_V2.shoulder, qRot(coreToUpperArm, v3(0, -1, 0)), qRot(coreToUpperArm, v3(1, 0, 0)), sideSign) * D;
+}
+
+/**
  * Every joint's anatomical measures of a drawn pose (deg):
  *  hip: `hipAngles`;
  *  knee/elbow: flex (twist of the child about the parent's hinge X; + flexion, - hyperextension), off (angle between the
  *    two hinge axes: varus/valgus and axial rotation, 0 for a hinge);
- *  shoulder: swing, coneEx (excess past the joint-range-v2 cone, the repo's fitted range), rot (plan 09 twist, external
- *    positive, neutral 180);
+ *  shoulder: swing, coneEx (excess past the joint-range-v2 cone, the repo's fitted range), rot (`shoulderRotationDeg`,
+ *    the anatomical twist, external positive; ladder 13a, plan 09's twist before);
  *  neck: flex (about the core X), off / yoff (anything else: turn and tilt; the ragdoll neck is a hinge);
  *  ankle: pitch (published `anklePitchDeg`, + toe down), where the pose has one.
  */
@@ -74,8 +86,9 @@ export function jointAngles(pose: PhysicalPose, body: BodyProfile): Record<strin
       const xc = qRot(q, v3(1, 0, 0));
       out[j] = { flex: twistAbout(q, v3(1, 0, 0)) * D, off: Math.acos(Math.max(-1, Math.min(1, xc.x))) * D };
     }
-    const st = swingTwistOf(rel(pose, 'core', `${s}UpperArm`));
-    out[`${s}Shoulder`] = { swing: st.swingRad * D, coneEx: swingExcess(shE, st.dir, ss).rad * D, rot: externalTwistRad(shE, st.twistRad, ss) * D };
+    const qs = rel(pose, 'core', `${s}UpperArm`);
+    const st = swingTwistOf(qs);
+    out[`${s}Shoulder`] = { swing: st.swingRad * D, coneEx: swingExcess(shE, st.dir, ss).rad * D, rot: shoulderRotationDeg(qs, ss) };
     const pitch = pose.anklePitchDeg?.[s];
     if (pitch !== undefined) out[`${s}Ankle`] = { pitch };
   }

@@ -4,9 +4,10 @@ import { preFlip } from './runs';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { modelBody } from '../src/sim/model/profiles';
 import type { PhysicalPose } from '../src/sim/pose';
-import { sideSignX, upperBodyCompound, type BodyProfile } from '../src/sim/profiles';
+import { JOINT_RANGE_V2, sideSignX, upperBodyCompound, type BodyProfile } from '../src/sim/profiles';
+import { externalTwistRad, swingTwistOf } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
-import { qFromAxisAngle, qFromUnitVectors, qMul, v3, type Quat } from '../src/sim/vec';
+import { cross, qFromAxisAngle, qFromBasis, qFromUnitVectors, qMul, v3, type Quat } from '../src/sim/vec';
 import { HUMAN_RANGES, hipAngles, idleBaseline, jointAngles, VisibleMeter } from './visible';
 
 // Ladder rung 8c: the visible-quality measures (tests/visible.ts; definitions in scripts/check/README.md) read the angles a
@@ -89,6 +90,65 @@ describe('visible quality: hip angles in the anatomical frame', () => {
     expect(check('extension', behind)).toBeCloseTo(93, 6);
     expect(check('fold', behind)).toBeLessThan(0);
     expect(check('flexion', hipAngles(thighRel(135, 0, 0, 1), 1))).toBeCloseTo(15, 6);
+  });
+});
+
+describe('visible quality: shoulder rotation in the anatomical measure (ladder 13a)', () => {
+  // A right or left upper arm at direction `dir` (core frame) with the forearm bent 90 deg toward `fore`: the upper arm's
+  // frame has -Y along the arm and X its elbow axis, flexion taking the forearm to the frame's -Z.
+  const armRel = (dir: [number, number, number], fore: [number, number, number], ss: number): Quat => {
+    const y = v3(-dir[0] * ss, -dir[1], -dir[2]);
+    const z = v3(-fore[0] * ss, -fore[1], -fore[2]);
+    return qFromBasis(cross(y, z), y, z);
+  };
+  // [direction, forearm] with x outward (mirrored per side), and the rotation each must read (external positive)
+  const ARMS: [string, [number, number, number], [number, number, number], number][] = [
+    ['hanging, forearm forward', [0, -1, 0], [0, 0, 1], 0],
+    ['hanging, forearm out', [0, -1, 0], [1, 0, 0], 90],
+    ['hanging, forearm across the belly', [0, -1, 0], [-1, 0, 0], -90],
+    ['out to the side, forearm up (throwing)', [1, 0, 0], [0, 1, 0], 90],
+    ['overhead, forearm behind the head', [0, 1, 0], [0, 0, -1], 0],
+    ['overhead, forearm over the head', [0, 1, 0], [-1, 0, 0], -90],
+    ['overhead, forearm out', [0, 1, 0], [1, 0, 0], 90],
+    ['overhead, forearm bent to the face', [0, 1, 0], [0, 0, 1], 180],
+  ];
+  const rotOf = (q: Quat, side: Side, body: BodyProfile): number => {
+    const segments = Object.fromEntries(SEGS.map((s) => [s, { originWorld: v3(), rotationWorld: qFromAxisAngle(v3(0, 0, 1), 80 * RAD) }]));
+    segments[`${side}UpperArm`] = { originWorld: v3(), rotationWorld: qMul(segments.core.rotationWorld, q) };
+    const pose = { playerId: 'X', segments, jointLandmarksWorld: {}, hingeDeg: {}, straightFallback: [], limbClearance: {} } as unknown as PhysicalPose;
+    return jointAngles(pose, body)[`${side}Shoulder`].rot;
+  };
+  const ROT = HUMAN_RANGES.find((r) => r.joint === 'Shoulder' && r.dof === 'rotation')!;
+
+  it('a constructed arm reads the rotation it was built with, on both sides of both bodies, the body lying on its side; an arm overhead bent to the face is past the impossible margin, behind the head neutral', () => {
+    for (const [, body] of BODIES)
+      for (const side of ['left', 'right'] as Side[]) {
+        const ss = sideSignX(body, side);
+        for (const [, dir, fore, rot] of ARMS) {
+          const r = rotOf(armRel(dir, fore, ss), side, body);
+          expect(Math.abs(((r - rot + 540) % 360) - 180)).toBeLessThan(1e-6);
+        }
+        expect(ROT.excess({ rot: rotOf(armRel([0, 1, 0], [0, 0, 1], ss), side, body) })).toBeGreaterThan(ROT.impossible);
+        expect(ROT.excess({ rot: rotOf(armRel([0, 1, 0], [0, 0, -1], ss), side, body) })).toBeLessThan(0);
+      }
+  });
+
+  it("fault twin: plan 09's twist from the hanging arm (the meter's measure before 13a) reads an arm 5 deg out from overhead bent to the face as neutral, inside the range, and the same arm with the forearm behind the head as half a turn, past the impossible margin", () => {
+    for (const [, body] of BODIES)
+      for (const side of ['left', 'right'] as Side[]) {
+        const ss = sideSignX(body, side);
+        const plan09 = (q: Quat): number => externalTwistRad(JOINT_RANGE_V2.shoulder, swingTwistOf(q).twistRad, ss) / RAD;
+        // tilted outward in the core frame (about Z), off plan 09's pole, where its swing axis is undefined
+        const out = (q: Quat): Quat => qMul(qFromAxisAngle(v3(0, 0, 1), -ss * 5 * RAD), q);
+        const face = out(armRel([0, 1, 0], [0, 0, 1], ss));
+        expect(ROT.excess({ rot: plan09(face) })).toBeLessThan(0);
+        expect(ROT.excess({ rot: rotOf(face, side, body) })).toBeGreaterThan(ROT.impossible);
+        const behind = out(armRel([0, 1, 0], [0, 0, -1], ss));
+        expect(ROT.excess({ rot: plan09(behind) })).toBeGreaterThan(ROT.impossible);
+        expect(ROT.excess({ rot: rotOf(behind, side, body) })).toBeLessThan(0);
+        // below horizontal the two are the same measure
+        expect(plan09(armRel([0, -1, 0], [1, 0, 0], ss))).toBeCloseTo(rotOf(armRel([0, -1, 0], [1, 0, 0], ss), side, body), 6);
+      }
   });
 });
 

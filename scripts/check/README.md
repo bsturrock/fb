@@ -95,7 +95,11 @@ the segment frames aligned (`src/sim/pose.ts`: limb -Y distal, X the hinge or kn
   past 60 deg of ab/adduction (the sagittal angle is ambiguous), rotation not past 150 deg of swing.
 - Knee and elbow: flexion is the twist of the child about the parent's hinge X (negative = hyperextension); off-axis is
   the angle between the two hinge axes.
-- Shoulder: excess past the joint-range-v2 swing cone (`swingExcess`) and the plan 09 twist (neutral 180).
+- Shoulder: excess past the joint-range-v2 swing cone (`swingExcess`) and the anatomical twist (`limbAnatomicalTwistRad`,
+  ladder 11d; 0 = the forearm bending forward from a hanging arm, behind the head from an arm overhead). Up to horizontal
+  it is plan 09's twist (neutral 180); above, it is taken after the shortest arc from a reference 35 deg forward of
+  hanging, so it stays regular overhead. Before ladder 13a the meter read plan 09's twist everywhere, which overhead reads
+  any value (an arm overhead bent to the face read neutral).
 - Neck: the twist about the core's X (flexion / extension) and the angle of anything else (turn and tilt).
 - Ankle (where the pose publishes `anklePitchDeg`): positive toe down.
 
