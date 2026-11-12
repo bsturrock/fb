@@ -8,7 +8,9 @@ planners on a proxy body) or *ragdolls*; most hard problems are at the boundary 
 - `npm run typecheck`, `npm run build`, `npm test` (vitest), `npm run fixtures` (exports all fixtures, writes
   `evidence/summary.json`), `npm run dev` (the lab: `?fixture=<id>&cam=front|side&speed=0.25&t=<s>`).
 - Full check, on branches that have `scripts/check/`: `npx vite-node scripts/check/full-check.ts <result-dir>`, then
-  `npx vite-node scripts/check/compare.ts <before> <after>`. About 3 minutes. See `scripts/check/README.md`.
+  `npx vite-node scripts/check/compare.ts <before> <after>`. About 4 minutes (the suite alone about 2.5, then the
+  fixture pass about 1.3). A step that changes no file the pass runs (docs, test files, test data) adds
+  `CHECK_REUSE=<previous result dir>` to take the pass from there: about 2.5 minutes. See `scripts/check/README.md`.
 
 ## How work is done here
 

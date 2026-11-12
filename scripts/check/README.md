@@ -18,7 +18,9 @@ Order and load: typecheck, build, then the test suite **alone** (nothing else ru
 check itself), then the fixture export and the matrices in one pass (below) in a pool of worker processes
 (`CHECK_JOBS`, default 6 on the 8-core machine: 8 is no faster; these runs have no timeouts and their results do not
 depend on load). Other heavy processes on the machine during the suite still matter: run the check on an otherwise idle
-machine.
+machine. Measured on the 8-core machine (ladder 14-speed): typecheck and build 4 s, the suite 141 s (161 s with the lab
+open in a browser), the pass 74-83 s: 220-250 s in all; with `CHECK_REUSE` the suite and 5 s. The suite is about 950 s
+of CPU, nearly all simulation, so it is near its floor on 8 cores; the pass about 480 s.
 
 Environment: `CHECK_JOBS=<n>` pool size; `CHECK_SKIP=suite,legmx,...` skips parts (typecheck, build, suite, fixtures,
 legmx, l4mx, energymx, visiblemx), recorded as skipped, for a quick look only (a rung is judged on a full run);

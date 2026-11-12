@@ -20,7 +20,10 @@ byte-identical to 10e, and 13a-i changed only the visible meter):
   HC 21 of 22.
 - Leg matrix: none over a ceiling. L4 matrix: one row over the power ceiling (`IMPACT_OVER_POWER`, tracked). The worst
   shape-query tick is 3588 (the budget is 4000).
-- The full check takes 396 s (the suite alone 157 s). `CLAUDE.md`'s "about 3 minutes" dates from rung 0.
+- The full check takes 220-250 s since ladder 14-speed (it took 396 s): the suite alone 141 s on a quiet machine, 161 s
+  with the lab open in a browser, then one pass of every fixture and order with every meter attached, 74-83 s. A step
+  that changes no file the pass runs (docs, test files, test data) can take the pass from the previous result
+  (`CHECK_REUSE`, `scripts/check/README.md`): the suite and 5 s.
 
 **What players visibly do now.** A falling or fallen player's hips and knees stay within what a body can do. Its legs
 no longer pass through each other or its own trunk. A standing player's legs are solid to falling players: a falling
