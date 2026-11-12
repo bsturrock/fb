@@ -11,8 +11,8 @@ It is not merged into `model-integration`, and the repository has no remote. Rep
 stack is the user's decision (plan doc, "Replacing the old working tree").
 
 Ladder 13 (2026-11-12) took the user's three look rulings: the fallen arm bent the wrong way overhead (13a), legs
-planted and still in a stationary hold (13b), and the elbow and upper arm inside the own chest (13c). Each landed off,
-and all three flips were parked. Ladder 14:
+planted and still in a stationary hold (13b), and the elbow and upper arm inside the own chest (13c). Each landed off;
+13a's and 13c's flips are parked, and 13b's was registered in 14a. Ladder 14:
 
 - **14a** registered 13b's still feet. It first replaced the coverage floor that blocked it (`c81146e`), then made the
   flip (`809d9aa`).
@@ -21,8 +21,8 @@ and all three flips were parked. Ladder 14:
 
 **Result at the tip** (full check `.scratch/ladder/r14b-flagoff/` in the main checkout). Every step after 10e is
 byte-identical to 10e except 14a-ii, which changed four summaries. 13a-i changed only the visible meter:
-- The suite passes 383/383 in 41 files (250 at the start). Typecheck and build pass. 411 fixtures export, equal to
-  `evidence/summary.json`.
+- The suite passes 383/383 in 41 files (250 at the start); after ladder 15's gate tests (below) 395/395 in 42 files,
+  `.scratch/ladder/r15-c-energy-conv/`. Typecheck and build pass. 411 fixtures export, equal to `evidence/summary.json`.
 - G, L1, L2 and RH summaries and traces are byte-identical to `a6d712f`. Summaries changed: L3 59 of 98, L4 70 of 75,
   HC 21 of 22.
 - Leg matrix: none over a ceiling. L4 matrix: one row over the power ceiling (`IMPACT_OVER_POWER`, tracked). The worst
@@ -79,6 +79,36 @@ brace pressed on a body at the end of its window misses `obstructed` (9e); and t
 
 Kept but unregistered: `LEG_GUARD_V2`, `HIP_STOPS_V1` (no zone, lab `hips=v1`), `HIP_STOPS_L4_V1` (8g's L4 backstop,
 `hips=l4`). Every one of the flips is parked (below).
+
+## Gates (2026-11-12)
+
+Ladder 15 (`7bfe068`, `b825dcb`, `9bd8041`; tests only, every summary, trace and matrix byte-identical) puts the
+whole-run tests on the visible bar (CLAUDE.md rule 6, the owner's ruling). Tests of G, L1, L2 and RH keep their
+assertions. Elsewhere a whole run or natural sample blocks only on:
+
+| What | Blocks when | Where |
+| --- | --- | --- |
+| Limb in its own or another body | deeper than 10 cm in any substep, past 5 cm for 0.10 s on end, or its bone axis inside for 0.10 s | `tests/visible-bar.ts` `limbInBody`; `body-limits.test.ts` (pose arms, arm-task arms, ragdoll forearms) |
+| Pose pop at a boundary | a joint landmark jumps more than 5 cm in one substep, or the 60 rad/s snap | `l3-pass.ts` AUDIT, RAW_KEPT, LANDINGS, RECONTACT, CARRY_AUDIT (`POP_M`) |
+| Planted foot, root | a failed or held plant slides more than 5 cm; the root more than 10 cm over its target, on the launch fixtures (L3-F6-saturated, L3-F7-loadRelease: lifts and kicks raise the root by their own motion) | `l3-pass.ts` PLANT_ROOT (`plantRootBreaches`) |
+| Joint past its range | more than 15 deg past for 0.25 s on end | `visible-bar.ts` `jointPastRange` (body-limits ragdoll shoulders); `loaded-limb.ts` `deepRunS` (every L4 fall) |
+| Conversion | a rejected handoff leaves a rigid falling figure; an accepted conversion has a limb more than 5 cm through a torso, either way round | `handoff-contact.test.ts` (`torsoBreach`) |
+| Energy | the explosion gate: a limit returns no more than it absorbs or 40 J, no body over 9 m/s; L4-F8-passive gains under 40 J | `falls.test.ts` |
+| Coverage | every kind occurs at least once outside the excluded phases | `l3-contracts.test.ts` (continuity, foot limit, carried ball) |
+
+Report-only now, printed by the tests on console lines tagged `(ladder 15 meter)` (`l3-contracts`, `body-limits`,
+`falls`, `handoff-contact`, `hip-approach`), one per fixture group: pops over 1 cm, plant slides and drift, root peaks,
+the deepest limb per source, shoulder excess, the loaded-limb free/bound/return times, the accepted-handoff anchor 5 mm,
+landmark 1 cm and penetration/floor 1.5 cm, the first solved step's torso depth, the L4-F1 soft mean against its load
+(was 0.25 deg), the L4 realized power past the 5% tolerance (also `l4mx`), the L4-F8-passive energy change (was 0.3 J)
+and the coverage counts. `energymx` carries each run's injection past 0.5 J.
+
+Unchanged: constructed rigs (stops, `HARD_OK` rigs, identities, conservation), determinism, resume and byte-identity
+tests, class-A rows, class-C budgets, capture-based mechanism tests (their `INJECTION_J` 0.5 J is a pass input; the
+hip-approach regression reads its rebound window, solves 60-90), and the work and plan caps. Not settled by the
+values above and left as they were: the `HOLD_SETTLES` 50 ms gap, `STANDS_STILL` 2 mm and `TOE_OFF`. Each new rule's
+fault twin: constructed series (`visible-bar.test.ts`, `unseenChase`, `plantRootBreaches`, `torsoBreach`), an 8 cm
+owner-change jump, a shoulder held 100 deg behind on L4-F8-passive (`holdArmBehind`), and a 3 m/s kick on L4-F8-passive.
 
 ## Key decisions and why
 
