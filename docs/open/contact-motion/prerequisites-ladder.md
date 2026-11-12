@@ -47,19 +47,20 @@ uncommitted diff), the untracked files, and the s17 patches (`b`, `query`, `arm`
 ## Primary measure: visible quality
 
 The full check's visible-quality matrix (rung 8c; `scripts/check/README.md`, Visible quality) is the ladder's primary
-measure: what the owner sees. Player-seconds over every L3/L4/HC fixture, both orders, at the registered tree (8f):
+measure: what the owner sees. Player-seconds over every L3/L4/HC fixture, both orders, first measured (8c, the tree
+after rungs 1-7) and now (10e, `r10e-exceptions`):
 
-| family | ragdoll s | ragImpS | ragImplS | supImpS | ragSelfLegAxS | ragSelfDeepS | kneeStopS | ragSnap60 |
+| family | ragImpS | ragImplS | supImpS | ragSelfLegAxS | ragSelfDeepS | supSelfLegAxS | kneeStopS | ragSnap60 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| L3 | 151.2 | 157.9 | 235.5 | 1.0 | 100.9 | 284.7 | 16.4 | 1 |
-| L4 | 380.4 | 0.9 | 188.0 | 0.5 | 254.2 | 416.3 | 103.3 | 4 |
-| HC | 93.5 | 99.9 | 157.7 | 4.4 | 63.2 | 184.3 | 7.8 | 0 |
+| L3 | 157.9 -> 0.8 | 235.5 -> 3.6 | 1.0 -> 1.0 | 100.9 -> 2.3 | 284.7 -> 89.0 | 9.3 -> 12.8 | 16.4 -> 0 | 1 -> 0 |
+| L4 | 0.9 -> 1.5 | 188.0 -> 3.4 | 0.5 -> 0 | 254.2 -> 21.7 | 416.3 -> 44.4 | 3.1 -> 2.0 | 103.3 -> 0 | 4 -> 0 |
+| HC | 99.9 -> 2.5 | 157.7 -> 4.5 | 4.4 -> 4.2 | 63.2 -> 3.4 | 184.3 -> 40.3 | 6.7 -> 6.5 | 7.8 -> 0 | 0 -> 0 |
 
-Ragdoll impossible time is almost all L3/HC hips with no limit; knee time past 150 is mostly L4. Measured, not landed:
-the 8i variant (hip stops with the approach zone, L4 backstop, knee stop 140, PGS 4) reads 5.4 impossible, 75.6
-implausible or worse (64.8 of it L4 hip adduction the L4 envelope admits), deep own-body 504; the 8d box with the same
-read 5.9 / 19.6 / 461 (8e, 8f). Own-leg contact (rung 9, registered at 9d) takes the 8m registration's deep own-body
-326 to 169 player-s and own-leg axes 108 to 23; what remains is mostly arms on the trunk.
+Ragdoll s now L3 154.9, L4 389.1, HC 93.6. Impossible time was almost all L3/HC hips with no limit (the hip stops,
+8m); knee time past 150 mostly L4 (the knee stop, 8m). Deep own-body overlap left is mostly arms on the trunk (108 of
+the 174 s); legs on legs 313 -> 20 (own-leg contact, 9d). supSelfLegAxS L3 rises with V2's sweep paths (10a). Passive
+energy (7g, the same at 8c): L3 1150 -> 804 J (largest 128 -> 48), L4 2907 -> 531 (122 -> 58), HC 949 -> 423 (197 ->
+48).
 
 ## Morning review for the user
 
@@ -72,7 +73,7 @@ them.
 | before 8m (the registration up to 8k) | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off` |
 | 8m left it | `&legs=v1&selfleg=off` |
 | 9d left it (through 10b) | `&legs=v1` |
-| now (10d) | nothing |
+| now (10d; nothing visible changed since) | nothing |
 
 ### Who falls now, against the ladder's start (the net list to review)
 
@@ -725,6 +726,13 @@ Results per rung under `.scratch/ladder/<rung>/` in the main checkout; each comp
   the registered run passes it. `HOLD_CLEARANCE_REPLANT` (l3-pass, L3-F6-hold and -holdMirror): the hold check counts
   every plant after 3.5 s; under V1 the clearance re-plants fail it (2 and 3, l3-contracts), the registered holds pass;
   the predicate (`replants`) reads the pre-flip captures only.
+- **10f** (`assess-10f`, README there; not applied): 9f's own-trunk hold on every L4 fall response, re-assessed under
+  V3. Only L4 moves (17 summaries, 46 traces), no who-falls change, the L4 matrix 1 -> 0 over (L4-F9-low reversed R
+  161.5 -> 132.9 W); suite 341/349, the 8 by construction. Not clean: from the same state the hold, acting by its rule
+  on closings that breach nothing, makes three runs worse. L4-F9-prep R's arm stays deep in its trunk 1.52 s against
+  0.48 (the hold at 0.892 s, its forearm on the trunk at 14.3 m/s); L4-F9-exit reversed R gains 1.73 J in a pinch solve
+  five substeps after a hold on a 2.02 m/s closing (none without); L4-F4-obstructed R's rebound solve 1.27 J against
+  0.81. Kept parked; the parked README says what the fix needs (below, `IMPACT_OVER_POWER`).
 
 Rungs 5-7 are interleaved in the `pose.ts` leg loop and `poseClearanceOf` in the old tree; they are re-expressed in
 order, not hunk-split.
@@ -735,9 +743,10 @@ order, not hunk-split.
 - Shoulder twist 1000/3: traded one power breach for another and masked the head-plant test.
 - The pushed-target clamp from `arm.patch`: raised reversals on trapped arms.
 - D4/D5 footwork: reverted (see the handoff's known issues).
-- 9f's flip, the own-trunk hold on every L4 fall response: fixes the captured landing but not the mechanism (an
-  own-trunk hit read before the solve far under what the solve takes); the run reaches it one substep later. Patch,
-  twins and README `.scratch/ladder/parked/self-trunk-flip/`.
+- 9f's flip, the own-trunk hold on every L4 fall response: at 9f it fixed the captured landing but the run reached the
+  same hit a substep later, read before the solve far under what the solve took; at 10f (under V3) it removes the last
+  L4 breach but makes three runs worse from the same state (a limb released into its trunk, two solves' energy). Patch,
+  twins, states and README `.scratch/ladder/parked/self-trunk-flip/`; the 10f evidence `assess-10f/`.
 - 8k's other option, the L4 hip envelope narrowed to the human ab/adduction (cone across 60 -> 42, its own backstop):
   removes the hip implausible time as the box does but not the own-body overlap; not taken. Patch and README
   `.scratch/ladder/parked/l4-hip-envelope-narrowed/`.
@@ -752,10 +761,13 @@ To be reproduced on the first rung where they appear, then handled under rule 7:
   s with its hip and knee effort acting, one substep over the power cap (183 W; off from 1.60 s 169 W), tagged an
   impact; held off in that substep, nothing is over. The forearm's own-trunk hit is held as the arm's only; 9f's
   `selfTrunkBody` (off) fixes that landing, but registered the run reaches the same hit one substep later, read before
-  the solve at 1.62 m/s against 49.8 N s taken (parked). Next: read an own-trunk hit from the pair's penetration or
-  pinning, not only its closing. Under the V3 flip (registered at 10d) L4-F3-run-on no longer reaches it; the one
-  instance is L4-F9-low reversed R (161.5 W at 1.0875 s, its right forearm's own-trunk hit; the same under V1 from 0.833 s,
-  `selfTrunkBody` fixes it), the flip patch's capture test. `BRACE_EXPIRED_OBSTRUCTED` (resolved at 9e):
+  the solve at 1.62 m/s against 49.8 N s taken (parked). Under the V3 flip (registered at 10d) L4-F3-run-on no longer
+  reaches it; the one instance is L4-F9-low reversed R (161.5 W at 1.0875 s, its right forearm's own-trunk hit; the same
+  under V1 from 0.833 s, `selfTrunkBody` fixes it), the flip patch's capture test. Re-assessed at 10f: on every L4 fall
+  response the hold removes that instance but releases the body on closings that breach nothing (three runs worse from
+  the same state). Next: read an own-trunk hit from what the solve will take (the pair's penetration or pinning, or its
+  predicted impulse), not its closing; test, the hold at `L4-F9-low~rev@50` and `L4-F3-run-on@96` and not from the
+  three 10f states (`parked/self-trunk-flip/10f/`). `BRACE_EXPIRED_OBSTRUCTED` (resolved at 9e):
   L4-F5-twoClamp-on D right (and L4-F9-both) missed `expired` at 2.2 s while pressed on R's shin; the end-of-window
   path did not read the obstruction the core-down path reads. Query peak (resolved at 9g): L3-F1-phase4 reversed, 4036
   in the tick at 1.317 s (8m 3749), D's deferred conversion validated unculled beside R's ragdoll.
