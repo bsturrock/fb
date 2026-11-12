@@ -1017,6 +1017,13 @@ export interface HipTwistProfile extends ShoulderTwistProfile {
 export interface ShoulderTwistProfile {
   marginDeg: number;
   maxRateRadPs: number;
+  /**
+   * Ladder 11d (the shoulder's window only; absent: the envelope's measure): the window, the elbow fit and the forearm
+   * turn work in the anatomical twist (`limbAnatomicalTwistRad`, regular through an upper arm pointing straight up), and
+   * the envelope's own twist is kept in the range where the two part (`guardEnvelopeTwist`). In the envelope's measure
+   * a rate window near vertical held the twist number while the arm itself turned over.
+   */
+  anatomical?: true;
 }
 
 export const JOINT_RANGE_V1: JointRangeProfile = {
@@ -1032,6 +1039,9 @@ export const JOINT_RANGE_V2: JointRangeProfile = { ...JOINT_RANGE_V1, id: 'joint
 
 /** Ladder 11b: V2 with the supported thigh's rotation kept in the ragdoll hip's twist range and continuous (`hipTwist`). */
 export const JOINT_RANGE_V3: JointRangeProfile = { ...JOINT_RANGE_V2, id: 'joint-range-v3', hipTwist: { envelope: ENVELOPE_L4.hip, marginDeg: 5, maxRateRadPs: 12 } };
+
+/** Ladder 11d: V2 with the shoulder's M1 twist in the anatomical measure (`anatomical`); not V3's thigh rotation. */
+export const JOINT_RANGE_V4: JointRangeProfile = { ...JOINT_RANGE_V2, id: 'joint-range-anat-v4', shoulderTwist: { ...JOINT_RANGE_V2.shoulderTwist!, anatomical: true } };
 
 /**
  * Plan 13f leg guard (absent = the guard measures other bodies where they stand): the supported pose's leg guard also

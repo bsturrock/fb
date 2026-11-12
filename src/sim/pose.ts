@@ -11,7 +11,7 @@ import { chestArm, type SampledLimbs } from './run-clip';
 import { idleStanceFade, idleWidthAddM, type IdleSample, type LocomotionProfile } from './locomotion';
 import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangeProfile, type OwnLegProfile, type RagdollProfile } from './profiles';
 import { segmentDistanceSq } from './physics';
-import { armTwistRad, behindDeg, clampDirToEnvelope, fitElbowTwist, fitThighTwist, turnForearmTwist, twistWindow } from './joint-cone';
+import { armAnatomicalTwistRad, armTwistRad, behindDeg, clampDirToEnvelope, fitElbowTwist, fitThighTwist, guardEnvelopeTwist, turnForearmTwist, twistWindow } from './joint-cone';
 import type { PoseDebug, PoseProbe } from './debug';
 import {
   add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qFromUnitVectors, qInvRot, qMul, qRot, qSlerp, scale, sub, toWorld, upOf, v3,
@@ -957,6 +957,9 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       // contact motion M1: the twist this pose may show (the range, and one step from the last shown twist)
       const TW = JR?.shoulderTwist;
       const twWin = TW ? twistWindow(JR!.shoulder, TW, gr0 ? (mem[`${s}Arm:tw`] ?? null) : null, inp.dtS ?? 0) : null;
+      // ladder 11d (`anatomical`): the window in the anatomical measure, and the range alone for the envelope guard
+      const twM = TW?.anatomical ? armAnatomicalTwistRad : armTwistRad;
+      const twRange = TW?.anatomical ? twistWindow(JR!.shoulder, TW, null, 0) : null;
       const procedural = (palmL: Vec3, poleL: Vec3) => (): ArmC => {
         const tgt = W(palmL);
         const r = twoBone(sh, tgt, R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, stablePole(sh, tgt, qRot(pose.q, poleL), prevElbow, CONT_ARM_MPS * (inp.dtS ?? 0), CONT_FAST_MPS * (inp.dtS ?? 0)), undefined, elbowMin);
@@ -979,12 +982,21 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // that turn moves the upper arm, so the cone is applied again after each turn: the cone is the hard limit, the
         // twist after the last clamp is within a fraction of a degree of the window
         for (let it = 0; it < 2 && twWin; it++) {
-          const f = fitElbowTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin);
+          const f = fitElbowTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin, twM);
           if (!f.turned) break;
           mid = f.elbow;
           dc = cone();
           // what the clamp's turn left outside the window: the forearm turns about the upper arm (the cone kept)
-          if (it === 1) end = turnForearmTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin);
+          if (it === 1) end = turnForearmTwist(JR.shoulder, pose.q, sh, mid, end, sx, twWin, twM);
+        }
+        // ladder 11d: and the envelope's own twist inside the range where the anatomical one parts from it, between
+        // horizontal and the blend's top (the ragdoll's limit is the envelope's)
+        if (twRange) {
+          const g = guardEnvelopeTwist(JR.shoulder, pose.q, sh, mid, end, sx, twRange);
+          if (g.turned) {
+            mid = g.elbow;
+            dc = cone();
+          }
         }
         const c = build(mid, end);
         // and the forward preference: a soft cost per 30 deg behind the side line
@@ -1172,7 +1184,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const pre = s;
     // contact motion M1: the shown twist is the next pose's start (an arm task's too, so a procedural arm carries on from it)
     if (inp.jointRange?.shoulderTwist) {
-      const tw = armTwistRad(inp.jointRange.shoulder, pose.q, sh, a.elbow, a.reach, sx);
+      const tw = (inp.jointRange.shoulderTwist.anatomical ? armAnatomicalTwistRad : armTwistRad)(inp.jointRange.shoulder, pose.q, sh, a.elbow, a.reach, sx);
       if (tw !== null) mem[`${s}Arm:tw`] = tw;
     }
     lm[`${pre}Shoulder`] = sh;

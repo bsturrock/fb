@@ -15,7 +15,7 @@ import type { ArmProfile, ArmSetup, BodyProfile, JointRangeProfile, RagdollProfi
 import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
-import { armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
+import { armAnatomicalTwistRad, armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
 import { cullGeom, geomNear, isSupportedLeg, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
@@ -433,12 +433,14 @@ export class ArmSystem {
     // stalls or retreats the reach (`reach`, the post-step push-out) or releases a held hand (`invalidPose`), instead of
     // the elbow turning around the obstacle in one step
     const TW = J?.shoulderTwist;
+    // ladder 11d: the measure the window is in (`ShoulderTwistProfile.anatomical`)
+    const twM = TW?.anatomical ? armAnatomicalTwistRad : armTwistRad;
     const wins: ({ mid: number; lo: number; hi: number } | null)[] = [];
     if (TW) {
       const key = `${pl.id}:${a.side}`;
       let anchor = this.twAnchor.get(key);
       if (!anchor || anchor.substep !== this.twSubstep) {
-        const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? armTwistRad(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
+        const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? twM(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
         this.twAnchor.set(key, (anchor = { substep: this.twSubstep, rad: prev }));
       }
       wins.push(twistWindow(J!.shoulder, TW, anchor.rad, this.host.dt));
@@ -451,7 +453,7 @@ export class ArmSystem {
     const solves = (win: { mid: number; lo: number; hi: number } | null): { poleL: Vec3; mid: Vec3; end: Vec3 }[] => {
       const out = this.poleCandidates(a).map((poleL) => {
         const r = twoBone(sW, target, P.upperArmM, P.forearmM + P.palmExtensionM, qRot(ownerPose.q, poleL), P.maxReachM);
-        return { poleL, mid: win ? fitElbowTwist(J!.shoulder, ownerPose.q, sW, r.mid, r.end, a.sx, win).elbow : r.mid, end: r.end };
+        return { poleL, mid: win ? fitElbowTwist(J!.shoulder, ownerPose.q, sW, r.mid, r.end, a.sx, win, twM).elbow : r.mid, end: r.end };
       });
       if (prevElbow) out.sort((x, y) => len(sub(x.mid, prevElbow)) - len(sub(y.mid, prevElbow)));
       return out;

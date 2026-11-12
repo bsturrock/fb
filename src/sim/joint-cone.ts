@@ -2,7 +2,7 @@
 // cone serves the ragdoll's soft envelope (plan 09), the fall response's brace clamp, and under a joint-range profile the
 // supported pose and the arm-task arms, so every arm source measures the same range.
 import type { JointEnvelope, ShoulderTwistProfile } from './profiles';
-import { add, clamp, cross, dot, len, norm, qFromAxisAngle, qFromUnitVectors, qInvRot, qRot, scale, sub, v3, wrapPi, type Quat, type Vec3 } from './vec';
+import { add, clamp, cross, dot, len, norm, qFromAxisAngle, qFromUnitVectors, qInvRot, qMul, qRot, scale, smooth, sub, v3, wrapPi, type Quat, type Vec3 } from './vec';
 
 const REF = v3(0, -1, 0);
 
@@ -88,8 +88,8 @@ export function limbTwistRad(E: JointEnvelope, dir: Vec3, hinge: Vec3, sideSign:
   return wrapPi(sideSign * (Math.atan2(-v.z, v.x) - (E.neutralTwistDeg * Math.PI) / 180));
 }
 
-/** The upper arm's external twist (rad) for a shoulder, elbow and distal point (world), or null for a straight arm. */
-export function armTwistRad(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number): number | null {
+/** An arm's direction and hinge axis (unit, core frame) from a shoulder, elbow and distal point (world); null when straight. */
+function armFrame(coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3): { dir: Vec3; hinge: Vec3 } | null {
   const dA = sub(elbow, sh);
   const dB = sub(end, elbow);
   const la = len(dA);
@@ -98,7 +98,51 @@ export function armTwistRad(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3
   const c = cross(dA, dB);
   const lc = len(c) / (la * lb);
   if (lc < 1e-6) return null;
-  return limbTwistRad(E, qInvRot(coreQ, scale(dA, 1 / la)), qInvRot(coreQ, scale(c, 1 / (lc * la * lb))), sideSign);
+  return { dir: qInvRot(coreQ, scale(dA, 1 / la)), hinge: qInvRot(coreQ, scale(c, 1 / (lc * la * lb))) };
+}
+
+/** The upper arm's external twist (rad) for a shoulder, elbow and distal point (world), or null for a straight arm. */
+export function armTwistRad(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number): number | null {
+  const f = armFrame(coreQ, sh, elbow, end);
+  return f ? limbTwistRad(E, f.dir, f.hinge, sideSign) : null;
+}
+
+/** Ladder 11d: the anatomical twist's reference above horizontal, 35 deg forward of the hanging limb (sagittal plane). */
+const ANAT_REF = v3(0, -Math.cos((35 * Math.PI) / 180), Math.sin((35 * Math.PI) / 180));
+const ANAT_REF_Q = qFromUnitVectors(REF, ANAT_REF);
+/** Ladder 11d: the limb height (unit direction +Y, about 33 deg above horizontal) from which the anatomical twist is the reference's alone. */
+export const ANAT_BLEND_Y = 0.55;
+
+/**
+ * Ladder 11d: the external twist (rad) measured so that it is regular through an upper arm pointing straight up. The
+ * envelope's measure (`limbTwistRad`) takes the swing as the shortest arc from the hanging limb; straight up that arc is a
+ * half turn about an axis that turns with the limb's azimuth, so near vertical a small rotation of the limb changes the
+ * reading by up to tan(swing / 2) times as much (46 at the plan 12 cone's tip). At and below horizontal this is exactly
+ * the envelope's measure; above, it blends (a smoothstep in the limb's height up to `ANAT_BLEND_Y`) into the twist left
+ * after the shortest arc from the hanging limb to `ANAT_REF` and from there to the limb. The two differ by a function of
+ * the direction alone, regular below `ANAT_BLEND_Y`, so the blend is continuous; its one singular direction is the
+ * reference's opposite, 35 deg behind straight up, outside the shoulder cone. A turn about the limb changes either
+ * measure by the same angle.
+ */
+export function limbAnatomicalTwistRad(E: JointEnvelope, dir: Vec3, hinge: Vec3, sideSign: number): number {
+  const w = smooth(dir.y / ANAT_BLEND_Y);
+  const v0 = qInvRot(qFromUnitVectors(REF, dir), hinge);
+  let t = Math.atan2(-v0.z, v0.x);
+  if (w > 0) {
+    const v1 = qInvRot(qMul(qFromUnitVectors(ANAT_REF, dir), ANAT_REF_Q), hinge);
+    const tr = Math.atan2(-v1.z, v1.x);
+    t = w >= 1 ? tr : t - w * wrapPi(t - tr);
+  }
+  return wrapPi(sideSign * (t - (E.neutralTwistDeg * Math.PI) / 180));
+}
+
+/** Ladder 11d: an arm twist measure (envelope, core rotation, shoulder, elbow, distal point, side: rad, null when straight). */
+export type ArmTwistMeasure = (E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number) => number | null;
+
+/** Ladder 11d: the upper arm's anatomical external twist (`limbAnatomicalTwistRad`), or null for a straight arm. */
+export function armAnatomicalTwistRad(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number): number | null {
+  const f = armFrame(coreQ, sh, elbow, end);
+  return f ? limbAnatomicalTwistRad(E, f.dir, f.hinge, sideSign) : null;
 }
 
 /**
@@ -120,13 +164,13 @@ export function twistWindow(E: JointEnvelope, T: ShoulderTwistProfile, prevRad: 
 /**
  * Contact motion M1: the elbow turned about the shoulder-to-end line (the end, and so the reach, unchanged) until the
  * upper arm's external twist is inside `win`, by the smallest turn. A twist inside is unchanged; a straight arm (no bend
- * plane) is returned as given. `twistRad` is the twist shown after the fit.
+ * plane) is returned as given. `twistRad` is the twist shown after the fit. `measure`: the twist `win` is in (ladder 11d).
  */
 /** Contact motion M1: `fitElbowTwist` stops once the fitted twist is this close to its window (rad). */
 export const TWIST_FIT_TOL_RAD = 1e-5;
 
-export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, win: { mid: number; lo: number; hi: number }): { elbow: Vec3; twistRad: number | null; turned: boolean } {
-  const t0 = armTwistRad(E, coreQ, sh, elbow, end, sideSign);
+export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, win: { mid: number; lo: number; hi: number }, measure: ArmTwistMeasure = armTwistRad): { elbow: Vec3; twistRad: number | null; turned: boolean } {
+  const t0 = measure(E, coreQ, sh, elbow, end, sideSign);
   if (t0 === null) return { elbow, twistRad: null, turned: false };
   const u0 = wrapPi(t0 - win.mid);
   if (u0 >= win.lo - 1e-9 && u0 <= win.hi + 1e-9) return { elbow, twistRad: t0, turned: false };
@@ -135,7 +179,7 @@ export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Ve
   const off = sub(elbow, sh);
   const at = (phi: number): Vec3 => add(sh, qRot(qFromAxisAngle(axis, phi), off));
   const f = (phi: number): number | null => {
-    const t = armTwistRad(E, coreQ, sh, at(phi), end, sideSign);
+    const t = measure(E, coreQ, sh, at(phi), end, sideSign);
     return t === null ? null : wrapPi(t - win.mid - target);
   };
   // Newton on the turn angle (the twist changes by about one radian per radian of turn, either sign)
@@ -156,7 +200,25 @@ export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Ve
   }
   if (best.phi === 0) return { elbow, twistRad: t0, turned: false };
   const e = at(best.phi);
-  return { elbow: e, twistRad: armTwistRad(E, coreQ, sh, e, end, sideSign), turned: true };
+  return { elbow: e, twistRad: measure(E, coreQ, sh, e, end, sideSign), turned: true };
+}
+
+/** Ladder 11d: limb heights (unit direction +Y) over which `guardEnvelopeTwist` lets go of the range. */
+const GUARD_FADE_Y: [number, number] = [0.3, ANAT_BLEND_Y];
+
+/**
+ * Ladder 11d: with the window in the anatomical measure, the envelope's own twist (`armTwistRad`, the ragdoll's limit) kept
+ * inside `range` where that measure is regular. Above horizontal the two measures part, so an arm held at the window's
+ * edge could stand past the ragdoll's range by their difference; there the elbow is turned (the end kept) back into the
+ * range in the envelope's measure. The range widens by up to a half turn between the `GUARD_FADE_Y` heights (a
+ * smoothstep), so the guard lets go continuously before the envelope's measure turns singular overhead.
+ */
+export function guardEnvelopeTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, range: { mid: number; lo: number; hi: number }): { elbow: Vec3; turned: boolean } {
+  const fr = armFrame(coreQ, sh, elbow, end);
+  if (!fr || fr.dir.y <= 0 || fr.dir.y >= GUARD_FADE_Y[1]) return { elbow, turned: false };
+  const wide = Math.PI * smooth((fr.dir.y - GUARD_FADE_Y[0]) / (GUARD_FADE_Y[1] - GUARD_FADE_Y[0]));
+  const f = fitElbowTwist(E, coreQ, sh, elbow, end, sideSign, { mid: range.mid, lo: range.lo - wide, hi: range.hi + wide });
+  return { elbow: f.elbow, turned: f.turned };
 }
 
 /**
@@ -164,8 +226,8 @@ export function fitElbowTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Ve
  * upper arm's direction, and so its swing and the cone, unchanged; the end moves. For an arm the cone has already turned
  * off its target, after `fitElbowTwist` and the cone have left the twist just outside the window.
  */
-export function turnForearmTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, win: { mid: number; lo: number; hi: number }): Vec3 {
-  const t0 = armTwistRad(E, coreQ, sh, elbow, end, sideSign);
+export function turnForearmTwist(E: JointEnvelope, coreQ: Quat, sh: Vec3, elbow: Vec3, end: Vec3, sideSign: number, win: { mid: number; lo: number; hi: number }, measure: ArmTwistMeasure = armTwistRad): Vec3 {
+  const t0 = measure(E, coreQ, sh, elbow, end, sideSign);
   if (t0 === null) return end;
   const u0 = wrapPi(t0 - win.mid);
   const dl = clamp(u0, win.lo, win.hi) - u0;
