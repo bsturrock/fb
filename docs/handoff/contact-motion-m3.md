@@ -1,8 +1,8 @@
-# Contact motion M3: the wrap and the committed finish (rough-first slice)
+# Contact motion M3: the wrap, the committed finish and the hold through it (rough-first slice)
 
 Plan: [03-wrap-and-finish](../open/contact-motion/03-wrap-and-finish.md), rough-first slice, on branch `prereq-ladder`:
 `02fa1b8` the slice, `23551d8` open and close (flag off), `aea0caa` its flip, `01f9dfb` the committed finish (flag
-off), `51a7f4b` its flip.
+off), `51a7f4b` its flip, `e886c0f` the hold through the takedown (flag off), `a02a5fc` its flip.
 
 ## What the defender does
 
@@ -18,6 +18,12 @@ A tackling defender (a `wrapAttempt` controller that pursues to the end) on L3, 
   to 0.78 m and leans in 12 deg for 0.2 s while he drives, then asks to leave support. The simulation converts him
   through the validated, audited path with reason `takedown`. If the carrier he holds securely loses his support first,
   he follows at the next substep.
+- **Keeps his hold while he goes down.** At the takedown his forearm holds carry onto his ragdoll arms: they keep
+  their shape and press his forearms into the carrier where the clamps held, under a bounded arm drive. In the front
+  wrap his arms stay on the carrier for about half a second after he leaves his feet (0.48 and 0.65 s; 0.42 and 0.51 s
+  reversed), the bodies stay together as they go down, and the carrier falls over him. In the forward rear wrap they
+  hold 0.37 s as he slides down the carrier's back; the carrier still runs on. When a hold lapses the arm reaches for
+  the ground (or goes limp once his trunk is down).
 - **Does not commit on less.** A one-arm hold, a miss, or a hold broken for more than 50 ms never takes him down; a
   broken hold during the lowering stands him back up and he pursues. The carrier is never converted by the finish: his
   own balance decides.
@@ -28,14 +34,15 @@ and he stayed on his feet over the carrier until a later trip.
 
 ## Flags, lab and code
 
-- `FixtureDef.wrap` = `WRAP_V2` (`src/sim/controllers/wrap.ts`). Registered on every L3, L4 and HC fixture with a
+- `FixtureDef.wrap` = `WRAP_V3` (`src/sim/controllers/wrap.ts`). Registered on every L3, L4 and HC fixture with a
   tackling defender (`src/sim/fixtures/index.ts` `wrapFlip`). G, L1, L2 and RH unchanged.
 - Not registered on a defender who stops to stand in a hold (`standAfterS`, the L3-F6 stationary holds): their wrap and
   hold settle check (`HOLD_SETTLES`, the plan 13e known limit) is about a standing hold, and under the cradle its free
   gap is 0.21 m against 0.05.
-- Lab `wrap=on|v1|off`: `on` is `WRAP_V2`, `v1` the cradle without the committed finish (before its flip), `off` the
-  Gate 2 progression (before M3). `tests/runs.ts` `preWrapV2` and `preWrap` give a definition as before each flip (the
-  head of `BEFORE_FLIPS`).
+- Lab `wrap=on|v2|v1|off`: `on` is `WRAP_V3`, `v2` the takedown with his arms let go at it (before the hold flip),
+  `v1` the cradle without the committed finish (before its flip), `off` the Gate 2 progression (before M3).
+  `tests/runs.ts` `preWrapV3`, `preWrapV2` and `preWrap` give a definition as before each flip (the head of
+  `BEFORE_FLIPS`).
 - Code:
   - `WrapProfile.ready`, `open`, `closeOnTouch`, `close`: the cradle and the close (requests only; every acquisition
     guard, the shared arm budget and the break rules stay).
@@ -43,8 +50,21 @@ and he stayed on his feet over the carrier until a later trip.
     reads the arm observation (retention and `touchingTarget`), never the observational wrap status (Gate 3's rule).
   - `PlayerIntent.leaveSupport: 'takedown'`; `Simulation` stage 1 converts on it (`HandoffRecord.reason` `takedown`),
     only under a profile with a commit and never after the referee's ending.
-- Tests: `tests/wrap-open.test.ts` (the cradle, the close), `tests/wrap-takedown.test.ts` (the finish), each case with
-  its fault twin; `tests/wrap-defects.test.ts` (tracked defects).
+  - `WrapProfile.commit.hold` (`FALL_HOLD_V1`, `src/sim/profiles.ts`): the plan 09 fall response a takedown starts on
+    a fixture without one of its own (`conversion.ts` `takedownHold`; no other conversion starts it). Why L3 and HC
+    lacked the transfer: the fall response, and with it the arm system's forearm-hold memory (`holdMemoryS`), was built
+    only for a fixture with its own fall response, which needs a hip envelope; their ragdolls have a shoulder envelope
+    only, and the wrap's holds are forearm clamps, which end at the owner's switch. Palm grips carry as passive links
+    everywhere, unchanged. The build refuses a hold that drives a ball joint its ragdoll has no envelope for.
+  - The press (`FallResponseProfile.arms.holdPressN`, `ArmSystem.pressTarget`): a forearm hold carried from a clamp
+    keeps that clamp's patch on the carrier's body; the hold task adds the joint torques (r x F at the shoulder and
+    elbow) of pushing the forearm, at the clamp's parameter, into it along its normal. Same ceilings, power and work
+    caps, impact guard and shared falling budget as every arm torque; the hold still lives only while solved contact
+    renews it (0.1 s memory) and lapses into a brace. No virtual force acts after the switch.
+  - L4 runs its own fall response (`FALL_L4`) for every conversion, takedowns included, as before: the flip leaves L4
+    runs unchanged.
+- Tests: `tests/wrap-open.test.ts` (the cradle, the close), `tests/wrap-takedown.test.ts` (the finish),
+  `tests/wrap-hold.test.ts` (the hold through it), each case with its fault twin; `tests/wrap-defects.test.ts` (tracked defects).
 
 ## Values and why
 
@@ -59,6 +79,10 @@ and he stayed on his feet over the carrier until a later trip.
 | lowering | 0.2 s, stance 0.78 m (11 cm down), lean 12 deg | the stance at its 0.6 m/s rate; 12 deg is the balance profile's cap |
 | grace | a hold lost for over 0.05 s starts over | a broken hold or a miss never commits |
 | follow | at once when the held carrier is off his support | he goes down with the carrier, not after a later trip |
+| hold drive | FALL_L4's arm tasks; no reaction delay (20 ms ramp) | the takedown is his own committed fall and the arms were already holding; FALL_L4's 40 ms delay and 80 ms ramp leave the drive near zero for the hold memory's whole 0.1 s, and every hold lapsed at exactly 0.1 s |
+| hold strength | holdScale 1; shoulder 30, elbow 20 N m | 15 N m does not hold a horizontal arm up; both arms at these ceilings ask 290 N of the 350 N falling owner budget |
+| press | 100 N into the clamp's patch | the clamp's closing force carried on. Pressing at the solved touch instead did little (a palm 1 mm off has no contact record), and no press lapsed within 0.1 to 0.3 s |
+| knees, hips | no effort | how he lands is M4's |
 
 ## Measured
 
@@ -95,9 +119,35 @@ supported arms per drawn frame (`g2/A` before M3, `g5/B` now).
 - The upper arm in own trunk rose with the cradle (M2 tracked defect `UPPER_ARM_IN_TRUNK`, reached more by defenders
   who now hold); the arm in another player is the carrier's (`CARRIER_ARM_IN_DEFENDER` below).
 
+### The hold through the takedown
+
+Full checks `.scratch/m3b/s1-hold-b` (flag off: every summary, trace and matrix byte-identical, suite 455/455) and
+`s2-flip-b` (the flip, against s1: suite 455/455; only L3-F19-front and L3-F19-rear summaries change, same results and
+end representations). Measures: `.scratch/m3b/hold.ts` (before `wrap=v2`, now `wrap=on`).
+
+| | before (`wrap=v2`) | now |
+| --- | --- | --- |
+| front wrap: hold retained after his switch, left / right | 0 / 0 | 0.48 / 0.65 s (reversed 0.42 / 0.51 s) |
+| front wrap: bodies in contact after his switch, unbroken (total) | 0.36 s (0.89 s); reversed to the end (1.59 s) | 0.86 s (1.11 s); reversed to the end (1.84 s) |
+| front wrap: support loss, carrier / defender | 1.100 (1.150 reversed) / 0.742 s | 1.121 (1.087 reversed) / 0.742 s |
+| rear wrap, forward: hold retained, left / right | 0 / 0 | 0.38 / 0.37 s |
+| rear wrap, forward: bodies in contact, unbroken (total) | 0.07 s (0.25 s) | 0.38 s (0.43 s) |
+| rear wrap, forward: support loss, carrier / defender | runs on / 0.904 s | runs on / 0.904 s |
+| side wrap (L3-F4-twoArm): support loss, carrier / defender | 0.742 / 0.938 s | unchanged (no takedown: one-arm hold) |
+| the hold's arm work (front, reversed, rear) | | 14.9, 23.9, 24.6 J of 100; no power over the cap |
+| worst shape-query tick | 2122 (L3-F19-front) | 3574 (L3-F19-front; limit 4000) |
+| rejected conversions, supported or ragdoll snaps, passive energy | | unchanged; no new injecting run, the largest gain did not rise |
+
+- Visible quality: the defender's impossible shoulder seconds fall (front 0.27 to 0 s, reversed 0.43 to 0.07 s; rear
+  0.03 to 0), and the rear wrap loses its deep own-body overlaps. Up: the front wrap's limp-legged defender crosses his
+  legs more (0.28 to 0.50 s; the shoe pair already 19 cm deep, now 23) and the carrier, landing later over him, folds
+  his upper arms 11 to 12 cm into his own trunk and each other for 0.05 to 0.27 s around 2 s (M2's tracked
+  `UPPER_ARM_IN_TRUNK`, reached by his moved landing; his arms are passive).
+
 ## Who falls
 
-Times are when the support loss starts (forward / reversed order). No other run changes who falls.
+Times are when the support loss starts (forward / reversed order). No other run changes who falls. The hold flip
+changes no fall outcome (times above).
 
 | fixture | player | before M3 | cradle | now | result before -> now |
 | --- | --- | --- | --- | --- | --- |
@@ -112,11 +162,14 @@ ms before he would go down): he stands back up and the pair run on as before.
 
 ## Known issues
 
-- **The hold ends at the takedown.** On L3 the defender's clamps end at his conversion and L3 has no fall response to
-  carry a forearm hold on, so his arms go limp. In the front wrap he drops at the carrier's legs and the carrier falls
-  over him 0.36 s later; in the forward rear wrap he drops off the carrier's back and the carrier runs on. Next step:
-  keep the hold through the takedown (a clamp carried across it, or the L4 fall response's forearm hold), flag off then
-  flip.
+- **The rear-wrap carrier still runs on.** The defender's arms hold 0.37 s while he drops, then slide off: a forearm
+  wrap pressed at 100 N cannot carry his weight (about 900 N against some 150 N of friction), and the falling owner
+  budget (350 N) would not carry it either. Only a palm grip (a passive link) or hands locked around the carrier could;
+  the wrap forms clamps, not grips. His limp legs drop him almost in free fall (no knee or hip effort, M4's).
+- **Holds last about half a second, not to the ground.** A forearm hold lives while solved contact renews it; as the
+  defender drops the contact thins and it lapses into a brace (0.37 to 0.65 s). Not a perpetual hold, by design.
+- **L4 takedowns keep L4's own response** (L4-F9-transferFailed: `FALL_L4`, no press, its reaction delay): L4 runs are
+  unchanged by the hold flip.
 - **One-arm holds do not commit** (out of the slice). In the side wrap (L3-F4-twoArm) the far arm's clamp slips
   between 0.52 and 0.55 s, so the hold is one-armed: the carrier falls on his own at 0.74 s and the defender trips over
   him 0.2 s later. A one-arm hit that brushes past (the miss with the defender 0.4 m nearer) leaves him standing over
@@ -142,11 +195,14 @@ ms before he would go down): he stands back up and the pair run on as before.
 
 ## Lab
 
-Port 5180. Each link at the moment before the arms open; add `&wrap=v1` for the cradle without the takedown and
-`&wrap=off` for before M3.
+Port 5180. Each link at the moment before the arms open; add `&wrap=v2` for the takedown with his arms let go at it,
+`&wrap=v1` for the cradle without the takedown and `&wrap=off` for before M3.
 
-- Front wrap, going down together: `?fixture=L3-F19-front&cam=side&speed=0.25&t=0.15` (and `cam=front`).
-- Rear wrap: `?fixture=L3-F19-rear&cam=side&speed=0.25&t=0.30`.
+- Front wrap, going down together: `?fixture=L3-F19-front&cam=side&speed=0.25&t=0.15` (and `cam=front`). The hold
+  through the takedown from 0.74 s: `?fixture=L3-F19-front&cam=side&speed=0.25&t=0.65` (`&wrap=v2` before it; reversed
+  `&order=rev`).
+- Rear wrap: `?fixture=L3-F19-rear&cam=side&speed=0.25&t=0.30`. The hold from 0.90 s, sliding off by 1.28 s:
+  `?fixture=L3-F19-rear&cam=side&speed=0.25&t=0.80` (`&wrap=v2` before it).
 - Side wrap (the far arm's clamp slips, a one-arm hold: no commit):
   `?fixture=L3-F4-twoArm&cam=front&speed=0.25&t=0.15`.
 - Broken hold, the rear wrap reversed (lowered from 0.70 s, the left hold lost at 0.86 s, he stands back up):
