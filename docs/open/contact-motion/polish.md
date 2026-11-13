@@ -32,6 +32,14 @@ to keep stepping while wrapped. Direction is ours. In order:
 1. **A hold that holds.** The tackler keeps a real, breakable grip on the carrier through his own conversion and
    the landing (today his ragdoll hold is a 100 N press that lasts about 0.1 s). This is what keeps him on his
    man, and it is the base for the drag-down, the lock and the roll. Flag off, then flip.
+   Built flag off (`d10605e`; `WRAP_V9` = V8 plus `fallLink`, lab `&wrap=v9`, no fixture uses it): at his switch
+   each clamp becomes a tension-only spring link from his forearm to the patch it held (10 kN/m, 150 N s/m, breaks
+   on overload under the 700 N arm and 1000 N owner ceilings, on 0.25 m of stretch, out of reach, target gone; not
+   at the whistle; `tests/fall-link.test.ts`). It forms in 2 of 10 evidence runs only (drag: both arms held to the
+   end, he rests 0.76 m from the carrier instead of 0.89; front: one arm 0.47 s, then overload): elsewhere the
+   whistle comes 0.08 to 0.19 s before his switch and ends his clamps and ride hold, so he has nothing to carry.
+   Next, still flag off: the riding tackler's hold lives through the whistle to his own switch. Then the flip.
+   Evidence: main checkout `.scratch/p11/hold/summary.txt`.
 2. **More oomph, and who ends on top.** Measure what the tackler puts into the carrier on the rear wrap and the
    drag (speed and mass behind the shoulder at contact, drive force and how long it acts, the carrier's speed
    change), find why the drag's tackler ends underneath, then raise what is low. No energy from nowhere.
