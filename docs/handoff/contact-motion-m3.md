@@ -3,8 +3,7 @@
 Plan: [03-wrap-and-finish](../open/contact-motion/03-wrap-and-finish.md), rough-first slice, on branch `prereq-ladder`:
 `02fa1b8` the slice, `23551d8` open and close (flag off), `aea0caa` its flip, `01f9dfb` the committed finish (flag
 off), `51a7f4b` its flip, `e886c0f` the hold through the takedown (flag off), `a02a5fc` its flip. Polish 1.1, the
-strike: `5f85796` (flag off), `cd4d92e` its flip. Polish 1.2, the drive: `b328144` (flag off; its flip is parked,
-below).
+strike: `5f85796` (flag off), `cd4d92e` its flip. Polish 1.2, the drive: `b328144` (flag off), 48c9403 its flip.
 
 ## What the defender does
 
@@ -69,7 +68,7 @@ contact. Before (`wrap=v3`): upright trunk, hands at elbow width.
   Trend only: L4 over-power substeps (7 runs 0 to 1); passive energy L3 and HC down, L4 442 to 477 J, largest solve
   down; worst shape-query tick 3048.
 
-## The drive (polish 1.2, WRAP_V5, flag off)
+## The drive (polish 1.2, WRAP_V5)
 
 Built, no fixture uses it (`WrapProfile.drive`, `src/sim/controllers/wrap.ts`; the hold carried through his own loss,
 `src/sim/conversion.ts`; `tests/wrap-drive.test.ts`). With a secure hold (both arms on the carrier, or one arm holding
@@ -78,9 +77,28 @@ carrier's velocity plus 3 m/s along the line through him, full effort, the ordin
 the extra eased off as his own lean goes from 12 to 25 deg. He leaves his feet only (a) when the carrier is down, (b)
 when the carrier leans past 30 deg, (c) on his own loss of balance (the takedown's hold carried through it), or (d) on a
 stall (0.9 s without the carrier's lean past 15 deg or rising 2 deg in 0.3 s; 1.6 s at most); (a), (b), (d) by the
-`takedown` conversion. A hold lost for over 50 ms ends the drive. The flip is parked with its evidence
-(`.scratch/p2/parked/` in the main checkout: suite green, older families byte-identical; under it the tackler goes down
-with the carrier in most felled-by-the-hit runs and the rear-wrap carrier is driven over forward).
+`takedown` conversion. A hold lost for over 50 ms ends the drive.
+
+On for L3, L4 and HC since its flip (`driveFlip`, WRAP_V4 to WRAP_V5; lab `wrap=v4` is the view before it,
+`tests/runs.ts` `preWrapV5`). Exits seen: front wrap (b) at 0.72 s; rear wrap (b) after 1.15 s and 7 steps, the carrier
+pushed 5.5 m and over forward; the side and felled-by-the-hit wraps (a) at once; the drag (c) at 0.72 s. Who falls (13
+changes, both orders; the rest are times): the tackler now goes down with his carrier at about 0.6 s in L3-F1-phase0,
+-phase1, -phase2, -phase7, L3-F1-low, L3-F4-twoArm, L3-F4-oneArm, HC-F3-phase0, HC-F3-lowRunner, L4-F10-wrap-on and
+-off (he stayed up); L3-F19-rear's carrier goes down with him at 1.90 s (stayed up forward, down at 3.58 s reversed).
+The diagnostic conversions of the rising and falling defenders are pre-empted by the takedown at 0.63 s. The L3-F1-low
+runner still falls, `L3-F19-miss` is unchanged. Tracked defects the flip reached, none made worse by it
+(`tests/drive-defects.test.ts`, each on a capture with its twin, drive off from the same state identical):
+
+| defect | capture | what |
+| --- | --- | --- |
+| `OVERHEAD_TWIST_UNHELD` | L4-F9-transferFailed reversed (1.000 s) | the failed-transfer carrier's passive left arm thrown overhead keeps its twist 70 to 79 deg past range to the end; before the flip the forward order does the same |
+| `CLEARANCE_KNEE_TURNS_BACK` | L3-F5-dragMirror reversed (1.500 s) | the defender's swing foot lifted close above the hip to clear the fallen carrier turns his supported knee back (hip twist 111 deg past, 1.65 to 1.93 s); the ladder 11b mechanism, within range under JOINT_RANGE_V3 (no fixture uses it); before the flip in L3-F1-phase1 |
+
+Not twinned, reached by falls that did not happen before (inferred): the rear-wrap carrier's ragdoll shoulder twist
+77 to 80 deg past for 0.25 to 0.37 s as he goes over; the reversed drag carrier's hip extension 46 deg past for 0.15 s.
+Trend only: ragdoll
+self-overlap seconds up where the tackler now falls with his carrier; carriers' fall-response over-power substeps 0 to
+1 or 2 in 16 runs.
 
 ## Flags, lab and code
 
@@ -89,8 +107,8 @@ with the carrier in most felled-by-the-hit runs and the rear-wrap carrier is dri
 - Not registered on a defender who stops to stand in a hold (`standAfterS`, the L3-F6 stationary holds): their wrap and
   hold settle check (`HOLD_SETTLES`, the plan 13e known limit) is about a standing hold, and under the cradle its free
   gap is 0.21 m against 0.05.
-- (Since polish 1.1 the registered profile is `WRAP_V4`, above; lab `wrap=on|v3|v2|v1|off`, `v3` the hold before the
-  strike.) Lab `wrap=on|v2|v1|off` as M3 left it: `on` was `WRAP_V3`, `v2` the takedown with his arms let go at it
+- (Since polish 1.2 the registered profile is `WRAP_V5`, above; lab `wrap=on|v4|v3|v2|v1|off`, `v4` the strike before
+  the drive, `v3` the hold before the strike.) Lab `wrap=on|v2|v1|off` as M3 left it: `on` was `WRAP_V3`, `v2` the takedown with his arms let go at it
   (before the hold flip), `v1` the cradle without the committed finish (before its flip), `off` the Gate 2 progression (before M3).
   `tests/runs.ts` `preWrapV3`, `preWrapV2` and `preWrap` give a definition as before each flip (the head of
   `BEFORE_FLIPS`).

@@ -18,9 +18,9 @@ reaches for the floor and, landed, gives under the body and lets go when unloade
 done ([handoff](../../handoff/contact-motion-m4.md)); next is the user's lab look at the whole tackle and fall, then
 polishing what looks worst. The first polish planned, locked hands so the rear-wrap carrier is dragged down, was
 measured unreachable before any code (his hands stay 0.37 m or more apart around these bodies; M3 handoff, "Locked
-hands"): the rear-wrap carrier still runs on, and making it go down is a design step of its own. Polish
+hands"); the drive (1.2) now takes the rear-wrap carrier down. Polish
 ([list](polish.md), 2026-11-13): 1.1, the strike (lean in, shoulder leads, arms wide), is on for L3, L4 and HC; 1.2,
-the drive, is built flag off with its flip parked; 1.3 (re-measure the hand gap, locked hands) is next after it.
+the drive (he keeps driving through the carrier and goes down with him), is on too; 1.3 (re-measure the hand gap, locked hands) is next after it.
 
 ## Direction (user-approved 2026-11-12; supersedes conflicting text below and in the milestone files)
 

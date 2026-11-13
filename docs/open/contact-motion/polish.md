@@ -25,13 +25,13 @@ in real life."
    1. **Done** (`cd4d92e`, M3 handoff "The strike"). Strike posture and wide arms: the tackler leans in, shoulder
       leads with the head to the side, arms open wide from the shoulders (was: upright trunk, hands at elbow width,
       "robotic").
-   2. Drive (built flag off, `b328144`; flip parked, M3 handoff "The drive"): with the wrap on, the tackler keeps
-      his legs driving through the carrier and goes down with him,
-      instead of lowering and going limp. Covers the user's notes on the front wrap, the drag tackle
+   2. **Done** (`48c9403`, M3 handoff "The drive"). Drive: with the wrap on, the tackler keeps his legs driving
+      through the carrier and goes down with him, instead of lowering and going limp. Covers the user's notes on the front wrap, the drag tackle
       (`L3-F5-drag`: he falls on top) and the side wrap (`L3-F4-twoArm`).
    3. Stay connected to the ground. Locked hands were measured impossible with today's upright wrap (the hands
       stop 0.5 m apart; M3 handoff, "Locked hands"). Re-measure after 1.1 puts the shoulder at the carrier's flank;
-      build the lock if the hands then meet. The rear-wrap carrier (`L3-F19-rear`) must go down.
+      build the lock if the hands then meet. The rear-wrap carrier (`L3-F19-rear`) must go down (under the drive he
+      is driven over at 1.90 s).
    4. Low hit: wrap the legs and roll.
 2. **Leg gallop.** The carrier's legs gallop under the brace (`L3-F3-collision`) and both legs gallop to catch up
    with the body after a hit he survives.
