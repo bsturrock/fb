@@ -38,7 +38,7 @@ import { FOOTWORK_L2, FOOTWORK_L3, HOLD_STILL_V1, withHoldStill } from '../src/s
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
-import { FALL_L4, FALL_REACT_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1, withClipArmSwing, withMetArmStay } from '../src/sim/profiles';
+import { FALL_L4, FALL_REACT_V2, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1, withClipArmSwing, withMetArmStay } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
 import { asCaptured, breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 import { loadState, resumeState } from './state';
@@ -177,10 +177,10 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'L4: only L4 fixtures carry an envelope; since contact motion M4 every L3 and HC fixture with a ragdoll carries FALL_REACT_V1, and no other fixture outside L4 a response',
+    'L4: only L4 fixtures carry an envelope; since contact motion M4 every L3 and HC fixture with a ragdoll carries the fall reaction (FALL_REACT_V2 since the palm-load flip), and no other fixture outside L4 a response',
     () => {
       for (const d of allFixtures().filter((x) => x.milestone !== 'L4')) {
-        if (d.ragdoll && /^(L3|HC)-/.test(d.id)) expect(d.fallResponse, d.id).toBe(FALL_REACT_V1);
+        if (d.ragdoll && /^(L3|HC)-/.test(d.id)) expect(d.fallResponse, d.id).toBe(FALL_REACT_V2);
         else expect(d.fallResponse, d.id).toBeUndefined();
         expect(d.ragdoll?.envelope, d.id).toBeUndefined();
       }

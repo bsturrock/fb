@@ -48,11 +48,11 @@
 //                      (arms carried ahead of the chest, opened wider than the carrier ahead of contact, closed on the
 //                      first valid touch); off: the Gate 2 progression. A fixture without a wrapping defender (a
 //                      `wrapAttempt` controller) is run as it is;
-//   fall=on|v2|off     the falling player's reaction on an L3 or HC fixture (contact motion M4). on: FALL_REACT_V1 at every
-//                      accepted conversion (the knees and hips flex, the free arm braces, the carry arm keeps the ball,
-//                      a holding arm keeps its hold); v2: FALL_REACT_V2, the same with a landed palm that bears load
-//                      (the arm yields under the body instead of holding its pose at contact); off: limp (a takedown's
-//                      hold only under WRAP_V3, the M3 view). An L4 fixture (its own response, or its motor-off twin) or
+//   fall=on|v1|off     the falling player's reaction on an L3 or HC fixture (contact motion M4). on: FALL_REACT_V2 at every
+//                      accepted conversion (the knees and hips flex, the free arm braces and, landed, bears load: the
+//                      arm yields under the body and lets go when unloaded; the carry arm keeps the ball, a holding arm
+//                      keeps its hold); v1: FALL_REACT_V1, the landed brace held on springs at its contact pose (before
+//                      the palm-load flip); off: limp (a takedown's hold only under WRAP_V3, the M3 view). An L4 fixture (its own response, or its motor-off twin) or
 //                      one without a ragdoll is run as it is. A view without the hip stops (hips=off) is limp: the
 //                      response bounds the hips by them.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
@@ -87,7 +87,7 @@ const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
 const WRAP = ['on', 'v2', 'v1', 'off'];
-const FALL = ['on', 'v2', 'off'];
+const FALL = ['on', 'v1', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -291,7 +291,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     else if (!/^(L3|HC)-/.test(out.id)) parts.push('fall n/a (not an L3 or HC fixture)');
     else if (!out.ragdoll) parts.push('fall n/a (no ragdoll profile)');
     else {
-      const want = v === 'on' ? FALL_REACT_V1 : v === 'v2' ? FALL_REACT_V2 : undefined;
+      const want = v === 'on' ? FALL_REACT_V2 : v === 'v1' ? FALL_REACT_V1 : undefined;
       parts.push(`fall ${v}${want === out.fallResponse ? ' (registered)' : ''}`);
       if (want !== out.fallResponse) {
         out = { ...out, fallResponse: want };

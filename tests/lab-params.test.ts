@@ -531,23 +531,26 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(off, new URLSearchParams('wrap=maybe'))).toEqual({ def: off, opts: {}, label: 'wrap=maybe ignored' });
   });
 
-  // contact motion M4: fall=on|v2|off registers FALL_REACT_V1 or FALL_REACT_V2 on an L3 or HC fixture, or removes it
-  // (tests/fall-react.test.ts has the twins that it changes the run)
-  it('fall=on runs an L3 or HC fixture with FALL_REACT_V1 (every falling player reacts), fall=v2 with FALL_REACT_V2 (the landed palm bears load), fall=off without either (limp); without the hip stops (hips=off) it is off; an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
+  // contact motion M4: fall=on|v1|off registers FALL_REACT_V2 (since the palm-load flip) or FALL_REACT_V1 on an L3 or HC
+  // fixture, or removes it (tests/fall-react.test.ts has the twins that it changes the run)
+  it('fall=on runs an L3 or HC fixture with FALL_REACT_V2 (every falling player reacts, a landed palm bears load), fall=v1 with FALL_REACT_V1 (before the palm-load flip), fall=off without either (limp); without the hip stops (hips=off) it is off; an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
     const { fallResponse, ...off } = FIX('L3-F19-front');
     void fallResponse;
-    const on: FixtureDef = { ...off, fallResponse: FALL_REACT_V1 };
-    expect(FIX('L3-F19-front').fallResponse).toBe(FALL_REACT_V1);
+    const on: FixtureDef = { ...off, fallResponse: FALL_REACT_V2 };
+    const v1: FixtureDef = { ...off, fallResponse: FALL_REACT_V1 };
+    expect(FIX('L3-F19-front').fallResponse).toBe(FALL_REACT_V2);
     expect(labRun(off, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on' });
     expect(labRun(on, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on (registered)' });
     const back = labRun(on, new URLSearchParams('fall=OFF'));
     expect(back).toEqual({ def: off, opts: {}, label: 'fall off' });
     expect('fallResponse' in back.def).toBe(false);
     expect(labRun(off, new URLSearchParams('fall=off'))).toEqual({ def: off, opts: {}, label: 'fall off (registered)' });
-    expect(labRun(on, new URLSearchParams('fall=v2'))).toEqual({ def: { ...off, fallResponse: FALL_REACT_V2 }, opts: {}, label: 'fall v2' });
-    expect(labRun(off, new URLSearchParams('fall=V2'))).toEqual({ def: { ...off, fallResponse: FALL_REACT_V2 }, opts: {}, label: 'fall v2' });
+    expect(labRun(on, new URLSearchParams('fall=v1'))).toEqual({ def: v1, opts: {}, label: 'fall v1' });
+    expect(labRun(off, new URLSearchParams('fall=V1'))).toEqual({ def: v1, opts: {}, label: 'fall v1' });
+    expect(labRun(v1, new URLSearchParams('fall=v1'))).toEqual({ def: v1, opts: {}, label: 'fall v1 (registered)' });
     const hc = FIX('HC-F3-lowRunner');
-    expect(labRun(hc, new URLSearchParams('fall=on')).def.fallResponse).toBe(FALL_REACT_V1);
+    expect(hc.fallResponse).toBe(FALL_REACT_V2);
+    expect(labRun(hc, new URLSearchParams('fall=v1')).def.fallResponse).toBe(FALL_REACT_V1);
     for (const id of ['L4-F2-back-on', 'L4-F2-back-off']) {
       const l4 = FIX(id);
       expect(labRun(l4, new URLSearchParams('fall=on'))).toEqual({ def: l4, opts: {}, label: 'fall n/a (not an L3 or HC fixture)' });
@@ -557,13 +560,14 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((d) => d.id.startsWith('G'))!;
     expect(labRun(g, new URLSearchParams('fall=on'))).toEqual({ def: g, opts: {}, label: 'fall n/a (not an L3 or HC fixture)' });
     expect(labRun(off, new URLSearchParams('fall=maybe'))).toEqual({ def: off, opts: {}, label: 'fall=maybe ignored' });
+    expect(labRun(off, new URLSearchParams('fall=v2'))).toEqual({ def: off, opts: {}, label: 'fall=v2 ignored' });
     // the response bounds an L3 or HC hip by its hard stops: a view without them is limp, named last
     const noStops = labRun(on, new URLSearchParams('hips=off&fall=on'));
     expect(noStops.label).toBe('hip stops off · fall on (registered) · fall off (no hip stops)');
     expect('fallResponse' in noStops.def).toBe(false);
     expect(noStops.def.ragdoll!.hipStops).toBeUndefined();
-    const noStopsV2 = labRun(on, new URLSearchParams('hips=off&fall=v2'));
-    expect(noStopsV2.label).toBe('hip stops off · fall v2 · fall off (no hip stops)');
-    expect('fallResponse' in noStopsV2.def).toBe(false);
+    const noStopsV1 = labRun(on, new URLSearchParams('hips=off&fall=v1'));
+    expect(noStopsV1.label).toBe('hip stops off · fall v1 · fall off (no hip stops)');
+    expect('fallResponse' in noStopsV1.def).toBe(false);
   });
 });

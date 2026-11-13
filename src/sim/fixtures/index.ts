@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { FALL_REACT_V1, hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
+import { FALL_REACT_V1, FALL_REACT_V2, hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
 import { WRAP_V3 } from '../controllers/wrap';
@@ -139,6 +139,15 @@ function fallFlip(d: FixtureDef): FixtureDef {
   return d.ragdoll && FALL_FLIP.test(d.id) ? { ...d, fallResponse: FALL_REACT_V1 } : d;
 }
 
+/**
+ * Contact motion M4, step 2: on every fixture the fall flip gave FALL_REACT_V1, FALL_REACT_V2 (a landed palm bears
+ * load: from its floor contact the arm only damps its motion and lets go once unloaded). Lab `fall=v1` is the view
+ * before; tests/runs.ts `prePalmLoad` gives the definition before it.
+ */
+function palmLoadFlip(d: FixtureDef): FixtureDef {
+  return d.fallResponse === FALL_REACT_V1 ? { ...d, fallResponse: FALL_REACT_V2 } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -167,6 +176,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip));
   return registry.slice();
 }
