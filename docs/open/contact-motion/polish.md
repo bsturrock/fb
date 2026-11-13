@@ -28,6 +28,13 @@ in real life."
    2. **Done** (`48c9403`, M3 handoff "The drive"). Drive: with the wrap on, the tackler keeps his legs driving
       through the carrier and goes down with him, instead of lowering and going limp. Covers the user's notes on the front wrap, the drag tackle
       (`L3-F5-drag`: he falls on top) and the side wrap (`L3-F4-twoArm`).
+      **User review 2026-11-13 of the strike and the drive: "good foundation"; next, the ride-down.** The tackler
+      must stay engaged longer, secure the wrap, drive more, and not become a ragdoll until he is close to the
+      ground. Today he leaves his feet nearly upright: when the carrier leans 30 degrees (front, rear), at once when
+      the carrier is already falling (side), or when his own balance check trips (drag), which ignores that he
+      leans on the carrier. The ride-down: he stays supported through the takedown, feet driving without easing
+      off, trunk following the carrier down on the hinge, hips sinking; he converts when his chest is within about
+      0.5 m of the ground, the carrier is flat, or the hold is lost and he is truly falling. Before the low tackle.
    3. Stay connected to the ground. Locked hands were measured impossible with today's upright wrap (the hands
       stop 0.5 m apart; M3 handoff, "Locked hands"). Re-measure after 1.1 puts the shoulder at the carrier's flank;
       build the lock if the hands then meet. The rear-wrap carrier (`L3-F19-rear`) must go down (under the drive he
@@ -48,6 +55,14 @@ in real life."
       0.72 m root floor, and a mid-thigh strike would need 95 degrees, so the hit is at the hip, not the thigh. Holds
       are eligible on torso, pelvis and the standing carrier's support capsule (radius 0.16, where the hands meet
       within 0.04 m), not on thighs. The ragdoll has no spine, so the twist comes from hips and shoulders at first.
+      State (`f14f7f7`, `bad104d`; `WRAP_V6`, no fixture uses it, lab `&wrap=v6`): the low strike folds to 75
+      degrees at the 0.72 m floor with the balance holding, shoulder into the hip at 0.83 m, head beside him. The
+      fold needs 0.85 s, so it needs a longer approach than the registered wraps give (probe: defender 4 m further
+      back in front, 2 m behind; worktree `.scratch/p5/`). The palms walk round the capsule but stop 0.35 m apart:
+      the head rests on his pelvis and never gets past the hip, so the far shoulder stays 0.7 m from his axis. From
+      the front the carrier's hit spins the folded tackler and one arm holds. Open before a flip: head past the hip
+      and shoulders square (a parked square-up, main checkout `.scratch/p5/parked/`, turned the body but it circled
+      him), and not being spun by the hit. The lock waits for that.
       **Back burner (user's idea): a posed dive.** The tackler launches and stays posed in the air with aimed arms,
       and becomes a ragdoll only at the ground or once the wrap is secure. Read as feasible without a rewrite: a
       new control mode with suspension, balance and the loss envelope off, legs body-relative and arms not
