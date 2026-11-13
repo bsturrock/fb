@@ -590,6 +590,22 @@ export const BALANCE_G3: BalanceProfile = {
 // ---------------------------------------------------------------- arms (Gate 2)
 export type RetentionMode = 'surfaceHold' | 'forearmClamp';
 
+/**
+ * Contact motion polish 1.2, the ride hold (`WrapRide.hold`, the arm system's `rideHold`): a riding tackler's forearm
+ * clamp on a carrier who is a ragdoll is a patch on the body part it holds (that part's frame). At the carrier's
+ * conversion the clamp's point goes to the nearest eligible ragdoll surface (within `remapM`, else it lapses as before);
+ * while he rides, the arm's wanted palm moves with that part and the palm follows at the arm's top speed, and the clamp's
+ * force (its own law, ceilings and allocator) acts at the patch whenever the forearm's own nearest contact is not an
+ * eligible surface of the carrier (his arm or thigh between them) or is beyond the surface tolerance. It ends with the ride, on no contact
+ * with the carrier for `memoryS`, the patch out of the arm's reach, the patch more than `separationM` from the forearm's
+ * surface, or the grip's overload rule (demand past the ceilings for `hold.overloadThresholdS`).
+ */
+export interface RideHoldProfile {
+  memoryS: number;
+  separationM: number;
+  remapM: number;
+}
+
 export interface ArmProfile {
   id: string;
   upperArmM: number;

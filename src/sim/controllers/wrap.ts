@@ -3,7 +3,7 @@
 // observed hand position / clamp contact. Timeouts only abandon or retry; they never create contact or a wrap.
 import type { ArmIntent, ArmSide, PlayerIntent, StanceRequest } from '../contracts';
 import { pairKey } from '../contracts';
-import type { BodyProfile, FallResponseProfile, MotorProfile } from '../profiles';
+import type { BodyProfile, FallResponseProfile, MotorProfile, RideHoldProfile } from '../profiles';
 import { FALL_HOLD_V1, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { Controller, ControllerContext } from './base';
@@ -107,6 +107,11 @@ export interface WrapRide {
   fromLeanDeg: number;
   fullLeanDeg: number;
   fullDropM: number;
+  /**
+   * The ride hold (absent: a clamp on the fallen carrier lasts while its forearm's nearest contact is an eligible surface
+   * of his): the arm system keeps the riding tackler's clamp as a patch on the carrier's body (`RideHoldProfile`).
+   */
+  hold?: RideHoldProfile;
   /** The carrier counts as his support while his legs lean less than this (deg; beyond it the envelope's verdict stands). */
   leanDeg: number;
 }
@@ -262,6 +267,10 @@ export interface WrapDebug {
   noRideGuard?: boolean;
   /** Polish 1.2, the ride-down (simulation): the carrier counts as his support without the hold and contact check. */
   rideNoHoldCheck?: boolean;
+  /** Polish 1.2, the ride hold (arms): no break rule (contact memory, reach, separation, overload); only the ride's end ends it. */
+  rideHoldNoBreak?: boolean;
+  /** Polish 1.2, the ride hold (simulation): every supported owner counts as riding for it (a hold never secured gets it). */
+  rideHoldUnridden?: boolean;
   /**
    * The balance reads the pitched trunk, as with no hinge (simulation, support-runtime): the support pivot and the loss
    * envelope in the body's frame, so the trunk's pitch tips him as whole-body lean would.
@@ -371,7 +380,7 @@ export const WRAP_V7: WrapProfile = {
   ...WRAP_V5,
   id: 'wrap-ride-v7',
   strike: { ...WRAP_V5.strike!, hinge: { ...WRAP_V5.strike!.hinge, maxDeg: 85, maxDropM: 0.2 } },
-  ride: { groundM: 0.5, sinkMps: 1.6, carrierDownM: 0.35, minS: 0.3, maxS: 2.5, pitchDeg: 85, dropM: 0.2, fromLeanDeg: 15, fullLeanDeg: 45, fullDropM: 0.4, leanDeg: 45 },
+  ride: { groundM: 0.5, sinkMps: 1.6, carrierDownM: 0.35, minS: 0.3, maxS: 2.5, pitchDeg: 85, dropM: 0.2, fromLeanDeg: 15, fullLeanDeg: 45, fullDropM: 0.4, leanDeg: 45, hold: { memoryS: 0.2, separationM: 0.15, remapM: 0.05 } },
 };
 
 export interface WrapSpec {

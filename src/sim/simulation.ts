@@ -714,6 +714,9 @@ export class Simulation {
       const A = armSystemProfile(def);
       checkLimbContract(A, def.ragdoll ?? DEFAULT_POSE_PROFILE);
       this.arms = new ArmSystem(this.armHost(), A, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip, def.selfClearance, def.jointRange);
+      // contact motion polish 1.2, the ride hold (`WrapRide.hold`): a riding tackler's clamp on the fallen carrier
+      const RH = def.wrap?.ride?.hold;
+      if (RH) this.arms.rideHold = { ...RH, ...(this.opts.debug?.wrap?.rideHoldNoBreak ? { noBreak: true } : {}) };
     }
     // contact motion M3 (WRAP_V3's `commit.hold`): on a fixture without a fall response, the one a takedown starts
     const hold = takedownHold(def);
@@ -846,6 +849,7 @@ export class Simulation {
           arms: pl.setup.arms,
           armIntent: pl.intent.arms,
           falling: pl.controlMode === 'falling',
+          ...((pl.intent.ride || sim.opts.debug?.wrap?.rideHoldUnridden) && pl.controlMode === 'supported' ? { riding: true } : {}),
           ragdoll: pl.rag,
           armEffort: pl.fall?.armDemand,
         }));
