@@ -7,6 +7,7 @@ import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, des
 import { add, v3, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, UP } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
+import { hingeBalanceTorque } from './hinge';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
@@ -95,7 +96,8 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
         const reached = host.def.brace?.pose.leanHold === 'reached' && pl.brace && pl.brace.w > 0 && up.y > bal.desiredUp.y;
         const holdUp = reached ? up : bal.desiredUp;
         const hold = pl.sus ? postureGravityHold(holdUp, pl.sus.pivotN / Math.abs(g), g, pl.sus.leverM) : postureGravityHold(holdUp, b.massKg, g, bal.leverM);
-        const bt = computeBalanceTorque(up, bal.desiredUp, b.angularVelocity, B, balCap, hold, holdUp);
+        // contact motion polish 1.1: under a hip hinge, the legs' balance first, then the trunk's pitch (hinge.ts)
+        const bt = pl.hinge ? hingeBalanceTorque(pl.hinge, b.rotation, b.angularVelocity, bal.desiredUp, B, balCap, hold, holdUp) : computeBalanceTorque(up, bal.desiredUp, b.angularVelocity, B, balCap, hold, holdUp);
         balReq = bt.requested;
         balCapped = bt.capped;
         balSat = bt.saturated;

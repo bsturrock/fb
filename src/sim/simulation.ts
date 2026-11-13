@@ -40,6 +40,7 @@ import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
+import { advanceHinge, legOmega, legRotation, type HingeState } from './hinge';
 import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
 import { carrySideOf, disablePhysicalLegs, footInputOf, legMeets, legPointMove, observePhysicalLegs, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
@@ -150,6 +151,11 @@ export interface PlayerRuntime {
    * point each substep (advanceBrace). Absent for every other player and without the profile.
    */
   brace?: CarrierBraceState;
+  /**
+   * Contact motion polish 1.1 (`WrapProfile.strike`): the hip hinge of a striking tackler, from his posture request
+   * (advanceHinge, hinge.ts). Absent while he has none, for every other player and without the profile.
+   */
+  hinge?: HingeState;
   /** Plan 06a: suspension support state (probe, height target, force, work); null under the legacy support. */
   sus: SuspensionRuntime | null;
   /** Bulk vertical velocity before the last solve (RH-F7 extremum conversions: [prevVy, lastVy] spans the last solve). */
@@ -624,7 +630,7 @@ export class Simulation {
       }
       const pose = { p: v3(setup.initial.x, y0, setup.initial.z), q: q0 };
       const proxy = this.physics.createProxy(setup.id, setup.body, def.stance, pose, S ?? undefined);
-      const controller = makeController(setup.controller, setup, motor, this.def.wrap);
+      const controller = makeController(setup.controller, setup, motor, this.def.wrap, this.opts.debug?.wrap);
       const pl: PlayerRuntime = {
         id: setup.id,
         setup,
@@ -982,6 +988,8 @@ export class Simulation {
       }
       // contact motion M2: the carrier's brace from what he observes, for every carrier controller
       if (this.def.brace && pl.setup.role === 'runner') this.advanceBrace(pl);
+      // contact motion polish 1.1: a striking tackler's hip hinge from his posture request
+      if (this.def.wrap?.strike && (pl.hinge || pl.intent.posture?.hinge)) this.advanceHinge(pl);
       // plan 10b: the ramp reads this substep's locomotion mode (decided from the last solve's contacts and motion, which
       // nothing changes before 4b), not the previous substep's
       if (this.suspension && !pl.rag && pl.sus) this.advanceLocoMode(pl, this.physics.dt);
@@ -1117,6 +1125,17 @@ export class Simulation {
    * mass and velocities, his achieved facing, the snapshot's solved contacts. A ragdoll keeps its last state (nothing reads
    * it); a falling proxy or a referee ending lets the brace go.
    */
+  /** Contact motion polish 1.1: the hinge from the posture request, while he is supported (hinge.ts). */
+  private advanceHinge(pl: PlayerRuntime): void {
+    if (pl.rag || pl.controlMode !== 'supported') {
+      delete pl.hinge;
+      return;
+    }
+    const h = advanceHinge(pl.hinge, pl.intent.posture?.hinge, this.def.wrap!.strike!.hinge, { ...this.coreBody(pl).rotation() }, pl.balance.desiredUp, this.physics.dt);
+    if (h) pl.hinge = h;
+    else delete pl.hinge;
+  }
+
   private advanceBrace(pl: PlayerRuntime): void {
     const P = this.def.brace!;
     // made on the first substep (a state captured without the profile resumes under it from rest)
@@ -1275,7 +1294,11 @@ export class Simulation {
     for (const pl of this.players) {
       const b = this.coreBody(pl);
       const bal = pl.balance;
-      const m = measureLean({ ...b.rotation() }, vc(b.angvel()), bal.axis, B.zeroTiltRad);
+      // contact motion polish 1.1: under a hip hinge the balance is the legs' (the trunk's pitch is the hinge's)
+      const h = pl.hinge && pl.controlMode === 'supported' && !this.opts.debug?.wrap?.trunkBalance ? pl.hinge : null;
+      const m = h
+        ? measureLean(legRotation(h, { ...b.rotation() }, bal.desiredUp), legOmega(h, { ...b.rotation() }, bal.desiredUp, vc(b.angvel())), bal.axis, B.zeroTiltRad)
+        : measureLean({ ...b.rotation() }, vc(b.angvel()), bal.axis, B.zeroTiltRad);
       bal.theta = m.theta;
       bal.axis = m.axis;
       bal.outwardRate = m.outwardRate;

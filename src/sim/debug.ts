@@ -4,6 +4,7 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { Vec3 } from './vec';
 import type { BraceDebug } from './brace';
+import type { WrapDebug } from './controllers/wrap';
 
 /** Foot plan switches (A/B probes and negative controls); each is off by default and changes behaviour when on. */
 export interface FootDebug {
@@ -149,6 +150,8 @@ export interface SimDebug {
   conversion?: ConversionDebug;
   /** Contact motion M2: fault switches of the carrier's brace decision (brace.ts). */
   brace?: BraceDebug;
+  /** Contact motion polish 1.1: fault switches of the tackler's strike (controllers/wrap.ts). */
+  wrap?: WrapDebug;
   /** Diagnostics only; not a switch, so not exported. */
   poseProbe?: PoseProbe;
   /** Diagnostics only (ladder 18): each born pair's separating force as it is applied. */
@@ -156,7 +159,7 @@ export interface SimDebug {
 }
 
 /** The switches that are on, for the export (null when every switch is off). */
-export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug; brace?: BraceDebug } | null {
+export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug; brace?: BraceDebug; wrap?: WrapDebug } | null {
   const on = <T extends object>(o: T | undefined): T | undefined => {
     const e = Object.entries(o ?? {}).filter(([, v]) => v);
     return e.length ? (Object.fromEntries(e) as T) : undefined;
@@ -165,5 +168,6 @@ export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?:
   const pose = on(d?.pose);
   const conversion = on(d?.conversion);
   const brace = on(d?.brace);
-  return foot || pose || conversion || brace ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}), ...(brace ? { brace } : {}) } : null;
+  const wrap = on(d?.wrap);
+  return foot || pose || conversion || brace || wrap ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}), ...(brace ? { brace } : {}), ...(wrap ? { wrap } : {}) } : null;
 }

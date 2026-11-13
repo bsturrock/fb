@@ -203,6 +203,8 @@ interface ArmRt {
   palmLocal: Vec3;
   wantedLocal: Vec3;
   poleLocal: Vec3;
+  /** Contact motion polish 1.1: the request's elbow pole (`ArmIntent.poleLocal`), tried first; absent without one. */
+  poleHint?: Vec3;
   prevElbowLocal: Vec3;
   prevWristLocal: Vec3;
   prevWantedElbowLocal: Vec3;
@@ -464,6 +466,11 @@ export class ArmSystem {
         return { poleL, mid: win ? fitElbowTwist(J!.shoulder, ownerPose.q, sW, r.mid, r.end, a.sx, win, twM).elbow : r.mid, end: r.end };
       });
       if (prevElbow) out.sort((x, y) => len(sub(x.mid, prevElbow)) - len(sub(y.mid, prevElbow)));
+      // contact motion polish 1.1: the requested pole ahead of every alternative (the window bounds its turn)
+      if (a.poleHint) {
+        const r = twoBone(sW, target, P.upperArmM, P.forearmM + P.palmExtensionM, qRot(ownerPose.q, a.poleHint), P.maxReachM);
+        out.unshift({ poleL: a.poleHint, mid: win ? fitElbowTwist(J!.shoulder, ownerPose.q, sW, r.mid, r.end, a.sx, win, twM).elbow : r.mid, end: r.end });
+      }
       return out;
     };
     for (const win of wins) for (const { poleL, ...r } of solves(win)) {
@@ -610,6 +617,8 @@ export class ArmSystem {
         // existing relationships are kept only while the normal checks allow; nothing new is acquired.
         const requested = pl.armIntent?.[side] ?? { action: 'rest' as const, targetWorld: v3() };
         const intent: ArmIntent = falling ? { action: a.action === 'pull' ? 'close' : a.action, targetWorld: v3() } : requested;
+        if (intent.poleLocal) a.poleHint = { ...intent.poleLocal };
+        else if (a.poleHint) delete a.poleHint;
         const prevAction = a.action;
         a.action = intent.action;
         const closing = falling ? !!a.clamp : intent.action === 'close' || intent.action === 'pull';

@@ -71,6 +71,11 @@ export interface ArmIntent {
   targetWorld: Vec3;
   /** 0..1 closing effort for forearm clamps (default 1). */
   closeEffort?: number;
+  /**
+   * Contact motion polish 1.1: an elbow pole (owner-local direction from the shoulder) the arm tries first, ahead of its
+   * own alternatives and unsorted (the twist window still bounds how fast the elbow turns toward it). Absent: as before.
+   */
+  poleLocal?: Vec3;
 }
 
 /** Gate 3 balance observation (radians; displayed degrees are derived separately). */
@@ -90,6 +95,13 @@ export interface PostureIntent {
   /** Desired lean direction (horizontal) and magnitude (rad, bounded by the balance profile). */
   leanDirWorld: Vec3;
   leanRad: number;
+  /**
+   * Contact motion polish 1.1 (a fixture whose wrap profile has a strike, `WrapProfile.strike`; ignored otherwise): the
+   * hip hinge. The trunk pitches `rad` forward (about its own level lateral axis) beyond the legs' lean and the hips drop
+   * `dropM`, each bounded and rate-limited by the strike's hinge limits (hinge.ts). The legs keep the balance: the
+   * support and the loss envelope read the legs' frame, not the pitched trunk's.
+   */
+  hinge?: { rad: number; dropM: number };
 }
 
 export interface PlayerIntent {

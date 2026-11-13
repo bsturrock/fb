@@ -5,11 +5,13 @@ import { type SuspensionSupport } from './profiles';
 import { advanceBraking, advanceStance, brakingDemand, classifyProbe, composeTarget, loadAuthority, runHeight, splitSupportForce, suspensionForce, type RunHeight } from './support';
 import { type Vec3, v3, vc, horiz, len, add, cross, qRot, sub, clamp, clampLen, smooth } from './vec';
 import type { Simulation, PlayerRuntime } from './simulation';
+import { hingePivot } from './hinge';
 
 /** What the suspension support runtime reads and writes on the simulation. */
 export type SupportHost = Pick<
   Simulation,
   | 'def'
+  | 'opts'
   | 'heightCalibration'
   | 'heightModels'
   | 'physics'
@@ -84,7 +86,9 @@ export function supportTargets(host: SupportHost, pl: PlayerRuntime, S: Suspensi
     advanceBraking(st, B, want, dt);
   }
   // contact motion M2: the carrier's brace drops the hips by its weight, on top of the preparation drop
-  composeTarget(st, S, runM, pl.run?.w ?? 0, dt, host.def.brace && pl.brace && pl.brace.w > 0 ? prepDropM(host, pl) + host.def.brace.pose.dropM * pl.brace.w : prepDropM(host, pl));
+  const dropM = host.def.brace && pl.brace && pl.brace.w > 0 ? prepDropM(host, pl) + host.def.brace.pose.dropM * pl.brace.w : prepDropM(host, pl);
+  // contact motion polish 1.1: a striking tackler's hip hinge drops his hips too
+  composeTarget(st, S, runM, pl.run?.w ?? 0, dt, pl.hinge ? dropM + pl.hinge.dropM : dropM);
 }
 
 /** Plan 08: the bounded height drop preparation requests (m), continuous with its weight; 0 without a locomotion profile. */
@@ -133,7 +137,9 @@ export function applySupport(host: SupportHost, pl: PlayerRuntime, S: Suspension
   st.authority = loadAuthority(f.appliedN, m, g);
   // split after the clamp (profile application): min(F, m g) at the turf point below the pivot, the excess through
   // the COM (lift without additional tipping torque); the total vertical force is unchanged
-  const pivot = add(o, qRot(q, S.application.pivot === 'legacyHemisphere' ? st.pivotLocal : v3(0, -h, 0)));
+  // contact motion polish 1.1: under a hip hinge the pivot hangs below the centre of mass in the legs' frame
+  const pivotLocal = S.application.pivot === 'legacyHemisphere' ? st.pivotLocal : v3(0, -h, 0);
+  const pivot = pl.hinge && !host.opts.debug?.wrap?.trunkBalance ? hingePivot(pl.hinge, q, o, com, pivotLocal, pl.balance.desiredUp) : add(o, qRot(q, pivotLocal));
   st.leverM = len(sub(pivot, com));
   const sp = v3(pivot.x, pr.groundY, pivot.z);
   const split = splitSupportForce(S, f.appliedN, m * Math.abs(g));

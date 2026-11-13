@@ -4,7 +4,7 @@ import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1 } from '../src/sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
-import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../src/sim/controllers/wrap';
+import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4 } from '../src/sim/controllers/wrap';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2,
@@ -525,6 +525,11 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect('wrap' in back.def).toBe(false);
     expect(labRun(on, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on (registered)' });
     expect(labRun(off, new URLSearchParams('wrap=off'))).toEqual({ def: off, opts: {}, label: 'wrap off (registered)' });
+    // contact motion polish 1.1: wrap=v4 runs WRAP_V4 (the strike; tests/wrap-strike.test.ts has its twins)
+    const v4: FixtureDef = { ...off, wrap: WRAP_V4 };
+    expect(labRun(on, new URLSearchParams('wrap=v4'))).toEqual({ def: v4, opts: {}, label: 'wrap v4' });
+    expect(labRun(v4, new URLSearchParams('wrap=v4'))).toEqual({ def: v4, opts: {}, label: 'wrap v4 (registered)' });
+    expect(labRun(v4, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
     const g = FIX('L3-F3-collision');
     expect(g.players.some((p) => p.controller.kind === 'wrapAttempt')).toBe(false);
     expect(labRun(g, new URLSearchParams('wrap=on'))).toEqual({ def: g, opts: {}, label: 'wrap n/a (no wrapping defender)' });

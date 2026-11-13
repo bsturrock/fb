@@ -8,6 +8,7 @@ import { FALL_HOLD_V1, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { Controller, ControllerContext } from './base';
 import { add, addScaled, clamp, cross, dot, horiz, len, norm, qRot, scale, sub, v3, UP, type Vec3 } from '../vec';
+import type { HingeLimits } from '../hinge';
 
 export type ArmPlan = 'wrap' | 'palmFlank' | 'none';
 export type WrapArmPhase = 'ready' | 'open' | 'spread' | 'arc' | 'close' | 'sustain' | 'recover' | 'palmReach' | 'palmClose' | 'palmPull' | 'idle';
@@ -52,6 +53,78 @@ export interface WrapProfile {
    * contact), inside the shared falling arm budget; a hold breaks by the existing rules and frees that arm to brace.
    */
   commit?: { secureS: number; lowerS: number; heightM: number; leanDeg: number; graceS: number; hold?: FallResponseProfile };
+  /** Contact motion polish 1.1 (absent: the upright approach as it was): the strike posture and wide arms. */
+  strike?: WrapStrike;
+}
+
+/**
+ * Contact motion polish 1.1: the tackler's strike. One authored pose, blended in by a weight and aimed by rules, as the
+ * carrier's brace is: over the last part of the approach he lowers his hips and pitches his trunk well forward (a hip
+ * hinge: hinge.ts, the legs keep the balance), leads with the near shoulder at the carrier's torso with his head to the
+ * carrier's side, and throws his arms wide from the shoulders (the cradle wider, the elbows out); the wrap then closes
+ * on the touch as before. Requests only.
+ *
+ * The head's side is decided as the strike starts, from the approach: behind the carrier's motion across the approach
+ * (opposite his lateral velocity relative to the tackler, above `sideRuleMps`), never across his front; with no such
+ * motion the side the tackler is already on (beyond 5 cm of the centre line); dead centre, the tackler's left (his
+ * right shoulder strikes). Motion across the approach that develops before the bodies meet moves it behind.
+ */
+export interface WrapStrike {
+  /**
+   * On once the predicted contact (gap over the observed closing speed) is `leadS` away or the gap is under `gapM`;
+   * off, a miss going by, once neither holds (the contact more than `2 leadS` away) with no contact for `lostS`; off
+   * too once the carrier is down without the tackler's hold (he straightens up).
+   */
+  leadS: number;
+  gapM: number;
+  lostS: number;
+  /** Off too, with no contact, once the carrier's bearing off the tackler's facing is above this (deg): he is going by. */
+  offBearingDeg: number;
+  /** While the weight is up the facing asked for stays within this of the body's own (deg): a pitched trunk cannot spin. */
+  maxTurnDeg: number;
+  /** The weight's response (1/s): critically damped toward 1 while on, 0 off. */
+  rateHz: number;
+  /**
+   * The trunk's pitch at full weight (deg): `leanDeg` of whole-body posture lean (the legs', which the balance torque
+   * holds against gravity: the approach's lean blends to it) plus the hinge's rest.
+   */
+  pitchDeg: number;
+  leanDeg: number;
+  /** The facing turned toward the head's side at full weight (deg; the trunk pitches along it): the strike shoulder leads. */
+  yawDeg: number;
+  /** The hips' drop at full weight (m). */
+  dropM: number;
+  /**
+   * Before the first contact his line steers his centre `offsetM` to the head's side of the carrier's (gain
+   * `offsetGainPerS` on the lateral error, at most `offsetMps` across), so the head passes beside the carrier's torso.
+   */
+  offsetM: number;
+  offsetGainPerS: number;
+  offsetMps: number;
+  /** The relative lateral speed (m/s) above which the head's side is taken from the carrier's motion. */
+  sideRuleMps: number;
+  /**
+   * The wide arms at full weight: the cradle's palms `forwardM` ahead of the chest and `marginM` outside the carrier's
+   * torso, each elbow toward `pole` (owner-local, x on the arm's own side), blended from the cradle's by the weight.
+   */
+  arms: { forwardM: number; marginM: number; pole: Vec3 };
+  /** The hip hinge's bounds. */
+  hinge: HingeLimits;
+}
+
+/** Contact motion polish 1.1 fault switches (tests: negative controls). */
+export interface WrapDebug {
+  /** The head's side rule reversed: the head goes across the carrier's front. */
+  headAcross?: boolean;
+  /** The strike never ends once on (no recovery after a miss). */
+  strikeHeld?: boolean;
+  /** No elbow pole request (the cradle's palms wide, the elbows the arm's own). */
+  noPole?: boolean;
+  /**
+   * The balance reads the pitched trunk, as with no hinge (simulation, support-runtime): the support pivot and the loss
+   * envelope in the body's frame, so the trunk's pitch tips him as whole-body lean would.
+   */
+  trunkBalance?: boolean;
 }
 
 /**
@@ -82,6 +155,35 @@ export const WRAP_V2: WrapProfile = { ...WRAP_V1, id: 'wrap-takedown-v2', commit
  * effort), so they keep holding the carrier while he goes down, for as long as solved contact keeps the hold.
  */
 export const WRAP_V3: WrapProfile = { ...WRAP_V2, id: 'wrap-hold-v3', commit: { ...WRAP_V2.commit!, hold: FALL_HOLD_V1 } };
+
+/**
+ * Contact motion polish 1.1: WRAP_V3 with the strike. On 0.6 s ahead of contact (or inside 0.8 m): 40 deg of trunk
+ * pitch (12 of whole-body lean, the balance cap, and 28 of hinge), the hips 8 cm lower, pitch and facing turned 30 deg
+ * toward the head's side, his centre steered 15 cm to that side; the palms 30 cm outside the carrier, elbows out and a
+ * little up. Values and reasons: docs/handoff/contact-motion-m3.md.
+ */
+export const WRAP_V4: WrapProfile = {
+  ...WRAP_V3,
+  id: 'wrap-strike-v4',
+  strike: {
+    leadS: 0.6,
+    gapM: 0.8,
+    lostS: 0.3,
+    offBearingDeg: 75,
+    maxTurnDeg: 30,
+    rateHz: 10,
+    pitchDeg: 40,
+    leanDeg: 0,
+    yawDeg: 30,
+    dropM: 0.08,
+    offsetM: 0.3,
+    offsetGainPerS: 6,
+    offsetMps: 1.5,
+    sideRuleMps: 0.5,
+    arms: { forwardM: 0.3, marginM: 0.3, pole: v3(1, 0.3, -0.2) },
+    hinge: { maxDeg: 40, rateDegPerS: 120, accelDegPerS2: 600, maxDropM: 0.12, dropRateMps: 0.4 },
+  },
+};
 
 export interface WrapSpec {
   kind: 'wrapAttempt';
@@ -195,14 +297,20 @@ export class WrapAttemptController implements Controller {
   declare private readonly wp?: WrapProfile;
   /** The committed finish's hold clock (set at the first finish decision under a profile with one). */
   declare private tk?: { since: number | null; lastT: number };
+  /** Contact motion polish 1.1: the strike's state (set at the first decision under a profile with one). */
+  declare private sk?: { on: boolean; w: number; v: number; head: number; hd: Vec3 };
+  /** Contact motion polish 1.1 fault switches (set only when given). */
+  declare private readonly fault?: WrapDebug;
 
   constructor(
     readonly spec: WrapSpec,
     readonly setup: PlayerSetup,
     readonly motor: MotorProfile,
     profile?: WrapProfile,
+    fault?: WrapDebug,
   ) {
     if (profile) this.wp = profile;
+    if (fault) this.fault = fault;
     this.p = { ...DEF, ...stripUndef(spec) } as Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance'>>;
     const mk = (s: ArmSide): ArmCtl => ({ phase: spec.plan[s] === 'none' ? 'idle' : spec.plan[s] === 'wrap' ? 'ready' : 'palmReach', since: 0, bestAz: -180, lastProgressT: 0, lastClampT: -1 });
     this.arm = { left: mk('left'), right: mk('right') };
@@ -322,6 +430,77 @@ export class WrapAttemptController implements Controller {
       }
       if (len(vel) > maxV) vel = scale(vel, maxV / len(vel));
     } else this.finishMode = this.connectedAt === null ? 'approach' : 'engaged';
+    // ---------------- contact motion polish 1.1: the strike (lower, pitch in, shoulder leading, head to the side)
+    const SK = this.wp?.strike;
+    const toCarrier = norm(horiz(sub(R, me.position)), this.lastFacing);
+    const closingNow = dot(sub(horiz(me.linearVelocity), vR), toCarrier);
+    const ttcNow = closingNow > 1e-3 ? gap / closingNow : Infinity;
+    let sk: { on: boolean; w: number; v: number; head: number; hd: Vec3 } | undefined;
+    if (SK && !removed) {
+      sk = this.sk ??= { on: false, w: 0, v: 0, head: 0, hd: v3() };
+      const supported = me.controlMode === 'supported';
+      const near2 = ttcNow <= SK.leadS || gap < SK.gapM;
+      const engaged = ctx.t - this.lastContactT <= SK.lostS;
+      // the carrier's bearing off his facing: one going by beside or behind him ends the strike (a miss)
+      const myFwd = norm(horiz(qRot(me.rotation, v3(0, 0, 1))), toCarrier);
+      const bearing = (Math.acos(clamp(dot(myFwd, toCarrier), -1, 1)) * 180) / Math.PI;
+      // the head's side (world, across the approach): behind the carrier's motion across it, never across his front;
+      // without such motion the side he is on, else his left (`side`, his local +X). Decided as the strike starts; motion
+      // that develops before the bodies meet moves it behind
+      const vl = dot(sub(vR, horiz(me.linearVelocity)), side);
+      const behind = (this.fault?.headAcross ? 1 : -1) * Math.sign(vl);
+      if (!sk.on && supported && near2) {
+        sk.on = true;
+        const off = dot(sub(me.position, R), side);
+        sk.head = Math.abs(vl) > SK.sideRuleMps ? behind : Math.abs(off) > 0.05 ? Math.sign(off) : 1;
+        sk.hd = scale(side, sk.head);
+      } else if (sk.on && this.connectedAt === null && !engaged && Math.abs(vl) > SK.sideRuleMps && Math.sign(dot(sk.hd, side)) !== behind) {
+        sk.head = behind;
+        sk.hd = scale(side, sk.head);
+      } else if (sk.on && !this.fault?.strikeHeld && (!supported || (tb.controlMode !== 'supported' && retaining.length === 0) || (!engaged && ((ttcNow > 2 * SK.leadS && gap >= SK.gapM) || bearing > SK.offBearingDeg)))) sk.on = false;
+      const k = SK.rateHz;
+      sk.v += (k * k * ((sk.on ? 1 : 0) - sk.w) - 2 * k * sk.v) * ctx.dt;
+      sk.w = clamp(sk.w + sk.v * ctx.dt, 0, 1);
+      if (sk.w <= 1e-3 && !sk.on) {
+        sk.w = 0;
+        sk.v = 0;
+      }
+      if (sk.w > 0) {
+        const w = sk.w;
+        // the head's side as decided (world): the facing turns toward it, the line steers to it
+        const hd = sk.hd;
+        const turn = (d: Vec3, deg: number): Vec3 => {
+          const across = horiz(sub(hd, scale(d, dot(hd, d))));
+          if (len(across) < 1e-3) return d;
+          const a = (deg * w * Math.PI) / 180;
+          return norm(add(scale(d, Math.cos(a)), scale(norm(across), Math.sin(a))), d);
+        };
+        // the legs' lean blends to the strike's (the balance holds it), the hinge pitches the trunk the rest of the way
+        const base = posture ?? { leanDirWorld: toCarrier, leanRad: 0 };
+        posture = {
+          // (unwinding after a miss, toward his own travel, as he faces)
+          leanDirWorld: sk.on ? base.leanDirWorld : norm(horiz(me.linearVelocity), myFwd),
+          leanRad: base.leanRad + ((SK.leanDeg * Math.PI) / 180 - base.leanRad) * w,
+          hinge: { rad: (Math.max(0, SK.pitchDeg - SK.leanDeg) * w * Math.PI) / 180, dropM: SK.dropM * w },
+        };
+        // on: the carrier, turned toward the head's side; unwinding after a miss: his own travel (no spin while pitched)
+        // (the turn only before the bodies meet: pressed into the carrier, a twist of the pitched trunk would roll him)
+        this.lastFacing = !sk.on ? norm(horiz(me.linearVelocity), myFwd) : this.connectedAt === null && !engaged ? turn(this.lastFacing, SK.yawDeg) : this.lastFacing;
+        // a pitched trunk cannot spin: the facing asked for stays within `maxTurnDeg` of the body's (bounds the yaw rate)
+        const off = Math.acos(clamp(dot(myFwd, this.lastFacing), -1, 1));
+        const lim = (SK.maxTurnDeg * Math.PI) / 180;
+        if (off > lim) {
+          const across = horiz(sub(this.lastFacing, scale(myFwd, dot(this.lastFacing, myFwd))));
+          if (len(across) > 1e-6) this.lastFacing = norm(add(scale(myFwd, Math.cos(lim)), scale(norm(across), Math.sin(lim))), myFwd);
+        }
+        if (this.connectedAt === null && !standing) {
+          // steer the line so his centre passes `offsetM` to the head's side of the carrier's
+          const e = dot(sub(addScaled(R, hd, SK.offsetM), me.position), hd);
+          vel = addScaled(vel, hd, w * clamp(SK.offsetGainPerS * e, -SK.offsetMps, SK.offsetMps));
+          if (len(vel) > maxV) vel = scale(vel, maxV / len(vel));
+        }
+      }
+    }
     // ---------------- arms
     const arms: Partial<Record<ArmSide, ArmIntent>> = {};
     const band = R.y + P.bandYLocal;
@@ -377,6 +556,7 @@ export class WrapAttemptController implements Controller {
       }
       let action: ArmIntent['action'] = 'reach';
       let target: Vec3;
+      let pole: Vec3 | undefined;
       if (plan === 'palmFlank') {
         const flank = addScaled(addScaled(R, near, this.support(tBody, tb.rotation, near) - 0.07), side, sgn * 0.1);
         target = v3(flank.x, band, flank.z);
@@ -390,7 +570,7 @@ export class WrapAttemptController implements Controller {
           case 'ready':
             if (W) {
               target = carriage(W.ready.forwardM, W.ready.lateralM, sgn);
-              if (ttc <= W.open.leadS || gap < W.open.gapM) go('open');
+              if (ttc <= W.open.leadS || gap < W.open.gapM || sk?.on) go('open');
               break;
             }
             target = addScaled(ring(0, sgn, 0.12), side, sgn * 0.18);
@@ -398,10 +578,16 @@ export class WrapAttemptController implements Controller {
             break;
           case 'open':
             // the cradle: wide of the carrier, ahead of the chest; the carrier's torso arrives between the hands
-            target = carriage(W!.open.forwardM, halfW + W!.open.marginM, sgn);
+            if (sk && sk.w > 0 && SK) {
+              // polish 1.1: the strike's wide arms, blended in by its weight, the elbows out from the shoulders
+              const w = sk.w;
+              target = carriage(W!.open.forwardM + (SK.arms.forwardM - W!.open.forwardM) * w, halfW + W!.open.marginM + (SK.arms.marginM - W!.open.marginM) * w, sgn);
+              const sx = Math.sign(sgn) || 1;
+              if (!this.fault?.noPole) pole = add(scale(v3(sx, -0.6, -0.4), 1 - w), scale(v3(sx * SK.arms.pole.x, SK.arms.pole.y, SK.arms.pole.z), w));
+            } else target = carriage(W!.open.forwardM, halfW + W!.open.marginM, sgn);
             if (touchClose || az >= P.wrapAzDeg - 25) go('close');
             else if (gap <= 0.02 && t - st.since > 0.1) go('arc');
-            else if (ttc > 2 * W!.open.leadS && gap > 2 * W!.open.gapM) go('ready');
+            else if (ttc > 2 * W!.open.leadS && gap > 2 * W!.open.gapM && !sk?.on) go('ready');
             break;
           case 'spread':
             target = ring(P.spreadAzDeg, sgn, P.marginM + 0.06);
@@ -431,7 +617,7 @@ export class WrapAttemptController implements Controller {
             target = ob.palmContactWorld;
         }
       }
-      arms[s] = { action, targetWorld: target };
+      arms[s] = pole ? { action, targetWorld: target, poleLocal: pole } : { action, targetWorld: target };
       debugArms[s] = { phase: st.phase, az: Math.round(az), target };
     }
     return {
@@ -439,7 +625,7 @@ export class WrapAttemptController implements Controller {
       arms,
       posture,
       ...(leave ? { leaveSupport: 'takedown' as const } : {}),
-      debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true },
+      debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true, ...(sk ? { strike: { on: sk.on, w: sk.w, head: sk.head } } : {}) },
     };
   }
 
