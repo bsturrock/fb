@@ -84,6 +84,17 @@ in real life."
       tackler ends 0.9 to 1.7 m beside or behind him, never on top (with one arm on he drops to the old one-arm
       reposition and the come-down starts late); a posed hip twist 37 degrees past range at his conversion; the
       long front approach never gets a secure hold.
+      **The tackler landing on top: tried twice, parked** (main checkout `.scratch/p10/parked/`: `onto-v9.patch`,
+      `onto-high.patch`, README with both tries; evidence `.scratch/p10/onto/`, `onto-high/`). Steering his
+      shoulders onto the carrier's core from the carrier's conversion puts him on top on the rear wrap, the drag
+      mirror and `L3-F1-low`, but no version passes alone. Found: a facing turn adds to posed hip twist; starting
+      the come-down's clock early converts him high (1.10 m); the carrier's core drops from 5.5 to 2.7 m/s within
+      0.05 s of landing while the posed tackler's drive sheds 3 to 4 m/s^2, so he arrives 1.4 m/s or more faster
+      and slides past, and any brake strong enough loses the carrier 0.4 m earlier; on the low tackle his head
+      and shoulder on the carrier's hip hold him off the centre line, so the side offset must come out before
+      the carrier goes down. Decided: not a steering problem. What keeps a tackler on his man through the
+      landing is the hold itself; take it up with the hold through the landing (the lock and the roll, 1.3 and
+      1.4), not with more drive requests.
    3. Stay connected to the ground. Locked hands were measured impossible with today's upright wrap (the hands
       stop 0.5 m apart; M3 handoff, "Locked hands"). Re-measure after 1.1 puts the shoulder at the carrier's flank;
       build the lock if the hands then meet. The rear-wrap carrier (`L3-F19-rear`) must go down (under the drive he
