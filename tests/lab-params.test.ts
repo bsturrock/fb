@@ -8,7 +8,7 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preFlip, preHoldStill, preOwnLegs, preV3, runSim } from './helpers';
+import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing` and `armstay` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -131,8 +131,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const id = 'HC-F3-falling';
     // (the profile before the visible flip, which registers this variant; a natural sample, with the leg guard before
     // the ladder 10 flip: under V3 the variant alone converts D, its posed legs held out of R; and before the ladder 17b
-    // flip, under which the variant alone converts D too, its thigh in R's palm held out of the solve)
-    const d = preV3(preFlip(preBornOverlap(FIX(id))));
+    // flip, under which the variant alone converts D too, its thigh in R's palm held out of the solve; and before the
+    // 18e met-arm flip, under which the variant alone converts D as well)
+    const d = preV3(preFlip(preBornOverlap(preMetArmStay(FIX(id)))));
     const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
     expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
     const want = withConversionRetry(flip8i(d).ragdoll!);
@@ -362,10 +363,11 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   }, 120000);
 
   // ladder 17: born=on|off on the fixture's ragdoll profile, composed after armtwist; registered on L3, L4 and HC (17b,
-  // V2 since 18c), so the row starts from the definition before those flips
-  it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling before the 17b flip: D converts at his first try, where that run defers him), which is the registered fixture before the born separation; born=off takes it off again and on a fixture without it is that run; on the registered fixture it keeps V2; a fixture without a ragdoll and unknown values change nothing', async () => {
+  // V2 since 18c), so the row starts from the definition before those flips; and before the met-arm flip (18e), under
+  // which D asks for the conversion later (1.200 s, from 1.129 s: the natural sample is the run before it)
+  it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling before the 17b and 18e flips: D converts at his first try, where that run defers him), which is the registered fixture before the born separation; born=off takes it off again and on a fixture without it is that run; on the registered fixture it keeps V2; a fixture without a ragdoll and unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
-    const reg = FIX(id);
+    const reg = preMetArmStay(FIX(id));
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const d = preBornOverlap(reg);
     expect(d.ragdoll!.bornOverlap).toBeUndefined();
@@ -398,10 +400,11 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   }, 120000);
 
   // ladder 18: bornsep=on|off on the fixture's born overlap (V1 to V2 and back), composed after born; registered on L3, L4
-  // and HC (18c), so the row starts from the definition before that flip
-  it('bornsep=on runs the fixture with its born pairs pushed apart (BORN_OVERLAP_V2 in V1\'s place, its id renamed in place: L3-F1-falling before the 18c flip, where D\'s palm pair is released with the separation\'s work, which V1\'s release has no part of), which is the registered fixture; bornsep=off takes it back; born=on keeps V2; with born=off, or a fixture without a born overlap, it is n/a; unknown values change nothing', async () => {
+  // and HC (18c), so the row starts from the definition before that flip, and before the met-arm flip (18e: D converts
+  // later, with no born pair released by 1.3 s; the natural sample is the run before it)
+  it('bornsep=on runs the fixture with its born pairs pushed apart (BORN_OVERLAP_V2 in V1\'s place, its id renamed in place: L3-F1-falling before the 18c and 18e flips, where D\'s palm pair is released with the separation\'s work, which V1\'s release has no part of), which is the registered fixture before the met-arm flip; bornsep=off takes it back; born=on keeps V2; with born=off, or a fixture without a born overlap, it is n/a; unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
-    const registered = FIX(id);
+    const registered = preMetArmStay(FIX(id));
     expect(registered.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const reg = preBornSeparation(registered);
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);

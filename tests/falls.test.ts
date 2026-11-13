@@ -1426,7 +1426,9 @@ describe('L4-F9 fall boundaries', () => {
   it('identical to its passive source up to the conversion, whose audits pass, on every L4-F9 boundary pair', async () => {
     await rows(pairs, ([id, base]) => `${id} (${base})`, async ([id, base, ids]) => {
       const a = await sim(id);
-      const b = await run(L3(base));
+      // (the passive source as registered: the L3 fixture under the same flips as the L4 one. Since the met-arm flip
+      // (18e) the flips move supported arms before any conversion, so the unflipped source is a different run)
+      const b = await run(FIX(base));
       const conv = Math.min(...a.players.filter((p) => p.handoff).map((p) => p.handoff!.t));
       const n = a.trace.filter((r) => r.t < conv - 1e-9).length;
       expect(n).toBeGreaterThan(5);

@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preFlip, preHoldStill, preV3, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preFlip, preHoldStill, preMetArmStay, preV3, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -70,6 +70,7 @@ import {
   HOLD_CLEARANCE_REPLANT,
   HOLD_SETTLES,
   HOLD_STILL,
+  holdsEndedEarly,
   KEEP_STEPPING,
   LANDINGS,
   LEG_IN_RAGDOLL,
@@ -448,9 +449,12 @@ describe('plan 10b foot target continuity', () => {
     expect(unseenKinds(ok)).toEqual([]);
     expect(unseenKinds(await record(pair, { debug: { foot: { noVoluntarySteps: true } } }))).toEqual(['B1 voluntary', 'B2 voluntary']);
     // the hold: before the flip the defender steps in it (counted as held, for no kind); with the rule it does not, and
-    // every kind's count is the same
-    const off = await record(['L3-F6-hold'], {}, preHoldStill);
-    const on = await record(['L3-F6-hold']);
+    // every kind's count is the same. (Ladder 18e: the pair as before the met-arm flip. With the rule and without it the
+    // runs are the same up to R's left step in the hold at 1.4375 s, with the flip and without it; after it they count
+    // the steps of a different run, the same number of each kind before the flip and not under it (B1 voluntary 260
+    // with the rule, 252 without): the sample, not the rule, so the sample is kept as it was taken)
+    const off = await record(['L3-F6-hold'], {}, (d) => preHoldStill(preMetArmStay(d)));
+    const on = await record(['L3-F6-hold'], {}, preMetArmStay);
     expect(off.held).toBeGreaterThan(on.held);
     const kinds = (s: ContinuitySeen) => Object.fromEntries(Object.entries(s).filter(([k]) => /^b[12]/.test(k)));
     expect(kinds(on)).toEqual(kinds(off));
@@ -487,12 +491,21 @@ describe('plan 10b foot target continuity', () => {
             }
             if (id === 'L3-F3-recover') {
               // plan 13e: R's left foot runs out of time near 0.838 s at 1.47 m/s and is still moving after it (1.16 m/s);
-              // D's left near 1.413 s at 9.19 m/s
+              // D's left near 1.413 s at 9.19 m/s (before the met-arm flip)
               const first = moving.find((x) => x.at === 'R:left' && Math.abs(x.t - 0.8375) < 0.01);
               expect(first, 'R left out of time near 0.838 s').toBeDefined();
               expect(first!.speed).toBeGreaterThan(1);
               expect(first!.next).toBeGreaterThan(1);
-              expect(moving.some((x) => x.at === 'D:left' && x.speed > 9), 'D left out of time at over 9 m/s').toBe(true);
+              // ladder 18e: D's left at over 9 m/s is a sample of the run before the met-arm flip, where it was taken: under
+              // the flip none of D's steps runs out of time at speed (R's above is unchanged). The bound is checked on it there
+              const pre = continuity(preMetArmStay(FIX(id)), noneSeen());
+              await runOne(preMetArmStay(FIX(id)), pre.watch, { transitionAudit: true });
+              const fast = pre.out.outOfTime.filter((x) => x.at === 'D:left' && x.speed > 9);
+              expect(fast.length, 'D left out of time at over 9 m/s').toBeGreaterThan(0);
+              for (const x of fast) {
+                expect(x.next, `${id} ${x.at} ${x.t.toFixed(4)}`).toBeGreaterThan(0);
+                expect(x.speed - x.next, `${id} ${x.at} ${x.t.toFixed(4)}`).toBeLessThanOrEqual(x.aMax * (1 / 240) + 1e-9);
+              }
             }
           }
         },
@@ -893,6 +906,18 @@ describe('plan 08 pass 3: contact integration', () => {
     'held arms: real palm holds keep the anchor and arm segments within Gate 2 through entry and remap within Gate 4; real forearm clamps keep the segments and end only for an engine reason',
     [PALM_HOLDS, CLAMPS],
   );
+  it('held arms, constructed: a hold ended before the conversion or with no reason is reported, and one ended in the conversion\'s own step after it is not', () => {
+    // ladder 18e: the fault twin of `holdsEndedEarly` (the palm holds' end rule above), on event lists the test makes. The
+    // rule was each release strictly after the conversion's time; since the met-arm flip a hold may end in the
+    // conversion's own step, after it (L3-F4-gripTarget D's left at 0.900 s, its arm meeting the ragdoll's forearm)
+    const rep = { type: 'representation', t: 0.9, data: { from: 'proxy', to: 'ragdoll' } };
+    const rel = (t: number, grip: string, reason?: string) => ({ type: 'gripRelease', t, data: { grip, ...(reason ? { reason } : {}) } });
+    expect(holdsEndedEarly([rep, rel(0.9, 'D:left:g2', 'invalidPose'), rel(1.17, 'D:right:g1', 'invalidPose')])).toEqual([]);
+    expect(holdsEndedEarly([rel(0.9, 'D:left:g2', 'invalidPose'), rep])).toEqual(['0.9000 D:left:g2']);
+    expect(holdsEndedEarly([rel(0.5, 'D:left:g2', 'voluntary'), rep, rel(1.17, 'D:right:g1', 'invalidPose')])).toEqual(['0.5000 D:left:g2']);
+    expect(holdsEndedEarly([rep, rel(1.17, 'D:right:g1')])).toEqual(['1.1700 D:right:g1']);
+    expect(holdsEndedEarly([rel(1.17, 'D:right:g1', 'invalidPose')])).toEqual(['1.1700 D:right:g1']);
+  });
   passTest('negative control: the retention measures fail a stretched limb and a shifted anchor, and the wrong player has no hold', [RETENTION_BITES]);
 });
 

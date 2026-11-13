@@ -1784,6 +1784,18 @@ function held(d: FixtureDef, watch: (s: Simulation) => void = () => {}, tamper: 
   };
 }
 
+/**
+ * Ladder 18e: the palm holds that end before the conversion (in the order the engine emits its events, the first
+ * `representation` event), or end with no reason: each as `<time> <grip>`. A hold may end in the conversion's own step,
+ * after it: since the met-arm flip the held runner's arm stays on the holder's chest, and the holder's arm, which meets
+ * the ragdoll's forearm there, lets go in that step for `invalidPose` (L3-F4-gripTarget D's left at 0.900 s; from the
+ * same state at 0.800 s without the flip it holds to 1.0875 s).
+ */
+export function holdsEndedEarly(events: readonly { type: string; t: number; data?: Record<string, unknown> }[]): string[] {
+  const rep = events.findIndex((e) => e.type === 'representation');
+  return events.flatMap((e, i) => (e.type === 'gripRelease' && (rep < 0 || i < rep || !e.data?.reason) ? [`${e.t.toFixed(4)} ${String(e.data?.grip)}`] : []));
+}
+
 export const PALM_HOLDS = check({
   name: 'real palm holds',
   fixtures: ['L3-F4-gripTarget', 'L3-F4-gripOwner', 'L3-F4-gripBoth'],
@@ -1801,13 +1813,11 @@ export const PALM_HOLDS = check({
         for (const e of begin) expect(e.data!.palmGap as number, id).toBeLessThanOrEqual(A.surfaceTolM + 1e-9);
         expect(r.lengthM, id).toBeLessThanOrEqual(ragOf(d).validation.lengthTolM);
         expect(r.gripGapM, id).toBeLessThanOrEqual(A.surfaceTolM);
-        // the holds outlive the entry; a hold ends only with a reason from the engine, after the conversion
+        // the holds outlive the entry; a hold ends only with a reason from the engine, after the conversion (ladder 18e:
+        // in event order, so in the conversion's own step too: `holdsEndedEarly`; before it, after the conversion's step)
         const rep = sim.events.find((e) => e.type === 'representation')!;
         expect(rep.t, id).toBeGreaterThan(begin[1].t);
-        for (const e of sim.events.filter((x) => x.type === 'gripRelease')) {
-          expect(e.t, id).toBeGreaterThan(rep.t);
-          expect(e.data!.reason, id).toBeTruthy();
-        }
+        expect(holdsEndedEarly(sim.events), id).toEqual([]);
         for (const e of sim.events.filter((x) => x.type === 'gripRemap')) {
           expect(e.data!.ok, id).toBe(true);
           expect(Number(e.data!.anchorErrM), id).toBeLessThanOrEqual(ragOf(d).validation.anchorTolM);
