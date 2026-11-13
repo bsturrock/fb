@@ -9,7 +9,9 @@ A carrier sees contact coming, lowers and pitches forward while covering the bal
 Status (2026-11-12): M1 is done ([handoff](../../handoff/contact-motion.md)). The prerequisites the user ruled must
 land before M2 (hard ragdoll joint stops, own-leg contact, physical supported legs) are on branch `prereq-ladder`
 ([handoff](../../handoff/contact-motion-prerequisites.md); what is still open, with the user's review list:
-[prerequisites ladder](prerequisites-ladder.md)). M2 starts from that branch after the user's review.
+[prerequisites ladder](prerequisites-ladder.md)). M2's rough-first slice (the carrier's brace: decision, pose, on for
+L3, L4 and HC carriers) is done on the same branch ([handoff](../../handoff/contact-motion-m2.md)); next is M3, the
+rough wrap and finish, after the user's lab look at the brace.
 
 ## Direction (user-approved 2026-11-12; supersedes conflicting text below and in the milestone files)
 

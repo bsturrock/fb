@@ -3,6 +3,8 @@
 ## Rough-first slice (2026-11-13; do this before anything else in this file)
 
 Per the direction in the [README](README.md): a rough, visible brace end to end, judged in the lab, polish later.
+Steps 1 to 3 are done (2026-11-12, [handoff](../../handoff/contact-motion-m2.md)); step 4 and the polish wait for the
+user's lab look.
 
 1. **Decision, flag off.** A brace weight 0..1 on the carrier from an observed, visible, closing opponent and a
    predicted contact time (port the intent of sim-6 `src/logic/brace.ts`: acquire about 0.45 s out, hold with
