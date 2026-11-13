@@ -23,6 +23,11 @@ export interface HingeState {
   rateRadPerS: number;
   /** The hips' drop the hinge adds to the stance (m, >= 0), rate-limited toward the request. */
   dropM: number;
+  /**
+   * Polish 1.2, the ride-down's come-down (`WrapRideDown.weightForward`; set by the simulation): his weight goes forward
+   * with the trunk, the support pivot under the body's own frame (as without the hinge), not the legs'.
+   */
+  bodyPivot?: true;
 }
 
 /** The hinge's bounds (`WrapStrike.hinge`). */

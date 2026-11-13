@@ -139,7 +139,8 @@ export function applySupport(host: SupportHost, pl: PlayerRuntime, S: Suspension
   // the COM (lift without additional tipping torque); the total vertical force is unchanged
   // contact motion polish 1.1: under a hip hinge the pivot hangs below the centre of mass in the legs' frame
   const pivotLocal = S.application.pivot === 'legacyHemisphere' ? st.pivotLocal : v3(0, -h, 0);
-  const pivot = pl.hinge && !host.opts.debug?.wrap?.trunkBalance ? hingePivot(pl.hinge, q, o, com, pivotLocal, pl.balance.desiredUp) : add(o, qRot(q, pivotLocal));
+  // (polish 1.2, the ride-down's come-down: his weight forward, the pivot under his body's own frame: `WrapRideDown`)
+  const pivot = pl.hinge && !pl.hinge.bodyPivot && !host.opts.debug?.wrap?.trunkBalance ? hingePivot(pl.hinge, q, o, com, pivotLocal, pl.balance.desiredUp) : add(o, qRot(q, pivotLocal));
   st.leverM = len(sub(pivot, com));
   const sp = v3(pivot.x, pr.groundY, pivot.z);
   const split = splitSupportForce(S, f.appliedN, m * Math.abs(g));

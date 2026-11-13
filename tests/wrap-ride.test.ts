@@ -1,12 +1,12 @@
 // Contact motion polish 1.2, the ride-down (WRAP_V7, `WrapProfile.ride`, src/sim/controllers/wrap.ts; the carrier counted
-// as support, `Simulation.rideSupported`). No fixture uses it. Each case has its fault twin: WRAP_V5 (the ride absent) or
+// as support, `Simulation.rideSupported`; the come-down, `WrapRideDown`). No fixture uses it. Each case has its fault twin: WRAP_V5 (the ride absent) or
 // the same run with the rule it checks broken (`SimDebug.wrap`) fails for that reason.
 import { describe, expect, it } from 'vitest';
 import { lowestY, WRAP_V5, WRAP_V7, type WrapDebug, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import { BALANCE_G3, upperBodyCompound } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
-import { cross, deg, horiz, norm, qFromAxisAngle, scale, sub, UP, v3, vc } from '../src/sim/vec';
+import { cross, deg, horiz, norm, qFromAxisAngle, scale, sub, UP, upOf, v3, vc } from '../src/sim/vec';
 import { FIX } from './helpers';
 
 const RD = WRAP_V7.ride!;
@@ -134,4 +134,100 @@ describe('polish 1.2, the ride-down (WRAP_V7, no fixture uses it)', () => {
     expect(twin.h).toBeNull();
     expect(twin.posedBelow).toBeGreaterThan(0);
   }, 60_000);
+});
+
+/** One run's come-down (`WrapRideDown`): its start, the rider's requests and root after it, and his conversion. */
+interface DownRun {
+  /** The come-down's start (debug `drive.downS`), the referee's ending, the carrier's conversion (s). */
+  downAt: number | null;
+  endAt: number | null;
+  rConvAt: number | null;
+  /** Riding substeps after the come-down began with a hinge request short of the full fold; the root's largest rise there (m). */
+  shortFold: number;
+  rootRise: number;
+  /** The first substep his body pitch reached 60 deg while posed (s). */
+  pitch60At: number | null;
+  /** His conversion: time, reason, the ride's exit asked (null: none asked), shoulder height (mean of the two, m). */
+  conv: { t: number; why: string; exit: string | null; sh: number } | null;
+}
+
+async function downRun(id: string, wrap: WrapProfile, fault?: WrapDebug): Promise<DownRun> {
+  let probe: (() => void) | null = null;
+  const sim = await Simulation.create({ ...FIX(id), wrap }, { onSubstep: () => probe?.(), ...(fault ? { debug: { wrap: fault } } : {}) });
+  const D = sim.players.find((p) => p.id === 'D')!;
+  const R = sim.players.find((p) => p.id === 'R')!;
+  const out: DownRun = { downAt: null, endAt: null, rConvAt: null, shortFold: 0, rootRise: 0, pitch60At: null, conv: null };
+  let last: { exit: string | null; sh: number } = { exit: null, sh: NaN };
+  let rootMin = Infinity;
+  probe = () => {
+    out.endAt ??= sim.ending?.t ?? null;
+    if (out.rConvAt === null && R.controlMode !== 'supported') out.rConvAt = sim.t;
+    if (D.controlMode !== 'supported') {
+      out.conv ??= { t: sim.t, why: String(D.handoff?.reason), ...last };
+      return;
+    }
+    const dv = (D.intent.debug as { drive?: { exit: string | null; downS?: number } } | undefined)?.drive;
+    const ob = sim.arms!.obs('D')!;
+    last = { exit: dv?.exit ?? null, sh: (ob.left!.shoulderWorld.y + ob.right!.shoulderWorld.y) / 2 };
+    if (out.pitch60At === null && out.rConvAt !== null && deg(Math.acos(Math.min(1, upOf({ ...D.proxy.body.rotation() }).y))) >= 60) out.pitch60At = sim.t;
+    if (dv?.downS !== undefined) out.downAt ??= sim.t - dv.downS;
+    if (out.downAt !== null && D.intent.ride) {
+      if ((D.intent.posture?.hinge?.rad ?? 0) < (RD.pitchDeg * Math.PI) / 180 - 1e-9) out.shortFold++;
+      const y = D.proxy.body.translation().y;
+      rootMin = Math.min(rootMin, y);
+      out.rootRise = Math.max(out.rootRise, y - rootMin);
+    }
+  };
+  while (!sim.done) sim.stepTick();
+  sim.dispose();
+  return out;
+}
+const DN = RD.down!;
+/** WRAP_V7 as before the come-down: exits (g), (l) and the referee's ending convert him where he is. */
+const V7_AT_ONCE: WrapProfile = { ...WRAP_V7, ride: { ...RD, down: undefined } };
+
+describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down, no fixture uses it)', () => {
+  it('(a) after the referee\'s ending the rider keeps the full fold and never rises, and converts low by (h) or (t); twin: the old at-once conversion converts him at the ending, higher', async () => {
+    for (const id of ['L3-F5-dragMirror', 'L3-F19-rear']) {
+      const ok = await downRun(id, WRAP_V7);
+      expect(ok.endAt, id).not.toBeNull();
+      expect(ok.downAt, id).not.toBeNull();
+      expect(ok.conv, id).not.toBeNull();
+      // he rides on through the ending: the come-down begins with it and converts him after it, by the low exit
+      expect(ok.conv!.t, id).toBeGreaterThan(ok.endAt! + 1e-9);
+      expect(ok.conv!.why, id).toBe('takedown');
+      expect(['h', 't'], id).toContain(ok.conv!.exit);
+      expect(ok.conv!.sh, id).toBeLessThanOrEqual(0.9);
+      expect(ok.shortFold, id).toBe(0);
+      expect(ok.rootRise, id).toBeLessThanOrEqual(0.01);
+      // twin: the ending converts him at once (no ride exit asked), at least 0.15 m higher
+      const twin = await downRun(id, V7_AT_ONCE);
+      expect(twin.downAt, id).toBeNull();
+      expect(twin.conv!.t - twin.endAt!, id).toBeLessThanOrEqual(2 / 240 + 1e-9);
+      expect(twin.conv!.sh - ok.conv!.sh, id).toBeGreaterThan(0.15);
+    }
+  }, 120_000);
+
+  it('(b) on the ride\'s own bounds the trunk reaches 60 deg of pitch within 0.25 s of the carrier\'s conversion (L3-F19-rear, measured 0.23 s); twin on the strike\'s hinge bounds it never does', async () => {
+    const ok = await downRun('L3-F19-rear', WRAP_V7);
+    expect(ok.pitch60At).not.toBeNull();
+    expect(ok.pitch60At! - ok.rConvAt!).toBeLessThanOrEqual(0.25);
+    const S = WRAP_V7.strike!.hinge;
+    const twin = await downRun('L3-F19-rear', { ...WRAP_V7, ride: { ...RD, down: { ...DN, hinge: { rateDegPerS: S.rateDegPerS, accelDegPerS2: S.accelDegPerS2, dropRateMps: S.dropRateMps } } } });
+    expect(twin.pitch60At).toBeNull();
+  }, 60_000);
+
+  it('(c) the time bound converts a rider who cannot get low (exits h, s, f and the no-support guard off): by (t), maxS after the come-down began; twin: with no bound he stays posed to the trial\'s end', async () => {
+    const off: WrapDebug = { noRideGuard: true, noRideLoose: true };
+    for (const id of ['L3-F5-dragMirror', 'L3-F4-twoArm']) {
+      const ok = await downRun(id, WRAP_V7, off);
+      expect(ok.downAt, id).not.toBeNull();
+      expect(ok.conv?.exit, id).toBe('t');
+      expect(ok.conv!.t - ok.downAt!, id).toBeGreaterThanOrEqual(DN.maxS - 1e-9);
+      expect(ok.conv!.t - ok.downAt!, id).toBeLessThanOrEqual(DN.maxS + 2 / 240 + 1e-9);
+      const twin = await downRun(id, { ...WRAP_V7, ride: { ...RD, down: { ...DN, maxS: 10 } } }, off);
+      expect(twin.downAt, id).not.toBeNull();
+      expect(twin.conv, id).toBeNull();
+    }
+  }, 120_000);
 });

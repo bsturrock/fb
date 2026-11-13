@@ -156,6 +156,12 @@ export interface PlayerRuntime {
    * (advanceHinge, hinge.ts). Absent while he has none, for every other player and without the profile.
    */
   hinge?: HingeState;
+  /**
+   * Contact motion polish 1.2, the ride-down's come-down (`WrapRideDown`): since when (s) the riding tackler has had no
+   * planted foot, no contact with the carrier and no hold of him, the carrier off his support (`rideUnsupported`).
+   * Absent otherwise.
+   */
+  rideLooseT?: number;
   /** Plan 06a: suspension support state (probe, height target, force, work); null under the legacy support. */
   sus: SuspensionRuntime | null;
   /** Bulk vertical velocity before the last solve (RH-F7 extremum conversions: [prevVy, lastVy] spans the last solve). */
@@ -921,9 +927,19 @@ export class Simulation {
       let edit: CandidateEdit | undefined;
       if (pl.balance.pendingLoss && pl.controlMode === 'supported') reason = 'lossOfSupport';
       // contact motion M3: the committed finish's request, decided on the last substep (never after the referee's ending)
-      if (!reason && pl.controlMode === 'supported' && pl.intent.leaveSupport === 'takedown' && this.def.wrap?.commit && !this.rules?.ending) reason = 'takedown';
+      // (polish 1.2, the ride-down's come-down: a riding tackler's, after it too; he is mid-takedown)
+      if (!reason && pl.controlMode === 'supported' && pl.intent.leaveSupport === 'takedown' && this.def.wrap?.commit && (!this.rules?.ending || this.def.wrap.ride?.down)) reason = 'takedown';
       // contact motion polish 1.2, the ride-down: a tackler riding the carrier down at the referee's ending goes down with him
-      if (!reason && pl.controlMode === 'supported' && pl.intent.ride && this.def.wrap?.ride && this.rules?.ending) reason = 'takedown';
+      // (with the come-down, he rides on down to him: `WrapRideDown`)
+      if (!reason && pl.controlMode === 'supported' && pl.intent.ride && this.def.wrap?.ride && !this.def.wrap.ride.down && this.rules?.ending) reason = 'takedown';
+      // (the come-down: riding with the carrier off his support, no planted foot, no contact with him and no hold of him: he
+      // has no support at all and goes down, never posed)
+      // (the drive's grace, `commit.graceS`, as a hold's flicker or a stride's flight is not a fall)
+      if (this.def.wrap?.ride?.down && !this.opts.debug?.wrap?.noRideLoose) {
+        if (pl.controlMode === 'supported' && pl.intent.ride && this.rideUnsupported(pl)) pl.rideLooseT ??= this.t;
+        else delete pl.rideLooseT;
+        if (!reason && pl.rideLooseT !== undefined && this.t - pl.rideLooseT > (this.def.wrap.commit?.graceS ?? 0) - 1e-9) reason = 'takedown';
+      }
       diag.forEach((d, i) => {
         if (d.playerId === pl.id && !this.diagDone.has(i) && this.t >= d.atS - 1e-9 && this.conversionCondition(pl, d.when)) {
           this.diagDone.add(i);
@@ -967,6 +983,7 @@ export class Simulation {
       const c = pl.controller;
       const every = Math.max(1, Math.round(c.decisionIntervalS / this.physics.dt));
       let decided = false;
+      const wasRiding = !!pl.intent.ride;
       if (this.steps % every === 0) {
         decided = true;
         const observed = this.observed(c.observationDelayS);
@@ -979,13 +996,21 @@ export class Simulation {
           substep,
           dt: this.physics.dt,
           bodies,
+          ...(this.rules?.ending ? { ended: true as const } : {}),
         });
       }
       // After a referee ending: no tackle acceleration, arm requests or posture lean. A supported player may still
       // brake with its finite motor and keep upright support; physics settles passively. Plan 10e E1 (rules revision 2,
       // U9): the player keeps its stance request (ride height and stagger) and its yaw effort, which are how it stands
       // and turns, not tackle actions; the historical profile returns it to the profile's standing height.
-      if (this.rules?.ending) {
+      // contact motion polish 1.2, the ride-down's come-down: a tackler riding the carrier down keeps his ride's requests
+      // (the fold, the sink, the drive toward the carrier) until it converts him, its time bound within the settle; no arms
+      const comeDown = !!this.def.wrap?.ride?.down && pl.controlMode === 'supported' && !pl.rag && (!!pl.intent.ride || (wasRiding && pl.intent.leaveSupport === 'takedown'));
+      if (this.rules?.ending && comeDown) {
+        const { arms: _arms, ...rest } = pl.intent;
+        pl.intent = rest;
+        decided = true;
+      } else if (this.rules?.ending) {
         const f = this.coreBody(pl);
         const was = pl.intent.locomotion;
         const keep = this.rules.profile.revision === 2 ? { ...(was.yawEffort !== undefined ? { yawEffort: was.yawEffort } : {}), ...(was.stance ? { stance: { ...was.stance } } : {}) } : {};
@@ -1137,7 +1162,17 @@ export class Simulation {
       delete pl.hinge;
       return;
     }
-    const h = advanceHinge(pl.hinge, pl.intent.posture?.hinge, this.def.wrap!.strike!.hinge, { ...this.coreBody(pl).rotation() }, pl.balance.desiredUp, this.physics.dt);
+    // polish 1.2, the ride-down's come-down: riding, the ride's own bounds (a hard trunk fold); with the carrier off his
+    // support, his weight forward (the support under his body's own frame)
+    const DN = pl.intent.ride ? this.def.wrap!.ride?.down : undefined;
+    const L = DN ? { ...this.def.wrap!.strike!.hinge, ...DN.hinge } : this.def.wrap!.strike!.hinge;
+    const h = advanceHinge(pl.hinge, pl.intent.posture?.hinge, L, { ...this.coreBody(pl).rotation() }, pl.balance.desiredUp, this.physics.dt);
+    if (h && DN?.weightForward) {
+      const tid = this.def.focus?.[pl.id];
+      const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
+      if (tgt && tgt.controlMode !== 'supported') h.bodyPivot = true;
+      else delete h.bodyPivot;
+    } else if (h) delete h.bodyPivot;
     if (h) pl.hinge = h;
     else delete pl.hinge;
   }
@@ -1313,6 +1348,21 @@ export class Simulation {
     const grips = [...this.arms.grips.values()];
     const holds = (['left', 'right'] as ArmSide[]).filter((s) => this.arms!.clampOf(pl.id, s)?.targetId === tid || grips.some((g) => g.ownerId === pl.id && g.arm === s && g.targetId === tid)).length;
     return holds === 2 || (holds === 1 && (this.contactObs[pl.id] ?? []).some((c) => c.other === tid));
+  }
+
+  /**
+   * Contact motion polish 1.2, the ride-down's come-down (`WrapRideDown`): a riding tackler whose carrier (the focus) is
+   * off his support, with no planted foot (or, without the foot plan, no support), no solved contact with the carrier and
+   * no clamp or grip on him.
+   */
+  private rideUnsupported(pl: PlayerRuntime): boolean {
+    const tid = this.def.focus?.[pl.id];
+    const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
+    if (!tid || !tgt || tgt.controlMode === 'supported') return false;
+    const planted = pl.feet ? (['left', 'right'] as ArmSide[]).some((s) => pl.feet!.feet[s].mode === 'planted') : pl.grounded;
+    if (planted || (this.contactObs[pl.id] ?? []).some((c) => c.other === tid)) return false;
+    const grips = this.arms ? [...this.arms.grips.values()] : [];
+    return !(['left', 'right'] as ArmSide[]).some((s) => this.arms?.clampOf(pl.id, s)?.targetId === tid || grips.some((g) => g.ownerId === pl.id && g.arm === s && g.targetId === tid));
   }
 
   /** Measure actual lean from the solved state and run the loss criterion (supported players only). */

@@ -15,6 +15,8 @@ export interface ControllerContext {
   substep: number;
   dt: number;
   bodies: Record<PlayerId, BodyProfile>;
+  /** Contact motion polish 1.2, the ride-down's come-down: the referee has ended the play (present only then). */
+  ended?: true;
 }
 
 export interface Controller {

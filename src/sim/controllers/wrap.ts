@@ -7,7 +7,7 @@ import type { BodyProfile, FallResponseProfile, MotorProfile, RideHoldProfile } 
 import { FALL_HOLD_V1, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { Controller, ControllerContext } from './base';
-import { add, addScaled, clamp, cross, dot, horiz, len, norm, qRot, scale, sub, v3, UP, type Vec3 } from '../vec';
+import { add, addScaled, clamp, cross, dot, horiz, len, norm, qRot, scale, sub, upOf, v3, UP, type Vec3 } from '../vec';
 import type { HingeLimits } from '../hinge';
 
 export type ArmPlan = 'wrap' | 'palmFlank' | 'none';
@@ -114,6 +114,29 @@ export interface WrapRide {
   hold?: RideHoldProfile;
   /** The carrier counts as his support while his legs lean less than this (deg; beyond it the envelope's verdict stands). */
   leanDeg: number;
+  /** The come-down (absent: exits (g) and (l) and the referee's ending convert him where he is): `WrapRideDown`. */
+  down?: WrapRideDown;
+}
+
+/**
+ * Contact motion polish 1.2, the ride-down's come-down: a riding tackler whose carrier has gone down comes down on him.
+ * Once the carrier is off his support the trunk's request is the full fold (`pitchDeg`, `dropM`) at once, on the ride's
+ * own bounds (`hinge`: a hard trunk fold, not the strike's), and his weight goes forward with it (`weightForward`: the
+ * support acts under his body's own frame, as for any player without the hinge, so the pitch he has tips him on toward
+ * the carrier). The carrier's core on the ground (g), the hold lost with the carrier down (l) and the referee's ending
+ * no longer convert him: they begin the come-down, in which he keeps riding (the fold and sink go on, the drive goes on
+ * toward the carrier's core) until his chest is low or his body has pitched to the full fold (h: past it he is falling,
+ * not folding), he sinks faster than a supported crouch can (s), the envelope
+ * finds him off his support (the hold gone), or `maxS` has passed since it began (t: he never stays posed and upright
+ * over a man on the ground; within the referee's 0.5 s settle). In the come-down he converts too the moment his
+ * support's probe finds no ground (f: his origin over the carrier, or off his feet), and (the simulation) riding with the
+ * carrier off his support, once he has had no planted foot, no contact with the carrier and no hold of him for longer
+ * than the drive's grace (`commit.graceS`: a stride's flight is not a fall): he never falls posed.
+ */
+export interface WrapRideDown {
+  maxS: number;
+  hinge: { rateDegPerS: number; accelDegPerS2: number; dropRateMps: number };
+  weightForward: boolean;
 }
 
 /**
@@ -271,6 +294,8 @@ export interface WrapDebug {
   rideHoldNoBreak?: boolean;
   /** Polish 1.2, the ride hold (simulation): every supported owner counts as riding for it (a hold never secured gets it). */
   rideHoldUnridden?: boolean;
+  /** Polish 1.2, the come-down (simulation): the no-support guard off (no planted foot, contact or hold converts nothing). */
+  noRideLoose?: boolean;
   /**
    * The balance reads the pitched trunk, as with no hinge (simulation, support-runtime): the support pivot and the loss
    * envelope in the body's frame, so the trunk's pitch tips him as whole-body lean would.
@@ -380,7 +405,21 @@ export const WRAP_V7: WrapProfile = {
   ...WRAP_V5,
   id: 'wrap-ride-v7',
   strike: { ...WRAP_V5.strike!, hinge: { ...WRAP_V5.strike!.hinge, maxDeg: 85, maxDropM: 0.2 } },
-  ride: { groundM: 0.5, sinkMps: 1.6, carrierDownM: 0.35, minS: 0.3, maxS: 2.5, pitchDeg: 85, dropM: 0.2, fromLeanDeg: 15, fullLeanDeg: 45, fullDropM: 0.4, leanDeg: 45, hold: { memoryS: 0.2, separationM: 0.15, remapM: 0.05 } },
+  ride: {
+    groundM: 0.5,
+    sinkMps: 1.6,
+    carrierDownM: 0.35,
+    minS: 0.3,
+    maxS: 2.5,
+    pitchDeg: 85,
+    dropM: 0.2,
+    fromLeanDeg: 15,
+    fullLeanDeg: 45,
+    fullDropM: 0.4,
+    leanDeg: 45,
+    hold: { memoryS: 0.2, separationM: 0.15, remapM: 0.05 },
+    down: { maxS: 0.4, hinge: { rateDegPerS: 300, accelDegPerS2: 2500, dropRateMps: 1 }, weightForward: true },
+  },
 };
 
 export interface WrapSpec {
@@ -500,7 +539,7 @@ export class WrapAttemptController implements Controller {
   /** Contact motion polish 1.1 fault switches (set only when given). */
   declare private readonly fault?: WrapDebug;
   /** Contact motion polish 1.2: the drive's start (s; set at the first finish decision under a profile with one). */
-  declare private dv?: { at: number | null; holdT: number; leans: { t: number; deg: number }[]; y0?: number };
+  declare private dv?: { at: number | null; holdT: number; leans: { t: number; deg: number }[]; y0?: number; down?: number };
 
   constructor(
     readonly spec: WrapSpec,
@@ -561,7 +600,7 @@ export class WrapAttemptController implements Controller {
     let effortOut = standing ? P.standEffort : P.effort;
     let stanceOut = this.stanceReq();
     let leave = false;
-    let driveDebug: { s: number; leanDeg: number; exit: string | null; driving: boolean; chestM?: number; follow?: number } | undefined;
+    let driveDebug: { s: number; leanDeg: number; exit: string | null; driving: boolean; chestM?: number; follow?: number; downS?: number } | undefined;
     // polish 1.2, the ride-down: riding (the drive begun under a profile with `ride`), the follow's weight
     let riding = false;
     let follow = 0;
@@ -625,8 +664,12 @@ export class WrapAttemptController implements Controller {
           tk.since ??= ctx.t;
         } else if (tk.since !== null && ctx.t - tk.lastT > C.graceS) tk.since = null;
         // the drive, once begun, lasts while an arm still holds him (its clock with it)
+        const DN = RD?.down;
         if (onTarget > 0) dv.holdT = ctx.t;
-        else if (dv.at !== null && ctx.t - dv.holdT > C.graceS) {
+        else if (DN && dv.at !== null && ctx.t - dv.holdT > C.graceS && tb.controlMode !== 'supported') {
+          // (the come-down: the hold lost with the carrier off his support begins it; he goes on down after him)
+          dv.down ??= ctx.t;
+        } else if (dv.at !== null && ctx.t - dv.holdT > C.graceS) {
           // (the ride-down: the hold lost with the carrier off his support, exit (l): he goes down after him)
           if (RD && tb.controlMode !== 'supported') {
             this.finishMode = 'takedown';
@@ -651,6 +694,16 @@ export class WrapAttemptController implements Controller {
           effortOut = this.fault?.driveLimp ? 0 : 1;
           posture = { leanDirWorld: d, leanRad: 0 };
         }
+        // the come-down begins with the carrier's core on the ground or the referee's ending (or the hold lost, above)
+        if (DN && dv.at !== null && ((carrierDown && R.y <= RD!.carrierDownM) || ctx.ended)) dv.down ??= ctx.t;
+        if (DN && dv.at !== null && dv.down !== undefined) {
+          // the come-down: the drive goes on toward the carrier's core, held or not (his weight is committed to him)
+          this.finishMode = 'down';
+          const d = norm(horiz(sub(R, me.position)), this.lastFacing);
+          vel = addScaled(vR, d, this.fault?.driveLimp ? 0 : DV.extraMps);
+          effortOut = this.fault?.driveLimp ? 0 : 1;
+          posture = { leanDirWorld: d, leanRad: 0 };
+        }
         if (dv.at !== null) {
           // the exits: (a) the carrier is down, (b) going over, with an arm still holding him; (d) a stall, while the hold
           // drives; (c), his own loss, is the simulation's
@@ -668,10 +721,18 @@ export class WrapAttemptController implements Controller {
             const chestM = lowestY(ctx.bodies[ctx.self], me.position, me.rotation);
             const guard = !this.fault?.noRideGuard;
             const coreDown = goes && carrierDown && R.y <= RD.carrierDownM && s >= RD.minS - 1e-9;
-            exit = guard && chestM <= RD.groundM ? 'h' : guard && -me.linearVelocity.y >= RD.sinkMps ? 's' : coreDown ? 'g' : held && !this.fault?.noStall && ((s >= DV.stallS - 1e-9 && !going) || s >= RD.maxS - 1e-9) ? 'd' : null;
-            follow = clamp(Math.max((leanDeg - RD.fromLeanDeg) / (RD.fullLeanDeg - RD.fromLeanDeg), ((dv.y0 ?? R.y) - R.y) / RD.fullDropM), 0, 1);
+            // (the come-down: (g) begins it, (d) gives way to its own bound (t))
+            // (and with the come-down, (f) his support gone: the suspension's probe finds no ground under him, he is on the
+            // carrier or off his feet; a posed body without it would fall stiff)
+            // (with the come-down, (h) too once his body has pitched to the full fold: past it he is falling, not folding)
+            const folded = !!DN && (Math.acos(clamp(upOf(me.rotation).y, -1, 1)) * 180) / Math.PI >= RD.pitchDeg - 1e-9;
+            const lowOrFast = guard && (chestM <= RD.groundM || folded) ? 'h' : guard && -me.linearVelocity.y >= RD.sinkMps ? 's' : guard && DN && dv.down !== undefined && !me.grounded ? 'f' : null;
+            exit = lowOrFast ?? (DN && dv.down !== undefined ? (ctx.t - dv.down >= DN.maxS - 1e-9 ? 't' : null) : DN ? null : coreDown ? 'g' : null);
+            if (!exit && dv.down === undefined) exit = held && !this.fault?.noStall && ((s >= DV.stallS - 1e-9 && !going) || s >= RD.maxS - 1e-9) ? 'd' : null;
+            // (the come-down's request: the full fold once the carrier is off his support)
+            follow = DN && carrierDown ? 1 : clamp(Math.max((leanDeg - RD.fromLeanDeg) / (RD.fullLeanDeg - RD.fromLeanDeg), ((dv.y0 ?? R.y) - R.y) / RD.fullDropM), 0, 1);
             riding = !exit;
-            driveDebug = { s, leanDeg, exit, driving: this.finishMode === 'drive+', chestM, follow };
+            driveDebug = { s, leanDeg, exit, driving: this.finishMode === 'drive+', chestM, follow, ...(dv.down !== undefined ? { downS: ctx.t - dv.down } : {}) };
           } else {
             exit = goes && carrierDown ? 'a' : goes && leanDeg >= DV.goLeanDeg ? 'b' : held && !this.fault?.noStall && ((s >= DV.stallS - 1e-9 && !going) || s >= DV.maxS - 1e-9) ? 'd' : null;
             driveDebug = { s, leanDeg, exit, driving: this.finishMode === 'drive+' };
