@@ -33,8 +33,9 @@
 //                      and HC (ladder 18e): `armstay=off&armswing=off` is the view before. A fixture without
 //                      self-clearance is run as it is;
 //   brace=on|off       the ball carrier bracing for a hit he sees coming (CARRIER_BRACE_V1, contact motion M2: knees
-//                      bent, hips down, chest forward, ball high and tight under the free hand), or not. A fixture without
-//                      locomotion composition (L3, L4, HC) or without a ball carrier is run as it is.
+//                      bent, hips down, chest forward, ball high and tight under the free hand), or not. Registered on
+//                      the L3, L4 and HC carriers: `brace=off` is the view before. A fixture without locomotion
+//                      composition (L3, L4, HC) or without a ball carrier is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.

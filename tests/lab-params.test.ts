@@ -445,13 +445,16 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(reg, new URLSearchParams('bornsep=maybe'))).toEqual({ def: reg, opts: {}, label: 'bornsep=maybe ignored' });
   }, 120000);
 
-  // contact motion M2: brace=on|off sets the fixture's carrier brace profile (used by no fixture yet)
-  it('brace=on runs the fixture with the carrier\'s brace (CARRIER_BRACE_V1: L3-F3-collision, another run); brace=off takes it off again and on a fixture without it is that run; a fixture without a composed ball carrier and unknown values change nothing', async () => {
+  // contact motion M2: brace=on|off sets the fixture's carrier brace profile (registered on the L3, L4 and HC carriers:
+  // brace=off is the view before the flip)
+  it('brace=on runs the fixture with the carrier\'s brace (CARRIER_BRACE_V1: L3-F3-collision, another run, the registered one); brace=off takes it off again (the view before the flip) and on a fixture without it is that run; a fixture without a composed ball carrier and unknown values change nothing', async () => {
     const id = 'L3-F3-collision';
-    const d = FIX(id);
+    const d = preBrace(FIX(id));
     expect(d.brace).toBeUndefined();
     const on = labRun(d, new URLSearchParams(`fixture=${id}&brace=on`));
     expect(on).toEqual({ def: { ...d, brace: CARRIER_BRACE_V1 }, opts: {}, label: 'carrier brace on' });
+    expect(on.def).toEqual(FIX(id));
+    expect(labRun(FIX(id), new URLSearchParams('brace=off'))).toEqual({ def: d, opts: {}, label: 'carrier brace off' });
     // the twin: the brace changes the run (the carrier's right palm, the ball's, at 0.45 s: braced, before contact)
     const palmAt = async (def: FixtureDef): Promise<string> => {
       const s = await create(def, {});

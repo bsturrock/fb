@@ -1,4 +1,5 @@
-// Contact motion M2: the ball carrier's brace (src/sim/brace.ts, `FixtureDef.brace`, used by no fixture yet).
+// Contact motion M2: the ball carrier's brace (src/sim/brace.ts, `FixtureDef.brace`, registered on the L3, L4 and HC
+// carriers; `preBrace` gives a fixture as before it).
 // The decision: constructed cases on it alone, bodies at constant velocity on the flat, the carrier facing his travel,
 // one decision substep at the gate 4 substep (1/240 s), "touching" when the torsos meet (both half widths, no margin).
 // The pose: the carrier of a fixture run up to its first contact, with the profile and without it. Each case has its
@@ -83,9 +84,15 @@ const FRONT: Mover = { id: 'D', p: v3(0, 1, 5), v: v3(0, 0, -4) };
 const OBLIQUE: Mover = { id: 'D', p: v3(6.5 * Math.sin(0.698), 1, 6.5 * Math.cos(0.698)), v: v3(-8 * Math.sin(0.698), 0, 3 - 8 * Math.cos(0.698)) };
 
 describe('contact motion M2: the carrier sees a hit coming and braces', () => {
-  it('the profile: carrier-brace-v1, used by no fixture yet', () => {
+  it('the profile: carrier-brace-v1, registered on every L3, L4 and HC fixture with a composed ball carrier, on no G, L1, L2 or RH fixture', () => {
     expect(CARRIER_BRACE_V1).toMatchObject({ id: 'carrier-brace-v1', acquireS: 0.45, holdS: 0.65, fovHalfDeg: 70 });
-    for (const d of allFixtures()) expect(d.brace, d.id).toBeUndefined();
+    let on = 0;
+    for (const d of allFixtures()) {
+      const carrier = /^(L3|L4|HC)-/.test(d.id) && !!d.locomotion && d.players.some((p) => p.role === 'runner');
+      if (carrier) on++;
+      expect(d.brace, d.id).toBe(carrier ? CARRIER_BRACE_V1 : undefined);
+    }
+    expect(on).toBeGreaterThan(100);
   });
 
   it('a front or oblique approach he sees is braced for before contact, ramped (the twin without anticipation braces only at contact)', async () => {
