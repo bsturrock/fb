@@ -73,6 +73,42 @@ export function limbInBody(): {
 }
 
 /**
+ * Ladder 18: whether a born pair (own `segment:region`, other `player:key`, tests the pair records of `Ragdoll.born`) is
+ * a limb and another player's trunk or head, either way round (a proxy's torso, pelvis and head are its trunk and head; a
+ * limb in a limb, or a trunk in a trunk, is not).
+ */
+export function limbAndTrunk(ownKey: string, otherKey: string): boolean {
+  const trunk = (k: string): boolean => /^(core|head|torso|pelvis)$/.test(k.split(':')[0]);
+  return trunk(ownKey) !== trunk(otherKey.split(':').slice(1).join(':'));
+}
+
+/**
+ * Ladder 18 (the visible bar for a ragdoll converted inside another player): after each solve (`substep`, from
+ * `onSubstep`), every born pair a ragdoll holds out of the solve that is a limb in another player's trunk or head
+ * (`limbAndTrunk`), by its depth, into its player's `limbInBody` rule (over 5 cm for 0.10 s, or over 10 cm at all, is a
+ * pass-through a viewer sees). `of` is a player's tracker (one is made for every player the first time it is sampled).
+ */
+export function heldBornBar(): { substep: (sim: Simulation) => void; of: (pid: string) => ReturnType<typeof limbInBody> | undefined } {
+  const by = new Map<string, ReturnType<typeof limbInBody>>();
+  return {
+    substep(sim) {
+      const w = sim.physics.world;
+      for (const pl of sim.players) {
+        if (!by.has(pl.id)) by.set(pl.id, limbInBody());
+        for (const bp of pl.rag?.born ?? []) {
+          if (!limbAndTrunk(bp.ownKey, bp.otherKey)) continue;
+          const a = w.getCollider(bp.own);
+          const b = w.getCollider(bp.other);
+          const c = a && b ? a.contactCollider(b, 0) : null;
+          by.get(pl.id)!.sample(`${bp.ownKey}~${bp.otherKey}`, sim.t, sim.physics.dt, c ? Math.max(0, -c.distance) : 0, false, `${pl.id} ${bp.ownKey} in ${bp.otherKey} at ${sim.t.toFixed(4)} s`);
+        }
+      }
+    },
+    of: (pid) => by.get(pid),
+  };
+}
+
+/**
  * A joint past its range: blocks when a joint is more than JOINT_PAST_DEG past it for JOINT_PAST_S on end. `sample`
  * takes each joint key's excess (deg past the range, negative inside) with the sample's duration; `worst` is the
  * largest excess (the printed meter).

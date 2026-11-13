@@ -29,7 +29,7 @@ import { buildProxyPose, carriedBall, hingeChain, proceduralLocal, type Physical
 import { shoulderLocal, sideSignX, type BodyProfile } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, dot, len, lerp, norm, qFromAxisAngle, qIdentity, qInvRot, qMul, qRot, sub, toLocal, toWorld, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { breathe, create, FIX, pace, rows, runSim } from './helpers';
+import { breathe, create, FIX, metArmStayed, pace, preMetArmStay, rows, runSim } from './helpers';
 
 const tv = (p: Vec3): THREE.Vector3 => new THREE.Vector3(p.x, p.y, p.z);
 const close = (a: THREE.Vector3, b: Vec3, tol = 1e-4): void => expect(a.distanceTo(tv(b))).toBeLessThan(tol);
@@ -338,9 +338,11 @@ describe('plan 08a composition and continuity', () => {
     expect(Math.min(...tilt)).toBeLessThan(0.9 * CARRY_L3.fwd.tilt);
   }, 60000);
 
-  it('a blocked arm carries the ball where the arm went, not at the request (plan 10d D1 b)', async () => {
-    const def = FIX('L3-F7-phase0');
-    const { sim, rows } = await followed('L3-F7-phase0');
+  // Ladder 18: under the met-arm flip (`metArmStay`, ladder 16b) the carry arm the tackler meets keeps its tuck (below),
+  // so this case (the arm sent away from its request, the ball with it) is the arm before that flip
+  it('a blocked arm carries the ball where the arm went, not at the request (plan 10d D1 b; the arm before the met-arm flip)', async () => {
+    const def = preMetArmStay(FIX('L3-F7-phase0'));
+    const { sim, rows } = def === FIX('L3-F7-phase0') ? await followed('L3-F7-phase0') : await follow(def);
     const R = carrier(sim);
     const L = def.ragdoll!.lengths;
     const C = CARRY_L3;
@@ -379,6 +381,38 @@ describe('plan 08a composition and continuity', () => {
     }
     expect(n).toBeGreaterThan(5);
     expect(worstFit).toBeLessThan(1e-6);
+    if (def !== FIX('L3-F7-phase0')) sim.dispose();
+  }, 60000);
+
+  it('ladder 18, the met-arm flip: the carry arm the tackler meets keeps its tuck, never more than 5 cm off its request, the ball seated on the achieved forearm; the arm before the flip (the twin) is sent away from it, the ball with it', async () => {
+    // Before the flip (plan 10d D1 b, above) an arm another body blocks was sent to an alternative, up to 57 cm from its
+    // request on L3-F7-phase0, and the ball went with it. The approved design (ladder 16b) keeps a met arm's natural pose,
+    // pressing a little into the other body: the request is shown, and the ball where the request seats it.
+    const id = 'L3-F7-phase0';
+    const residuals = (rows: Row[]): number[] => rows.filter((r) => !r.rag).map((r) => r.pose.targetResidualM?.rightArm ?? 0);
+    const stay = await follow(metArmStayed(FIX(id)));
+    const pre = preMetArmStay(FIX(id));
+    const before = pre === FIX(id) ? await followed(id) : await follow(pre);
+    const [a, b] = [residuals(stay.rows), residuals(before.rows)];
+    console.log(`ladder 18 met carry arm (L3-F7-phase0): worst residual ${(Math.max(...a) * 100).toFixed(2)} cm, ${a.filter((x) => x > 0.01).length} substeps over 1 cm; before the flip ${(Math.max(...b) * 100).toFixed(2)} cm, ${b.filter((x) => x > 0.05).length} over 5 cm`);
+    expect(a.length).toBeGreaterThan(500);
+    expect(Math.max(...a)).toBeLessThanOrEqual(0.05);
+    // the twin: the arm sent away
+    expect(b.filter((x) => x > 0.05).length).toBeGreaterThan(5);
+    // where the arm does press short of its request, the ball still sits on the achieved forearm (D4)
+    let worstFit = 0;
+    for (const r of stay.rows) {
+      if (r.rag || (r.pose.targetResidualM?.rightArm ?? 0) <= 0) continue;
+      const lm = r.pose.jointLandmarksWorld;
+      const u = norm(sub(lm.rightWrist, lm.rightElbow));
+      const rel = sub(r.ball.p, lm.rightElbow);
+      const along = dot(rel, u);
+      const out = sub(rel, addScaled(v3(), u, along));
+      worstFit = Math.max(worstFit, Math.abs(along - r.seat.alongM), Math.abs(len(out) - r.seat.outM));
+    }
+    expect(worstFit).toBeLessThan(1e-6);
+    stay.sim.dispose();
+    if (pre !== FIX(id)) before.sim.dispose();
   }, 60000);
 
   it('ready hands: the left arm takes the ready assignment, the ball arm keeps the carry', async () => {

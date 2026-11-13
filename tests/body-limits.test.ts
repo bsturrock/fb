@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preFlip, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preFlip, preMetArmStay, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -540,15 +540,21 @@ describe('plan 12 joint range: shoulders', () => {
     // which HC-F3-phase50's twin is 63.2 deg behind (profile 50.7: margin 12.5); HC-F3-phase0 loads it again (twin 62.7,
     // profile 37.8). Ladder rung 7d: HC-F3-lowRunner pinned to LEG_GUARD_V1 (under the physical legs its profile arm is
     // 49.99 deg behind against the twin's 64.2, inside the margin)
+    // Ladder 18: the comparison with the twin runs on the definition before the met-arm flip (`preMetArmStay`), whose
+    // supported arms load the runner's arm behind at the conversion: under the flip a met arm keeps its natural pose and
+    // HC-F3-phase0's twin arm goes only 23.6 deg behind (the case no longer loads it); the registered run keeps the bar
     const said: string[] = [];
     for (const id of ['HC-F3-phase0', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
       const d = id === 'HC-F3-lowRunner' ? pinV1(FIX(id)) : FIX(id);
+      const pre = preMetArmStay(d);
       const on = await probe(d);
-      const off = await probe(twin(d));
+      const onPre = pre === d ? on : await probe(pre);
+      const off = await probe(twin(pre));
       expect(off.worst.ragdoll.behind, id).toBeGreaterThan(45);
       // plan 14: margin 15 (was 20): the profile's supported back swing now eases to 42 deg behind (the clip arm in the
       // ground frame), and L3-F1-low's runner ragdoll arm is 47.3 deg behind against its twin's 63.1
-      expect(on.worst.ragdoll.behind, id).toBeLessThan(off.worst.ragdoll.behind - 15);
+      expect(onPre.worst.ragdoll.behind, id).toBeLessThan(off.worst.ragdoll.behind - 15);
+      if (pre !== d) expect(onPre.ragPast.breaches(), `${id} before the met-arm flip`).toEqual([]);
       // ladder 15: never more than 15 deg past the cone for 0.25 s (jointPastRange; it was past the 5 deg tolerance for
       // less than the envelope's persistence limit, and never 15 deg past); both are printed
       said.push(`${id} ${on.worst.ragdoll.ex.toFixed(1)} deg past (${on.worst.ragdoll.at}), ${on.ragOverRunS.toFixed(3)} s past ${ENVELOPE_L4.toleranceDeg} deg`);
@@ -1145,7 +1151,10 @@ describe('contact motion M1: upper-arm twist', () => {
       expect(on.pose.over, `${id} ${on.pose.at}`).toBeLessThanOrEqual(-2 + 0.5);
       // the cone applied again after the turn adds a little
       expect(on.pose.jump, `${id} ${on.pose.jat}`).toBeLessThanOrEqual(tick + 1);
-      const off = await twistRun(v1(FIX(id)));
+      // ladder 18: the twin is the arm before the met-arm flip (`preMetArmStay`), which the met contact sends to a raised or
+      // forward alternative the pole rolls past the range; under the flip a met arm keeps its natural pose, which the
+      // range holds without the fit (L3-F4-twoArm's and L4-F9-contact's twins no longer roll past)
+      const off = await twistRun(v1(preMetArmStay(FIX(id))));
       expect(Math.max(off.pose.over, off.pose.jump - tick - 1), `${id} twin ${off.pose.at} ${off.pose.jat}`).toBeGreaterThan(5);
     });
   }, 240000);

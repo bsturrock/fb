@@ -20,7 +20,8 @@ import { stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { POSE_GUARD_C6, withoutBornOverlap } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { breathe, create, FIX, pace, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
+import { breathe, create, FIX, metArmStayed, pace, preBornSeparation, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
+import { heldBornBar, limbAndTrunk, limbInBody, LIMB_DEEP_M, LIMB_HELD_M, LIMB_HELD_S } from './visible-bar';
 
 const HC = (): FixtureDef[] => allFixtures().filter((d) => d.id.startsWith('HC-'));
 /** Unchanged boundary tolerances (RagdollProfile validation): landmark 0.01 m, new external penetration 0.015 m. */
@@ -28,10 +29,14 @@ const LANDMARK_TOL = 0.01;
 const PEN_TOL = 0.015;
 
 /**
- * Ladder 15 (CLAUDE.md rule 6): a conversion the simulation accepted blocks a step only with a limb more than TORSO_M
- * through a torso (a limb segment in a core, either way round); the candidate's anchor, landmark, new external and floor
- * depths against the boundary tolerances (5 mm, 1 cm, 1.5 cm, 1.5 cm) are printed per family (afterAll). The frozen
- * families (G, L1, L2, RH) keep those assertions: their runs never change.
+ * Ladder 15 (CLAUDE.md rule 6): a conversion the simulation accepted blocks a step only with a visible pass-through; the
+ * candidate's anchor, landmark, new external and floor depths against the boundary tolerances (5 mm, 1 cm, 1.5 cm,
+ * 1.5 cm) are printed per family (afterAll). The frozen families (G, L1, L2, RH) keep those assertions: their runs never
+ * change. Ladder 18: the pass-through is the visible bar after the conversion (`heldBornBar`: a limb in another player's
+ * trunk or head over 5 cm for 0.10 s, or over 10 cm at all, while their pair is held out of the solve), not the
+ * candidate's depth when born (ladder 15's rule, a limb more than TORSO_M in a core: since ladder 17 such a limb is born
+ * held out of the solve, and since 18c pushed out, HC-F1-at1.6's upper arm from 7.3 cm born in about 0.05 s). TORSO_M
+ * stays the bound of the first solved steps' contacts (a pair in the solve).
  */
 const TORSO_M = 0.05;
 const FROZEN = /^(G|L1|L2|RH)-/;
@@ -42,17 +47,15 @@ const limbAndTorso = (own: string, other: string): boolean => {
   const b = other.split(':')[1] ?? '';
   return (isLimb(a) && b === 'core') || (a === 'core' && isLimb(b));
 };
-/** The visible-bar breach of an accepted candidate's worst new external penetration, or null. */
-function torsoBreach(w: { newDepthM: number; own: string; other: string } | null, tag: string): string | null {
-  return w && limbAndTorso(w.own, w.other) && w.newDepthM > TORSO_M ? `${tag}: ${w.own} ${(w.newDepthM * 100).toFixed(2)} cm in ${w.other} (over ${TORSO_M * 100} cm)` : null;
-}
+/** Ladder 18: each player's held-born-pair tracker of its `hcRun` (`heldBornBar`), for `expectAudited`. */
+const BORN_BAR = new WeakMap<PlayerRuntime, () => ReturnType<typeof limbInBody> | undefined>();
 /** The fine measures of every accepted handoff, by family (printed). */
-const FINE = new Map<string, { n: number; anchor: number; landmark: number; pen: number; floor: number }>();
+const FINE = new Map<string, { n: number; anchor: number; landmark: number; pen: number; floor: number; held: number; heldAt: string }>();
 afterAll(() => {
   if (FINE.size)
     console.log(
-      `accepted handoffs (ladder 15 meter; tolerances anchor 5 mm, landmark ${LANDMARK_TOL * 100} cm, new external and floor ${PEN_TOL * 100} cm): ${[...FINE]
-        .map(([f, m]) => `${f} ${m.n}: anchor ${(m.anchor * 1000).toFixed(2)} mm, landmark ${(m.landmark * 100).toFixed(2)} cm, new external ${(m.pen * 100).toFixed(2)} cm, floor ${(m.floor * 100).toFixed(2)} cm`)
+      `accepted handoffs (ladder 15 meter; tolerances anchor 5 mm, landmark ${LANDMARK_TOL * 100} cm, new external and floor ${PEN_TOL * 100} cm; ladder 18, a held limb in a trunk or head after a solve): ${[...FINE]
+        .map(([f, m]) => `${f} ${m.n}: anchor ${(m.anchor * 1000).toFixed(2)} mm, landmark ${(m.landmark * 100).toFixed(2)} cm, new external ${(m.pen * 100).toFixed(2)} cm, floor ${(m.floor * 100).toFixed(2)} cm, held ${(m.held * 100).toFixed(2)} cm${m.heldAt ? ` (${m.heldAt})` : ''}`)
         .join('; ')}`,
     );
 });
@@ -74,9 +77,13 @@ function expectAudited(pl: PlayerRuntime, fx: string): void {
     expect(r.floorPenetrationM, tag).toBeLessThanOrEqual(PEN_TOL);
   } else {
     const fam = fx.split('-')[0];
-    const m = FINE.get(fam) ?? { n: 0, anchor: 0, landmark: 0, pen: 0, floor: 0 };
-    FINE.set(fam, { n: m.n + 1, anchor: Math.max(m.anchor, r.maxAnchorErrM), landmark: Math.max(m.landmark, r.maxLandmarkErrM), pen: Math.max(m.pen, r.maxNewExternalPenetrationM), floor: Math.max(m.floor, r.floorPenetrationM) });
-    expect(torsoBreach(r.worstExternal, tag)).toBeNull();
+    const bar = BORN_BAR.get(pl)?.();
+    expect(bar, `${tag}: a run of hcRun`).toBeTruthy();
+    const deep = bar!.deepest();
+    const m = FINE.get(fam) ?? { n: 0, anchor: 0, landmark: 0, pen: 0, floor: 0, held: 0, heldAt: '' };
+    const [held, heldAt] = deep.d > m.held ? [deep.d, deep.at] : [m.held, m.heldAt];
+    FINE.set(fam, { n: m.n + 1, anchor: Math.max(m.anchor, r.maxAnchorErrM), landmark: Math.max(m.landmark, r.maxLandmarkErrM), pen: Math.max(m.pen, r.maxNewExternalPenetrationM), floor: Math.max(m.floor, r.floorPenetrationM), held, heldAt });
+    expect(bar!.breaches(), tag).toEqual([]);
   }
   for (const [k, deg] of Object.entries(r.hingeDeg)) expect(Number.isFinite(deg), `${tag} ${k}`).toBe(true);
   const a = h.audit!;
@@ -226,7 +233,9 @@ function hcRun(def: FixtureDef, reverseOrder = false): Promise<HcRun> {
     return hit.run;
   }
   const p = (async (): Promise<HcRun> => {
-    const sim = await create(def, reverseOrder ? { reverseOrder } : {});
+    const bar = heldBornBar();
+    const sim = await create(def, { ...(reverseOrder ? { reverseOrder } : {}), onSubstep: bar.substep });
+    for (const pl of sim.players) BORN_BAR.set(pl, () => bar.of(pl.id));
     const base = sim.counts();
     const n = reverseOrder ? undefined : POST_N[def.id];
     const post = n === undefined ? null : postSwitch(sim, def, n);
@@ -327,20 +336,47 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
     console.log(`first solved steps after acceptance (ladder 15 meter): ${said.join('; ')}`);
   });
 
-  it('ladder 15, constructed: a limb more than 5 cm through a torso fails the accepted-conversion rule, either way round; 4.9 cm, a limb in a limb or the head in a torso does not', () => {
-    // the rule's fault twin on records the test makes (the rule reads the candidate's worst new external penetration)
-    const at = (own: string, other: string, newDepthM: number) => torsoBreach({ own, other, newDepthM }, 'T');
-    expect(at('leftForearm:capsule', 'R:core:torso', TORSO_M + 0.001)).toBe('T: leftForearm:capsule 5.10 cm in R:core:torso (over 5 cm)');
-    expect(at('core:pelvis', 'D:rightThigh:thigh', TORSO_M + 0.001)).not.toBeNull();
-    expect(at('leftForearm:capsule', 'R:core:torso', TORSO_M - 0.001)).toBeNull();
-    expect(at('leftThigh:thigh', 'R:rightShin:shin', 0.2)).toBeNull();
-    expect(at('head:head', 'R:core:torso', 0.2)).toBeNull();
-    expect(torsoBreach(null, 'T')).toBeNull();
+  it('ladder 18, constructed: a held limb over 5 cm in another player\'s trunk or head for 0.10 s after the conversion, or over 10 cm at all, fails the accepted-conversion rule, either way round; 0.095 s, 4.9 cm, a limb in a limb or a trunk in a trunk does not', () => {
+    // the rule's fault twin on samples the test makes (the rule reads each held pair's depth after each solve)
+    const dt = 1 / 240;
+    const fed = (depthM: number, s: number): string[] => {
+      const b = limbInBody();
+      for (let t = 0; t < s - 1e-9; t += dt) b.sample('k', t, dt, depthM, false, `t ${t.toFixed(4)}`);
+      return b.breaches();
+    };
+    expect(fed(LIMB_HELD_M + 0.001, LIMB_HELD_S + dt)).toHaveLength(1);
+    expect(fed(LIMB_HELD_M + 0.001, LIMB_HELD_S - 2 * dt)).toEqual([]);
+    expect(fed(LIMB_HELD_M - 0.001, 1)).toEqual([]);
+    expect(fed(LIMB_DEEP_M + 0.001, dt)).toHaveLength(1);
+    expect(limbAndTrunk('leftForearm:forearm', 'D:core:torso')).toBe(true);
+    expect(limbAndTrunk('leftUpperArm:upperArm', 'D:torso')).toBe(true);
+    expect(limbAndTrunk('rightForearm:forearm', 'B:head')).toBe(true);
+    expect(limbAndTrunk('core:torso', 'D:rightThigh:thigh')).toBe(true);
+    expect(limbAndTrunk('leftThigh:thigh', 'R:rightShin:shin')).toBe(false);
+    expect(limbAndTrunk('core:torso', 'D:core:torso')).toBe(false);
     // and the contact form the first solved steps read (part against part)
     expect(limbAndTorso('rightUpperArm', ':core')).toBe(true);
     expect(limbAndTorso('core', ':leftShin')).toBe(true);
     expect(limbAndTorso('core', ':core')).toBe(false);
   });
+
+  it('ladder 18, the rule\'s twin on a run: HC-F1-at1.6 reversed under the met-arm flip, R converted with his left upper arm 8 cm in D\'s torso; left to part (V1, the born pairs held, not pushed) the arm stays over 5 cm in D for over 0.4 s and fails the rule; pushed apart (V2, the registered born overlap) it passes', async () => {
+    const said: string[] = [];
+    for (const [def, fails] of [[metArmStayed(preBornSeparation(FIX('HC-F1-at1.6'))), true], [metArmStayed(FIX('HC-F1-at1.6')), false]] as const) {
+      const bar = heldBornBar();
+      const sim = await runSim(await create(def, { reverseOrder: true, onSubstep: bar.substep }));
+      const R = sim.players.find((p) => p.id === 'R')!;
+      const tag = `${def.ragdoll!.bornOverlap!.id}`;
+      expect(R.handoff!.outcome, tag).toBe('accepted');
+      expect(R.handoff!.report.worstExternal!.newDepthM, tag).toBeGreaterThan(0.07);
+      const br = bar.of('R')!.breaches();
+      said.push(`${tag}: deepest ${(bar.of('R')!.deepest().d * 100).toFixed(2)} cm, ${br.length ? br.join('; ') : 'no breach'}`);
+      if (fails) expect(br.some((b) => /for 0\.(4|5|6|7)\d+ s/.test(b)), `${tag} ${br.join('; ')}`).toBe(true);
+      else expect(br, tag).toEqual([]);
+      sim.dispose();
+    }
+    console.log(`ladder 18 held born pair, HC-F1-at1.6 reversed under the met-arm flip: ${said.join(' | ')}`);
+  }, 120000);
 
   it('HC-F2-bothFall: the post-switch window ends where A first touches B again, its right arm closing on B\'s head', async () => {
     // plan 13e (user ruling): A's switch is clean until its first new contact with B (checked above). Plan 13f: at +19

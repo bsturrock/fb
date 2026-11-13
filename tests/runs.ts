@@ -8,7 +8,7 @@ import { withoutHoldStill } from '../src/sim/footwork';
 import { RAPIER } from '../src/sim/physics';
 import {
   HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
-  withoutBornOverlap, withoutBornSeparation, withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
+  withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
@@ -57,6 +57,14 @@ export const preBornOverlap = (d: FixtureDef): FixtureDef => (d.ragdoll?.bornOve
  * `pre*` helpers (`preBornOverlap` takes either off).
  */
 export const preBornSeparation = (d: FixtureDef): FixtureDef => (d.ragdoll?.bornOverlap?.separation ? { ...d, ragdoll: withoutBornSeparation(d.ragdoll) } : d);
+/**
+ * Ladder 18 (the met-arm flip, 16b's `metArmStay` with 14b's `clipArmSwing`): `d` as before it, its self-clearance
+ * without either (the same definition on a fixture without them): what a case that loads the arm the flip keeps, and
+ * every state capture and natural sample taken before it, ran under. Composes with the other `pre*` helpers.
+ */
+export const preMetArmStay = (d: FixtureDef): FixtureDef => (d.selfClearance?.metArmStay ? { ...d, selfClearance: withoutClipArmSwing(withoutMetArmStay(d.selfClearance)) } : d);
+/** Ladder 18: `d` with the met-arm flip's self-clearance (`metArmStay` and `clipArmSwing`; as it is when it has them). */
+export const metArmStayed = (d: FixtureDef): FixtureDef => (d.selfClearance ? { ...d, selfClearance: withMetArmStay(withClipArmSwing(d.selfClearance)) } : d);
 /** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */
 export const hipStops8i = (r: RagdollProfile): HipStopProfile => (r.envelope?.hip ? HIP_STOPS_L4_V1 : HIP_STOPS_V2);
 /**
