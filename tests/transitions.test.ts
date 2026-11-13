@@ -23,7 +23,7 @@ import { lockedOutOfLocomotion, onModel } from '../src/sim/fixtures/with-locomot
 import { FOOTWORK_L3, withHoldStill } from '../src/sim/footwork';
 import { chestArm } from '../src/sim/run-clip';
 import { idleIntake } from '../scripts/model/idle-intake';
-import { pace, rows, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
+import { pace, preBraceV2, rows, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
 import { RULES_FOOTBALL, shoulderLocal, sideSignX, withSolvedImpulses } from '../src/sim/profiles';
 import { FIX } from './transitions-shared';
 
@@ -451,8 +451,9 @@ describe('plan 08 walking ramp between controller decisions', () => {
         'a referee ending stops the request at once between decisions',
         async () => {
           // L3-F1-phase0 is called down at 1.11 s: deciding every 0.05 s from just before it, the substep after the call no supported
-          // player has a request left from the last decision
-          const sim = await Simulation.create(FIX('L3-F1-phase0'));
+          // player has a request left from the last decision. Contact motion M2 follow-up: taken before CARRIER_BRACE_V2
+          // (`preBraceV2`); with the braced carrier leaning in time both players are down by the call
+          const sim = await Simulation.create(preBraceV2(FIX('L3-F1-phase0')));
           await stepWhile(sim, () => sim.t < 1.05 - 1e-9);
           for (const pl of sim.players) (pl.controller as { decisionIntervalS: number }).decisionIntervalS = DECIDE_S;
           await stepWhile(sim, () => !sim.rules?.ending);

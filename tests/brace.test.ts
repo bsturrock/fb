@@ -84,13 +84,14 @@ const FRONT: Mover = { id: 'D', p: v3(0, 1, 5), v: v3(0, 0, -4) };
 const OBLIQUE: Mover = { id: 'D', p: v3(6.5 * Math.sin(0.698), 1, 6.5 * Math.cos(0.698)), v: v3(-8 * Math.sin(0.698), 0, 3 - 8 * Math.cos(0.698)) };
 
 describe('contact motion M2: the carrier sees a hit coming and braces', () => {
-  it('the profile: carrier-brace-v1, registered on every L3, L4 and HC fixture with a composed ball carrier, on no G, L1, L2 or RH fixture', () => {
+  it('the profile: carrier-brace-v1 (v2 registered), on every L3, L4 and HC fixture with a composed ball carrier, on no G, L1, L2 or RH fixture', () => {
     expect(CARRIER_BRACE_V1).toMatchObject({ id: 'carrier-brace-v1', acquireS: 0.45, holdS: 0.65, fovHalfDeg: 70 });
     let on = 0;
     for (const d of allFixtures()) {
       const carrier = /^(L3|L4|HC)-/.test(d.id) && !!d.locomotion && d.players.some((p) => p.role === 'runner');
       if (carrier) on++;
-      expect(d.brace, d.id).toBe(carrier ? CARRIER_BRACE_V1 : undefined);
+      // (since the M2 follow-up's lean flip: V2)
+      expect(d.brace, d.id).toBe(carrier ? CARRIER_BRACE_V2 : undefined);
     }
     expect(on).toBeGreaterThan(100);
   });

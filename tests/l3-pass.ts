@@ -373,21 +373,27 @@ export const NOT_TWICE = check({
   }),
 });
 
+/** The landings LANDINGS saw, by whose: the coverage floor is by kind (ladder 14a), a carrier's and a defender's. */
+export const LANDING_SEEN = { carrier: 0, defender: 0 };
+/** The kinds of landing a record has none of. */
+export const unseenLandings = (s: typeof LANDING_SEEN): string[] => [...(s.carrier > 0 ? [] : ['carrier']), ...(s.defender > 0 ? [] : ['defender'])];
+
 export const LANDINGS = check({
   name: 'a landing compared with the old step path as it is',
   // L3-F3-side: before 10b, R's step at 0.32 s ran out of time at the speed cap and its old path stood still 5 cm past
   // the plant the substep after (the stop the stepStopM reference carried on); across L3 that correction carried 14
-  // boundaries over 1 cm, up to 6.9 cm. Now every step-to-plant landing passes with nothing set aside. Each fixture lands
-  // at least once (contact motion M2: under the carrier's brace L3-F3-sideMirror's D no longer steps to a plant before the
-  // end, R lands once; 19 landings over the four)
+  // boundaries over 1 cm, up to 6.9 cm. Now every step-to-plant landing passes with nothing set aside. The coverage floor
+  // is by kind (ladder 14a), over the four: a carrier's landing and a defender's are checked (LANDING_SEEN). It was more
+  // than one landing in each fixture; under the carrier's brace L3-F3-sideMirror's D no longer steps to a plant before the
+  // end, and with the brace leaning in time (CARRIER_BRACE_V2) neither L3-F3 run lands before both players are down
   fixtures: ['L3-F3-side', 'L3-F3-sideMirror', 'L3-F5-drag', 'L3-F8-recontact'],
   watch: (d) => ({
     finish(sim) {
       const id = d.id;
       const landings = sim.transitionDeltas.filter((b) => SIDES.some((s) => b.legs[s].old.kind === 'target' && b.legs[s].now.kind === 'plant'));
-      expect(landings.length, id).toBeGreaterThan(0);
       // (ladder 15: no pop, POP_M; was 1 cm)
       for (const x of landings) {
+        LANDING_SEEN[sim.byId.get(x.playerId)!.setup.role === 'runner' ? 'carrier' : 'defender']++;
         expect(x.rawM, `${id} ${x.t.toFixed(4)} ${x.playerId}`).toBeLessThanOrEqual(POP_M);
         if (Math.max(...Object.values(x.requestJumpM)) === 0) expect(x.deltaM).toBe(x.rawM);
       }
@@ -1434,9 +1440,25 @@ export const DEFENDER_BOB = check({
  * Plan 13d known limits (user ruling, to plan 13f), kept by 13f (user ruling): the one-arm defenders of L3-F9 (and
  * L3-F1-falling, the same run) no longer converted on their bob; Falling's conversion was rejected (2.39 cm, 1.89 under
  * the 13f guard). Plan 14: with the clip arms swinging as the clip shows them, all three convert at their labelled
- * conversion again, audited, and nothing is rejected.
+ * conversion again, audited, and nothing is rejected. Contact motion M2 follow-up: with the carrier's brace leaning in time
+ * (CARRIER_BRACE_V2) L3-F9-defenderRising's D loses support at 0.796 s, before its labelled conversion. The pass checks
+ * the rule (the defender's conversion, whatever starts it, is accepted, nothing rejected); the labelled conversion is the
+ * natural sample DEFENDER_13F_SAMPLE, taken as it was, before that flip.
  */
 export const DEFENDER_13F = check({
+  name: "the L3-F9 defenders' conversions are accepted, none rejected",
+  fixtures: ['L3-F9-defenderRising', 'L3-F9-defenderFalling', 'L3-F1-falling'],
+  watch: (d) => ({
+    finish(sim) {
+      const D = sim.byId.get('D')!;
+      expect(D.handoff?.outcome, d.id).toBe('accepted');
+      expect(count(sim, 'handoffRejected'), d.id).toBe(0);
+    },
+  }),
+});
+
+/** The same three converting at their labelled conversion (DEFENDER_13F), run as before CARRIER_BRACE_V2 (`preBraceV2`). */
+export const DEFENDER_13F_SAMPLE: Check = {
   name: 'the L3-F9 defenders convert at their labelled conversion',
   fixtures: ['L3-F9-defenderRising', 'L3-F9-defenderFalling', 'L3-F1-falling'],
   watch: (d) => ({
@@ -1447,7 +1469,7 @@ export const DEFENDER_13F = check({
       expect(count(sim, 'handoffRejected'), d.id).toBe(0);
     },
   }),
-});
+};
 
 export const PREP_UNWINDS = check({
   name: 'L3-F2: preparation unwinds',
@@ -2104,7 +2126,7 @@ export async function passFixture(d: FixtureDef): Promise<FixturePass> {
 }
 
 /** What the checks record over several fixtures, for the tests that read it: counters (summed) and per-fixture maps. */
-export const RECORDS = { HANDOVER, SEAMS, seen, CONT, FEET, REACH_AT, COPIED, ONE_BALL_SEEN, RULE_REF_SPOT, CARRY_BOUNDARIES, AUDIT_SEEN, PLANT_SEEN, ROOT_PEAK };
+export const RECORDS = { HANDOVER, LANDING_SEEN, SEAMS, seen, CONT, FEET, REACH_AT, COPIED, ONE_BALL_SEEN, RULE_REF_SPOT, CARRY_BOUNDARIES, AUDIT_SEEN, PLANT_SEEN, ROOT_PEAK };
 export type Records = typeof RECORDS;
 
 /** Adds a shard's records into this process's: counters summed, per-fixture records taken over. */

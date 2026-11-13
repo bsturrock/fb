@@ -12,7 +12,7 @@ import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
 import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
-import { CARRIER_BRACE_V1 } from '../brace';
+import { CARRIER_BRACE_V2 } from '../brace';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -90,12 +90,13 @@ function metArmStayFlip(d: FixtureDef): FixtureDef {
 
 /**
  * Contact motion M2, the brace flip: on every L3, L4 and HC fixture with a composed ball carrier, the carrier braces for
- * a hit he sees coming (CARRIER_BRACE_V1: hips lower, chest forward, the ball held high and tight under the free hand).
+ * a hit he sees coming (CARRIER_BRACE_V1: hips lower, chest forward, the ball held high and tight under the free hand;
+ * since the M2 follow-up CARRIER_BRACE_V2, the same pose with the chest's lean formed in time for the hit).
  * G, L1, L2 and RH keep their definitions. The lab's `brace=off` is the view before it; tests/runs.ts `preBrace` gives a
  * definition as before it.
  */
 function braceFlip(d: FixtureDef): FixtureDef {
-  return d.locomotion && VISIBLE_FLIP.test(d.id) && d.players.some((p) => p.role === 'runner') ? { ...d, brace: CARRIER_BRACE_V1 } : d;
+  return d.locomotion && VISIBLE_FLIP.test(d.id) && d.players.some((p) => p.role === 'runner') ? { ...d, brace: CARRIER_BRACE_V2 } : d;
 }
 
 /**

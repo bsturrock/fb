@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preFlip, preHoldStill, preMetArmStay, preV3, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preBraceV2, preFlip, preHoldStill, preMetArmStay, preV3, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -66,6 +66,7 @@ import {
   FREE_ARMS,
   FRESH_PLANT,
   HANDOVER,
+  LANDING_SEEN,
   HELD_LEG,
   HOLD_CLEARANCE_REPLANT,
   HOLD_SETTLES,
@@ -98,6 +99,7 @@ import {
   type Records,
   RESEED,
   RESEED_SAMPLE,
+  DEFENDER_13F_SAMPLE,
   reseedCovered,
   RETAINED,
   RETENTION_BITES,
@@ -121,6 +123,7 @@ import {
   STOP_MOTOR,
   TOE_OFF,
   unseenChase,
+  unseenLandings,
   unseenKinds,
   WALK_STEPS,
   WALK_VALID,
@@ -295,7 +298,16 @@ describe('plan 08 transition audit', () => {
   passTest(
     'the boundary records: a reseed that keeps mode and source is a boundary; a landing is compared with its old path as it is; the raw difference and what was set aside are kept; a jump the offset took up is not corrected twice',
     [RAW_KEPT, NOT_TWICE, LANDINGS],
+    () => expect(unseenLandings(LANDING_SEEN)).toEqual([]),
   );
+
+  it('the landing coverage, constructed: a record with no landing of a kind reports that kind and only it', () => {
+    // the fault twin of the by-kind floor above (LANDING_SEEN, read by count only)
+    expect(unseenLandings({ carrier: 4, defender: 5 })).toEqual([]);
+    expect(unseenLandings({ carrier: 0, defender: 0 })).toEqual(['carrier', 'defender']);
+    expect(unseenLandings({ carrier: 4, defender: 0 })).toEqual(['defender']);
+    expect(unseenLandings({ carrier: 0, defender: 5 })).toEqual(['carrier']);
+  });
 
   it('the boundary records, natural sample: a reseed that keeps mode and source is a boundary (L3-F7-phase75, the planted pose off)', async () => {
     // ladder rung 7d: R's right foot released by clearance and planted again in the next substep (tests/l3-pass.ts
@@ -859,7 +871,17 @@ describe('plan 08 pass 3: contact integration', () => {
   passTest('temporary airborne recovery: probe support lost in the named mode and regained, feet airborne, no support force in the air, no conversion: every L3-F9-lift fixture', [LIFT_RECOVERY]);
   passTest('a labelled conversion or a loss of probe support in the named mode is an audited, irreversible fall: every L3-F9-convert and L3-F9-noProbe fixture, and the low runner in contact', [AUDITED_FALL]);
   passTest('the defender converts on the measured sign of its bob: the L3-F10 rising and falling holds', [DEFENDER_BOB]);
-  passTest('plan 13d known limits gone (plan 14): the L3-F9 one-arm defenders and L3-F1-falling convert at their labelled conversion', [DEFENDER_13F]);
+  passTest("plan 13d known limits gone (plan 14): the L3-F9 one-arm defenders' and L3-F1-falling's conversions are accepted, none rejected", [DEFENDER_13F]);
+  it('plan 13d known limits gone (plan 14), natural sample: the L3-F9 one-arm defenders and L3-F1-falling convert at their labelled conversion (taken before CARRIER_BRACE_V2)', async () => {
+    // under V2 L3-F9-defenderRising's D loses support at 0.796 s, before its label: the sample is kept as it was taken
+    const fails: string[] = [];
+    const rep = (m: string): void => void fails.push(m);
+    for (const id of DEFENDER_13F_SAMPLE.fixtures as string[]) {
+      const def = preBraceV2(FIX(id));
+      await runWatched(def, [{ w: DEFENDER_13F_SAMPLE.watch(def, rep), fail: rep }], { transitionAudit: true });
+    }
+    expect(fails).toEqual([]);
+  }, 120000);
   passTest(
     'contact entry: preparation unwinds with no contact (L3-F2); the mode follows the first observed contact within a tick (L3-F3); legs keep stepping in contact and tackles end as their copies do (L3-F4/F5)',
     [PREP_UNWINDS, FOLLOWS_CONTACT, KEEP_STEPPING],

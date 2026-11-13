@@ -3,13 +3,13 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1 } from '../src/sim/footwork';
-import { CARRIER_BRACE_V1 } from '../src/sim/brace';
+import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, runSim } from './helpers';
+import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -447,13 +447,16 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion M2: brace=on|off sets the fixture's carrier brace profile (registered on the L3, L4 and HC carriers:
   // brace=off is the view before the flip)
-  it('brace=on runs the fixture with the carrier\'s brace (CARRIER_BRACE_V1: L3-F3-collision, another run, the registered one); brace=off takes it off again (the view before the flip) and on a fixture without it is that run; a fixture without a composed ball carrier and unknown values change nothing', async () => {
+  it('brace=on runs the fixture with the carrier\'s brace (CARRIER_BRACE_V2: L3-F3-collision, another run, the registered one), brace=v1 with V1\'s slow lean; brace=off takes it off again (the view before the flip) and on a fixture without it is that run; a fixture without a composed ball carrier and unknown values change nothing', async () => {
     const id = 'L3-F3-collision';
     const d = preBrace(FIX(id));
     expect(d.brace).toBeUndefined();
     const on = labRun(d, new URLSearchParams(`fixture=${id}&brace=on`));
-    expect(on).toEqual({ def: { ...d, brace: CARRIER_BRACE_V1 }, opts: {}, label: 'carrier brace on' });
+    expect(on).toEqual({ def: { ...d, brace: CARRIER_BRACE_V2 }, opts: {}, label: 'carrier brace on' });
     expect(on.def).toEqual(FIX(id));
+    // the view before the M2 follow-up's lean flip (tests/brace.test.ts has the twin that the lean differs)
+    expect(labRun(FIX(id), new URLSearchParams('brace=v1'))).toEqual({ def: { ...d, brace: CARRIER_BRACE_V1 }, opts: {}, label: 'carrier brace v1' });
+    expect(labRun(FIX(id), new URLSearchParams('brace=v1')).def).toEqual(preBraceV2(FIX(id)));
     expect(labRun(FIX(id), new URLSearchParams('brace=off'))).toEqual({ def: d, opts: {}, label: 'carrier brace off' });
     // the twin: the brace changes the run (the carrier's right palm, the ball's, at 0.45 s: braced, before contact)
     const palmAt = async (def: FixtureDef): Promise<string> => {

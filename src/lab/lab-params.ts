@@ -32,9 +32,10 @@
 //                      sent to a raised or forward alternative; or as before. Registered with `clipArmSwing` on L3, L4
 //                      and HC (ladder 18e): `armstay=off&armswing=off` is the view before. A fixture without
 //                      self-clearance is run as it is;
-//   brace=on|off       the ball carrier bracing for a hit he sees coming (CARRIER_BRACE_V1, contact motion M2: knees
-//                      bent, hips down, chest forward, ball high and tight under the free hand), or not. Registered on
-//                      the L3, L4 and HC carriers: `brace=off` is the view before. A fixture without locomotion
+//   brace=on|v1|off    the ball carrier bracing for a hit he sees coming (CARRIER_BRACE_V2, contact motion M2: knees
+//                      bent, hips down, chest forward, ball high and tight under the free hand), `v1` the same pose
+//                      with V1's slow lean (the view before the M2 follow-up's lean), or not. Registered on the L3, L4
+//                      and HC carriers: `brace=off` is the view before the brace. A fixture without locomotion
 //                      composition (L3, L4, HC) or without a ball carrier is run as it is;
 //   balclear=on|off    the referee's defensive influence clearing only once the runner has regained his balance (the
 //                      rule profile's `balancedClear`), or on supported control alone. Registered on the L3, L4 and HC
@@ -52,7 +53,7 @@ import {
   withClipArmSwing, withMetArmStay, withUpperArmClearance, withBalancedClear, withoutBalancedClear, type RagdollProfile,
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
-import { CARRIER_BRACE_V1 } from '../sim/brace';
+import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
@@ -67,7 +68,7 @@ const HOLDSTILL = ['on', 'off'];
 const UPPERARM = ['on', 'off'];
 const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
-const BRACE = ['on', 'off'];
+const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
@@ -230,7 +231,8 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     if (!BRACE.includes(v)) parts.push(`brace=${brace} ignored`);
     else if (!out.locomotion || !out.players.some((p) => p.role === 'runner')) parts.push('brace n/a (no composed ball carrier)');
     else {
-      const b = v === 'off' ? undefined : out.brace?.id === CARRIER_BRACE_V1.id ? out.brace : CARRIER_BRACE_V1;
+      const want = v === 'off' ? undefined : v === 'v1' ? CARRIER_BRACE_V1 : CARRIER_BRACE_V2;
+      const b = want && out.brace?.id === want.id ? out.brace : want;
       parts.push(`carrier brace ${v}${b === out.brace ? ' (registered)' : ''}`);
       if (b !== out.brace) {
         out = { ...out, brace: b };

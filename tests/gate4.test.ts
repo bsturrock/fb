@@ -12,7 +12,7 @@ import { LEG_GUARD_V1, RAGDOLL_G4, RULES_FOOTBALL, rulesRevision2, type RuleProf
 import { RuleObserver, type RetentionObs, type RuleFrame } from '../src/sim/rules';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dot, len, qRot, v3, type Vec3 } from '../src/sim/vec';
-import { evs, nonEmpty, pace, rows, run, runEach, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
+import { evs, nonEmpty, pace, preBraceV2, rows, run, runEach, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
 import { FixedStepDriver } from '../src/sim/driver';
 
 const R = RAGDOLL_G4;
@@ -1071,7 +1071,9 @@ describe('plan 10e: rules revision 2', () => {
     // is still a supported proxy for a while after it (the runner, a ragdoll by then, asks for full yaw effort). Plan 13d:
     // was L3-F1-phase0, whose defender after Fast Run's contact timing has settled before the ending (no rise to compare)
     // Ladder rung 7d: pinned to LEG_GUARD_V1 (under the physical legs the historical core does not rise through the window either: -2.5 cm)
-    const base = { ...allFixtures().find((d) => d.id === 'L3-F1-mirror0')!, legGuard: LEG_GUARD_V1 };
+    // Contact motion M2 follow-up: taken before CARRIER_BRACE_V2 (`preBraceV2`); with the braced carrier leaning in time
+    // the defender goes down with him before the ending
+    const base = { ...preBraceV2(allFixtures().find((d) => d.id === 'L3-F1-mirror0')!), legGuard: LEG_GUARD_V1 };
     const variant = (rules: RuleProfile): FixtureDef => ({
       ...base,
       id: `test-E1-${rules.revision ?? 1}`,
