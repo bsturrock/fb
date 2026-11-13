@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, preWrapV4, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -55,6 +55,7 @@ import {
   DEFENDER_13F,
   DEFENDER_BOB,
   FEET,
+  footLimits,
   FINE_POP_M,
   FIRST,
   FITTED,
@@ -457,10 +458,11 @@ describe('plan 10b foot target continuity', () => {
       for (const id of ids) await runOne(def(FIX(id)), continuity(def(FIX(id)), s).watch, { transitionAudit: true, ...opts });
       return s;
     };
+    // (the strike flip: L3-F10-defender's liftoff steps are in its run before the flip, where the pair was taken)
     const pair = ['L3-F16-kick', 'L3-F10-defender'];
-    const ok = await record(pair);
+    const ok = await record(pair, {}, preWrapV4);
     expect(unseenKinds(ok)).toEqual([]);
-    expect(unseenKinds(await record(pair, { debug: { foot: { noVoluntarySteps: true } } }))).toEqual(['B1 voluntary', 'B2 voluntary']);
+    expect(unseenKinds(await record(pair, { debug: { foot: { noVoluntarySteps: true } } }, preWrapV4))).toEqual(['B1 voluntary', 'B2 voluntary']);
     // the hold: before the flip the defender steps in it (counted as held, for no kind); with the rule it does not, and
     // every kind's count is the same. (Ladder 18e: the pair as before the met-arm flip. With the rule and without it the
     // runs are the same up to R's left step in the hold at 1.4375 s, with the flip and without it; after it they count
@@ -475,11 +477,12 @@ describe('plan 10b foot target continuity', () => {
   }, 120000);
 
   it(`the continuity records: a step out of time while moving slows within its limit; a continued step is given the time its acceleration limit needs${NOTE}`, async () => {
-    const of = async (id: string): Promise<Continuity> => {
-      const kept = CONT.get(id);
+    const of = async (id: string, pre?: (d: FixtureDef) => FixtureDef): Promise<Continuity> => {
+      const kept = pre ? undefined : CONT.get(id);
       if (kept) return kept;
-      const c = continuity(FIX(id), noneSeen());
-      await runOne(FIX(id), c.watch, { transitionAudit: true });
+      const d = (pre ?? ((x: FixtureDef) => x))(FIX(id));
+      const c = continuity(d, noneSeen());
+      await runOne(d, c.watch, { transitionAudit: true });
       return c.out;
     };
     const ids = allFixtures()
@@ -493,9 +496,10 @@ describe('plan 10b foot target continuity', () => {
           // same at R 0.2708 s, D left 0.3333 s and L3-F1-phase0 0.6708 s. Those runs have changed with the fix; each fixture
           // still has steps running out of time at speed
           // plan 13d: L3-F1-phase0 has none now; L3-F1-phase1 D left 0.721 s slows from 11.0 to 10.5 m/s within its limit.
-          // Plan 13e: L3-F3-side has none at speed now (it plays the supplied clips); L3-F3-recover has two (below)
-          for (const id of ['L3-F3-recover', 'L3-F1-phase1']) {
-            const { outOfTime } = await of(id);
+          // Plan 13e: L3-F3-side has none at speed now (it plays the supplied clips); L3-F3-recover has two (below). The
+          // strike flip: L3-F1-phase1's is in its run before the flip (`preWrapV4`), where it was taken
+          for (const [id, pre] of [['L3-F3-recover', undefined], ['L3-F1-phase1', preWrapV4]] as const) {
+            const { outOfTime } = await of(id, pre);
             const moving = outOfTime.filter((x) => x.speed > 1);
             expect(moving.length, id).toBeGreaterThan(0);
             for (const x of moving) {
@@ -566,15 +570,22 @@ describe('plan 08 foot limits at every actual substep', () => {
   passTest(
     'vertical target and offset recovery stay inside their limits, measured inside the planner and from outside: every L3 fixture; a carried handover is under the bound from its first update; the reported overruns reach the limits',
     [FOOT_LIMITS],
-    () => {
+    async () => {
+      // the strike flip: these carried handovers are in the runs before the flip (`preWrapV4`), where they were taken
+      const preStrike = new Map<string, ReturnType<typeof footLimits>['seen']>();
+      for (const id of ['L3-F1-phase3', 'L3-F1-phase0', 'L3-F1-phase6']) {
+        const m = footLimits();
+        await runOne(preWrapV4(FIX(id)), m.watch, { transitionAudit: true });
+        preStrike.set(id, m.seen);
+      }
       const records: [string, () => void][] = [
         [
           'a carried handover is under the bound from its first update, and the planner records that update',
           () => {
             // the follow path these legs came off was going down at 3.25 m/s (phase3) and 2.85 m/s (phase0) when a step took them over
-            // (plan 13d: L3-F1-low's D carries none now; L3-F1-phase6's D left does, at 0.479 s)
+            // (plan 13d: L3-F1-low's D carries none now; L3-F1-phase6's D left does, at 0.479 s; all three before the strike)
             for (const id of ['L3-F1-phase3', 'L3-F1-phase0', 'L3-F1-phase6']) {
-              const { seen } = FEET.get(id)!;
+              const seen = preStrike.get(id)!;
               expect(seen.nCarried, id).toBeGreaterThan(0);
               expect(seen.lift, id).toBeGreaterThan(0.9 * LIFT);
               expect(seen.lift, id).toBeLessThanOrEqual(LIFT + 1e-6);

@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preMetArmStay, preWrap, preWrapV3, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preMetArmStay, preWrap, preWrapV3, preWrapV4, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -141,8 +141,11 @@ const J = JOINT_RANGE_V1;
 const D = Math.PI / 180;
 // (contact motion M3, the hold flip: the takedown's hold drives the shoulder inside the joint-range profile's envelope,
 // which a run without the profile has not, so the twin's wrap is the one before the hold, as the twin is before plan 12)
-// (contact motion M4, the fall flip: likewise FALL_REACT_V1, which drives the shoulders inside that envelope too)
-const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(preFallReact(d)), id: `${d.id}-noRange`, jointRange: undefined });
+// (contact motion M4, the fall flip: likewise FALL_REACT_V1, which drives the shoulders inside that envelope too; and the
+// strike flip, whose wrap is the hold's)
+const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(preWrapV4(preFallReact(d))), id: `${d.id}-noRange`, jointRange: undefined });
+/** `d` as before the strike flip (`preWrapV4`), under its own id (the runs are cached by id). */
+const preStrike = (d: FixtureDef): FixtureDef => ({ ...preWrapV4(d), id: `${d.id}~wrapV3` });
 /** Ladder rung 7d: `d` pinned to LEG_GUARD_V1, the guard a natural sample was taken under (its own id while it registers V1, the runs being cached by id). */
 const pinV1 = (d: FixtureDef): FixtureDef => (!d.legGuard || d.legGuard.id === LEG_GUARD_V1.id ? d : { ...d, id: `${d.id}~v1`, legGuard: LEG_GUARD_V1 });
 const SIDES = ['left', 'right'] as const;
@@ -639,7 +642,9 @@ describe('plan 12 joint range: ankles', () => {
     }
   }, 120000);
 
-  const LIMP_CASES = ['L4-F3-forward-on', 'L4-F8-passive', 'HC-F1-low', 'HC-F1-lowMirror'].map(FIX);
+  // (the strike flip: HC-F1-low and HC-F1-lowMirror as registered hold no shoe now; their runs before it, where the
+  // positive sample below was taken, are checked as well)
+  const LIMP_CASES = [...['L4-F3-forward-on', 'L4-F8-passive', 'HC-F1-low', 'HC-F1-lowMirror'].map(FIX), ...['HC-F1-low', 'HC-F1-lowMirror'].map((id) => preStrike(FIX(id)))];
   limpRule(LIMP_CASES);
   it('ragdoll feet: in range at conversion, relaxed to 15 deg within 1 deg 0.35 s later unless the limp shoe is held near another player', async () => {
     // plan 12's hold (Simulation.shoeDeeper, docs/handoff/plan12.md): a shoe waits only while its turn would bring it

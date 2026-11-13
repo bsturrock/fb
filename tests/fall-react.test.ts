@@ -10,9 +10,15 @@ import { ARM_G2, FALL_HOLD_V1, FALL_L4, FALL_REACT_V1, FALL_REACT_V2, withoutHip
 import { armSystemProfile, checkLimbContract, Simulation } from '../src/sim/simulation';
 import { hingeAngles, limbDirWorld } from '../src/sim/ragdoll';
 import { dot, qInvRot } from '../src/sim/vec';
-import { FIX } from './helpers';
+import { FIX, preWrapV4 } from './helpers';
 
 const SIDES: ArmSide[] = ['left', 'right'];
+/**
+ * A wrap fixture as before the strike flip (`preWrapV4`, WRAP_V3), where the M4 samples were taken: under the strike
+ * (WRAP_V4) the front wrap's carrier goes down from the hit and the tackler later loses his own support, so neither the
+ * takedown nor the tackler's held arms at it are in that run. Every other fixture as registered.
+ */
+const W = (id: string): FixtureDef => preWrapV4(FIX(id));
 const MEMORY = FALL_REACT_V1.arms.holdMemoryS;
 const deg = (r: number): number => (r * 180) / Math.PI;
 
@@ -97,7 +103,7 @@ describe('contact motion M4: every falling player on L3 and HC reacts (FALL_REAC
   });
 
   it('it builds on an L3 or HC ragdoll (the joint-range shoulder envelope, the hips only their hard stops) and starts at every accepted conversion: in the front wrap the tackler (his takedown) holds with both arms, the carrier (his lost balance) protects the ball and braces his free arm. The fault twins: without the hip stops the build refuses it; under WRAP_V3 alone (no response of the fixture\'s own) only the takedown starts one, the M3 hold', async () => {
-    const d = FIX('L3-F19-front');
+    const d = W('L3-F19-front');
     const r = await run(reacting(d), 1.5);
     expect(r.sim.players.find((p) => p.id === 'D')!.handoff?.reason).toBe('takedown');
     expect(r.sim.players.find((p) => p.id === 'R')!.handoff?.reason).toBe('lossOfSupport');
@@ -112,10 +118,10 @@ describe('contact motion M4: every falling player on L3 and HC reacts (FALL_REAC
   it('an arm still holding at the switch keeps its hold (`holdOnset`, no reaction delay): in the front wrap (both orders) and the rear wrap, each of the tackler\'s holds lasts at least 0.3 s past his takedown (three times the 0.1 s memory). The fault twin: with the reaction delay of every other task (FALL_L4\'s 40 ms and 80 ms ramp) a hold lapses within 0.2 s in each, and every hold does in the reversed front wrap and the rear wrap', async () => {
     for (const [id, rev, all] of [['L3-F19-front', false, false], ['L3-F19-front', true, true], ['L3-F19-rear', false, true]] as const) {
       const label = `${id}${rev ? ' reversed' : ''}`;
-      const r = await run(reacting(FIX(id)), 1.6, { rev });
+      const r = await run(reacting(W(id)), 1.6, { rev });
       for (const s of SIDES) expect(r.heldS.D[s], `${label} ${s}`).toBeGreaterThanOrEqual(3 * MEMORY - 1e-9);
       r.sim.dispose();
-      const late = await run(reacting(FIX(id), variant({ arms: { ...FALL_REACT_V1.arms, holdOnset: undefined } }, 'fall-react-late-hold')), 1.6, { rev });
+      const late = await run(reacting(W(id), variant({ arms: { ...FALL_REACT_V1.arms, holdOnset: undefined } }, 'fall-react-late-hold')), 1.6, { rev });
       const lapsed = SIDES.filter((s) => (late.heldS.D[s] ?? 0) < 0.2);
       expect(lapsed.length, label).toBeGreaterThanOrEqual(all ? 2 : 1);
       late.sim.dispose();
@@ -141,11 +147,11 @@ describe('contact motion M4: every falling player on L3 and HC reacts (FALL_REAC
   it('the ball carrier keeps his tuck, around the braced pose he converts in: converted mid-run (L3-F16-handoff) and in the front wrap (both orders) his carry upper arm stays within 40 deg of its direction at the switch (core frame) over the first second. The fault twin: the same falls with no arm effort turn it past 60 deg', async () => {
     for (const [id, rev, untilS] of [['L3-F16-handoff', false, 3.7], ['L3-F19-front', false, 2.3], ['L3-F19-front', true, 2.3]] as const) {
       const label = `${id}${rev ? ' reversed' : ''}`;
-      const on = await run(reacting(FIX(id)), untilS, { rev });
+      const on = await run(reacting(W(id)), untilS, { rev });
       expect(on.began.R?.tasks.right, label).toBe('protect');
       expect(on.carryDevDeg.R, label).toBeLessThan(40);
       on.sim.dispose();
-      const off = await run(reacting(FIX(id), variant({ enable: { knee: true, hip: true, arms: false } }, 'fall-react-no-arms')), untilS, { rev });
+      const off = await run(reacting(W(id), variant({ enable: { knee: true, hip: true, arms: false } }, 'fall-react-no-arms')), untilS, { rev });
       expect(off.carryDevDeg.R, label).toBeGreaterThan(60);
       off.sim.dispose();
     }

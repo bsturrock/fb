@@ -7,7 +7,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { withoutHoldStill } from '../src/sim/footwork';
 import { RAPIER } from '../src/sim/physics';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
-import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../src/sim/controllers/wrap';
+import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4 } from '../src/sim/controllers/wrap';
 import {
   FALL_REACT_V1, FALL_REACT_V2, HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
   withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, withoutBalancedClear, type HipStopProfile, type RagdollProfile,
@@ -116,6 +116,12 @@ export const preFallReact = (d: FixtureDef): FixtureDef => {
   return rest;
 };
 /**
+ * Contact motion polish 1.1 (the strike flip): `d` as before it, its wrap profile WRAP_V3 where it has V4 (the upright
+ * approach, no strike): what every state capture and natural sample taken before it ran under. Composes with the other
+ * `pre*` helpers.
+ */
+export const preWrapV4 = (d: FixtureDef): FixtureDef => (d.wrap?.id === WRAP_V4.id ? { ...d, wrap: WRAP_V3 } : d);
+/**
  * Contact motion M3 (the hold flip): `d` as before it, its wrap profile WRAP_V2 where it has V3 (the takedown without the
  * hold carried through it): what every state capture and natural sample taken before it ran under. Composes with the
  * other `pre*` helpers.
@@ -179,7 +185,7 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
  * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
  * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preWrapV4, prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before

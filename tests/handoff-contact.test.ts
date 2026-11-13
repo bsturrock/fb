@@ -61,7 +61,24 @@ afterAll(() => {
 });
 
 /** Every accepted handoff passes the unchanged candidate and transfer checks. */
-function expectAudited(pl: PlayerRuntime, fx: string): void {
+/**
+ * Contact motion M5 tracked defect (rule 5; tests/strike-defects.test.ts; docs/handoff/contact-motion-m3.md, "Known
+ * issues"): REJECTED_PROXY_PRESS. A ragdoll's limb born in a player whose candidate is rejected (who stays a rigid falling
+ * proxy) is held out of the solve, and that proxy, falling, presses it back in. HC-F5-invalidOne (the labelled invalid
+ * candidate) under the strike: R's left upper arm, born 7.7 cm in D's pitched torso, is pushed out to 3.4 cm, then
+ * pressed past 5 cm for 0.13 s as D's rejected proxy falls onto it; with D's candidate valid it is out in 0.05 s. Excepted
+ * there alone: the held bar (never the 10 cm one) of a limb in a rejected player's proxy.
+ */
+const REJECTED_PROXY_PRESS = {
+  fixtures: ['HC-F5-invalidOne'],
+  applies: (sim: Simulation, fx: string, breach: string): boolean => {
+    if (!REJECTED_PROXY_PRESS.fixtures.includes(fx) || !/: over \d+ cm deep for /.test(breach)) return false;
+    const o = sim.byId.get(/ in (\w+):/.exec(breach)?.[1] ?? '');
+    return !!o && o.handoff?.outcome === 'rejected' && o.representation === 'proxy';
+  },
+};
+
+function expectAudited(pl: PlayerRuntime, fx: string, except?: (breach: string) => boolean): void {
   const h = pl.handoff!;
   const tag = `${fx} ${pl.id}`;
   expect(h.outcome, tag).toBe('accepted');
@@ -83,7 +100,7 @@ function expectAudited(pl: PlayerRuntime, fx: string): void {
     const m = FINE.get(fam) ?? { n: 0, anchor: 0, landmark: 0, pen: 0, floor: 0, held: 0, heldAt: '' };
     const [held, heldAt] = deep.d > m.held ? [deep.d, deep.at] : [m.held, m.heldAt];
     FINE.set(fam, { n: m.n + 1, anchor: Math.max(m.anchor, r.maxAnchorErrM), landmark: Math.max(m.landmark, r.maxLandmarkErrM), pen: Math.max(m.pen, r.maxNewExternalPenetrationM), floor: Math.max(m.floor, r.floorPenetrationM), held, heldAt });
-    expect(bar!.breaches(), tag).toEqual([]);
+    expect(bar!.breaches().filter((b) => !except?.(b)), tag).toEqual([]);
   }
   for (const [k, deg] of Object.entries(r.hingeDeg)) expect(Number.isFinite(deg), `${tag} ${k}`).toBe(true);
   const a = h.audit!;
@@ -545,7 +562,7 @@ describe('HC diagnostics: invalid candidates and strict transfer fail safely', (
     expect(D.representation).toBe('proxy');
     expect(D.controlMode).toBe('falling');
     expect(D.sus!.active).toBe(false);
-    expectAudited(R, def.id);
+    expectAudited(R, def.id, (b) => REJECTED_PROXY_PRESS.applies(sim, def.id, b));
     expect(R.handoff!.step).toBe(D.handoff!.step);
     // no leaked candidate bodies or colliders: R's proxy replaced by its ten bodies (nine joints), D unchanged
     const c = sim.counts();

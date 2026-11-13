@@ -13,7 +13,7 @@ import { handoffContactFixtures } from './handoff-contact';
 import { FALL_REACT_V1, FALL_REACT_V2, hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
-import { WRAP_V3 } from '../controllers/wrap';
+import { WRAP_V3, WRAP_V4 } from '../controllers/wrap';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -128,6 +128,16 @@ function wrapFlip(d: FixtureDef): FixtureDef {
 }
 
 /**
+ * Contact motion polish 1.1, the strike flip: every fixture the wrap flip gave WRAP_V3 runs WRAP_V4 (the tackler's strike:
+ * hips lower, trunk pitched in on a hip hinge, the near shoulder leading with the head to the carrier's side, arms wide
+ * from the shoulders). The lab's `wrap=v3` is the view before it; tests/runs.ts `preWrapV4` gives a definition as before
+ * it.
+ */
+function strikeFlip(d: FixtureDef): FixtureDef {
+  return d.wrap === WRAP_V3 ? { ...d, wrap: WRAP_V4 } : d;
+}
+
+/**
  * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
  * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
  * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
@@ -176,6 +186,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip));
   return registry.slice();
 }

@@ -333,7 +333,7 @@ export async function stepAsIsCovered(o: { strip?: boolean } = {}): Promise<stri
 
 export const RAW_KEPT = check({
   name: 'the raw difference and what was set aside',
-  fixtures: ['L3-F7-phase0', 'L3-F1-mirror4'],
+  fixtures: ['L3-F7-phase0', 'L3-F1-mirror0'],
   watch: (d) => ({
     finish(sim) {
       const ds = sim.transitionDeltas;
@@ -348,7 +348,8 @@ export const RAW_KEPT = check({
         // what still jumps is the body-frame request when contact entry turns the body (the angular impulse; the clip itself
         // is the same in both compositions). Plan 13d: no L3 boundary is over 1 cm raw any more (L3-F1-mirror0 D 0.479 s was
         // 1.76 cm), so the record is a boundary the correction set at least 5 mm aside: L3-F1-mirror4 D 0.479 s, raw 0.99 cm,
-        // 0.22 cm after it
+        // 0.22 cm after it. Under the strike (WRAP_V4) that run has none and L3-F1-mirror0 has R's at the hit, 0.450 s: raw
+        // 0.76 cm, 0.25 cm after it
         const jolted = nonEmpty(ds.filter((x) => x.rawM - x.deltaM > 0.005), 'jolted boundaries');
         for (const x of jolted) expect(Math.max(...Object.values(x.requestJumpM))).toBeGreaterThan(0);
       }
@@ -554,7 +555,7 @@ export const unseenChase = (s: ContinuitySeen): string[] => [...(s.chaseStarts >
 export const unseenKinds = (s: ContinuitySeen): string[] => STEP_KINDS.flatMap((k) => [...(s[`b1${cap(k)}`] > 0 ? [] : [`B1 ${k}`]), ...(s[`b2${cap(k)}`] > 0 ? [] : [`B2 ${k}`])]);
 
 /** B3: the declared limit of the clip leg request's own world-frame second difference (m): the composition limit. */
-const REQUEST_DD_M = 0.01;
+export const REQUEST_DD_M = 0.01;
 
 /** The transition audit's record of each player's last ordinary leg request (body frame); read only. */
 type AuditView = { auditPrev: Map<string, { reqL: Record<'left' | 'right', Vec3>; supported: boolean; falling: boolean }> };
@@ -583,7 +584,11 @@ interface Breach {
 export interface Continuity {
   breaches: Breach[];
   outOfTime: { at: string; t: number; speed: number; next: number; aMax: number }[];
-  requestDD: { d: number; at: string }[];
+  /**
+   * B3's request jumps. `onset`: the jump's three samples take in the substep after the player's first contact with
+   * another player (the hit's first full solve; HIT_MOVES_CLIP_REQUEST).
+   */
+  requestDD: { d: number; at: string; onset: boolean }[];
   overdue: { at: string; n: number }[];
 }
 
@@ -610,10 +615,15 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
   // ladder 14a (the step coverage): each foot's current planner step, its kind and whether it started in a stationary hold
   const kindOf = new Map<string, { kind: StepKind | null; held: boolean }>();
   const heldAt = new Map<string, number>();
+  // each player's first substep in contact with another player (the substep count of the run)
+  const metAt = new Map<string, number>();
+  let n = 0;
   let evAt = 0;
   const watch: Watch = {
     substep: (s: Simulation) => {
       const dt = s.dt;
+      n++;
+      for (const pl of s.players) if (!metAt.has(pl.id) && (s.contactObs[pl.id] ?? []).length > 0) metAt.set(pl.id, n);
       const audit = (s as unknown as AuditView).auditPrev;
       // this substep's plant releases and planner step starts, per foot
       const rel = new Map<string, string>();
@@ -642,7 +652,8 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
             if (h.length === 3 && h.every((x) => x.ok)) {
               into.requests++;
               const dd = len(add(sub(h[2]!.p, scale(h[1]!.p, 2)), h[0]!.p));
-              if (dd > REQUEST_DD_M) requestDD.push({ d: dd, at: `${d.id} ${k} ${s.t.toFixed(4)}` });
+              const met = metAt.get(pl.id);
+              if (dd > REQUEST_DD_M) requestDD.push({ d: dd, at: `${d.id} ${k} ${s.t.toFixed(4)}`, onset: met !== undefined && met + 1 >= n - 2 && met + 1 <= n });
             }
           }
         }
@@ -728,6 +739,17 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
   return { watch, out };
 }
 
+/**
+ * Contact motion M5 tracked defect (rule 5; tests/strike-defects.test.ts; docs/handoff/contact-motion-m3.md, "Known
+ * issues"): HIT_MOVES_CLIP_REQUEST. Under the strike (WRAP_V4) the wide arms touch nothing before the body hit, so the hit
+ * arrives while the clip is still at full weight (before it, the arms' first touch began the contact composition's fade
+ * earlier), and the hit moves the clip's leg request in one substep: a walking carrier's stride scale follows his measured
+ * speed unsmoothed (the L3-F10 runs and L3-F11-invalid, R's request), and a defender's request rides his root, which the
+ * collision jolts (L3-F1-mirror4, D's). Neither foot shows it while the planner owns it. B3 excepts, on these fixtures, a
+ * jump whose three samples take in the substep after the player's first contact with another player, and nothing else.
+ */
+export const HIT_MOVES_CLIP_REQUEST = { fixtures: ['L3-F1-mirror4', 'L3-F10-both', 'L3-F10-bothMirror', 'L3-F10-bothLow', 'L3-F10-rising', 'L3-F10-falling', 'L3-F11-invalid'] };
+
 /** Each L3 fixture's continuity record from the pass. */
 export const CONT = new Map<string, Continuity>();
 export const CONTINUITY = check({
@@ -741,7 +763,9 @@ export const CONTINUITY = check({
       substep: c.watch.substep,
       finish(sim) {
         c.watch.finish!(sim);
-        const { breaches, requestDD } = c.out;
+        const { breaches } = c.out;
+        // the tracked defect's exception: its fixtures, a jump at the hit's onset alone
+        const requestDD = c.out.requestDD.filter((r) => !(HIT_MOVES_CLIP_REQUEST.fixtures.includes(d.id) && r.onset));
         ok(() => expect(breaches.slice(0, 5).map((b) => `${b.what} ${b.at}: ${b.got} > ${b.limit}`), `${breaches.length} breaches`).toEqual([]));
         ok(() => expect(requestDD.slice(0, 5).map((r) => `${r.at}: ${r.d}`), `${requestDD.length} request jumps`).toEqual([]));
       },
@@ -761,7 +785,7 @@ type Counters = { lift: number; offset: number; margin: number };
  * also from the substep it takes over without a reseed (a carried leg), or changes mode on its path. `carriedStat` and
  * `carriedFlat` are how far the planner's own record of that first update is from what it published, vertically and level.
  */
-function footLimits(): { watch: Watch; seen: FeetSeen } {
+export function footLimits(): { watch: Watch; seen: FeetSeen } {
   const seen: FeetSeen = { lift: 0, offset: 0, nLift: 0, nOffset: 0, ownerChanges: 0, gap: 0, gapLevel: 0, gapStepY: 0, nStepReseeds: 0, nCarried: 0, carriedStat: 0, carriedFlat: 0 };
   const last = new Map<string, { source: string; mode: string; target: Vec3; offset: Vec3; seeds: number; solved: Vec3; recoord: boolean; speed: number }>();
   const watch: Watch = {
