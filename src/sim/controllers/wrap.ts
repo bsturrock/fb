@@ -75,6 +75,21 @@ export interface WrapProfile {
  */
 export interface WrapLow {
   bandYLocal: number;
+  /**
+   * Polish 1.4 (absent: the closing target is `close`, on the ring behind the carrier): the close path walks round the
+   * carrier's shape. The closing target leads the palm's own azimuth (from the near corner) by `leadDeg`, up to `endDeg`
+   * (behind him, beside the other hand), `extraM` outside the shape at the band: a straight pull from the palm runs along
+   * the surface, not into it, and the forearm wraps the shape behind the palm.
+   */
+  walk?: { leadDeg: number; endDeg: number; extraM: number };
+}
+
+/**
+ * Polish 1.4: the low wrap's closing target azimuth (deg from the carrier's near face, on the arm's own side) for a palm at
+ * `palmAzDeg`: `walk.leadDeg` ahead of the palm (or of the near corner, the palm still in front of it), at most `walk.endDeg`.
+ */
+export function walkAzDeg(walk: NonNullable<WrapLow['walk']>, palmAzDeg: number, cornerDeg: number): number {
+  return Math.min(walk.endDeg, Math.max(palmAzDeg, cornerDeg) + walk.leadDeg);
 }
 
 /**
@@ -291,7 +306,7 @@ export const WRAP_V6: WrapProfile = {
     offsetM: 0.35,
     hinge: { ...WRAP_V5.strike!.hinge, maxDeg: 75, maxDropM: 0.2 },
   },
-  low: { bandYLocal: -0.05 },
+  low: { bandYLocal: -0.05, walk: { leadDeg: 30, endDeg: 170, extraM: 0.02 } },
 };
 
 export interface WrapSpec {
@@ -765,13 +780,14 @@ export class WrapAttemptController implements Controller {
             else if (t - st.lastProgressT > P.stuckS) go('recover');
             break;
           case 'close':
-            target = W?.close ? ring(W.close.azDeg, sgn, -W.close.depthM) : ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
+            // (polish 1.4, the walk: ahead of the palm round the carrier's shape)
+            target = LOW?.walk ? ring(walkAzDeg(LOW.walk, az, cornerDeg), sgn, LOW.walk.extraM) : W?.close ? ring(W.close.azDeg, sgn, -W.close.depthM) : ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
             action = 'close';
             if (ob.clampContactId || ob.gripId) go('sustain');
             else if (t - st.since > P.stuckS) go('arc');
             break;
           case 'sustain':
-            target = W?.close ? ring(W.close.azDeg, sgn, -W.close.depthM) : ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
+            target = LOW?.walk ? ring(walkAzDeg(LOW.walk, az, cornerDeg), sgn, LOW.walk.extraM) : W?.close ? ring(W.close.azDeg, sgn, -W.close.depthM) : ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
             action = 'close';
             if (!ob.clampContactId && !ob.gripId && t - st.lastClampT > 0.15) go(az < 50 ? 'arc' : 'close');
             break;
