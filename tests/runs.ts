@@ -8,7 +8,7 @@ import { withoutHoldStill } from '../src/sim/footwork';
 import { RAPIER } from '../src/sim/physics';
 import {
   HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
-  withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, type HipStopProfile, type RagdollProfile,
+  withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, withoutBalancedClear, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
@@ -74,6 +74,12 @@ export const preBrace = (d: FixtureDef): FixtureDef => {
   void brace;
   return o;
 };
+/**
+ * Contact motion M2 follow-up (the balanced-clear flip): `d` as before it, its rule profile without `balancedClear`
+ * (the same definition on a fixture without it): what every state capture and natural sample taken before it ran
+ * under. Composes with the other `pre*` helpers.
+ */
+export const preBalancedClear = (d: FixtureDef): FixtureDef => (d.rules?.balancedClear ? { ...d, rules: withoutBalancedClear(d.rules) } : d);
 /** Ladder 18: `d` with the met-arm flip's self-clearance (`metArmStay` and `clipArmSwing`; as it is when it has them). */
 export const metArmStayed = (d: FixtureDef): FixtureDef => (d.selfClearance ? { ...d, selfClearance: withMetArmStay(withClipArmSwing(d.selfClearance)) } : d);
 /** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */
@@ -123,11 +129,11 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
 
 /**
  * The flips registered on L3, L4 and HC since the first state capture, the latest first: each gives a definition as
- * before its flip (M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
+ * before its flip (M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
  * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
  * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before

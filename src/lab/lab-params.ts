@@ -37,8 +37,9 @@
 //                      the L3, L4 and HC carriers: `brace=off` is the view before. A fixture without locomotion
 //                      composition (L3, L4, HC) or without a ball carrier is run as it is;
 //   balclear=on|off    the referee's defensive influence clearing only once the runner has regained his balance (the
-//                      rule profile's `balancedClear`), or on supported control alone, as before. A fixture without
-//                      football rules is run as it is.
+//                      rule profile's `balancedClear`), or on supported control alone. Registered on the L3, L4 and HC
+//                      football rules: `balclear=off` is the view before. A fixture without football rules is run as it
+//                      is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.

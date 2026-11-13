@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs } from '../profiles';
+import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V1 } from '../brace';
 
@@ -98,6 +98,16 @@ function braceFlip(d: FixtureDef): FixtureDef {
   return d.locomotion && VISIBLE_FLIP.test(d.id) && d.players.some((p) => p.role === 'runner') ? { ...d, brace: CARRIER_BRACE_V1 } : d;
 }
 
+/**
+ * Contact motion M2 follow-up, the balanced-clear flip: on every L3, L4 and HC fixture refereed by the football rules,
+ * the defensive influence clears only once the runner has regained his balance (`balancedClear`): a carrier hit off
+ * balance who topples a moment later is down by contact. G, L1, L2 and RH keep their profiles. The lab's `balclear=off`
+ * is the view before it; tests/runs.ts `preBalancedClear` gives a definition as before it.
+ */
+function balancedClearFlip(d: FixtureDef): FixtureDef {
+  return d.rules?.kind === 'footballTackleSubset' && VISIBLE_FLIP.test(d.id) ? { ...d, rules: withBalancedClear(d.rules) } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -126,6 +136,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip));
   return registry.slice();
 }

@@ -204,7 +204,8 @@ const OPT_IN: Row[] = [
       expect(hist.length).toBeGreaterThan(20);
       for (const d of recent) {
         expect(d.rules!.revision, d.id).toBe(2);
-        expect(d.rules!.id, d.id).toMatch(/\+revision=2$/);
+        // (the id names the revision; a later opt-in's label may follow it: contact motion M2's `+balancedClear`)
+        expect(d.rules!.id, d.id).toMatch(/\+revision=2(\+|$)/);
       }
       for (const d of hist) {
         expect(d.rules!.revision, d.id).toBeUndefined();
@@ -213,6 +214,17 @@ const OPT_IN: Row[] = [
       }
       // idempotent: an L3 fixture's rules are not wrapped again by L4
       expect(rulesRevision2(REV2)).toBe(REV2);
+    },
+  ],
+  [
+    'contact motion M2 follow-up: influence clears out of a regained balance on exactly the L3, L4 and HC football referees, and the export records it',
+    () => {
+      for (const d of allFixtures()) {
+        const on = /^(L3|L4|HC)-/.test(d.id) && d.rules?.kind === 'footballTackleSubset';
+        expect(d.rules?.balancedClear, d.id).toBe(on ? true : undefined);
+        if (d.rules) expect(d.rules.id.includes('+balancedClear'), d.id).toBe(on);
+        if (d.rules) expect(ruleProfileExport(d.rules).balancedClear, d.id).toBe(on ? true : undefined);
+      }
     },
   ],
   [

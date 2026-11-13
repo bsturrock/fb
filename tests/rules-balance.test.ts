@@ -1,6 +1,7 @@
 // Contact motion M2 follow-up: influence clears only out of a regained balance (RuleProfile.balancedClear,
-// `withBalancedClear`). Gate 4 section 12 clears the continuing defensive influence "after at least 0.20 s of regained
-// supported balance, no retention or impeding opponent contact, and resumed unrestrained movement"; the observer read
+// `withBalancedClear`; registered on the L3, L4 and HC football rules, `preBalancedClear` gives a fixture as before).
+// Gate 4 section 12 clears the continuing defensive influence "after at least 0.20 s of regained supported balance, no
+// retention or impeding opponent contact, and resumed unrestrained movement"; the observer read
 // "supported balance" as the supported control mode. A braced carrier hit off balance keeps his feet and his line while
 // he topples (lean 5 to 30 deg, rising at 1 to 2 rad/s), the 0.2 s pass, influence clears, and the fall a moment later is
 // not ruled down. Under the profile a free substep also needs his lean projected ahead under the lean at which the
@@ -51,13 +52,19 @@ function play(profile: RuleProfile, n: number, at: (i: number) => boolean): stri
 }
 
 describe('contact motion M2 follow-up: influence clears out of a regained balance', () => {
-  it('the profile: `+balancedClear` on the rule profile, and off again under the id it had', () => {
+  it('the profile: `+balancedClear` on the rule profile, and off again under the id it had; registered on every L3, L4 and HC fixture refereed by the football rules, on no G, L1, L2 or RH fixture', () => {
     const on = withBalancedClear(REV2);
     expect(on).toEqual({ ...REV2, id: `${REV2.id}+balancedClear`, balancedClear: true });
     expect(withBalancedClear(on)).toBe(on);
     expect(withoutBalancedClear(on)).toEqual(REV2);
     expect(withoutBalancedClear(REV2)).toBe(REV2);
-    for (const d of allFixtures()) expect(d.rules?.balancedClear, d.id).toBeUndefined();
+    let n = 0;
+    for (const d of allFixtures()) {
+      const reg = /^(L3|L4|HC)-/.test(d.id) && d.rules?.kind === 'footballTackleSubset';
+      if (reg) n++;
+      expect(d.rules?.balancedClear, d.id).toBe(reg ? true : undefined);
+    }
+    expect(n).toBeGreaterThan(30);
   });
 
   it('a runner off balance out of contact keeps influence for as long as he is off balance; balanced for 0.2 s, it clears; without the profile his balance is not read', () => {
