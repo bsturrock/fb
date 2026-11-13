@@ -1,8 +1,9 @@
 # Contact-motion prerequisites: ladder (open items)
 
-Status: ladder 14 landed on 2026-11-12 at `8f3ce6e` (branch `prereq-ladder`). It follows ladder 13 at `599dc57` and the
-full check's speed-up. 14a registered 13b's still feet. 14b fixed what 13c left at its source, a clip arm carried across
-the chest; it landed off, and its flip is parked. What landed, how it works, the measured result, open defects and
+Status: ladder 18 landed on 2026-11-12 at `3630ede` (branch `prereq-ladder`): a met arm keeps its natural pose
+(`metArmStay` with 14b's `clipArmSwing`) and a ragdoll's held born pairs are pushed apart, both registered on every L3,
+L4 and HC fixture. Before it: ladder 14 (13b's still feet registered, 14b landed off), 15 (gates on the visible bar),
+16 (`metArmStay` landed off) and 17 (born overlap registered). What landed, how it works, the measured result, open defects and
 parked flips: [handoff](../../handoff/contact-motion-prerequisites.md). This page keeps what is still open: the user's
 review list, the next steps, and how this branch replaces the old working tree. M2 starts after the review.
 
@@ -13,7 +14,7 @@ The working rules are in `CLAUDE.md` ("How work is done here"). For this ladder 
 - One step is one commit on `prereq-ladder`. New behaviour lands behind a flag with fixture summaries byte-identical,
   and a flip is its own step. G, L1, L2 and RH stay byte-identical.
 - Each step's full check goes to `.scratch/ladder/<step>/` in the main checkout and is compared with the previous step
-  (`scripts/check/README.md`). The tip's result is `r14b-flagoff`. The primary measure is the visible-quality matrix.
+  (`scripts/check/README.md`). The tip's result is `r18-e-flip`. The primary measure is the visible-quality matrix.
 - A flip is assessed first as a variant, with every suite failure classed and behaviour failures twinned
   (`assess-<step>/`). If it is not clean it is parked with its patch (`parked/<flip>/`) and a README saying what blocks
   it.
@@ -21,18 +22,21 @@ The working rules are in `CLAUDE.md` ("How work is done here"). For this ladder 
 ## Morning review for the user
 
 What each step changed that is worth watching, newest last. Every link is a lab URL served from this branch (the
-ladder worktree, `npx vite --port 5180 --strictPort`; the dev server in the main checkout runs the old tree). The link
+ladder worktree, `npx vite --port 5180 --strictPort`). The link
 as given is the current tip; the parameters below show a moment as an earlier step left it. Speed 0.25 in all of them.
 The open questions from all three steps, with the later ones, are numbered in the handoff ("Questions waiting on the
 user").
 
 | to see a moment as | add to the link |
 | --- | --- |
-| before 8m (the registration up to 8k) | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off&holdstill=off` |
-| 8m left it | `&legs=v1&selfleg=off&holdstill=off` |
-| 9d left it (through 10b) | `&legs=v1&holdstill=off` |
-| 10d left it (through 13c) | `&holdstill=off` |
-| now (the tip; 14a's still feet are the only change since 10d) | nothing |
+| before 8m (the registration up to 8k) | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off&holdstill=off&born=off&armstay=off&armswing=off` |
+| 8m left it | `&legs=v1&selfleg=off&holdstill=off&born=off&armstay=off&armswing=off` |
+| 9d left it (through 10b) | `&legs=v1&holdstill=off&born=off&armstay=off&armswing=off` |
+| 10d left it (through 13c) | `&holdstill=off&born=off&armstay=off&armswing=off` |
+| 14a left it (through 17a) | `&born=off&armstay=off&armswing=off` |
+| 17b left it (through 18b) | `&bornsep=off&armstay=off&armswing=off` |
+| 18c left it (through 18e-i) | `&armstay=off&armswing=off` |
+| now (the tip, 18e) | nothing |
 
 ### Who falls now, against the ladder's start (the net list to review)
 
@@ -44,14 +48,14 @@ be rejected, as at the start (at the start known for the forward order).
 
 | fixture | order | player | at the start | now | changed at | lab (now) |
 | --- | --- | --- | --- | --- | --- | --- |
+| HC-F3-lowRunner | forward | defender | falls 1.59 s | stays up | 18e | `?fixture=HC-F3-lowRunner&cam=front&speed=0.25&t=1.45` |
 | HC-F3-mirror | reversed | defender | stays up | falls 1.75 s | 3 | `?fixture=HC-F3-mirror&order=rev&cam=front&speed=0.25&t=1.60` |
 | HC-F3-phase0 | forward | defender | falls 1.18 s | stays up | 8m | `?fixture=HC-F3-phase0&cam=front&speed=0.25&t=1.05` |
 | L3-F1-low | both | defender | falls 1.70 / 1.65 s | stays up | 3 (forward), 9d (reversed) | `?fixture=L3-F1-low&cam=front&speed=0.25&t=1.55` |
 | L3-F1-mirror0 | both | defender | stays up | falls 1.39 / 1.45 s | 8m | `?fixture=L3-F1-mirror0&cam=front&speed=0.25&t=1.25` |
 | L3-F1-mirror4 | reversed | defender | stays up | falls 1.50 s | 8m | `?fixture=L3-F1-mirror4&order=rev&cam=front&speed=0.25&t=1.35` |
 | L3-F1-phase0 | forward | defender | falls 1.17 s | stays up | 8m | `?fixture=L3-F1-phase0&cam=front&speed=0.25&t=1.00` |
-| L3-F1-phase5 | reversed | defender | stays up | falls 1.60 s | 3 | `?fixture=L3-F1-phase5&order=rev&cam=front&speed=0.25&t=1.45` |
-| L3-F1-phase7 | forward | defender | stays up | falls 1.54 s | 10d | `?fixture=L3-F1-phase7&cam=front&speed=0.25&t=1.40` |
+| L3-F1-phase5 | reversed | defender | stays up | falls 1.58 s | 3 | `?fixture=L3-F1-phase5&order=rev&cam=front&speed=0.25&t=1.45` |
 | L3-F4-gripTarget | both | defender | falls 1.82 s | stays up | 10d (forward: 8m up, 9d falls, 10d up) | `?fixture=L3-F4-gripTarget&cam=front&speed=0.25&t=1.65` |
 | L3-F9-convert-free | both | defender | stays up | falls 0.86 s | 10d | `?fixture=L3-F9-convert-free&cam=front&speed=0.25&t=0.70` |
 | L4-F3-run-off | both | defender | stays up | falls 0.86 s | 10d (the same run as L3-F9-convert-free) | `?fixture=L4-F3-run-off&cam=front&speed=0.25&t=0.70` |
@@ -60,10 +64,10 @@ be rejected, as at the start (at the start known for the forward order).
 | L4-F9-free | both | defender | stays up | falls 1.12 s | 9d (the same run as L4-F3-run-on) | `?fixture=L4-F9-free&cam=front&speed=0.25&t=0.95` |
 | L4-F5-twoPalm-on | both | runner | falls 2.17 s | stays up | 8m | `?fixture=L4-F5-twoPalm-on&cam=front&speed=0.25&t=2.00` |
 
-In all: 16 player-runs now fall that stayed up, 8 now stay up that fell. Times are when the fall starts (the switch to
+In all (`netfalls.py r0-baseline r18-e-flip`): 15 player-runs now fall that stayed up, 9 now stay up that fell. Times are when the fall starts (the switch to
 falling); for "stays up" the link is just before the moment it used to fall. Changed and back again, so not in the
 list (the defender each time): L4-F10-elbow-on (fell at the start; up at 4b, down at 7c, up at 9d, down at 10d),
-L4-F10-knee-off (up at 8m, down at 10d), L3-F9-noProbe-free (down at 8m, up at 10d), HC-F3-phase0 reversed (up at 8m,
+L4-F10-knee-off (up at 8m, down at 10d), L3-F1-phase7 (down at 10d, up at 18e), L3-F9-noProbe-free (down at 8m, up at 10d), HC-F3-phase0 reversed (up at 8m,
 down at 10d), L3-F1-phase0 reversed (down at rung 3, up at 10d), HC-F3-lowRunner reversed and HC-F3-mirror forward
 (down at rung 3, up at 9d), HC-F3-phase75 reversed (up at rung 3, down at 8m), L3-F1-phase6 reversed (up at rung 3,
 down at 7c), and the conversions rejected from rung 3 until 8m (L3-F4-oneArm, L3-F1-phase2, L4-F10-wrap-off: rigid
@@ -250,21 +254,42 @@ Each 13a and 13c link adds the lab parameter that shows the parked flip; drop it
 - 14a changed four runs, the three L3-F6 holds and L4-F5-twoPalm-on, with no who-falls change:
   `?fixture=L3-F6-hold&cam=front&speed=0.25&t=2.10` and `?fixture=L3-F6-saturated&cam=front&speed=0.25&t=3.20`. Add
   `&holdstill=off` to see them as before.
-- 14b, the user's screenshot: `?fixture=L3-F16-contactStop&cam=front&speed=0.25&t=0.55&armswing=on`. As registered (drop
-  `&armswing=on`), the defender's left forearm, held off its swing, passes 10 cm into its own chest at 0.567 s, just
+- 14b, the user's screenshot (registered since 18e): `?fixture=L3-F16-contactStop&cam=front&speed=0.25&t=0.55`. As
+  before (add `&armstay=off&armswing=off`), the defender's left forearm, held off its swing, passes 10 cm into its own chest at 0.567 s, just
   before contact. With the swing it stays on its swing, clear of the chest. Neither player's forearm or hand passes
   through its own trunk; two upper arms touch 10-11 cm deep for a frame or two (0.68 s, 1.0 s).
-- 14b, the facemask: `?fixture=L3-F5-drag&cam=side&speed=0.25&t=0.85&armswing=on`. As registered, the runner's left
+- 14b, the facemask: `?fixture=L3-F5-drag&cam=side&speed=0.25&t=0.85`. As before, the runner's left
   hand passes through its own head at 0.87-1.25 s. With the swing it does not. The upper arm deep in the chest from
   1.6 s is left (a procedural arm; tracked).
 - With the swing on every L3/L4/HC fixture, the arms' gross pass-through of the own body (past 10 cm, or the bone
   inside the trunk or head) goes from 28 events (1.68 s) to 5 (0.08 s) for the forearm and hand, and from 111 (41.6 s)
-  to 75 (7.1 s) for the upper arm. The flip is parked: three defenders keep their feet (question 13), and the snaps
-  and the largest energy gains rise. The links are in question 13; the README is `parked/clip-arm-swing-flip/`.
+  to 75 (7.1 s) for the upper arm. Alone it was parked (three defenders kept their feet, snaps and energy gains rose;
+  `assess-14b/`); it is registered with the met arms (18e, below).
+
+### 16-18: a met arm keeps its natural pose; a ragdoll born in another player is pushed out
+
+Registered in 18e (16b's `metArmStay` with 14b's swing) on 17b's born overlap and 18c's separation. Add
+`&armstay=off&armswing=off` for 18c's tree.
+
+- The user's L3-F5-drag report: `?fixture=L3-F5-drag&cam=side&speed=0.25&t=0.35`. The carrier's left arm, met by the
+  wrap at 0.40 s, stays low at its side; before, it went up to a fixed raised pose, its hand to its facemask (0.97 s)
+  and its shoulder snapped (1.27 s).
+- The carry tuck pressed into the tackler: `?fixture=L3-F5-dragMirror&cam=front&speed=0.25&t=1.60` (past 10 cm for
+  1.25 s, the deepest met arm; question 16).
+- The runner whose shoulder is against the tackler: `?fixture=HC-F1-at1.6&order=rev&cam=front&speed=0.25&t=1.55`. It
+  converts at its request with its arm inside the tackler, which is pushed out of him (add `&born=off` for the stiff
+  fall it would be, `&bornsep=off` for the arm left to part).
+- Who falls: two defenders keep their feet where they fell before 18e, HC-F3-lowRunner and L3-F1-phase7 (both
+  forward; question 13). The L3-F1-low runner still falls.
+- Over every L3/L4/HC run, both orders: an arm through its own trunk or head (past 10 cm, or the bone axis inside)
+  0.35 s left for the forearm and hand (2.72 before), none in the head (0.92), 1.8 s for the upper arm, all arm tasks
+  (81.6); no supported snaps (17); one-frame jumps over 20 cm 124 -> 4. The trade: a met arm past 5 cm in the other
+  player 0.22 -> 31.7 s. No ragdoll limb is past 5 cm in another player's trunk or head for 0.10 s.
 
 ## Next steps
 
-None of these is started. The open questions are 3, 4 and 9-15 in the handoff (1, 2 and 5-8 are answered). Details,
+None of these is started. The open questions are 3, 4, 9-14, 16 and 17 in the handoff (1, 2 and 5-8 are answered,
+15 is moot since 18e). Details,
 captures and twins are in the handoff's "Open defects" and "Parked flips", and each parked README.
 
 1. **The user's review** of the list above and the open questions. A changed outcome the user rejects becomes its own
@@ -274,16 +299,13 @@ captures and twins are in the handoff's "Open defects" and "Parked flips", and e
    three cases it caused, then the 13a flip.
 4. `HOLD_LEG_CLEARANCE` (the forced release in a still hold), now that the still feet are registered (14a).
    `LEG_GUARD_V4`'s step-out is a step in a still hold, which ruling 2 rules out.
-5. 14b's flip, after question 13. If the three defenders who keep their feet are not accepted, find why the met arm
-   keeps them up in the first 0.1 s of contact (`assess-14b/falltwin.txt`). Then twin the snaps it worsens (R's right
-   elbow as it folds, the falling defenders near their conversions), its two largest energy gains, and the HC wrist
-   jumps. Next, `PROC_ARM_HELD_DEPARTURE`: let a procedural arm's held departure go too, and re-measure the upper arm's
-   pass-through.
-6. 13c-iii, only if the upper arm is still wanted after step 5 (`parked/clip-arm-swing-flip/README.md`): own-trunk
-   depth ranked below another body's (the rigid runner), the carry arm's tuck kept, the upper arm's trunk queries
-   culled (4759 with the swing). Then the low-tackle runner, and re-assess the 13c flip.
-7. After question 15: `ARM_OWN_HEAD`, the head as an arm self shape, with an own-head axis meter beside armTrunk's
-   (`parked/arm-own-head/`).
+5. `MET_ARM_REQUEST_IN_TRUNK` (18e): keep a met arm's request only while it is at most `MET_ARM_OWN_M` in its own
+   trunk, behind a flag; then the grip let go at the switch (L3-F4-gripTarget). If question 13's two defenders are not
+   accepted, twin them from just before the met arm's first difference.
+6. 13c-iii, only if the upper arm is still wanted (18e leaves 1.8 s, all arm tasks; `assess-14b/`): own-trunk depth
+   ranked below another body's, the carry arm's tuck kept, the upper arm's trunk queries culled (the tip's worst tick
+   is 3983 of 4000). Then the low-tackle runner, and re-assess the 13c flip.
+7. The 18e rebound gain (L3-F1-phase4 reversed D, 119 J) with rebound energy (step 12).
 8. Fix: an own-trunk hit read from what the solve will take, then re-assess the parked `selfTrunkBody` flip
    (`IMPACT_OVER_POWER`).
 9. Fix: the leg guard keeping a falling proxy's leg clear of a ragdoll shoe at HARD_OK, then re-assess the parked
