@@ -123,7 +123,32 @@ export interface FootComposeProfile {
    * minimum-jerk rise or descent at the lift cap over half the shortest step.
    */
   liftAccelMps2: number;
+  /**
+   * Contact motion polish 2 (the leg gallop; absent: as before, bit-identical): a step keeps the time its path needs and a
+   * step out of time lands. (1) A new step is fitted to its stance foot's window with its destination set, so the fit's
+   * floor, the time its acceleration limit needs for that distance, applies from the start (before, the fit ran with no
+   * destination and could squeeze 1.34 m into 0.08 s: L3-F3-collision R's right step at 0.45 s). (2) A step out of time
+   * lands at a destination fixed on the turf, the travel-predicted landing point: under the hip where it will be when the
+   * path, held to its acceleration limit, comes to rest there; re-picked only once that point leaves the step's reach
+   * budget about the predicted hip (before, it was re-picked against the moving hip every arrival stretch and never came to
+   * rest: the foot skimmed the turf for 0.5 to 1.2 s while the other foot took every stance). Its arrival is judged
+   * against the target the last pose was given, and a step retimed to its stance window lands where it is only when it
+   * has slowed as a settled foot does.
+   */
+  lateLanding?: boolean;
 }
+
+/** Contact motion polish 2: the late-landing rules' id suffix (`FootComposeProfile.lateLanding`). */
+export const LATE_LANDING_ID = 'late-landing-v1';
+/** The footwork profile with the late-landing rules, under an id that names them (a profile without compose is returned as it is). */
+export const withLateLanding = (f: FootworkProfile): FootworkProfile =>
+  !f.compose || f.compose.lateLanding ? f : { ...f, id: `${f.id}+${LATE_LANDING_ID}`, compose: { ...f.compose, lateLanding: true } };
+/** The footwork profile without them. */
+export const withoutLateLanding = (f: FootworkProfile): FootworkProfile => {
+  if (!f.compose?.lateLanding) return f;
+  const { lateLanding: _, ...compose } = f.compose;
+  return { ...f, id: f.id.replace(`+${LATE_LANDING_ID}`, ''), compose };
+};
 
 /** A minimum-jerk path's peak acceleration over its distance / its time^2 (10 / sqrt 3). */
 const MJ_PEAK_ACCEL = 10 / Math.sqrt(3);
@@ -328,6 +353,13 @@ export interface FootState {
   blockerW: Vec3 | null;
   /** The current step drags along the turf (no clearance): a reach release while the other foot is in the air. */
   drag: boolean;
+  /**
+   * Polish 2 (`FootComposeProfile.lateLanding`): a step out of time, its landing point fixed on the turf, and the radius
+   * (m, horizontal) about the predicted hip it was picked within; absent or null before the step runs out of time.
+   * (Optional: written only under the rule, so a plan without it keeps its layout.)
+   */
+  lateDest?: Vec3 | null;
+  lateR?: number;
   /** Clip swing progress of the last clip-regime substep (null in clip stance or outside the clip regime). */
   clipSwingP: number | null;
   /**
@@ -1121,6 +1153,12 @@ function startStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput, why: FootReas
   const L = len(hz(sub(d0, f.target)));
   const vCap = P.swing.maxSpeedMps + P.swing.travelSpeedK * len(hz(inp.vel));
   f.durS = clamp(1.6 * (L / vCap) + P.swing.minS * 0.5, P.swing.minS, P.swing.maxS);
+  // polish 2: the stance fit sees the destination of the nominal step, so its acceleration floor applies (without it the
+  // fit ran on the plant's cleared destination, or an old step's, and could only shorten)
+  if (P.compose?.lateLanding) {
+    f.lateDest = null;
+    if (!inp.debug?.squeezeStart) f.dest = destination(plan, s, inp, f.durS);
+  }
   fitStance(plan, s, inp);
   fitLanding(plan, s, inp);
   f.dest = destination(plan, s, inp, f.durS);
@@ -1147,6 +1185,7 @@ function continueSwing(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootE
   f.drag = false;
   f.wait = false;
   f.short = false;
+  if (P.compose?.lateLanding) f.lateDest = null;
   if (P.compose && heldOff(plan, f)) carryPath(plan, s, inp);
   else seedStep(plan, f);
   const vCap = P.swing.maxSpeedMps + P.swing.travelSpeedK * len(hz(inp.vel));
@@ -1205,7 +1244,8 @@ function fitStance(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
   // foot rising onto its toes stays within reach longer, and shortening the step to it over all that time asked for more
   // than the path can do (L3-F16-runStop: R's left foot 9 substeps late at 6 m/s); the stance foot then leaves first
   const aMax = C ? stepAccelMax(C, inp.vel) : 0;
-  const brake = inp.heelLift && C && f.dest ? boundedHorizon(HORIZONTAL, f.target, f.stepH.v, limitH(f.stepH.a, aMax), f.dest, inp.dt, inp.dt, aMax) : 0;
+  // (polish 2, lateLanding: with or without the heel lift)
+  const brake = (inp.heelLift || C?.lateLanding) && C && f.dest ? boundedHorizon(HORIZONTAL, f.target, f.stepH.v, limitH(f.stepH.a, aMax), f.dest, inp.dt, inp.dt, aMax) : 0;
   const rem = Math.min(remain, Math.max(left, 0.25 * plan.profile.swing.minS, inp.dt, descent, brake));
   f.short = true;
   f.durS = rem / (1 - p);
@@ -1333,18 +1373,23 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
   // from it takes that stretch again, to a fresh destination (plan 10b: also when the stretch ran out with the foot still on
   // its way: the path no longer arrives in one substep, it slows within the step's acceleration limit)
   const arriving = !!C && f.dest !== null && (f.lateS > 0 || (remainS > 0 && remainS <= C.arriveS));
-  if (!arriving) {
-    f.dest = destination(plan, s, inp, remainS);
+  const pick = (aheadS: number): Vec3 => {
+    let d = destination(plan, s, inp, aheadS);
     // plan 08: a step shortened to the other foot's stance lands where it has got to, it does not run back to the nearer point
-    const along = len(hz(inp.vel)) > 1e-6 ? dot(sub(prev, f.dest), norm(hz(inp.vel))) : 0;
-    if (C && f.short && len(hz(inp.vel)) >= P.settleSpeedMps && along > 0) f.dest = addScaled(f.dest, norm(hz(inp.vel)), along);
+    const along = len(hz(inp.vel)) > 1e-6 ? dot(sub(prev, d), norm(hz(inp.vel))) : 0;
+    if (C && f.short && len(hz(inp.vel)) >= P.settleSpeedMps && along > 0) d = addScaled(d, norm(hz(inp.vel)), along);
     // a step held off its destination by another body lands where the leg has got to
     if (C && remainS <= 0 && f.variant !== 0) {
-      f.dest = v3(f.ankleW.x, f.dest.y, f.ankleW.z);
+      d = v3(f.ankleW.x, d.y, f.ankleW.z);
       f.blockedW = v3(inp.home[s].x, 0, inp.home[s].z);
       f.blockerW = nearestOther(inp, f.blockedW);
     }
-  }
+    return d;
+  };
+  // polish 2 (lateLanding): a step out of time lands at a point fixed on the turf (`lateLand`)
+  const lateFixed = !!C?.lateLanding && remainS <= 0 && !inp.debug?.lateRepick;
+  if (lateFixed) f.dest = lateLand(plan, s, inp, prev, pick, !arriving);
+  else if (!arriving) f.dest = pick(remainS);
   if (C && remainS <= 0 && f.lateS <= 0 && len(hz(sub(f.dest!, prev))) >= 1e-3) f.lateS = C.arriveS;
   const horizonS = remainS > 0 ? remainS + dt : Math.max(f.lateS, dt);
   if (C) f.lateS = Math.max(0, f.lateS - dt);
@@ -1432,15 +1477,20 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
   // on a destination; without that stop a step whose destination kept moving, a leg held off by a tackler, chased it a
   // fresh stretch at a time and hovered: L3-F4-twoArm D, no plant from 0.48 s until its fall at 1.40 s)
   const settled = !!C && len(hz(f.ankleV)) * dt <= P.plantTolM && len(f.stepH.v) * dt <= P.plantTolM;
-  const little = (f.short || (settled && remainS <= 0)) && dist(f.target, inp.hips[s]) <= plan.reachM - P.reachMarginM;
+  // (polish 2, lateLanding: the arrival below is judged against the target the last pose was given, which no longer
+  // holds a quick foot off the ground; a step retimed to its stance window lands where it is once it has slowed as a
+  // settled foot does, not at speed)
+  const L = !!C?.lateLanding;
+  const little = ((f.short && (!L || settled)) || (settled && remainS <= 0)) && dist(f.target, inp.hips[s]) <= plan.reachM - P.reachMarginM;
   // composed: and the achieved foot is on the ground on its primary leg (a leg held off by clearance comes down first: the
   // proposal starts from the achieved foot, however long that takes, no teleport to the target)
   // plan 12 heel lift: a foot at its ankle range limit is on the ground tilted, its ankle above the flat-foot target by
   // the floor lift: it has arrived when it is over the target, and it lands on the corner it stands on
-  const lifted = !!inp.heelLift && f.ankleW.y > f.target.y;
+  const given = L ? prev : f.target;
+  const lifted = !!inp.heelLift && f.ankleW.y > given.y;
   // (and, held up at the leg's reach, inside the plant reach margin: a plant there is pulled off its corner by the leg's
   // soft reach on its first solve, L3-F5-drag D's left foot 2.567 s)
-  const arrived = lifted ? len(hz(sub(f.ankleW, f.target))) <= P.plantTolM && dist(f.ankleW, inp.hips[s]) <= plan.reachM - P.reachMarginM : dist(f.ankleW, f.target) <= P.plantTolM;
+  const arrived = lifted ? len(hz(sub(f.ankleW, given))) <= P.plantTolM && dist(f.ankleW, inp.hips[s]) <= plan.reachM - P.reachMarginM : dist(f.ankleW, given) <= P.plantTolM;
   if (p >= 1 && down && (len(hz(sub(f.dest!, f.target))) < 1e-3 || little) && (!C || (f.gapM <= P.plantTolM && f.variant === 0 && arrived))) {
     // (the step's own path this substep, level, at the achieved height: the foot moves on while it lands)
     if (C && lifted) proposeOnCorner(plan, f, inp, f.headingRad, lowestCorner(plan, f, inp, v3(f.target.x, f.ankleW.y, f.target.z)), inp.toeM);
@@ -1452,6 +1502,42 @@ function advanceStep(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * Polish 2 (`FootComposeProfile.lateLanding`): the destination of a step out of time. It stays where it was fixed on the
+ * turf while it is within the step's reach budget about the hip predicted at its landing (the hip moved on at the travel
+ * for the time the path, held to its acceleration limit, takes to come to rest there); it is picked (`pick`, the
+ * ordinary destination for a given time ahead) the first time, and again once it leaves that budget, at the
+ * travel-predicted landing point. A leg held off by another body (a clearance variant) is re-read where it has got to at
+ * each arrival stretch (`stretch`), as before.
+ */
+function lateLand(plan: FootPlan, s: ArmSide, inp: FootPlanInput, prev: Vec3, pick: (aheadS: number) => Vec3, stretch: boolean): Vec3 {
+  const P = plan.profile;
+  const C = P.compose!;
+  const f = plan.feet[s];
+  const aMax = stepAccelMax(C, inp.vel);
+  const a0 = limitH(f.stepH.a, aMax);
+  const v = hz(inp.vel);
+  // (the horizon the path will be given this substep: what is left of the arrival stretch, or a fresh one)
+  const T0 = f.lateS > 0 ? Math.max(f.lateS, inp.dt) : C.arriveS;
+  const landS = (d: Vec3): number => boundedHorizon(HORIZONTAL, prev, f.stepH.v, a0, d, T0, inp.dt, aMax);
+  const off = (d: Vec3, T: number): number => len(hz(sub(d, add(hz(inp.hips[s]), scale(v, T)))));
+  const vert = inp.hips[s].y - (inp.groundY + inp.soleM);
+  const rReach = Math.sqrt(Math.max(0, (plan.reachM - 2 * P.reachMarginM) ** 2 - vert * vert));
+  if (f.lateDest && !(f.variant !== 0 && stretch)) {
+    // (the budget: the destination's own radius, or the one it was picked at past it (the other foot's separation), with the reach margin)
+    if (off(f.lateDest, landS(f.lateDest)) <= Math.max(Math.min(P.maxStepFromHipM, rReach), f.lateR ?? 0) + P.reachMarginM) return f.lateDest;
+  }
+  let T = T0;
+  let d = pick(T);
+  for (let i = 0; i < 2; i++) {
+    T = landS(d);
+    d = pick(T);
+  }
+  f.lateDest = d;
+  f.lateR = off(d, T);
+  return d;
 }
 
 /**

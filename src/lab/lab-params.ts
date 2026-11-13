@@ -20,6 +20,9 @@
 //                      bodies move (V1); a fixture without a born overlap (after `born`) is run as it is;
 //   holdstill=on|off   a stationary hold keeping its feet planted (the footwork's HOLD_STILL_V1, rung 13b), or stepping
 //                      home, settling and turning its feet as any stance; a fixture without footwork is run as it is;
+//   latestep=on|off    a new step keeping the time its acceleration needs and a step out of time landing at a point
+//                      fixed on the turf (the footwork's `compose.lateLanding`, polish 2, the leg gallop; no fixture
+//                      registers it yet), or as before; a fixture without composed footwork is run as it is;
 //   upperarm=on|off    the supported arms keeping the upper arm and elbow out of their own trunk too (the self-clearance
 //                      profile's `upperArm`, rung 13c), or only the forearm and palm; a fixture without self-clearance is
 //                      run as it is;
@@ -74,7 +77,7 @@ import {
   withHipStops, withKneeStop, withBornOverlap, withoutBornOverlap, withBornSeparation, withoutBornSeparation, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutMetArmStay, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
   withClipArmSwing, withMetArmStay, withUpperArmClearance, withBalancedClear, withoutBalancedClear, type RagdollProfile,
 } from '../sim/profiles';
-import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
+import { HOLD_STILL_V1, withHoldStill, withLateLanding, withoutHoldStill, withoutLateLanding } from '../sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7 } from '../sim/controllers/wrap';
 import { FALL_REACT_V1, FALL_REACT_V2 } from '../sim/profiles';
@@ -89,6 +92,7 @@ const ARMTWIST = ['on', 'off'];
 const BORN = ['on', 'off'];
 const BORNSEP = ['on', 'off'];
 const HOLDSTILL = ['on', 'off'];
+const LATESTEP = ['on', 'off'];
 const UPPERARM = ['on', 'off'];
 const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
@@ -122,7 +126,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`, `wrap`, `fall`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `latestep`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`, `wrap`, `fall`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -215,6 +219,17 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     else {
       const f = v === 'off' ? withoutHoldStill(out.footwork) : out.footwork.holdStill?.id === HOLD_STILL_V1.id ? out.footwork : withHoldStill(withoutHoldStill(out.footwork));
       parts.push(`hold still ${v}${f === out.footwork ? ' (registered)' : ''}`);
+      if (f !== out.footwork) out = { ...out, footwork: f };
+    }
+  }
+  const latestep = params.get('latestep');
+  if (latestep !== null && latestep !== '') {
+    const v = latestep.toLowerCase();
+    if (!LATESTEP.includes(v)) parts.push(`latestep=${latestep} ignored`);
+    else if (!out.footwork?.compose) parts.push('latestep n/a (no composed footwork)');
+    else {
+      const f = v === 'off' ? withoutLateLanding(out.footwork) : withLateLanding(out.footwork);
+      parts.push(`late step ${v}${f === out.footwork ? ' (registered)' : ''}`);
       if (f !== out.footwork) out = { ...out, footwork: f };
     }
   }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
-import { HOLD_STILL_V1 } from '../src/sim/footwork';
+import { HOLD_STILL_V1, LATE_LANDING_ID } from '../src/sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7 } from '../src/sim/controllers/wrap';
 import {
@@ -278,6 +278,27 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((x) => !x.footwork)!;
     expect(labRun(g, new URLSearchParams('holdstill=on'))).toEqual({ def: g, opts: {}, label: 'holdstill n/a (no footwork)' });
     expect(labRun(d, new URLSearchParams('holdstill=maybe'))).toEqual({ def: d, opts: {}, label: 'holdstill=maybe ignored' });
+  }, 120000);
+
+  // contact motion polish 2: latestep=on|off on the fixture's composed footwork; no fixture registers it yet
+  it('latestep=on runs the fixture with the late-landing rules on its footwork (`compose.lateLanding`, id and all: L3-F7-loadRelease, another run); latestep=off takes them off again and on the registered fixture is the registered run; a fixture without composed footwork and unknown values change nothing', async () => {
+    const id = 'L3-F7-loadRelease';
+    const d = FIX(id);
+    expect(d.footwork!.compose!.lateLanding).toBeUndefined();
+    const on = labRun(d, new URLSearchParams(`fixture=${id}&latestep=on`));
+    expect(on.label).toBe('late step on');
+    expect(on.def.footwork!.compose!.lateLanding).toBe(true);
+    expect(on.def.footwork!.id).toBe(`${d.footwork!.id}+${LATE_LANDING_ID}`);
+    // the twin: the rules change the run
+    expect(await summaryOf(on.def, on.opts)).not.toBe(await summaryOf(d, {}));
+    const back = labRun(on.def, new URLSearchParams('latestep=OFF'));
+    expect(back.label).toBe('late step off');
+    expect(back.def).toEqual(d);
+    expect(labRun(d, new URLSearchParams('latestep=off'))).toEqual({ def: d, opts: {}, label: 'late step off (registered)' });
+    expect(labRun(on.def, new URLSearchParams('latestep=on'))).toEqual({ def: on.def, opts: {}, label: 'late step on (registered)' });
+    const g = allFixtures().find((x) => !x.footwork?.compose)!;
+    expect(labRun(g, new URLSearchParams('latestep=on'))).toEqual({ def: g, opts: {}, label: 'latestep n/a (no composed footwork)' });
+    expect(labRun(d, new URLSearchParams('latestep=maybe'))).toEqual({ def: d, opts: {}, label: 'latestep=maybe ignored' });
   }, 120000);
 
   // ladder rung 13c: upperarm=on|off on the fixture's self-clearance profile; no fixture registers the upper arm in it yet

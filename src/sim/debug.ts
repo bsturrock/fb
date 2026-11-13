@@ -36,6 +36,16 @@ export interface FootDebug {
    * where the clip stance goes on, the planner proposes it again there: a reseed that keeps mode and source).
    */
   releasePlantAt?: { t: number; side: 'left' | 'right' };
+  /**
+   * Fault (negative control of polish 2's step floor, `FootComposeProfile.lateLanding`): a new step is fitted to its
+   * stance window before its destination is set, as before: the fit has no acceleration floor.
+   */
+  squeezeStart?: boolean;
+  /**
+   * Fault (negative control of polish 2's late landing): a step out of time re-picks its destination against the moving
+   * hip every arrival stretch, as before (its arrival is still judged against the pose's target).
+   */
+  lateRepick?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */
