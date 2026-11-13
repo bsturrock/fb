@@ -64,7 +64,7 @@ async function rideRun(def: FixtureDef, opts: { reverseOrder?: boolean; fault?: 
   return out;
 }
 
-describe('polish 1.2, the ride hold (WRAP_V7, no fixture uses it)', () => {
+describe('polish 1.2, the ride hold (WRAP_V7)', () => {
   it('(a) the riding tackler holds the fallen carrier unbroken (front wrap reversed: from his conversion to the end of play, 0.38 s; side two-arm: 0.11 s); without the ride hold the clamp never holds 0.1 s unbroken after his conversion', async () => {
     for (const [id, rev, least] of [['L3-F19-front', true, 0.3], ['L3-F4-twoArm', false, 0.1]] as const) {
       const on = await rideRun({ ...FIX(id), wrap: V7 }, { reverseOrder: rev });

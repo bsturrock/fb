@@ -51,7 +51,7 @@ async function overRun(def: FixtureDef): Promise<{ over: number; asked: { t: num
   return out;
 }
 
-describe('polish 1.2, the ride-down (WRAP_V7, no fixture uses it)', () => {
+describe('polish 1.2, the ride-down (WRAP_V7)', () => {
   it('lowestY is the lowest corner of the torso box: upright, the box bottom; pitched 85 deg at root 0.72, the chest near 0.56 m', () => {
     const b = upperBodyCompound();
     if (b.kind === 'legacyCapsule') throw new Error('compound body expected');
@@ -196,7 +196,7 @@ const DN = DOWN_PRE;
 /** WRAP_V7 as before the come-down: exits (g), (l) and the referee's ending convert him where he is. */
 const V7_AT_ONCE: WrapProfile = { ...WRAP_V7, ride: { ...RD, down: undefined } };
 
-describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down, no fixture uses it)', () => {
+describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down)', () => {
   it('(a) after the referee\'s ending the rider keeps the full fold and never rises, and converts low by (h) or (t); twin: the old at-once conversion converts him at the ending, higher', async () => {
     for (const id of ['L3-F5-dragMirror', 'L3-F19-rear']) {
       const ok = await downRun(id, V7_PRE_ARRIVE);
@@ -337,7 +337,7 @@ async function foldedAsk(wrap: WrapProfile, pitchDeg: number, rateDegPerS: numbe
   return { exit: exit ?? null, chest };
 }
 
-describe('polish 1.2, the come-down arriving (WRAP_V7 ride.down.arrive, no fixture uses it)', () => {
+describe('polish 1.2, the come-down arriving (WRAP_V7 ride.down.arrive)', () => {
   it('(a) his conversion gains no more than the centre-of-mass offset and the exit\'s own rate gate allow; twin: the come-down without the arrival gains several times its bound', async () => {
     const ok = await arriveRun(WRAP_V7);
     expect(ok.conv).not.toBeNull();

@@ -16,7 +16,7 @@
 // which no registered fixture runs yet), suffix `jrv4`; a test resumes it with `{ def: { ...FIX(id), jointRange:
 // JOINT_RANGE_V4 } }`. `--brace=v1`: the fixture as before the M2 lean flip (tests/runs.ts `preBraceV2`, its carrier's brace
 // CARRIER_BRACE_V1), suffix `bracev1`; a test resumes it with `{ def: asCaptured(cap) }`. `--wrap=v7`: the fixture's
-// defender under WRAP_V7 (polish 1.2, the ride-down, which no registered fixture runs), suffix `wrapv7`; a test resumes
+// defender under WRAP_V7 (polish 1.2, the ride-down; registered on L3, L4 and HC since its flip), suffix `wrapv7`; a test resumes
 // it with `{ def: asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V7 })) }`. See tests/README.md.
 import { statSync } from 'node:fs';
 import { WRAP_V7 } from '../src/sim/controllers/wrap';
