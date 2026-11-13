@@ -13,7 +13,7 @@ import { handoffContactFixtures } from './handoff-contact';
 import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
-import { WRAP_V2 } from '../controllers/wrap';
+import { WRAP_V3 } from '../controllers/wrap';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -114,8 +114,9 @@ function balancedClearFlip(d: FixtureDef): FixtureDef {
  * Contact motion M3, the wrap flip: on every L3, L4 and HC fixture with a tackling defender (a `wrapAttempt`
  * controller that pursues to the end), his arms ride ahead of his chest, open into a cradle wider than the carrier ahead
  * of contact and close on the first valid touch; then, on a defender with a supported finish, a secure two-arm hold
- * lowers him and takes him down with the carrier (WRAP_V2; WRAP_V1 before the takedown flip, the lab's `wrap=v1`). A
- * defender who stops pursuing to stand in a hold
+ * lowers him and takes him down with the carrier, his arms keeping their hold on the carrier while he goes down (WRAP_V3;
+ * WRAP_V2 before the hold flip, the lab's `wrap=v2`; WRAP_V1 before the takedown flip, `wrap=v1`). A defender who stops
+ * pursuing to stand in a hold
  * (`standAfterS`: the L3-F6 stationary holds, which register the hold's still feet) keeps the Gate 2 hands: the cradle
  * is the tackle's, and under it the hold's wrap is retained at the touch, after the carrier's prep has unwound
  * (docs/handoff/contact-motion-m3.md). G, L1, L2 and RH keep their definitions. The lab's `wrap=off` is the view before
@@ -123,7 +124,7 @@ function balancedClearFlip(d: FixtureDef): FixtureDef {
  */
 function wrapFlip(d: FixtureDef): FixtureDef {
   const tackles = d.players.some((p) => p.controller.kind === 'wrapAttempt' && p.controller.standAfterS === undefined);
-  return VISIBLE_FLIP.test(d.id) && tackles ? { ...d, wrap: WRAP_V2 } : d;
+  return VISIBLE_FLIP.test(d.id) && tackles ? { ...d, wrap: WRAP_V3 } : d;
 }
 
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */

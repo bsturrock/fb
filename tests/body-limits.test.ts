@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preBrace, preFlip, preMetArmStay, preWrap, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFlip, preMetArmStay, preWrap, preWrapV3, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -139,7 +139,9 @@ function pullForearms(): (s: Simulation) => void {
 
 const J = JOINT_RANGE_V1;
 const D = Math.PI / 180;
-const twin = (d: FixtureDef): FixtureDef => ({ ...d, id: `${d.id}-noRange`, jointRange: undefined });
+// (contact motion M3, the hold flip: the takedown's hold drives the shoulder inside the joint-range profile's envelope,
+// which a run without the profile has not, so the twin's wrap is the one before the hold, as the twin is before plan 12)
+const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(d), id: `${d.id}-noRange`, jointRange: undefined });
 /** Ladder rung 7d: `d` pinned to LEG_GUARD_V1, the guard a natural sample was taken under (its own id while it registers V1, the runs being cached by id). */
 const pinV1 = (d: FixtureDef): FixtureDef => (!d.legGuard || d.legGuard.id === LEG_GUARD_V1.id ? d : { ...d, id: `${d.id}~v1`, legGuard: LEG_GUARD_V1 });
 const SIDES = ['left', 'right'] as const;

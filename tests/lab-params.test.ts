@@ -4,7 +4,7 @@ import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1 } from '../src/sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
-import { WRAP_V1, WRAP_V2 } from '../src/sim/controllers/wrap';
+import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../src/sim/controllers/wrap';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear,
@@ -494,13 +494,18 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('balclear=maybe'))).toEqual({ def: d, opts: {}, label: 'balclear=maybe ignored' });
   });
 
-  // contact motion M3: wrap=on|v1|off sets the fixture's wrap profile (tests/wrap-open.test.ts and
-  // tests/wrap-takedown.test.ts have the twins that it changes the run)
-  it('wrap=on runs the wrapping defender with WRAP_V2 (the cradle, the close on touch and the committed finish), wrap=v1 with WRAP_V1 (the cradle only); wrap=off without either; a fixture without a wrapping defender and unknown values change nothing', () => {
+  // contact motion M3: wrap=on|v2|v1|off sets the fixture's wrap profile (tests/wrap-open.test.ts,
+  // tests/wrap-takedown.test.ts and tests/wrap-hold.test.ts have the twins that it changes the run)
+  it('wrap=on runs the wrapping defender with WRAP_V3 (the cradle, the close on touch, the committed finish and the hold carried through it), wrap=v2 with WRAP_V2 (the finish, his arms let go at it), wrap=v1 with WRAP_V1 (the cradle only); wrap=off without any; a fixture without a wrapping defender and unknown values change nothing', () => {
     const { wrap, ...off } = FIX('L3-F4-twoArm');
     void wrap;
     const v1: FixtureDef = { ...off, wrap: WRAP_V1 };
-    const on: FixtureDef = { ...off, wrap: WRAP_V2 };
+    const v2: FixtureDef = { ...off, wrap: WRAP_V2 };
+    const on: FixtureDef = { ...off, wrap: WRAP_V3 };
+    expect(FIX('L3-F4-twoArm').wrap).toBe(WRAP_V3);
+    expect(labRun(on, new URLSearchParams('wrap=v2'))).toEqual({ def: v2, opts: {}, label: 'wrap v2' });
+    expect(labRun(v2, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
+    expect(labRun(v2, new URLSearchParams('wrap=v2'))).toEqual({ def: v2, opts: {}, label: 'wrap v2 (registered)' });
     expect(labRun(off, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
     expect(labRun(off, new URLSearchParams('wrap=v1'))).toEqual({ def: v1, opts: {}, label: 'wrap v1' });
     expect(labRun(on, new URLSearchParams('wrap=v1'))).toEqual({ def: v1, opts: {}, label: 'wrap v1' });

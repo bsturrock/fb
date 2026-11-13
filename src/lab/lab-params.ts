@@ -41,8 +41,10 @@
 //                      rule profile's `balancedClear`), or on supported control alone. Registered on the L3, L4 and HC
 //                      football rules: `balclear=off` is the view before. A fixture without football rules is run as it
 //                      is;
-//   wrap=on|v1|off     the wrapping defender (contact motion M3). on: WRAP_V2, the cradle and the committed finish (a
-//                      secure two-arm hold lowers him and takes him down with the carrier); v1: WRAP_V1, the cradle only
+//   wrap=on|v2|v1|off  the wrapping defender (contact motion M3). on: WRAP_V3, the cradle and the committed finish (a
+//                      secure two-arm hold lowers him and takes him down with the carrier), his holds carried through the
+//                      takedown onto his ragdoll arms; v2: WRAP_V2, the same takedown with his arms let go at it (the
+//                      view before the hold flip); v1: WRAP_V1, the cradle only
 //                      (arms carried ahead of the chest, opened wider than the carrier ahead of contact, closed on the
 //                      first valid touch); off: the Gate 2 progression. A fixture without a wrapping defender (a
 //                      `wrapAttempt` controller) is run as it is.
@@ -59,7 +61,7 @@ import {
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
-import { WRAP_V1, WRAP_V2 } from '../sim/controllers/wrap';
+import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../sim/controllers/wrap';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
@@ -76,7 +78,7 @@ const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
-const WRAP = ['on', 'v1', 'off'];
+const WRAP = ['on', 'v2', 'v1', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -264,7 +266,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     if (!WRAP.includes(v)) parts.push(`wrap=${wrap} ignored`);
     else if (!out.players.some((p) => p.controller.kind === 'wrapAttempt')) parts.push('wrap n/a (no wrapping defender)');
     else {
-      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : WRAP_V2;
+      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : v === 'v2' ? WRAP_V2 : WRAP_V3;
       const w = want && out.wrap?.id === want.id ? out.wrap : want;
       parts.push(`wrap ${v}${w === out.wrap ? ' (registered)' : ''}`);
       if (w !== out.wrap) {
