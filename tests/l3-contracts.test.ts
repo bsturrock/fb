@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, preWrapV4, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -130,6 +130,9 @@ import {
   WALK_VALID,
   type Watch,
 } from './l3-pass';
+
+/** A fixture as before the strike flip (WRAP_V3): the drive flip's `preWrapV5`, then the strike flip's `preWrapV4`. */
+const preStrikeFlip = (d: FixtureDef): FixtureDef => preWrapV4(preWrapV5(d));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The pass
@@ -460,9 +463,9 @@ describe('plan 10b foot target continuity', () => {
     };
     // (the strike flip: L3-F10-defender's liftoff steps are in its run before the flip, where the pair was taken)
     const pair = ['L3-F16-kick', 'L3-F10-defender'];
-    const ok = await record(pair, {}, preWrapV4);
+    const ok = await record(pair, {}, preStrikeFlip);
     expect(unseenKinds(ok)).toEqual([]);
-    expect(unseenKinds(await record(pair, { debug: { foot: { noVoluntarySteps: true } } }, preWrapV4))).toEqual(['B1 voluntary', 'B2 voluntary']);
+    expect(unseenKinds(await record(pair, { debug: { foot: { noVoluntarySteps: true } } }, preStrikeFlip))).toEqual(['B1 voluntary', 'B2 voluntary']);
     // the hold: before the flip the defender steps in it (counted as held, for no kind); with the rule it does not, and
     // every kind's count is the same. (Ladder 18e: the pair as before the met-arm flip. With the rule and without it the
     // runs are the same up to R's left step in the hold at 1.4375 s, with the flip and without it; after it they count
@@ -497,8 +500,8 @@ describe('plan 10b foot target continuity', () => {
           // still has steps running out of time at speed
           // plan 13d: L3-F1-phase0 has none now; L3-F1-phase1 D left 0.721 s slows from 11.0 to 10.5 m/s within its limit.
           // Plan 13e: L3-F3-side has none at speed now (it plays the supplied clips); L3-F3-recover has two (below). The
-          // strike flip: L3-F1-phase1's is in its run before the flip (`preWrapV4`), where it was taken
-          for (const [id, pre] of [['L3-F3-recover', undefined], ['L3-F1-phase1', preWrapV4]] as const) {
+          // strike flip: L3-F1-phase1's is in its run before the flip (`preStrikeFlip`), where it was taken
+          for (const [id, pre] of [['L3-F3-recover', undefined], ['L3-F1-phase1', preStrikeFlip]] as const) {
             const { outOfTime } = await of(id, pre);
             const moving = outOfTime.filter((x) => x.speed > 1);
             expect(moving.length, id).toBeGreaterThan(0);
@@ -571,11 +574,11 @@ describe('plan 08 foot limits at every actual substep', () => {
     'vertical target and offset recovery stay inside their limits, measured inside the planner and from outside: every L3 fixture; a carried handover is under the bound from its first update; the reported overruns reach the limits',
     [FOOT_LIMITS],
     async () => {
-      // the strike flip: these carried handovers are in the runs before the flip (`preWrapV4`), where they were taken
+      // the strike flip: these carried handovers are in the runs before the flip (`preStrikeFlip`), where they were taken
       const preStrike = new Map<string, ReturnType<typeof footLimits>['seen']>();
       for (const id of ['L3-F1-phase3', 'L3-F1-phase0', 'L3-F1-phase6']) {
         const m = footLimits();
-        await runOne(preWrapV4(FIX(id)), m.watch, { transitionAudit: true });
+        await runOne(preStrikeFlip(FIX(id)), m.watch, { transitionAudit: true });
         preStrike.set(id, m.seen);
       }
       const records: [string, () => void][] = [
@@ -886,11 +889,13 @@ describe('plan 08 pass 3: contact integration', () => {
   passTest('the defender converts on the measured sign of its bob: the L3-F10 rising and falling holds', [DEFENDER_BOB]);
   passTest("plan 13d known limits gone (plan 14): the L3-F9 one-arm defenders' and L3-F1-falling's conversions are accepted, none rejected", [DEFENDER_13F]);
   it('plan 13d known limits gone (plan 14), natural sample: the L3-F9 one-arm defenders and L3-F1-falling convert at their labelled conversion (taken before CARRIER_BRACE_V2)', async () => {
-    // under V2 L3-F9-defenderRising's D loses support at 0.796 s, before its label: the sample is kept as it was taken
+    // under V2 L3-F9-defenderRising's D loses support at 0.796 s, before its label: the sample is kept as it was taken.
+    // (The drive flip: under WRAP_V5 these defenders take their carriers down before their labels; the sample is in the
+    // runs before it, `preWrapV5`)
     const fails: string[] = [];
     const rep = (m: string): void => void fails.push(m);
     for (const id of DEFENDER_13F_SAMPLE.fixtures as string[]) {
-      const def = preBraceV2(FIX(id));
+      const def = preBraceV2(preWrapV5(FIX(id)));
       await runWatched(def, [{ w: DEFENDER_13F_SAMPLE.watch(def, rep), fail: rep }], { transitionAudit: true });
     }
     expect(fails).toEqual([]);

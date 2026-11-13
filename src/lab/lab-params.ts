@@ -41,9 +41,11 @@
 //                      rule profile's `balancedClear`), or on supported control alone. Registered on the L3, L4 and HC
 //                      football rules: `balclear=off` is the view before. A fixture without football rules is run as it
 //                      is;
-//   wrap=on|v3|v2|v1|off  the wrapping defender (contact motion M3). on: WRAP_V4, the strike (polish 1.1: hips lower,
-//                      trunk pitched in on a hip hinge, the shoulder leading with the head to the carrier's side, arms
-//                      wide from the shoulders) on WRAP_V3; v3: WRAP_V3 (the view before the strike flip), the cradle and
+//   wrap=on|v4|v3|v2|v1|off  the wrapping defender (contact motion M3). on: WRAP_V5, the drive (polish 1.2: with a hold he
+//                      stays on his feet driving through the carrier and goes down with him) on WRAP_V4; v4: WRAP_V4 (the
+//                      view before the drive flip: the hold lowers him and takes him down on a timer), the strike (polish
+//                      1.1: hips lower, trunk pitched in on a hip hinge, the shoulder leading with the head to the
+//                      carrier's side, arms wide from the shoulders) on WRAP_V3; v3: WRAP_V3 (the view before the strike flip), the cradle and
 //                      the committed finish (a secure two-arm hold lowers him and takes him down with the carrier), his
 //                      holds carried through the takedown onto his ragdoll arms; v2: WRAP_V2, the same takedown with his arms let go at it (the
 //                      view before the hold flip); v1: WRAP_V1, the cradle only
@@ -70,7 +72,7 @@ import {
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
-import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4 } from '../sim/controllers/wrap';
+import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5 } from '../sim/controllers/wrap';
 import { FALL_REACT_V1, FALL_REACT_V2 } from '../sim/profiles';
 import type { SimOptions } from '../sim/simulation';
 
@@ -88,7 +90,7 @@ const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
-const WRAP = ['on', 'v3', 'v2', 'v1', 'off'];
+const WRAP = ['on', 'v4', 'v3', 'v2', 'v1', 'off'];
 const FALL = ['on', 'v1', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
@@ -277,7 +279,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     if (!WRAP.includes(v)) parts.push(`wrap=${wrap} ignored`);
     else if (!out.players.some((p) => p.controller.kind === 'wrapAttempt')) parts.push('wrap n/a (no wrapping defender)');
     else {
-      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : v === 'v2' ? WRAP_V2 : v === 'v3' ? WRAP_V3 : WRAP_V4;
+      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : v === 'v2' ? WRAP_V2 : v === 'v3' ? WRAP_V3 : v === 'v4' ? WRAP_V4 : WRAP_V5;
       const w = want && out.wrap?.id === want.id ? out.wrap : want;
       parts.push(`wrap ${v}${w === out.wrap ? ' (registered)' : ''}`);
       if (w !== out.wrap) {
