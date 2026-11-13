@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
+import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
 import { withHoldStill } from '../footwork';
 
 /**
@@ -65,6 +65,16 @@ function bornFlip(d: FixtureDef): FixtureDef {
   return d.ragdoll && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withBornOverlap(d.ragdoll) } : d;
 }
 
+/**
+ * Ladder 18c, the born-separation flip: every L3, L4 and HC ragdoll's held born pairs are pushed apart, capped
+ * (BORN_OVERLAP_V2 in V1's place, rung 18b), rather than left to part as the bodies move: none goes deeper than it was
+ * born. G, L1, L2 and RH keep their profiles. The lab's `bornsep=off` is the view before it; tests/runs.ts
+ * `preBornSeparation` gives a definition as before it.
+ */
+function bornSepFlip(d: FixtureDef): FixtureDef {
+  return d.ragdoll?.bornOverlap && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withBornSeparation(d.ragdoll) } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -93,6 +103,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip));
   return registry.slice();
 }

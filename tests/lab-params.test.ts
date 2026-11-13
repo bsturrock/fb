@@ -8,7 +8,7 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preBornOverlap, preFlip, preHoldStill, preOwnLegs, preV3, runSim } from './helpers';
+import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preFlip, preHoldStill, preOwnLegs, preV3, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing` and `armstay` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -361,18 +361,18 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('armstay=maybe'))).toEqual({ def: d, opts: {}, label: 'armstay=maybe ignored' });
   }, 120000);
 
-  // ladder 17: born=on|off on the fixture's ragdoll profile, composed after armtwist; registered on L3, L4 and HC (17b),
-  // so the row starts from the definition before that flip
-  it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling before the 17b flip: D converts at his first try, where that run defers him), which is the registered fixture; born=off takes it off again and on a fixture without it is that run; a fixture without a ragdoll and unknown values change nothing', async () => {
+  // ladder 17: born=on|off on the fixture's ragdoll profile, composed after armtwist; registered on L3, L4 and HC (17b,
+  // V2 since 18c), so the row starts from the definition before those flips
+  it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling before the 17b flip: D converts at his first try, where that run defers him), which is the registered fixture before the born separation; born=off takes it off again and on a fixture without it is that run; on the registered fixture it keeps V2; a fixture without a ragdoll and unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
     const reg = FIX(id);
-    expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
+    expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const d = preBornOverlap(reg);
     expect(d.ragdoll!.bornOverlap).toBeUndefined();
     const on = labRun(d, new URLSearchParams(`fixture=${id}&born=on`));
     expect(on.label).toBe('born overlap on');
     expect(on.def).toEqual({ ...d, ragdoll: withBornOverlap(d.ragdoll!) });
-    expect(on.def).toEqual(reg);
+    expect(on.def).toEqual(preBornSeparation(reg));
     expect(on.def.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
     expect(on.def.ragdoll!.id).toBe(`${d.ragdoll!.id}+born-overlap-v1`);
     // the twin: the run before the flip defers D's conversion (his palm in R's arm), the profile converts him at once
@@ -397,12 +397,16 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('born=maybe'))).toEqual({ def: d, opts: {}, label: 'born=maybe ignored' });
   }, 120000);
 
-  // ladder 18: bornsep=on|off on the fixture's born overlap (V1 to V2 and back), composed after born
-  it('bornsep=on runs the fixture with its born pairs pushed apart (BORN_OVERLAP_V2 in V1\'s place, its id renamed in place: L3-F1-falling, where D\'s palm pair is released with the separation\'s work, which V1\'s release has no part of); bornsep=off takes it back to the registered fixture; born=on keeps V2; with born=off, or a fixture without a born overlap, it is n/a; unknown values change nothing', async () => {
+  // ladder 18: bornsep=on|off on the fixture's born overlap (V1 to V2 and back), composed after born; registered on L3, L4
+  // and HC (18c), so the row starts from the definition before that flip
+  it('bornsep=on runs the fixture with its born pairs pushed apart (BORN_OVERLAP_V2 in V1\'s place, its id renamed in place: L3-F1-falling before the 18c flip, where D\'s palm pair is released with the separation\'s work, which V1\'s release has no part of), which is the registered fixture; bornsep=off takes it back; born=on keeps V2; with born=off, or a fixture without a born overlap, it is n/a; unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
-    const reg = FIX(id);
+    const registered = FIX(id);
+    expect(registered.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
+    const reg = preBornSeparation(registered);
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
     const on = labRun(reg, new URLSearchParams(`fixture=${id}&bornsep=on`));
+    expect(on.def).toEqual(registered);
     expect(on.label).toBe('born separation on');
     expect(on.def).toEqual({ ...reg, ragdoll: withBornSeparation(reg.ragdoll!) });
     expect(on.def.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);

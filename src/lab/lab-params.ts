@@ -16,8 +16,8 @@
 //                      the solve until separated (BORN_OVERLAP_V1, ladder 17: ragdoll rather than fall stiff), or
 //                      refused (deferred) past the 1.5 cm tolerance as before; `on` keeps a born overlap already registered;
 //   bornsep=on|off     the born overlap's held pairs pushed apart, capped (BORN_OVERLAP_V2, ladder 18: none deeper than
-//                      born, parted in about 0.15 s), or left to part as the bodies move (V1); a fixture without a born
-//                      overlap (after `born`) is run as it is;
+//                      born, parted in about 0.15 s; registered on L3, L4 and HC since 18c), or left to part as the
+//                      bodies move (V1); a fixture without a born overlap (after `born`) is run as it is;
 //   holdstill=on|off   a stationary hold keeping its feet planted (the footwork's HOLD_STILL_V1, rung 13b), or stepping
 //                      home, settling and turning its feet as any stance; a fixture without footwork is run as it is;
 //   upperarm=on|off    the supported arms keeping the upper arm and elbow out of their own trunk too (the self-clearance

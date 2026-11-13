@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
 import { readdirSync } from 'node:fs';
 import type { FixtureDef } from '../src/sim/fixture';
-import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preFlip, preHoldStill, preV3, runSim } from './helpers';
+import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBornSeparation, preFlip, preHoldStill, preV3, runSim } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
 import { ARM_G2, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 
@@ -167,7 +167,10 @@ describe('asCaptured: a capture\'s definition out of the flip chain', () => {
     // overlap: the first only
     expect(same(asCaptured(S('L3-F6-hold@126')), preHoldStill(preBornOverlap(FIX('L3-F6-hold'))))).toBe(true);
     expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(preBornOverlap(FIX('L3-F16-contactStop')));
-    expect(BEFORE_FLIPS[0]).toBe(preBornOverlap);
+    // (`preBornOverlap` takes the born overlap off whichever it is: before the born separation, the same definition)
+    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(preBornOverlap(preBornSeparation(FIX('L3-F16-contactStop'))));
+    expect(BEFORE_FLIPS[0]).toBe(preBornSeparation);
+    expect(BEFORE_FLIPS[1]).toBe(preBornOverlap);
   });
 
   it('fault twins: a capture no definition of the chain ran (a flip not added to it) is refused, naming the differing paths; a variant path the chain changes is refused', () => {
