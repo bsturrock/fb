@@ -13,6 +13,7 @@ import { handoffContactFixtures } from './handoff-contact';
 import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
+import { WRAP_V1 } from '../controllers/wrap';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -109,6 +110,20 @@ function balancedClearFlip(d: FixtureDef): FixtureDef {
   return d.rules?.kind === 'footballTackleSubset' && VISIBLE_FLIP.test(d.id) ? { ...d, rules: withBalancedClear(d.rules) } : d;
 }
 
+/**
+ * Contact motion M3, the wrap flip: on every L3, L4 and HC fixture with a tackling defender (a `wrapAttempt`
+ * controller that pursues to the end), his arms ride ahead of his chest, open into a cradle wider than the carrier ahead
+ * of contact and close on the first valid touch (WRAP_V1). A defender who stops pursuing to stand in a hold
+ * (`standAfterS`: the L3-F6 stationary holds, which register the hold's still feet) keeps the Gate 2 hands: the cradle
+ * is the tackle's, and under it the hold's wrap is retained at the touch, after the carrier's prep has unwound
+ * (docs/handoff/contact-motion-m3.md). G, L1, L2 and RH keep their definitions. The lab's `wrap=off` is the view before
+ * it; tests/runs.ts `preWrap` gives a definition as before it.
+ */
+function wrapFlip(d: FixtureDef): FixtureDef {
+  const tackles = d.players.some((p) => p.controller.kind === 'wrapAttempt' && p.controller.standAfterS === undefined);
+  return VISIBLE_FLIP.test(d.id) && tackles ? { ...d, wrap: WRAP_V1 } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -137,6 +152,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip));
   return registry.slice();
 }

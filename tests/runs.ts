@@ -82,6 +82,17 @@ export const preBrace = (d: FixtureDef): FixtureDef => {
  */
 export const preBalancedClear = (d: FixtureDef): FixtureDef => (d.rules?.balancedClear ? { ...d, rules: withoutBalancedClear(d.rules) } : d);
 /**
+ * Contact motion M3 (the wrap flip): `d` as before it, without the wrapping defender's wrap profile (the same definition
+ * on a fixture without one): what every state capture and natural sample taken before it ran under. Composes with the
+ * other `pre*` helpers.
+ */
+export const preWrap = (d: FixtureDef): FixtureDef => {
+  if (!d.wrap) return d;
+  const { wrap, ...o } = d;
+  void wrap;
+  return o;
+};
+/**
  * Contact motion M2 follow-up (the lean flip): `d` as before it, its carrier's brace CARRIER_BRACE_V1 where it has V2:
  * what every state capture and natural sample taken before it ran under. Composes with the other `pre*` helpers.
  */
@@ -135,11 +146,11 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
 
 /**
  * The flips registered on L3, L4 and HC since the first state capture, the latest first: each gives a definition as
- * before its flip (M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
+ * before its flip (M3 the wrap, M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
  * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
  * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before

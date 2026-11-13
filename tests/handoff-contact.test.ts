@@ -20,7 +20,7 @@ import { stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { POSE_GUARD_C6, withoutBornOverlap } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { breathe, create, FIX, metArmStayed, pace, preBornSeparation, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
+import { breathe, create, FIX, metArmStayed, pace, preBornSeparation, preWrap, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
 import { heldBornBar, limbAndTrunk, limbInBody, LIMB_DEEP_M, LIMB_HELD_M, LIMB_HELD_S } from './visible-bar';
 
 const HC = (): FixtureDef[] => allFixtures().filter((d) => d.id.startsWith('HC-'));
@@ -362,7 +362,9 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
 
   it('ladder 18, the rule\'s twin on a run: HC-F1-at1.6 reversed under the met-arm flip, R converted with his left upper arm 8 cm in D\'s torso; left to part (V1, the born pairs held, not pushed) the arm stays over 5 cm in D for over 0.4 s and fails the rule; pushed apart (V2, the registered born overlap) it passes', async () => {
     const said: string[] = [];
-    for (const [def, fails] of [[metArmStayed(preBornSeparation(FIX('HC-F1-at1.6'))), true], [metArmStayed(FIX('HC-F1-at1.6')), false]] as const) {
+    // (contact motion M3: a natural sample, before the wrap flip: under it R converts with that arm 4 cm in D)
+    const at16 = preWrap(FIX('HC-F1-at1.6'));
+    for (const [def, fails] of [[metArmStayed(preBornSeparation(at16)), true], [metArmStayed(at16), false]] as const) {
       const bar = heldBornBar();
       const sim = await runSim(await create(def, { reverseOrder: true, onSubstep: bar.substep }));
       const R = sim.players.find((p) => p.id === 'R')!;
