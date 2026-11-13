@@ -7,8 +7,8 @@ Sequence: [contact motion](../open/contact-motion/README.md). This work comes af
 The work is on branch `prereq-ladder`, cut from `a6d712f` (M1) and built in the worktree
 `~/.claude-wt/football-sim-7-ladder`: 61 commits to `8a6af97`, the close-out docs, then ladder 13 (four commits to
 `599dc57`, and its docs), the full check's speed-up (`69ae0bb` to `29c785b`), ladder 14 (`c81146e` to `8f3ce6e`),
-ladder 15 and ladder 16 (`11551f6`, `5c8d4aa`). `model-integration` in the main checkout is fast-forwarded to it, and
-both branches are pushed to `origin`.
+ladder 15, ladder 16 (`11551f6`, `5c8d4aa`) and ladder 17 (`8d50783`, `0926d2c`). `model-integration` in the main
+checkout is fast-forwarded to it, and both branches are pushed to `origin`.
 
 Ladder 13 (2026-11-12) took the user's three look rulings: the fallen arm bent the wrong way overhead (13a), legs
 planted and still in a stationary hold (13b), and the elbow and upper arm inside the own chest (13c). Each landed off;
@@ -27,12 +27,22 @@ its facemask and goes haywire: the body-fixed alternatives, `MET_ARM_FIXED_ALTER
 - **16c**: its flip with `clipArmSwing` is parked after one fix round (`parked/met-arm-stay-flip/`): it leaves a new
   rigid falling figure and the shape-query budget broken.
 
-**Result at the tip** (full check `.scratch/ladder/r16-b-metarmstay/` in the main checkout). Every step after 10e is
+Ladder 17 (direction item 4: a player who should go to ragdoll always does; a rigid falling figure is the worst look):
+
+- **17a** (`8d50783`): a candidate born inside another player converts, the overlapping pairs out of the solve until
+  they separate (`bornOverlap`), landed off.
+- **17b** (`0926d2c`): registered on every L3, L4 and HC ragdoll.
+- **17c**: 16c's flip re-judged on 17b with one more round (a limb born deep in a trunk deferred, query trims): parked
+  again (`parked/met-arm-stay-flip/`, round 2). It fixes 16c's rigid figure, its torso breach and the query budget, but
+  nine defender runs keep their feet and 17 suite rows fail.
+
+**Result at the tip** (full check `.scratch/ladder/r17-b3-born-flip/` in the main checkout). Every step after 10e is
 byte-identical to 10e except 14a-ii, which changed four summaries. 13a-i changed only the visible meter:
 - The suite passes 383/383 in 41 files (250 at the start); after ladder 15's gate tests (below) 395/395 in 42 files,
-  `.scratch/ladder/r15-c-energy-conv/`; after ladder 16 404/404 in 43. Typecheck and build pass. 411 fixtures export, equal to `evidence/summary.json`.
+  `.scratch/ladder/r15-c-energy-conv/`; after ladder 16 404/404 in 43; after ladder 17 409/409 in 44. Typecheck and build pass. 411 fixtures export, equal to `evidence/summary.json`.
 - G, L1, L2 and RH summaries and traces are byte-identical to `a6d712f`. Summaries changed: L3 59 of 98, L4 70 of 75,
-  HC 21 of 22.
+  HC 21 of 22. 17b changed two L3 summaries against 16b (L3-F1-falling, L3-F9-defenderFalling: D converts 12.5 ms
+  earlier, same result).
 - Leg matrix: none over a ceiling. L4 matrix: one row over the power ceiling (`IMPACT_OVER_POWER`, tracked). The worst
   shape-query tick is 3588 (the budget is 4000).
 - The full check takes 220-250 s since ladder 14-speed (it took 396 s): the suite alone 141 s on a quiet machine, 161 s
@@ -46,13 +56,17 @@ byte-identical to 10e except 14a-ii, which changed four summaries. 13a-i changed
 - A standing player's legs are solid to falling players: a falling arm, leg or body meets the shin or thigh, and both
   are pushed.
 - Two players in a still hold keep their feet planted (14a).
+- A player who goes to ragdoll while overlapping another (an arm in the other's body, a trunk against a trunk) becomes
+  a ragdoll instead of falling stiff (17b); the overlapping parts pass through each other until they come apart. A
+  rigid falling figure is left only where the candidate is not the shown body: the three fixtures built for it.
 - Otherwise supported players look as at M1, because every other supported-side step is landed off.
 
 ## Behaviour registered on L3, L4 and HC
 
 `src/sim/fixtures/index.ts` maps the registry through `visibleFlip` (8m), then `ownLegFlip` (9d), then `legFlip`
-(10d), then `holdStillFlip` (14a). `tests/runs.ts` `preFlip`, `preOwnLegs`, `preV3` and `preHoldStill` give a
-definition as before each one, for captures and natural samples taken earlier.
+(10d), then `holdStillFlip` (14a), then `bornFlip` (17b). `tests/runs.ts` `preFlip`, `preOwnLegs`, `preV3`,
+`preHoldStill` and `preBornOverlap` give a definition as before each one, for captures and natural samples taken
+earlier (`BEFORE_FLIPS`, `asCaptured`).
 
 | What | Flag / helper | Mechanism | Where |
 | --- | --- | --- | --- |
@@ -60,12 +74,13 @@ definition as before each one, for captures and natural samples taken earlier.
 | Approach zone | `HIP_APPROACH_V1` (in V2) | A damped one-sided spring 10 deg inside each stop, passive as stepped. Fall-response hip targets are held inside it. | `joint-stops.ts` |
 | Knee stop 140 | `withKneeStop` | The hinge's upper limit goes from 150 to 140, with the same widen-and-close start. Fall-response knee targets are held at the stop. | `joint-stops.ts` |
 | PGS +4 | `withAdditionalPgsIterations` | Each segment body asks for 4 more internal PGS iterations per substep. | `ragdoll.ts` |
-| Conversion retry | `CONVERSION_RETRY_V1` | A candidate rejected for `externalPenetration` is deferred (`handoffDeferred`; the pose guard keeps working) and tried again each substep for 0.25 s, then rejected for good. The 1.5 cm check is unchanged. | `conversion.ts`, `simulation.ts` |
+| Conversion retry | `CONVERSION_RETRY_V1` | A candidate rejected for `externalPenetration` is deferred (`handoffDeferred`; the pose guard keeps working) and tried again each substep for 0.25 s, then rejected for good (under born overlap, converted at the window's end). The 1.5 cm check is unchanged. | `conversion.ts`, `simulation.ts` |
 | Own-leg contact | `SELF_LEGS_V1` (`withSelfLegs`) | Massless self shapes 1 cm smaller than drawn (distal half thigh, shin, shoe): legs meet each other, shins and shoes the own trunk. A group overlapping at the switch stays out until clear. The impact guard reads them. | `ragdoll.ts` |
 | Physical supported legs | `LEG_GUARD_V3` | V2 (`sweep`): the shown leg step is judged against physical bodies, tries other knee poles and offsets, and is swept in 1 cm samples; plants take a knee pole first (7, 7b). `physicalLegs`: six massless colliders on the proxy, placed from the achieved pose, live only on static ground (probe `ok`, 10b) and until the conversion request, meeting other players' ragdoll segments only; the guard clears the posed legs to 1 mm. | `pose.ts`, `pose-runtime.ts`, `physics.ts`, `simulation.ts` |
 | Fall response L4 v6 | `FALL_L4` | The impact guard reads the joint residual (4a) and every manifold point (4b). `carried` (6c) holds the body for a landing carried through a contact; it acts only with physical legs. | `fall-response.ts`, `simulation.ts` |
 | Solved impulses | `SolverProfile.solvedImpulses` (7c) | Contact records, support contact, leg ledger and self-trunk impulses read Rapier's solved contacts. A manifold point outside the at most four solved reads 0. L3/L4/HC only, because it moved G/L2/RH. | `physics.ts` |
 | Still feet in a hold | `HOLD_STILL_V1` (13b, `withHoldStill`; flipped in 14a) | A player holding or held (a grip or clamp within the last 0.25 s), its body under 0.3 m/s, takes no step home, settle or turn step; a foot that cannot keep its plant still steps. On every L3, L4 and HC foot planner (L2's is unchanged). It changed four summaries (the three L3-F6 holds and L4-F5-twoPalm-on), with no result, ending or who-falls change. The plan 10b coverage floor it lowered became coverage by kind outside a stationary hold (14a-i) | `footwork.ts` |
+| Born overlap | `BORN_OVERLAP_V1` (17a, `withBornOverlap`, lab `born`; flipped in 17b) | A candidate deeper than the 1.5 cm tolerance in another player converts. Each collider pair born deeper (its segment, the other's collider) is left out of the solve (the contact hook, `Ragdoll.born`) until no deeper than 1 mm (`bornOverlapReleased`), so the switch adds no push-out. A limb converts at once; a trunk or head in another's trunk or head is deferred within the retry window, then converted so. The floor stays in the solve, accepted to 5 cm deep (a shoe 4.6 cm in leaves at 0.25 m/s). A pair whose other collider is replaced by its ragdoll moves to that ragdoll's collider. Anchors, landmarks, hinges and lengths still reject. Over every L3/L4/HC run, both orders: rigid figures 6 -> 6 (the built invalid candidates), deferred handoffs 2 -> 0, born pairs 2 (a palm 3.1 cm in an arm, held 0.021 s); no who-falls change | `conversion.ts`, `ragdoll.ts`, `physics.ts`, `simulation.ts` |
 
 These have no flag: the arm-task twist window anchored once per substep (rung 3, `arms.ts`; it moved L3/L4/HC); a
 brace pressed on a body at the end of its window misses `obstructed` (9e); and three byte-identical query savings
@@ -167,16 +182,18 @@ owner-change jump, a shoulder held 100 deg behind on L4-F8-passive (`holdArmBehi
 - **Rules as tests:** `tests/loaded-limb.ts` (7f), `tests/passive-energy.ts` (7g), `tests/visible.ts` (8c).
 - **Lab parameters** (`src/lab/lab-params.ts`): `order=rev`, `legs=v1|v2|v3`, `hips=on|l4|v1|off`, `pgs=<n>`,
   `knees=off|140|145`, `retry=on|off`, `selfleg=on|off`, the ladder 13 flags `armtwist=on|off` and `upperarm=on|off`,
-  and the ladder 14 flags `holdstill=on|off` (registered since 14a) and `armswing=on|off`. `armtwist=on`,
-  `upperarm=on` and `armswing=on` each show a parked flip. Before-views (each equals the earlier registration on all
-  195 L3/L4/HC fixtures, `r10d-v3-flip/lab-views.txt`):
+  the ladder 14 flags `holdstill=on|off` (registered since 14a) and `armswing=on|off`, `armstay=on|off` (16b) and
+  `born=on|off` (registered since 17b). `armtwist=on`, `upperarm=on`, `armswing=on` and `armstay=on` each show a
+  parked flip. Before-views (each equals the earlier registration on all 195 L3/L4/HC fixtures,
+  `r10d-v3-flip/lab-views.txt`; `born=off` is tested in `lab-params.test.ts`):
 
   | as it was | add |
   | --- | --- |
-  | before 8m | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off&holdstill=off` |
-  | after 8m | `&legs=v1&selfleg=off&holdstill=off` |
-  | after 9d (through 10b) | `&legs=v1&holdstill=off` |
-  | after 10d (through 13c) | `&holdstill=off` |
+  | before 8m | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off&holdstill=off&born=off` |
+  | after 8m | `&legs=v1&selfleg=off&holdstill=off&born=off` |
+  | after 9d (through 10b) | `&legs=v1&holdstill=off&born=off` |
+  | after 10d (through 13c) | `&holdstill=off&born=off` |
+  | after 14a (through 17a) | `&born=off` |
 
   Rungs 3 to 7c have no lab view. Serve the lab from the ladder worktree (`npx vite --port 5180 --strictPort`). The
   dev server in the main checkout (pid 35012) serves the old tree.
@@ -298,8 +315,24 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
 - **`MET_ARM_UPPER_IN_OTHER`** (blocks 16c): a met arm hanging at its side whose shoulder is against the other player
   keeps its upper arm in that player; no low pose clears it. HC-F1-at1.6 reversed R's left upper arm is 3-4.6 cm in D's
   drawn torso from 1.35 s, 8.2 cm in the ragdoll's at the request (1.600 s), and the deferred handoff is rejected at
-  1.850 s: a rigid falling figure. Forward, R is deferred 0.204 s. Evidence and options:
+  1.850 s: a rigid falling figure. Forward, R is deferred 0.204 s. Since 17b the rigid figure is gone (R converts at
+  1.600 s with that arm's pairs held, released 0.6-0.7 s later), but the accepted conversion has the upper arm 7.3 cm
+  (8.2 reversed) in D's torso, past the visible bar's 5 cm (`torsoBreach`). The parked round 2 defers such a limb
+  (`BORN_OVERLAP_V2`): 4 / 12.5 ms, then accepted at 2.2 / 3.9 cm. Evidence and options:
   `parked/met-arm-stay-flip/README.md`.
+- **`BORN_PAIR_DEEPENS`**: a born pair left out of the solve can go deeper before it separates. At the tip only two
+  pairs occur (3.1 cm, 0.021 s). Under `armstay=on`, HC-F2-lowCarrier A's forearm reaches 21.6 cm in B's head over
+  0.46 s; under the parked round 2, 33 of 75 pairs deepen past 5 cm (to 9.0 cm). Proposed: a bounded separation for a
+  held pair that deepens, instead of none.
+- **17b reaches the ragdoll arm in its own trunk** (the `armTrunk` class): L3-F1-falling and L3-F9-defenderFalling D,
+  converted 12.5 ms earlier, has its arm past the deep line in its own trunk for 0.27 s each (0 before). Not twinned:
+  the class existed, and the earlier conversion reaches it.
+- **HC-F3-lowRunner: the runner tilted over "still trying to run"** (the user's look, measured only). The request is
+  not late against the lean: lean passes 30 deg at 0.8875 s, the recovery envelope requests at 0.9125 s (lean 33 deg,
+  projected 57 against 55), accepted at once with no deferral. From 1.45 s, where the look was seen, the runner has been
+  a passive ragdoll for 0.5 s, carried on by its speed (3.3 -> 1.3 m/s) and the defender's hold. So it is the trigger,
+  not validation. Capture before the lean passes 30 deg: `parked/low-runner-trigger/HC-F3-lowRunner@51.json.gz` (0.85 s),
+  timeline in its README. Question 17.
 - **`CLIP_ARM_HELD_DEPARTURE`**: fixed off by `clipArmSwing` (14b), and by `metArmStay` (16b); both flips are parked. A clip arm with no clear
   candidate takes a body-fixed alternative, and the departure toward it is carried with the clip's target. As the clip
   swings on, the arm is carried across the chest, and each push-out it cannot follow walks the target on.
@@ -351,7 +384,8 @@ Its README has the evidence and the suite failures by class.
 | Arm pair: `JOINT_RANGE_V5` with `SELF_CLEARANCE_V2` (11d, 12b) | One-frame arm turns (supSnap60 L3 16 -> 2) and trembling palms (L3 3027 -> 405) | The raised held arm (L3 supImpS 0.95 -> 4.13, caused). Not yet twinned: three natural samples (falls' L4-F9 boundary identity first) and HC ragdoll implausible time 4.48 -> 6.58 | `arm-pair-flip/map.patch` (replaces `palm-seam-flip/`, `overhead-twist-flip/`); `assess-12b/` |
 | `SHOULDER_TWIST_ANAT_V1` on every L3/L4/HC ragdoll (13a) | The fallen arm bent the wrong way overhead: ragdoll shoulder impossible 31.5 -> 0.5 player-s | `SHOULDER_TWIST_REBOUND`: a rebound snap and two solve gains, caused; two soft suite rows (L4-F1-shoulderTwist, L4-F8-passive) | `arm-twist-flip/flip.patch`; `assess-13a/` |
 | `upperArm` on every L3/L4/HC self-clearance (13c) | Arms in the own chest: L3 upper arm past 5 cm 160 -> 85 player-s (arm tasks 16.7 -> 0); trembling palms L3 3027 -> 1111 | Caused: two runners fall as rigid figures, the low-tackle runner stays up, shape queries 4265 (budget 4000), the carry's tuck. Worsened: supported snaps L3 16 -> 53 (`CLIP_ARM_HELD_DEPARTURE`). With `clipArmSwing` too (14b) the snaps are 20, but the low-tackle runner, one rigid runner (HC-F1-at1.6 rev), the tuck and the queries (4759) remain | `upper-arm-flip/flip.patch`; `assess-13c/`, `assess-14b/full-upperarm/` |
-| `metArmStay` with `clipArmSwing` on every L3/L4/HC self-clearance (16c) | `MET_ARM_FIXED_ALTERNATIVE` and the arms through the own body: forearm or hand 1.28 -> 0.27 s, hand in head 0.40 -> 0, upper arm 41.6 -> 0.85 s; snaps 8 -> 1, one-frame jumps over 20 cm 54 -> 5 (forward runs) | Caused: a rigid falling figure (HC-F1-at1.6 rev R, `MET_ARM_UPPER_IN_OTHER`), HC-F3-lowRunner D keeps its feet (twinned); shape queries 4248 after one fix round (4834 before). Worsened, not twinned: the largest passive gain L3 48 -> 197 J (a pinched forearm), one new L4 power row, ragdoll shoulder past range 31.5 -> 47.2 s. L3-F1-phase7 D keeps its feet (accepted); the L3-F1-low runner still falls | `met-arm-stay-flip/flip.patch`, `fix-r1.patch`; `evidence/` |
+| `metArmStay` with `clipArmSwing` on every L3/L4/HC self-clearance (16c; 17c round 2 below) | `MET_ARM_FIXED_ALTERNATIVE` and the arms through the own body: forearm or hand 1.28 -> 0.27 s, hand in head 0.40 -> 0, upper arm 41.6 -> 0.85 s; snaps 8 -> 1, one-frame jumps over 20 cm 54 -> 5 (forward runs) | Caused: a rigid falling figure (HC-F1-at1.6 rev R, `MET_ARM_UPPER_IN_OTHER`), HC-F3-lowRunner D keeps its feet (twinned); shape queries 4248 after one fix round (4834 before). Worsened, not twinned: the largest passive gain L3 48 -> 197 J (a pinched forearm), one new L4 power row, ragdoll shoulder past range 31.5 -> 47.2 s. L3-F1-phase7 D keeps its feet (accepted); the L3-F1-low runner still falls | `met-arm-stay-flip/flip.patch`, `fix-r1.patch`; `evidence/` |
+| The same on 17b, round 2 (17c): plus `BORN_OVERLAP_V2` (a limb born past 5 cm in a trunk deferred) and query trims | As 16c; fixes 16c's rigid figure and torso breach; queries 3983 | Who falls: nine defender runs keep their feet (HC-F3-lowRunner, L3-F1-phase1, L3-F1-phase7, L3-F4-twoArm both, L4-F10-wrap-off and -on both). Held pairs deepen (33 past 5 cm). Caused (twinned): L4 largest passive gain 58 -> 86 J, shoulder rotation past range 31.6 -> 36.1 s, both meters. 17 suite rows, by class in the README | `met-arm-stay-flip/flip-r2.patch` (on `0926d2c`); `evidence/full-check-r2/`, `compare-r2.txt`, `scan-r2/` |
 | `clipArmSwing` on every L3/L4/HC self-clearance (14b) | Arms through the own body, gross pass-through: forearm or hand 28 events / 1.68 s -> 5 / 0.08 s, upper arm 111 / 41.6 s -> 75 / 7.1 s; the screenshot and the facemask are gone; forearm past 2 cm L3 26.4 -> 0.23 s | Who falls, caused (same-state twins): three defenders keep their feet (L3-F1-phase1, L3-F1-phase7, HC-F3-phase0 rev). Worsened, not twinned: supported snaps L3 16 -> 48, HC 1 -> 11; the largest passive gain 48 -> 144 J (L3) and 48 -> 77 J (HC); one new L4 power row; HC wrist jumps of 0.37-0.40 m | `clip-arm-swing-flip/flip.patch`; `assess-14b/` |
 
 Not taken: the narrowed L4 envelope (`l4-hip-envelope-narrowed/`). From the old stack: `ARM_CLEARANCE_V1` and the
@@ -390,6 +424,11 @@ Open:
     `&armstay=on` for the arm that goes to the facemask), `?fixture=L3-F16-contactStop&cam=front&speed=0.25&t=0.55&armstay=on`.
     Where the shoulder itself is against the tackler, may the arm lift over it (a raised arm, which the fix forbids), or
     should it stay and the conversion start it clear? `?fixture=HC-F1-at1.6&order=rev&cam=front&speed=0.25&t=1.35&armstay=on`.
+    Since 17b that runner converts there with the arm inside the tackler, which then passes out of him
+    (`...&t=1.55&armstay=on`; add `&born=off` for the stiff fall it was).
+17. HC-F3-lowRunner: the runner goes ragdoll at 0.91 s, when its lean (33 deg, falling outward) is projected past 55 deg.
+    Should a tackled runner go ragdoll earlier, and from what (lean, contact, the tackler's hold)?
+    `?fixture=HC-F3-lowRunner&cam=front&speed=0.25&t=0.85`.
 
 Answered (2026-11-12):
 
@@ -423,6 +462,7 @@ trajectories have moved since, so re-read them before relying on a time.
 
 Main checkout `.scratch/ladder/`: `r0-baseline` (start), `r8c-visible-checks`, `r10d-v3-flip` (last behaviour flip,
 `netfalls`, lab views), `r12b-twist-fit` (before ladder 13), `r13c-upper-arm` (end of ladder 13), `r14a-flip`,
-`r14b-flagoff`, `r16-a-ascaptured`, `r16-b-metarmstay` (tip); `assess-*/` (README each), `parked/`, `pinch/`,
+`r14b-flagoff`, `r16-a-ascaptured`, `r16-b-metarmstay`, `r17-a-born-off` (17a), `r17-b3-born-flip` (tip),
+`r17-scan/` (every L3/L4/HC conversion try, by variant); `assess-*/` (README each), `parked/`, `pinch/`,
 `visible-audit/`. Old
 stack: `.scratch/cmp-evidence/s17/`. What may be deleted: `.scratch/ladder/cleanup-audit.md`.
