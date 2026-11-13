@@ -1,5 +1,33 @@
 # Milestone 4 — Hands and bent knees absorb the landing
 
+## Rough-first slice (2026-11-13; do this before anything else in this file)
+
+Per the direction in the [README](README.md): rough and visible end to end, judged in the lab, polish later.
+
+Starting fact (M3 handoff): only L4 ragdolls have an active fall response (`FALL_L4`). L3 and HC ragdolls are
+passive apart from a takedown's arm hold, because the response needs a hip envelope they lack. So on most scenes a
+falling player is limp: legs trail or cross, arms flop, the carrier's tuck is lost.
+
+1. **Every falling player on L3, L4 and HC reacts, flag off then on.** Give L3 and HC ragdolls the envelopes the
+   existing fall response needs and start it on every conversion (reuse `FALL_L4`'s tasks; one response, not a
+   second system). Knees and hips flex before landing and yield through it; a free arm reaches for the ground; an
+   arm that is holding keeps holding (M3) and a carry arm keeps the ball tucked (the M2 step 4 carry-over, in rough
+   form: the reference at conversion is the achieved braced pose).
+2. **A landed palm bears load, flag off then on.** On real palm contact the arm stops chasing a target and yields
+   (elbow bends, shoulder gives) instead of tapping and springing back; it releases when unloaded. No floor weld, no
+   suction.
+3. Each flip is its own step, judged on the visible bar and by the user's look; changed fall outcomes are listed,
+   not blocking.
+
+Known looks to check while here: a held ragdoll's trailing legs read as running (`HC-F3-lowRunner`); the limp
+defender's legs cross in the front wrap (`L3-F19-front`); the carrier's passive upper arms fold into his trunk on
+landing (`UPPER_ARM_IN_TRUNK`).
+
+Not in the slice: measured tolerances, hand-specific friction, knee/shin strike tuning, get-up. Logged for polish
+after it: the rear-wrap carrier still runs on because forearm clamps cannot carry the defender's weight; the
+candidate fix is locked hands (the wrapping hands grip each other or the own wrist, breakable), plus one-arm
+finishes for the side wrap.
+
 ## Visual target
 
 A free hand reaches down ahead of the falling defender. When its palm actually lands, it briefly becomes a stable support point: the torso continues over it while the elbow bends and shoulder yields. It should read as catching body weight, not tapping the ground and springing back up. Sliding is allowed under excessive sideways load. The hand releases naturally when unloaded or overtaken by the body. Knees flex before landing, then the knee/shin contact absorbs the remaining descent; legs do not remain rigid or fold backward. A retained wrap arm continues holding until released, rather than abandoning its target to brace.
