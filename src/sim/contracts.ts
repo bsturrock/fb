@@ -114,6 +114,11 @@ export interface PlayerIntent {
    * of support would, unless the referee has ended the play.
    */
   leaveSupport?: 'takedown';
+  /**
+   * Contact motion polish 1.2, the ride-down (a wrap profile with `ride`): he rides the carrier he holds down. While the
+   * simulation sees the hold and the contact, a lean past the loss envelope against the carrier is no loss of support.
+   */
+  ride?: true;
   /** Controller-reported diagnostics (phase names, aim points). Never read by mechanics. */
   debug?: Record<string, unknown>;
 }

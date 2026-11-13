@@ -918,6 +918,8 @@ export class Simulation {
       if (pl.balance.pendingLoss && pl.controlMode === 'supported') reason = 'lossOfSupport';
       // contact motion M3: the committed finish's request, decided on the last substep (never after the referee's ending)
       if (!reason && pl.controlMode === 'supported' && pl.intent.leaveSupport === 'takedown' && this.def.wrap?.commit && !this.rules?.ending) reason = 'takedown';
+      // contact motion polish 1.2, the ride-down: a tackler riding the carrier down at the referee's ending goes down with him
+      if (!reason && pl.controlMode === 'supported' && pl.intent.ride && this.def.wrap?.ride && this.rules?.ending) reason = 'takedown';
       diag.forEach((d, i) => {
         if (d.playerId === pl.id && !this.diagDone.has(i) && this.t >= d.atS - 1e-9 && this.conversionCondition(pl, d.when)) {
           this.diagDone.add(i);
@@ -1288,6 +1290,27 @@ export class Simulation {
     return this.rules?.ending ?? null;
   }
 
+  /**
+   * Contact motion polish 1.2, the ride-down (`WrapProfile.ride`): a riding tackler (`PlayerIntent.ride`) whose legs lean
+   * under `ride.leanDeg` toward the carrier (within 60 deg of the line to him: one can lean on a man only toward him) is
+   * held up by him while an arm holds him (a clamp or grip on the focus) with the other arm or his body on him too (a
+   * solved contact between them).
+   */
+  private rideSupported(pl: PlayerRuntime, thetaRad: number, legsUp: Vec3): boolean {
+    const RD = this.def.wrap?.ride;
+    if (!RD || !pl.intent.ride || !this.arms || thetaRad >= (RD.leanDeg * Math.PI) / 180) return false;
+    if (this.opts.debug?.wrap?.rideNoHoldCheck) return true;
+    const tid = this.def.focus?.[pl.id];
+    const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
+    if (!tid || !tgt) return false;
+    const toward = horiz(sub(vc(this.coreBody(tgt).translation()), vc(this.coreBody(pl).translation())));
+    const lean = horiz(legsUp);
+    if (len(lean) > 1e-6 && len(toward) > 1e-6 && dot(norm(lean), norm(toward)) < 0.5) return false;
+    const grips = [...this.arms.grips.values()];
+    const holds = (['left', 'right'] as ArmSide[]).filter((s) => this.arms!.clampOf(pl.id, s)?.targetId === tid || grips.some((g) => g.ownerId === pl.id && g.arm === s && g.targetId === tid)).length;
+    return holds === 2 || (holds === 1 && (this.contactObs[pl.id] ?? []).some((c) => c.other === tid));
+  }
+
   /** Measure actual lean from the solved state and run the loss criterion (supported players only). */
   private evaluateBalance(measureOnly = false): void {
     const B = this.balanceProfile;
@@ -1306,6 +1329,9 @@ export class Simulation {
       if (measureOnly || pl.controlMode !== 'supported' || bal.pendingLoss) continue;
       const v = envelopeStep(m, bal.counter, B);
       bal.counter = v.counter;
+      // contact motion polish 1.2, the ride-down: the carrier he holds is his support (a lean against him is no loss); the
+      // counter runs on, so with the hold or the contact gone the envelope's verdict stands at once
+      if (v.loss && v.reason === 'recoveryEnvelope' && this.rideSupported(pl, m.theta, m.bodyUp)) continue;
       if (v.loss) {
         bal.pendingLoss = true;
         bal.lossT = this.t;
