@@ -40,8 +40,31 @@ in real life."
       model says the hands meet (thighs at drawn size, or the standing carrier's support capsule). Numbers and
       probes: main checkout `.scratch/p3/hand-gap/`, worktree `.scratch/p1/handgap.ts`, `handgeo.ts`.
    4. Low hit: wrap the legs, lock the hands if they meet, and roll.
+      **User ruling 2026-11-13: the deep crouch tackle first.** The tackler stays on his feet, trunk pitched about
+      75 degrees at the lowest stance, shoulder into the carrier's hip or upper thigh (about 0.9 m), arms round him
+      at pelvis height, hands locked, then he leaves his feet holding on and twists to bring him down. Steps: low
+      strike flag off with a new two-arm low fixture (a variant of `L3-F19-front`), flip, lock, leave feet and twist.
+      Sizing (code reading): on his feet the shoulder cannot go below 1.16 m at the 40 degree hinge cap and the
+      0.72 m root floor, and a mid-thigh strike would need 95 degrees, so the hit is at the hip, not the thigh. Holds
+      are eligible on torso, pelvis and the standing carrier's support capsule (radius 0.16, where the hands meet
+      within 0.04 m), not on thighs. The ragdoll has no spine, so the twist comes from hips and shoulders at first.
+      **Back burner (user's idea): a posed dive.** The tackler launches and stays posed in the air with aimed arms,
+      and becomes a ragdoll only at the ground or once the wrap is secure. Read as feasible without a rewrite: a
+      new control mode with suspension, balance and the loss envelope off, legs body-relative and arms not
+      `falling`; a ledgered launch force at the feet (no vertical channel exists today); a landing trigger that
+      converts before a limb reaches the floor. Main risk: a snap or a lost hold at that conversion. Not built.
 2. **Leg gallop.** The carrier's legs gallop under the brace (`L3-F3-collision`) and both legs gallop to catch up
    with the body after a hit he survives.
+   Diagnosed 2026-11-13 (probe only): one mechanism in three places (the carrier under the brace `L3-F3-collision`
+   0.45 to 1.35 s, the carrier after a hit `L3-F7-loadRelease` 0.45 to 0.9 s, the tackler's drive `L3-F19-rear`
+   1.09 to 1.84 s). A planner step is squeezed to less time than its acceleration needs, runs out of time, and
+   then cannot land at running speed: its destination is re-picked against the moving hip every 50 ms and the
+   touchdown test compares the last pose's ankle with the new target (`src/sim/footwork.ts` about 1335-1348 and
+   1434-1444). The foot skims for 0.5 to 1.2 s while the other foot does every stance alone, with drag steps.
+   Fix, one compose flag, two steps: a late step fixes its destination in world space and is judged against the
+   target its pose was given; a new step is never shorter than its acceleration floor (`fitStance` is called
+   before the destination is set, about 1120-1126; inferred, not twin-tested). Probe and results: worktree
+   `.scratch/p4/gallop.ts`, main checkout `.scratch/p4/gallop/`. Queued after the low strike.
 3. **Brace amount.** A bit more forward lean and crouch. `L3-F2-miss` shows no brace at all: check whether that is
    intended (never a real threat) or a decision bug.
 4. **Falls.** The reaching arm palm down with give, some body control ("falls like a bag of wooden blocks"); the
