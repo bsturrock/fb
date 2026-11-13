@@ -4,7 +4,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import type { PlayerId } from './contracts';
 import { newLocoState } from './locomotion';
 import { buildCandidate, externalFromColliders, externalFromRagdoll, holdOverlappingSelfLegs, initEnvelope, ragdollPose, removeRagdoll, switchToRagdoll, validateCandidate, type BornPair, type CandidateEdit, type CandidateReport, type ExternalShape } from './ragdoll';
-import { vc, round } from './vec';
+import { add, cross, dot, round, scale, sub, vc, type Vec3 } from './vec';
 import { legsOffInsideConverted } from './pose-runtime';
 import type { Simulation, HandoffRecord, PlayerRuntime } from './simulation';
 
@@ -282,7 +282,7 @@ function carryBornPairs(host: ConversionHost, pl: PlayerRuntime, proxyRegions: M
       const twin = PROXY_TWIN[proxyRegions.get(p.other) ?? ''];
       const nc = twin && pl.rag!.colliders.find((x) => x.segment === twin.segment && x.region === twin.region);
       if (!nc) {
-        host.emit('bornOverlapReleased', o.id, { own: p.ownKey, other: p.otherKey, heldS: round(host.t - p.t0, 5), depth0M: round(p.depth0M, 5), maxDepthM: round(p.maxDepthM, 5), why: 'replaced' });
+        host.emit('bornOverlapReleased', o.id, { ...released(host, p), why: 'replaced' });
         return [];
       }
       return [{ ...p, other: nc.collider.handle, otherKey: `${pl.id}:${twin.segment}:${twin.region}` }];
@@ -312,9 +312,94 @@ export function releaseBornPairs(host: Pick<Simulation, 'physics' | 'emit' | 't'
       p.maxDepthM = Math.max(p.maxDepthM, depth);
       if (depth > releaseM) return true;
     }
-    host.emit('bornOverlapReleased', pl.id, { own: p.ownKey, other: p.otherKey, heldS: round(host.t - p.t0, 5), depth0M: round(p.depth0M, 5), maxDepthM: round(p.maxDepthM, 5), ...(gone ? { why: 'gone' } : {}) });
+    host.emit('bornOverlapReleased', pl.id, { ...released(host, p), ...(gone ? { why: 'gone' } : {}) });
     return false;
   });
+}
+
+/** Ladder 17: a released pair's event data (ladder 18: with the separation's work, under one). */
+const released = (host: Pick<Simulation, 't'>, p: BornPair): Record<string, unknown> => ({
+  own: p.ownKey,
+  other: p.otherKey,
+  heldS: round(host.t - p.t0, 5),
+  depth0M: round(p.depth0M, 5),
+  maxDepthM: round(p.maxDepthM, 5),
+  ...(p.workJ !== undefined ? { workJ: round(p.workJ, 4) } : {}),
+});
+
+/** The inverse effective mass of a body along `n` at `at` (0 for a body that is not dynamic; its joints not counted). */
+function invMassAlong(b: RAPIER.RigidBody, at: Vec3, n: Vec3): number {
+  if (!b.isDynamic()) return 0;
+  const im = b.effectiveInvMass();
+  const lin = n.x * n.x * im.x + n.y * n.y * im.y + n.z * n.z * im.z;
+  const u = cross(sub(at, vc(b.worldCom())), n);
+  // (the inertia view is shared scratch: read at once)
+  const I = b.effectiveWorldInvInertia();
+  const [a, bb, c, d, e, f] = [I.m11, I.m12, I.m13, I.m22, I.m23, I.m33];
+  return lin + u.x * (a * u.x + bb * u.y + c * u.z) + u.y * (bb * u.x + d * u.y + e * u.z) + u.z * (c * u.x + e * u.y + f * u.z);
+}
+
+/**
+ * Ladder 18 (`BornOverlapProfile.separation`, the profile's comment): before each solve, every ragdoll's held born pairs
+ * at once, ordered by their keys (the lower of the two first), so that no player order changes what is applied or the
+ * order forces add on a body: a pair whose shapes have separated (no deeper than `releaseM`) or whose collider has left
+ * the world is released (`bornOverlapReleased`, with the separation's work); every other one is pushed apart under the
+ * profile's caps.
+ */
+export function separateBornPairs(host: Pick<Simulation, 'physics' | 'emit' | 't' | 'players' | 'opts' | 'def'>): void {
+  const S = host.def.ragdoll!.bornOverlap!.separation!;
+  const releaseM = host.def.ragdoll!.bornOverlap!.releaseM;
+  const w = host.physics.world;
+  const dt = host.physics.dt;
+  const uncapped = !!host.opts.debug?.conversion?.bornSeparationUncapped;
+  const probe = host.opts.debug?.bornForce;
+  const all: { pl: PlayerRuntime; p: BornPair; key: string; flip: boolean }[] = [];
+  for (const pl of host.players) {
+    for (const p of pl.rag?.born ?? []) {
+      const own = `${pl.id}:${p.ownKey}`;
+      const flip = p.otherKey < own;
+      all.push({ pl, p, key: flip ? `${p.otherKey}~${own}` : `${own}~${p.otherKey}`, flip });
+    }
+  }
+  if (!all.length) return;
+  all.sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : x.p.t0 - y.p.t0));
+  const gone = new Set<BornPair>();
+  for (const { pl, p, key, flip } of all) {
+    const lo = w.getCollider(flip ? p.other : p.own);
+    const hi = w.getCollider(flip ? p.own : p.other);
+    const left = !lo || !hi || !host.physics.tags.has(p.own) || !host.physics.tags.has(p.other);
+    const r = left ? null : lo.contactCollider(hi, 0);
+    const depth = r ? Math.max(0, -r.distance) : 0;
+    if (!left) p.maxDepthM = Math.max(p.maxDepthM, depth);
+    if (left || !r || depth <= releaseM) {
+      gone.add(p);
+      host.emit('bornOverlapReleased', pl.id, { ...released(host, { ...p, workJ: p.workJ ?? 0 }), ...(left ? { why: 'gone' } : {}) });
+      continue;
+    }
+    const bl = lo.parent()!;
+    const bh = hi.parent()!;
+    const n = vc(r.normal1);
+    const m = scale(add(vc(r.point1), vc(r.point2)), 0.5);
+    // the relative normal speed at the midpoint (positive: parting) and the impulse that brings it to the target
+    const vn = dot(sub(vc(bh.velocityAtPoint(m)), vc(bl.velocityAtPoint(m))), n);
+    const K = invMassAlong(bl, m, n) + invMassAlong(bh, m, n);
+    if (K <= 0) continue;
+    const spent = !uncapped && (p.workJ ?? 0) >= S.workJ;
+    const target = uncapped ? depth / dt : spent ? 0 : Math.min(S.maxMps, Math.max(S.minMps, Math.max(p.depth0M, depth) / S.partS));
+    let j = Math.min(uncapped ? Infinity : S.maxN * dt, Math.max(0, (target - vn) / K));
+    if (j <= 0) continue;
+    // the work it would do on the pair (the impulse times its mean normal speed over the change, j vn + K j^2 / 2): the
+    // positive part counted, and the impulse cut to what the budget has left (the root of that work = what is left)
+    const rest = Math.max(0, S.workJ - (p.workJ ?? 0));
+    if (!uncapped && j * vn + 0.5 * K * j * j > rest) j = Math.min(j, (-vn + Math.sqrt(vn * vn + 2 * K * rest)) / K);
+    p.workJ = (p.workJ ?? 0) + Math.max(0, j * vn + 0.5 * K * j * j);
+    const F = scale(n, j / dt);
+    bl.addForceAtPoint(scale(F, -1), m, true);
+    bh.addForceAtPoint(F, m, true);
+    probe?.({ key, lo: bl, hi: bh, force: scale(F, -1), point: m, depthM: depth });
+  }
+  if (!gone.size) return;
+  for (const pl of host.players) if (pl.rag?.born?.some((p) => gone.has(p))) pl.rag.born = pl.rag.born.filter((p) => !gone.has(p));
 }
 
 /** Ladder 17: whether the contact pair (engine handles) is a born pair held out of the solve on either player's ragdoll. */

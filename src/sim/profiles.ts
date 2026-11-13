@@ -798,9 +798,40 @@ export interface BornOverlapProfile {
   releaseM: number;
   /** The deepest a candidate may start in the floor and still be converted (m). */
   floorBornM: number;
+  /** Ladder 18: held pairs pushed apart rather than left to part (`BornSeparationProfile`). Absent: left to part. */
+  separation?: BornSeparationProfile;
+}
+
+/**
+ * Ladder 18: a born pair held out of the solve is pushed apart by a capped, one-sided force rather than left to part as
+ * the bodies happen to move. Left alone a pair could deepen while held (the solve never sees it): 33 of the 75 pairs of
+ * the met-arm flip went past 5 cm, the deepest 9 cm, held up to 0.65 s (`BORN_PAIR_DEEPENS`). Before each solve, for each
+ * held pair in one order every player order gives (by its keys), with its shapes' contact normal n and witness midpoint:
+ * the target separating speed along n is the born depth (or the depth now, if deeper) over `partS`, within
+ * [`minMps`, `maxMps`], so a pair parts in about `partS` at a constant speed; the impulse that would bring the two
+ * bodies' relative normal speed there (their effective mass along n at that point, the joints not counted) is applied as
+ * equal and opposite forces at the midpoint, never negative (it never pulls a pair together), at most `maxN`. The
+ * separation's positive work on a pair is counted (from the speeds before and after it would give) and stops at `workJ`:
+ * past it the pair is only kept from closing (a target of zero, which takes energy out), so a pair adds at most that. The
+ * solve's own depenetration (the kick 17a removed) is the target "the whole depth in one solve", unbounded
+ * (`debug.conversion.bornSeparationUncapped`, the fault).
+ */
+export interface BornSeparationProfile {
+  /** The time a pair is driven to part in: its target speed is its born depth over this (s). */
+  partS: number;
+  /** The least and the greatest target separating speed (m/s). */
+  minMps: number;
+  maxMps: number;
+  /** The greatest separating force on a pair (N). */
+  maxN: number;
+  /** The most positive work the separation may do on a pair (J). */
+  workJ: number;
 }
 
 export const BORN_OVERLAP_V1: BornOverlapProfile = { id: 'born-overlap-v1', releaseM: 0.001, floorBornM: 0.05 };
+export const BORN_SEPARATION_V1: BornSeparationProfile = { partS: 0.15, minMps: 0.1, maxMps: 0.5, maxN: 2000, workJ: 2 };
+/** Ladder 18: V1 with its held pairs pushed apart. */
+export const BORN_OVERLAP_V2: BornOverlapProfile = { ...BORN_OVERLAP_V1, id: 'born-overlap-v2', separation: BORN_SEPARATION_V1 };
 
 /** Ladder 17: the ragdoll profile with the born-overlap conversion, under an id that names it. */
 export const withBornOverlap = (r: RagdollProfile, p: BornOverlapProfile = BORN_OVERLAP_V1): RagdollProfile => ({ ...r, id: `${r.id}+${p.id}`, bornOverlap: p });
@@ -810,6 +841,12 @@ export function withoutBornOverlap(r: RagdollProfile): RagdollProfile {
   const { bornOverlap, ...rest } = r;
   return { ...rest, id: r.id.replace(`+${bornOverlap.id}`, '') };
 }
+/** Ladder 18: a ragdoll profile with V1's born overlap given V2's in its place (its id's part renamed in place). */
+export const withBornSeparation = (r: RagdollProfile): RagdollProfile =>
+  r.bornOverlap?.id === BORN_OVERLAP_V1.id ? { ...r, id: r.id.replace(`+${BORN_OVERLAP_V1.id}`, `+${BORN_OVERLAP_V2.id}`), bornOverlap: BORN_OVERLAP_V2 } : r;
+/** Ladder 18: the inverse, V2's born overlap back to V1's under the id it had. */
+export const withoutBornSeparation = (r: RagdollProfile): RagdollProfile =>
+  r.bornOverlap?.id === BORN_OVERLAP_V2.id ? { ...r, id: r.id.replace(`+${BORN_OVERLAP_V2.id}`, `+${BORN_OVERLAP_V1.id}`), bornOverlap: BORN_OVERLAP_V1 } : r;
 
 /**
  * Ladder rung 13a: the ragdoll shoulder envelope's twist limit with the arm raised. Plan 09 measures the twist after the

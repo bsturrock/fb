@@ -4,13 +4,13 @@ import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1 } from '../src/sim/footwork';
 import {
-  BORN_OVERLAP_V1, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap,
+  BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preBornOverlap, preFlip, preHoldStill, preOwnLegs, preV3, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `holdstill`, `upperarm`, `armswing` and `armstay` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing` and `armstay` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -21,7 +21,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, born, holdstill, upperarm, armswing and armstay', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, born, bornsep, holdstill, upperarm, armswing and armstay', () => {
   it('order=rev&legs=v1 runs the matrices\' reversed V1 row of the fixture (L3-F1-phase6, the guard before the ladder 10 flip), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v1'));
@@ -395,5 +395,41 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((x) => !x.ragdoll)!;
     expect(labRun(g, new URLSearchParams('born=on'))).toEqual({ def: g, opts: {}, label: 'born on n/a (no ragdoll profile)' });
     expect(labRun(d, new URLSearchParams('born=maybe'))).toEqual({ def: d, opts: {}, label: 'born=maybe ignored' });
+  }, 120000);
+
+  // ladder 18: bornsep=on|off on the fixture's born overlap (V1 to V2 and back), composed after born
+  it('bornsep=on runs the fixture with its born pairs pushed apart (BORN_OVERLAP_V2 in V1\'s place, its id renamed in place: L3-F1-falling, where D\'s palm pair is released with the separation\'s work, which V1\'s release has no part of); bornsep=off takes it back to the registered fixture; born=on keeps V2; with born=off, or a fixture without a born overlap, it is n/a; unknown values change nothing', async () => {
+    const id = 'L3-F1-falling';
+    const reg = FIX(id);
+    expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
+    const on = labRun(reg, new URLSearchParams(`fixture=${id}&bornsep=on`));
+    expect(on.label).toBe('born separation on');
+    expect(on.def).toEqual({ ...reg, ragdoll: withBornSeparation(reg.ragdoll!) });
+    expect(on.def.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
+    expect(on.def.ragdoll!.id).toBe(reg.ragdoll!.id.replace('+born-overlap-v1', '+born-overlap-v2'));
+    expect(withoutBornSeparation(on.def.ragdoll!)).toEqual(reg.ragdoll);
+    // the twin: the same release of D's palm pair, with the separation's work counted under V2 only
+    const rel = async (def: FixtureDef): Promise<Record<string, unknown>[]> => {
+      const s = await create(def, {});
+      while (!s.done && s.t < 1.3) s.stepTick();
+      const r = s.events.filter((e) => e.type === 'bornOverlapReleased' && e.playerId === 'D').map((e) => e.data as Record<string, unknown>);
+      s.dispose();
+      return r;
+    };
+    const [a, b] = [await rel(reg), await rel(on.def)];
+    expect(a.length).toBeGreaterThan(0);
+    expect(b.map((x) => x.own)).toEqual(a.map((x) => x.own));
+    expect(a.every((x) => !('workJ' in x))).toBe(true);
+    expect(b.every((x) => typeof x.workJ === 'number')).toBe(true);
+    const back = labRun(on.def, new URLSearchParams('bornsep=OFF'));
+    expect(back.label).toBe('born separation off');
+    expect(back.def).toEqual(reg);
+    expect(labRun(reg, new URLSearchParams('bornsep=off'))).toEqual({ def: reg, opts: {}, label: 'born separation off (registered)' });
+    expect(labRun(on.def, new URLSearchParams('bornsep=on'))).toEqual({ def: on.def, opts: {}, label: 'born separation on (registered)' });
+    expect(labRun(on.def, new URLSearchParams('born=on'))).toEqual({ def: on.def, opts: {}, label: 'born overlap on (registered)' });
+    expect(labRun(reg, new URLSearchParams('born=off&bornsep=on')).label).toBe('born overlap off · bornsep n/a (no born overlap)');
+    const g = allFixtures().find((x) => !x.ragdoll)!;
+    expect(labRun(g, new URLSearchParams('bornsep=on'))).toEqual({ def: g, opts: {}, label: 'bornsep n/a (no born overlap)' });
+    expect(labRun(reg, new URLSearchParams('bornsep=maybe'))).toEqual({ def: reg, opts: {}, label: 'bornsep=maybe ignored' });
   }, 120000);
 });

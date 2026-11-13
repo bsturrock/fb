@@ -14,7 +14,10 @@
 //                      (SHOULDER_TWIST_ANAT_V1, rung 13a), or plan 09's, which fades out there;
 //   born=on|off        a candidate overlapping another player converted with the overlapping collider pairs left out of
 //                      the solve until separated (BORN_OVERLAP_V1, ladder 17: ragdoll rather than fall stiff), or
-//                      refused (deferred) past the 1.5 cm tolerance as before;
+//                      refused (deferred) past the 1.5 cm tolerance as before; `on` keeps a born overlap already registered;
+//   bornsep=on|off     the born overlap's held pairs pushed apart, capped (BORN_OVERLAP_V2, ladder 18: none deeper than
+//                      born, parted in about 0.15 s), or left to part as the bodies move (V1); a fixture without a born
+//                      overlap (after `born`) is run as it is;
 //   holdstill=on|off   a stationary hold keeping its feet planted (the footwork's HOLD_STILL_V1, rung 13b), or stepping
 //                      home, settling and turning its feet as any stance; a fixture without footwork is run as it is;
 //   upperarm=on|off    the supported arms keeping the upper arm and elbow out of their own trunk too (the self-clearance
@@ -28,15 +31,15 @@
 //                      `metArmStay`, rung 16b): pressing a little into the other body, at most hanging at its side, never
 //                      sent to a raised or forward alternative; or as before. A fixture without self-clearance is run as
 //                      it is.
-// The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, then born), so `hips=on&pgs=4&knees=140` is the
+// The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
 // Lab only: a parameter changes the run on screen and its label, never a registered fixture. No DOM or renderer here, so
 // a test can build the same run headless (tests/lab-params.test.ts).
 import type { FixtureDef } from '../sim/fixture';
 import {
-  BORN_OVERLAP_V1, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry,
-  withHipStops, withKneeStop, withBornOverlap, withoutBornOverlap, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutMetArmStay, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry,
+  withHipStops, withKneeStop, withBornOverlap, withoutBornOverlap, withBornSeparation, withoutBornSeparation, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutMetArmStay, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
   withClipArmSwing, withMetArmStay, withUpperArmClearance, type RagdollProfile,
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
@@ -49,6 +52,7 @@ const RETRY = ['on', 'off'];
 const SELFLEG = ['on', 'off'];
 const ARMTWIST = ['on', 'off'];
 const BORN = ['on', 'off'];
+const BORNSEP = ['on', 'off'];
 const HOLDSTILL = ['on', 'off'];
 const UPPERARM = ['on', 'off'];
 const ARMSWING = ['on', 'off'];
@@ -79,7 +83,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `holdstill`, `upperarm`, `armswing`, `armstay`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -154,8 +158,15 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     const v = born.toLowerCase();
     out = ragdollParam(out, 'born', born, BORN.includes(v), parts, `born overlap ${v}`, (r) => {
       if (v === 'off') return withoutBornOverlap(r);
-      return r.bornOverlap?.id === BORN_OVERLAP_V1.id ? r : withBornOverlap(withoutBornOverlap(r));
+      return r.bornOverlap ? r : withBornOverlap(r);
     });
+  }
+  const bornsep = params.get('bornsep');
+  if (bornsep !== null && bornsep !== '') {
+    const v = bornsep.toLowerCase();
+    if (!BORNSEP.includes(v)) parts.push(`bornsep=${bornsep} ignored`);
+    else if (!out.ragdoll?.bornOverlap) parts.push('bornsep n/a (no born overlap)');
+    else out = ragdollParam(out, 'bornsep', bornsep, true, parts, `born separation ${v}`, (r) => (v === 'off' ? withoutBornSeparation(r) : withBornSeparation(r)));
   }
   const holdstill = params.get('holdstill');
   if (holdstill !== null && holdstill !== '') {

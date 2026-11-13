@@ -39,7 +39,7 @@ import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
-import { bornHeld, convertPlayers, releaseBornPairs } from './conversion';
+import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs } from './conversion';
 import { observeContacts } from './contact-observation';
 import { carrySideOf, disablePhysicalLegs, footInputOf, legMeets, legPointMove, observePhysicalLegs, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
 import { EMPTY_APPLIED, applyMotors } from './motor-step';
@@ -960,14 +960,16 @@ export class Simulation {
     // 5b. plan 09: passive soft envelopes of every ragdoll, then this substep's effort proposals (accepted ragdolls only)
     let limbsNow: Map<PlayerId, ExternalShape[]> | null = null;
     const limbs = (): Map<PlayerId, ExternalShape[]> => (limbsNow ??= publishedLimbs(this));
+    const bornSep = !!this.def.ragdoll?.bornOverlap?.separation;
     for (const pl of this.players) {
       if (pl.rag) {
         // plan 12: the limp shoe eases toward its relaxed pitch on the shin before the envelope reads the joints
         if (pl.rag.limpFoot) easeLimpFeet(pl.rag, this.physics.dt, (c, from, to) => this.shoeDeeper(pl, c, from, to, limbs()));
         // ladder rung 9a: an own-leg group left out since the switch takes part again once within the skin
         if (pl.rag.selfLegs) releaseSelfLegs(this.physics, pl.rag);
-        // ladder 17: so does a pair the ragdoll was switched in overlapping, once separated
-        if (pl.rag.born?.length) releaseBornPairs(this, pl);
+        // ladder 17: so does a pair the ragdoll was switched in overlapping, once separated (ladder 18: under a
+        // separation, every ragdoll's at once after this loop)
+        if (pl.rag.born?.length && !bornSep) releaseBornPairs(this, pl);
         applyEnvelope(pl.rag, this.physics.dt);
         if (pl.rag.hipStops) {
           // ladder rung 8g: the approach zone inside the hip stops (a profile without one applies nothing)
@@ -980,6 +982,9 @@ export class Simulation {
       }
       if (pl.fall) this.fall!.request(pl.fall, this.contacts, this.arms);
     }
+    // 5c. ladder 18 (`BornOverlapProfile.separation`): every held born pair released once separated, else pushed apart
+    // under its caps, in an order no player order changes
+    if (bornSep) separateBornPairs(this);
     // 6. arms: collision-aware reach, acquisitions, retention demands, shared budget, reciprocal forces (once)
     this.arms?.preStep();
     // 6b. plan 09: effort applied after the shared allocation, under its power and work caps, as internal torque pairs

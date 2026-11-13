@@ -1,6 +1,7 @@
 // Plan 10f (F2): debug switches, per simulation. They used to be module state (`FOOT_DEBUG` in footwork, `POSE_DEBUG` in
 // pose) shared by every simulation in a process and absent from the export. Now a simulation takes them as
 // `SimOptions.debug`, passes them in each foot plan and pose input, and exports every switch that is on.
+import type RAPIER from '@dimforge/rapier3d-compat';
 import type { Vec3 } from './vec';
 
 /** Foot plan switches (A/B probes and negative controls); each is off by default and changes behaviour when on. */
@@ -117,6 +118,23 @@ export interface ConversionDebug {
    * the solve (switched in overlapping, as a looser tolerance would leave them).
    */
   bornInSolve?: boolean;
+  /**
+   * Fault (`BornOverlapProfile.separation`): a held pair is pushed to part in one solve (the target speed its depth over
+   * the step), its force and work uncapped: the depenetration the solve itself would give it.
+   */
+  bornSeparationUncapped?: boolean;
+}
+
+/** Ladder 18: one separating force of a born pair (`BornOverlapProfile.separation`), before the solve. */
+export interface BornForce {
+  /** The pair's keys (`player:segment:region~player:key`, the lower first). */
+  key: string;
+  /** The force on the lower-keyed collider's body at `point`; the other body takes its opposite there (N, world). */
+  lo: RAPIER.RigidBody;
+  hi: RAPIER.RigidBody;
+  force: Vec3;
+  point: Vec3;
+  depthM: number;
 }
 
 export interface SimDebug {
@@ -125,6 +143,8 @@ export interface SimDebug {
   conversion?: ConversionDebug;
   /** Diagnostics only; not a switch, so not exported. */
   poseProbe?: PoseProbe;
+  /** Diagnostics only (ladder 18): each born pair's separating force as it is applied. */
+  bornForce?: (f: BornForce) => void;
 }
 
 /** The switches that are on, for the export (null when every switch is off). */

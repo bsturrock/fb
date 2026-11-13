@@ -137,6 +137,8 @@ export interface BornPair {
   maxDepthM: number;
   /** A trunk or head in another trunk or head (converted at the end of the retry window). */
   gross: boolean;
+  /** Ladder 18 (`BornOverlapProfile.separation`): the separation's positive work on the pair so far (J). */
+  workJ?: number;
 }
 
 /** Ladder 17: a candidate collider deeper than the tolerance in one external shape (`CandidateReport.born`). */

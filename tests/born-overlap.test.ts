@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
-import { BORN_OVERLAP_V1, withBornOverlap, withConversionRetry, type BornOverlapProfile } from '../src/sim/profiles';
+import type { BornForce } from '../src/sim/debug';
+import { BORN_OVERLAP_V1, BORN_OVERLAP_V2, withBornOverlap, withConversionRetry, type BornOverlapProfile } from '../src/sim/profiles';
 import type { PlayerRuntime, Simulation, SimOptions } from '../src/sim/simulation';
-import { v3 } from '../src/sim/vec';
+import { dot, v3, vc, type Vec3 } from '../src/sim/vec';
 import { create, evs, FIX, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter } from './passive-energy';
 
@@ -205,3 +206,145 @@ describe('ladder 17: born overlap (a candidate inside another player is converte
     loose.sim.dispose();
   }, 120000);
 });
+
+// Ladder 18 (`BornOverlapProfile.separation`, BORN_OVERLAP_V2): a held pair pushed apart, capped, rather than left to part.
+// Left alone a held pair can deepen (the solve never sees it); pushed, none goes deeper than it was born, and it parts in
+// about the profile's `partS`. The separation's work is read here from the motion itself: each force the probe reports
+// (`debug.bornForce`, before the solve) times the mean of its point's velocities before and after the solve, on both
+// bodies.
+
+interface Held {
+  /** Depth when born, deepest after any solve (m), the release time (s) and the separation's own count of its work (J). */
+  depth0: number;
+  deep: number;
+  heldS: number | null;
+  workJ: number | null;
+  trunk: boolean;
+}
+interface Separated {
+  sim: Simulation;
+  /** Per held pair (`player:own~other`). */
+  pairs: Map<string, Held>;
+  /** The separating forces' work over the run, from the motion (J), and the fastest segment of R's right arm (m/s). */
+  workJ: number;
+  armMs: number;
+}
+const isTrunkKey = (k: string): boolean => /(^|:)(core|torso|pelvis|head)(:|$)/.test(k);
+async function separated(def: FixtureDef, opts: SimOptions = {}): Promise<Separated> {
+  const pending: { f: BornForce; lo: Vec3; hi: Vec3 }[] = [];
+  const pairs = new Map<string, Held>();
+  let workJ = 0;
+  let armMs = 0;
+  const sim = await create(def, {
+    ...opts,
+    debug: { ...opts.debug, bornForce: (f) => pending.push({ f, lo: vc(f.lo.velocityAtPoint(f.point)), hi: vc(f.hi.velocityAtPoint(f.point)) }) },
+    onSubstep: (x) => {
+      for (const { f, lo, hi } of pending) {
+        const lo1 = vc(f.lo.velocityAtPoint(f.point));
+        const hi1 = vc(f.hi.velocityAtPoint(f.point));
+        // (the force on lo; hi takes its opposite)
+        workJ += (dot(f.force, v3((lo.x + lo1.x) / 2, (lo.y + lo1.y) / 2, (lo.z + lo1.z) / 2)) - dot(f.force, v3((hi.x + hi1.x) / 2, (hi.y + hi1.y) / 2, (hi.z + hi1.z) / 2))) * x.physics.dt;
+      }
+      pending.length = 0;
+      const w = x.physics.world;
+      for (const pl of x.players) {
+        for (const bp of pl.rag?.born ?? []) {
+          const k = `${pl.id}:${bp.ownKey}~${bp.otherKey}`;
+          let h = pairs.get(k);
+          if (!h) pairs.set(k, (h = { depth0: bp.depth0M, deep: 0, heldS: null, workJ: null, trunk: isTrunkKey(bp.ownKey) && isTrunkKey(bp.otherKey) }));
+          const a = w.getCollider(bp.own);
+          const b = w.getCollider(bp.other);
+          const c = a && b ? a.contactCollider(b, 0) : null;
+          if (c) h.deep = Math.max(h.deep, -c.distance);
+        }
+      }
+      const R = x.players.find((p) => p.id === 'R')!.rag;
+      if (R) for (const sg of ['rightUpperArm', 'rightForearm'] as const) armMs = Math.max(armMs, Math.hypot(R.bodies[sg].linvel().x, R.bodies[sg].linvel().y, R.bodies[sg].linvel().z));
+    },
+  });
+  await runSim(sim);
+  for (const e of evs(sim, 'bornOverlapReleased')) {
+    const h = pairs.get(`${e.playerId}:${e.data.own}~${e.data.other}`);
+    if (h) [h.heldS, h.workJ] = [e.data.heldS as number, (e.data.workJ as number | undefined) ?? null];
+  }
+  return { sim, pairs, workJ, armMs };
+}
+const fmt = (m: Map<string, Held>): string => [...m.entries()].map(([k, h]) => `${k} ${(h.depth0 * 100).toFixed(1)}->${(h.deep * 100).toFixed(1)} cm held ${h.heldS?.toFixed(3)} s work ${h.workJ?.toFixed(2)}`).join('; ');
+
+describe('ladder 18: born separation (a held born pair pushed apart, capped, rather than left to part)', () => {
+  const S = BORN_OVERLAP_V2.separation!;
+
+  it('the gross case (R born with his trunk 14 cm in D\'s ragdoll trunk, his right arm in it): left to part (V1, the twin) the pairs go deeper than born and the trunk pair is held 0.6 s; pushed apart (V2) none goes deeper than born, the limb pairs part within 0.2 s and the trunk pair well before V1\'s, each within its work budget by the separation\'s count and all within theirs by the motion; the explosion gate holds', async () => {
+    const v1 = await separated(crowded({ trunk: true }));
+    const v2 = await separated(crowded({ trunk: true, born: BORN_OVERLAP_V2 }));
+    console.log(`ladder 18 gross case, V1: ${fmt(v1.pairs)}`);
+    console.log(`ladder 18 gross case, V2: ${fmt(v2.pairs)}; work from the motion ${v2.workJ.toFixed(2)} J`);
+    for (const [m, tag] of [[v1, 'V1'], [v2, 'V2']] as const) {
+      expectBooked(player(m.sim, 'R'), tag);
+      expect(m.pairs.size, tag).toBeGreaterThanOrEqual(4);
+      // every pair released within the run, none left
+      for (const [k, h] of m.pairs) expect(h.heldS, `${tag} ${k}`).not.toBeNull();
+      for (const p of m.sim.players) expect(p.ragStats!.maxSpeed, `${tag} ${p.id}`).toBeLessThan(EXPLODE_MS);
+    }
+    // the twin: left to part, the trunk pair and an arm pair deepen while held
+    const trunk1 = v1.pairs.get('R:core:torso~D:core:torso')!;
+    expect(trunk1.deep - trunk1.depth0).toBeGreaterThan(0.01);
+    expect(trunk1.heldS!).toBeGreaterThan(0.5);
+    expect(v2.pairs.get('R:core:torso~D:core:torso')!.heldS!).toBeLessThan(trunk1.heldS! - 0.15);
+    expect([...v1.pairs.values()].some((h) => !h.trunk && h.deep - h.depth0 > 0.005)).toBe(true);
+    expect(v1.workJ).toBe(0);
+    for (const [k, h] of v2.pairs) {
+      expect(h.deep, `V2 ${k}`).toBeLessThanOrEqual(h.depth0 + 0.001);
+      if (!h.trunk) expect(h.heldS!, `V2 ${k}`).toBeLessThanOrEqual(0.2);
+      // (the trunk pairs: within their budget, the trunk in the trunk well before V1's; the shallower trunk in the pelvis
+      // about as soon as V1's, which nothing drives deeper)
+      expect(h.heldS!, `V2 ${k}`).toBeLessThanOrEqual(Math.max(0.2, v1.pairs.get(k)!.heldS! + 0.01));
+      expect(h.workJ!, `V2 ${k}`).toBeLessThanOrEqual(S.workJ + 1e-9);
+    }
+    expect(v2.workJ).toBeGreaterThan(0);
+    expect(v2.workJ).toBeLessThanOrEqual(v2.pairs.size * S.workJ);
+    v1.sim.dispose();
+    v2.sim.dispose();
+  }, 120000);
+
+  it('no kick: R\'s right arm born 3.7 cm in D\'s torso is pushed out in about 0.15 s by under 0.5 J (from the motion); the fault (`bornSeparationUncapped`, the depenetration the solve would give: the whole depth in one solve) does over 20 J and throws the arm out at over twice the speed', async () => {
+    const on = await separated(crowded({ born: BORN_OVERLAP_V2 }));
+    const fault = await separated(crowded({ born: BORN_OVERLAP_V2 }), { debug: { conversion: { bornSeparationUncapped: true } } });
+    console.log(`ladder 18 arm case: capped ${on.workJ.toFixed(3)} J, arm ${on.armMs.toFixed(2)} m/s (${fmt(on.pairs)}); uncapped ${fault.workJ.toFixed(1)} J, arm ${fault.armMs.toFixed(2)} m/s`);
+    for (const [m, tag] of [[on, 'on'], [fault, 'fault']] as const) {
+      expectBooked(player(m.sim, 'R'), tag);
+      expect(m.pairs.size, tag).toBeGreaterThanOrEqual(2);
+      for (const [k, h] of m.pairs) {
+        expect(h.heldS, `${tag} ${k}`).not.toBeNull();
+        expect(h.deep, `${tag} ${k}`).toBeLessThanOrEqual(h.depth0 + 0.001);
+      }
+    }
+    for (const [k, h] of on.pairs) expect(h.heldS!, k).toBeLessThanOrEqual(0.2);
+    expect(on.workJ).toBeGreaterThan(0);
+    expect(on.workJ).toBeLessThan(0.5);
+    expect(fault.workJ).toBeGreaterThan(20);
+    expect(fault.armMs).toBeGreaterThan(2 * on.armMs);
+    on.sim.dispose();
+    fault.sim.dispose();
+  }, 120000);
+
+  it('R and D converted in the same batch (the pair they were both born in held by whichever comes first): both orders release the same pairs, R and D accepted at the same step, each order deterministic', async () => {
+    const d = crowded({ born: BORN_OVERLAP_V2 });
+    const both = { ...d, diagnostics: { ...d.diagnostics, conversions: [{ playerId: 'D', atS: 0.5 }, { playerId: 'R', atS: 0.5 }] } };
+    const seen: { rel: string[]; steps: string; summary: string }[] = [];
+    for (const reverseOrder of [false, true, false, true]) {
+      const sim = await runSim(await create(both, { reverseOrder }));
+      const rel = evs(sim, 'bornOverlapReleased').map((e) => [`${e.playerId}:${e.data.own}`, e.data.other as string].sort().join('~'));
+      seen.push({ rel: rel.sort(), steps: sim.players.map((p) => `${p.id} ${p.handoff!.outcome}@${p.handoff!.step}`).sort().join(', '), summary: JSON.stringify(sim.summary()) });
+      sim.dispose();
+    }
+    // the shared pair is held once: by R forward, by D reversed
+    expect(seen[0].rel.length).toBeGreaterThanOrEqual(4);
+    expect(seen[1].rel).toEqual(seen[0].rel);
+    expect(seen[1].steps).toBe(seen[0].steps);
+    expect(seen[0].steps).toBe('D accepted@120, R accepted@120');
+    expect(seen[2].summary).toBe(seen[0].summary);
+    expect(seen[3].summary).toBe(seen[1].summary);
+  }, 120000);
+});
+
