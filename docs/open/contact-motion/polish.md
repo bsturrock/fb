@@ -19,6 +19,32 @@ in real life."
 - **Low hit (thighs): hit, wrap, roll.** Shoulder into the thighs, wrap the legs, squeeze, then the tackler rolls
   his own body; the roll's torque takes the carrier down. He does not release.
 
+## Next steps (2026-11-13, after the user's look at the ride-down and the bound-legs fall)
+
+On for L3, L4 and HC: `WRAP_V8` (strike, drive, ride-down, bound-legs fall). Flag off: `WRAP_V6` (low tackle, on
+V8), `compose.lateLanding`. The user's review: the front ride-down looks good; the drag mirror looks better; the
+rear wrap and the drag (`L3-F5-drag`, to confirm which scene he meant by "the side one") need more oomph from the
+tackler, and in the drag the tackler lands underneath the carrier, which is unlikely; the side wrap
+(`L3-F4-twoArm`) looks ok but reads as a hit, not a wrap; the low rear wrap (`&wrap=v6`) does not look good: from
+behind it should read as a drag-down, the tackler holding on with his own legs dragging, not the carrier trying
+to keep stepping while wrapped. Direction is ours. In order:
+
+1. **A hold that holds.** The tackler keeps a real, breakable grip on the carrier through his own conversion and
+   the landing (today his ragdoll hold is a 100 N press that lasts about 0.1 s). This is what keeps him on his
+   man, and it is the base for the drag-down, the lock and the roll. Flag off, then flip.
+2. **More oomph, and who ends on top.** Measure what the tackler puts into the carrier on the rear wrap and the
+   drag (speed and mass behind the shoulder at contact, drive force and how long it acts, the carrier's speed
+   change), find why the drag's tackler ends underneath, then raise what is low. No energy from nowhere.
+3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
+   lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
+   parked posed dive is the general form if a supported tackler cannot do it.
+4. **The side wrap reads as a wrap.** The arms close round the carrier and stay on him through the fall instead
+   of a hit and a release; needs 1, and the narrow footwork step (item 2 of the order below) so the tackler is
+   not cut loose high in the fast falls.
+5. Then the rest of the order below: the low tackle's flip on long-approach fixtures (side offset out before the
+   carrier goes down, a secure hold on the long front approach, the posed hip twist), the hand lock, a sideways
+   roll with the carrier, brace amount, falls, whiff, debt.
+
 ## Order
 
 1. **Real tackle form.**
