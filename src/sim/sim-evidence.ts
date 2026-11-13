@@ -2,7 +2,7 @@
 // export, the joint-limit report and the summary. Read-only: nothing here changes simulation state but the trace array.
 import type { ArmSide, PlayerId } from './contracts';
 import { rapierVersion } from './physics';
-import { ARM_G2, SCHEMA_VERSION, type BodyProfile } from './profiles';
+import { SCHEMA_VERSION, type BodyProfile } from './profiles';
 import { debugExport } from './debug';
 import { footTrace } from './footwork';
 import { anchorErrors } from './ragdoll';
@@ -192,7 +192,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       motor: def.motor.id,
       solver: def.solver.id,
       stance: def.stance.id,
-      arm: host.arms ? (def.armProfile ?? ARM_G2).id : undefined,
+      arm: host.arms?.profile.id,
       balance: host.balanced ? host.balanceProfile.id : undefined,
       ragdoll: def.ragdoll?.id,
       rule: def.rules?.id,
@@ -213,7 +213,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       motor: def.motor,
       solver: def.solver,
       stance: def.stance,
-      arm: host.arms ? (def.armProfile ?? ARM_G2) : undefined,
+      arm: host.arms?.profile,
       balance: host.balanced ? host.balanceProfile : undefined,
       ragdoll: def.ragdoll,
       rule: def.rules ? ruleProfileExport(def.rules) : undefined,

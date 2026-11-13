@@ -7,7 +7,7 @@ import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../src/sim/controllers/wrap';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, preWrap, runSim } from './helpers';
@@ -519,5 +519,31 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(g.players.some((p) => p.controller.kind === 'wrapAttempt')).toBe(false);
     expect(labRun(g, new URLSearchParams('wrap=on'))).toEqual({ def: g, opts: {}, label: 'wrap n/a (no wrapping defender)' });
     expect(labRun(off, new URLSearchParams('wrap=maybe'))).toEqual({ def: off, opts: {}, label: 'wrap=maybe ignored' });
+  });
+
+  // contact motion M4: fall=on|off registers or removes FALL_REACT_V1 on an L3 or HC fixture (tests/fall-react.test.ts has
+  // the twins that it changes the run)
+  it('fall=on runs an L3 or HC fixture with FALL_REACT_V1 (every falling player reacts), fall=off without it (limp); an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
+    const { fallResponse, ...off } = FIX('L3-F19-front');
+    void fallResponse;
+    const on: FixtureDef = { ...off, fallResponse: FALL_REACT_V1 };
+    expect(FIX('L3-F19-front').fallResponse).toBeUndefined();
+    expect(labRun(off, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on' });
+    expect(labRun(on, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on (registered)' });
+    const back = labRun(on, new URLSearchParams('fall=OFF'));
+    expect(back).toEqual({ def: off, opts: {}, label: 'fall off' });
+    expect('fallResponse' in back.def).toBe(false);
+    expect(labRun(off, new URLSearchParams('fall=off'))).toEqual({ def: off, opts: {}, label: 'fall off (registered)' });
+    const hc = FIX('HC-F3-lowRunner');
+    expect(labRun(hc, new URLSearchParams('fall=on')).def.fallResponse).toBe(FALL_REACT_V1);
+    for (const id of ['L4-F2-back-on', 'L4-F2-back-off']) {
+      const l4 = FIX(id);
+      expect(labRun(l4, new URLSearchParams('fall=on'))).toEqual({ def: l4, opts: {}, label: 'fall n/a (not an L3 or HC fixture)' });
+    }
+    const bare = { ...off, ragdoll: undefined };
+    expect(labRun(bare, new URLSearchParams('fall=on'))).toEqual({ def: bare, opts: {}, label: 'fall n/a (no ragdoll profile)' });
+    const g = allFixtures().find((d) => d.id.startsWith('G'))!;
+    expect(labRun(g, new URLSearchParams('fall=on'))).toEqual({ def: g, opts: {}, label: 'fall n/a (not an L3 or HC fixture)' });
+    expect(labRun(off, new URLSearchParams('fall=maybe'))).toEqual({ def: off, opts: {}, label: 'fall=maybe ignored' });
   });
 });

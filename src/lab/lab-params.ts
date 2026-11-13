@@ -47,7 +47,11 @@
 //                      view before the hold flip); v1: WRAP_V1, the cradle only
 //                      (arms carried ahead of the chest, opened wider than the carrier ahead of contact, closed on the
 //                      first valid touch); off: the Gate 2 progression. A fixture without a wrapping defender (a
-//                      `wrapAttempt` controller) is run as it is.
+//                      `wrapAttempt` controller) is run as it is;
+//   fall=on|off        the falling player's reaction on an L3 or HC fixture (contact motion M4). on: FALL_REACT_V1 at every
+//                      accepted conversion (the knees and hips flex, the free arm braces, the carry arm keeps the ball,
+//                      a holding arm keeps its hold); off: limp (a takedown's hold only under WRAP_V3, the M3 view). An
+//                      L4 fixture (its own response, or its motor-off twin) or one without a ragdoll is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -62,6 +66,7 @@ import {
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../sim/controllers/wrap';
+import { FALL_REACT_V1 } from '../sim/profiles';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
@@ -79,6 +84,7 @@ const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
 const WRAP = ['on', 'v2', 'v1', 'off'];
+const FALL = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -105,7 +111,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`, `wrap`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`, `wrap`, `fall`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -272,6 +278,21 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
       if (w !== out.wrap) {
         out = { ...out, wrap: w };
         if (!w) delete out.wrap;
+      }
+    }
+  }
+  const fall = params.get('fall');
+  if (fall !== null && fall !== '') {
+    const v = fall.toLowerCase();
+    if (!FALL.includes(v)) parts.push(`fall=${fall} ignored`);
+    else if (!/^(L3|HC)-/.test(out.id)) parts.push('fall n/a (not an L3 or HC fixture)');
+    else if (!out.ragdoll) parts.push('fall n/a (no ragdoll profile)');
+    else {
+      const want = v === 'on' ? FALL_REACT_V1 : undefined;
+      parts.push(`fall ${v}${want === out.fallResponse ? ' (registered)' : ''}`);
+      if (want !== out.fallResponse) {
+        out = { ...out, fallResponse: want };
+        if (!want) delete out.fallResponse;
       }
     }
   }

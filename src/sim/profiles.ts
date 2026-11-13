@@ -1349,6 +1349,12 @@ export interface FallResponseProfile {
      * force, carried onto the ragdoll arm. Absent: no press.
      */
     holdPressN?: number;
+    /**
+     * Contact motion M4: the effort onset of an arm whose task is `hold` (delay, ramp; the profile's fade): an arm still
+     * holding at the switch needs no reaction time, so its drive is there while its hold memory lasts. Absent: the
+     * profile's `timing`, as every other task.
+     */
+    holdOnset?: { delayS: number; rampS: number };
   };
   brace: {
     /** Prediction horizon, and the shoulder height the prediction aims at inside it. */
@@ -1492,6 +1498,25 @@ export const FALL_HOLD_V1: FallResponseProfile = {
   ceilingsNm: { ...FALL_L4.ceilingsNm, shoulder: 30, elbow: 20 },
   arms: { ...FALL_L4.arms, holdScale: 1, holdPressN: 100 },
   enable: { knee: false, hip: false, arms: true },
+};
+
+/**
+ * Contact motion M4 (rough slice step 1): the fall response of every L3 and HC conversion, one response for every
+ * falling player (an L4 fixture keeps its own, FALL_L4). FALL_L4's tasks, gains, timing, power and work caps and
+ * impact guard: the knees and hips flex from the accepted angles after the reaction delay and yield through the landing
+ * (a flexor knee, a hip that only damps past its target), a free arm reaches for the floor and yields once it lands, the
+ * carry arm protects around the achieved pose at the switch (the braced tuck). The M3 hold (FALL_HOLD_V1) is part of
+ * it, so a holding arm keeps holding, pressed on what it holds, and braces when its hold lapses:
+ * - an arm holding at the switch starts at once (`holdOnset` 0 s, 20 ms ramp; FALL_HOLD_V1's timing, for that task only);
+ * - `holdScale` 1, `holdPressN` 100 N, and arm ceilings 30 N m (shoulder) and 20 N m (elbow) for every arm task: 15 N m
+ *   does not hold a horizontal arm, the tucked ball arm included, against gravity (about 20 N m for the model's arm).
+ * On a ragdoll whose hips have no soft envelope (L3, HC) the hip target is bounded by the hard stops alone.
+ */
+export const FALL_REACT_V1: FallResponseProfile = {
+  ...FALL_L4,
+  id: 'fall-react-v1',
+  ceilingsNm: FALL_HOLD_V1.ceilingsNm,
+  arms: { ...FALL_HOLD_V1.arms, holdOnset: { delayS: FALL_HOLD_V1.timing.delayS, rampS: FALL_HOLD_V1.timing.rampS } },
 };
 
 export const RAGDOLL_G4: RagdollProfile = {

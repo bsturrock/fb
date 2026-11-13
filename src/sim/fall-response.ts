@@ -185,9 +185,10 @@ export class FallResponse {
     return ep.rag.joints.find((j) => j.id === id)!;
   }
 
-  private envelope(ep: FallEpisode, kind: 'shoulder' | 'hip'): JointEnvelope {
-    // the simulation admits a fall response only on an envelope with hips (plan 12: an L3 or HC one is shoulder-only)
-    return ep.rag.profile.envelope![kind]!;
+  private envelope(ep: FallEpisode, kind: 'shoulder'): JointEnvelope {
+    // the simulation admits a fall response only on a ragdoll with a shoulder envelope (plan 12: an L3 or HC one is
+    // shoulder-only; its hips have the hard stops, `hipCmd`)
+    return ep.rag.profile.envelope![kind];
   }
 
   private coreQ(ep: FallEpisode): Quat {
@@ -251,9 +252,10 @@ export class FallResponse {
     return ep;
   }
 
-  private effortAt(tS: number): number {
+  /** The effort window at `tS` after the switch: the onset (the profile's, or `onset`), then the profile's fade. */
+  private effortAt(tS: number, onset: { delayS: number; rampS: number } = this.P.timing): number {
     const T = this.P.timing;
-    return smooth((tS - T.delayS) / T.rampS) * (1 - smooth((tS - T.fadeStartS) / T.fadeS));
+    return smooth((tS - onset.delayS) / onset.rampS) * (1 - smooth((tS - T.fadeStartS) / T.fadeS));
   }
 
   private setTask(ep: FallEpisode, a: ArmState, task: ArmTask, reason: string): void {
@@ -349,10 +351,20 @@ export class FallResponse {
     if (ep.exhausted) return;
     const e = this.effortAt(tS);
     ep.effort = e;
-    if (e <= 0) return;
-    if (this.P.enable.knee) for (const side of SIDES) this.kneeCmd(ep, side, tS, e);
-    if (this.P.enable.hip) for (const side of SIDES) this.hipCmd(ep, side, tS, e);
-    if (this.P.enable.arms) for (const side of SIDES) this.armCmds(ep, ep.arms[side], e, arms);
+    // contact motion M4 (`arms.holdOnset`): an arm still holding has no reaction delay, so a hold lives through the switch
+    const onset = this.P.arms.holdOnset;
+    const eHold = onset ? this.effortAt(tS, onset) : e;
+    if (e <= 0 && eHold <= 0) return;
+    if (e > 0) {
+      if (this.P.enable.knee) for (const side of SIDES) this.kneeCmd(ep, side, tS, e);
+      if (this.P.enable.hip) for (const side of SIDES) this.hipCmd(ep, side, tS, e);
+    }
+    if (this.P.enable.arms)
+      for (const side of SIDES) {
+        const a = ep.arms[side];
+        const ea = a.task === 'hold' ? eHold : e;
+        if (ea > 0) this.armCmds(ep, a, ea, arms);
+      }
     const held = this.impactsAhead(ep, contacts);
     if (held.size) {
       ep.stats.heldSubsteps++;
@@ -447,7 +459,9 @@ export class FallResponse {
     const j = this.joint(ep, `${side}Hip`);
     const delta = rad(P.hip.flexDeg) * smooth((tS - P.timing.delayS) / P.hip.rampS);
     const raw = qRot(qFromAxisAngle(v3(1, 0, 0), -delta), ep.hipDir0[side]);
-    let tgtCore = clampDirToEnvelope(this.envelope(ep, 'hip'), raw, j.sideSign ?? 1, 0);
+    // contact motion M4: an L3 or HC ragdoll's hips have no soft envelope, only the hard stops below, which bound the target
+    const env = ep.rag.profile.envelope?.hip;
+    let tgtCore = env ? clampDirToEnvelope(env, raw, j.sideSign ?? 1, 0) : raw;
     // ladder rung 8d: the hard stops are inside the envelope's cone (flexion 125 against 129): the target stays inside them,
     // and inside their approach zone where they have one (8g)
     const stop = ep.rag.hipStops?.find((h) => h.jointId === j.id);

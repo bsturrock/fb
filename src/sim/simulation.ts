@@ -349,6 +349,11 @@ const EMPTY_BALANCE = (): BalanceRuntime => ({
  * different geometry is rejected at construction.
  */
 export function checkLimbContract(A: ArmProfile, R: RagdollProfile): void {
+  const bad = limbContractBreaks(A, R);
+  if (bad.length) throw new Error(`limb contract: arm profile ${A.id} and ragdoll profile ${R.id} differ (${bad.map(([k, a, r]) => `${k} ${a} vs ${r}`).join(', ')})`);
+}
+
+function limbContractBreaks(A: ArmProfile, R: RagdollProfile): [string, number, number][] {
   const pairs: [string, number, number][] = [
     ['upperArm', A.upperArmM, R.lengths.upperArm],
     ['forearm', A.forearmM, R.lengths.forearm],
@@ -357,8 +362,33 @@ export function checkLimbContract(A: ArmProfile, R: RagdollProfile): void {
     ['forearmRadius', A.forearmRadiusM, R.radii.forearm],
     ['palmRadius', A.palmRadiusM, R.radii.palm],
   ];
-  const bad = pairs.filter(([, a, r]) => Math.abs(a - r) > 1e-9);
-  if (bad.length) throw new Error(`limb contract: arm profile ${A.id} and ragdoll profile ${R.id} differ (${bad.map(([k, a, r]) => `${k} ${a} vs ${r}`).join(', ')})`);
+  return pairs.filter(([, a, r]) => Math.abs(a - r) > 1e-9);
+}
+
+/**
+ * The arm profile the arm system runs: the fixture's. Contact motion M4: a fixture whose players have no supported arms
+ * has an arm system only for its fall response's shared falling budget (plan 09), which reads the arm lengths alone;
+ * where the fixture's profile does not fit its ragdoll (an L3 or HC model ragdoll without arms), it takes the ragdoll's
+ * limb lengths and radii, as `asL4` fits an L4 one in its definition. A fixture with supported arms keeps its profile
+ * and the contract's check.
+ */
+export function armSystemProfile(def: FixtureDef): ArmProfile {
+  const A = def.armProfile ?? ARM_G2;
+  const R = def.ragdoll ?? DEFAULT_POSE_PROFILE;
+  if (def.players.some((p) => p.arms) || !limbContractBreaks(A, R).length) return A;
+  const chain = (a: number, b: number, c: number): number => a + b + c;
+  const L = R.lengths;
+  return {
+    ...A,
+    id: `${A.id}+limbs:${R.id}`,
+    upperArmM: L.upperArm,
+    forearmM: L.forearm,
+    palmExtensionM: L.palmExtension,
+    maxReachM: chain(L.upperArm, L.forearm, L.palmExtension) - (chain(A.upperArmM, A.forearmM, A.palmExtensionM) - A.maxReachM),
+    upperArmRadiusM: R.radii.upperArm,
+    forearmRadiusM: R.radii.forearm,
+    palmRadiusM: R.radii.palm,
+  };
 }
 
 /**
@@ -675,15 +705,17 @@ export class Simulation {
     // Colliders follow bodies only during a step; publish the reset-time placement to queries now.
     this.physics.world.propagateModifiedBodyPositionsToColliders();
     if (def.fallResponse || def.players.some((p) => p.arms)) {
-      checkLimbContract(def.armProfile ?? ARM_G2, def.ragdoll ?? DEFAULT_POSE_PROFILE);
-      this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip, def.selfClearance, def.jointRange);
+      const A = armSystemProfile(def);
+      checkLimbContract(A, def.ragdoll ?? DEFAULT_POSE_PROFILE);
+      this.arms = new ArmSystem(this.armHost(), A, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip, def.selfClearance, def.jointRange);
     }
     // contact motion M3 (WRAP_V3's `commit.hold`): on a fixture without a fall response, the one a takedown starts
     const hold = takedownHold(def);
     const fallP = def.fallResponse ?? hold;
     if (fallP) {
       const sim = this;
-      if (def.fallResponse && !def.ragdoll?.envelope?.hip) throw new Error(`fixture ${def.id}: a fall response needs a ragdoll profile with a shoulder and hip envelope`);
+      // contact motion M4: the hips take a soft envelope (L4) or the hard stops (L3, HC: a shoulder-only envelope)
+      if (def.fallResponse && !(def.ragdoll?.envelope?.shoulder && (def.ragdoll.envelope.hip || def.ragdoll.hipStops))) throw new Error(`fixture ${def.id}: a fall response needs a ragdoll profile with a shoulder envelope and a hip envelope or hip stops`);
       if (hold && ((hold.enable.arms && !def.ragdoll?.envelope?.shoulder) || (hold.enable.hip && !def.ragdoll?.envelope?.hip))) throw new Error(`fixture ${def.id}: the takedown's hold ${hold.id} needs a ragdoll envelope for every ball joint it drives`);
       this.fall = new FallResponse(fallP, {
         get dt() {
