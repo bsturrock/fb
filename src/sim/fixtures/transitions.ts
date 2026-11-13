@@ -7,7 +7,7 @@ import { CARRY_L3 } from '../carry';
 import { FOOTWORK_L3 } from '../footwork';
 import { IDLE_POSE_RECORD, LOCOMOTION_L3 } from '../locomotion';
 import { JOINT_RANGE_V2, LEG_GUARD_V1, ruleVariant, rulesRevision2, SELF_CLEARANCE_V1, withPoseGuard, withSolvedImpulses } from '../profiles';
-import { v3 } from '../vec';
+import { len, norm, v3, type Vec3 } from '../vec';
 import { asL2, l2f1, l2f3, l2f11, l2f12, l2f14OneArmFeet, runStop } from './footwork';
 import { defenderBob, defenderPhase, hcf5, LOW, mirrorZ, withStance } from './handoff-contact';
 import { g4f4 } from './gate4';
@@ -298,6 +298,30 @@ export const l3f10 = (): FixtureDef[] => [
 
 export const l3f11 = (): FixtureDef[] => [asL3(hcf5()[0], 'L3-F11-invalid', 'Candidate rejected for a genuine bad pose: a labelled 5 cm forearm joint offset in a simultaneous batch')];
 
+// ------------------------------------------------------------------ L3-F19 wrap directions (contact motion M3)
+/**
+ * The side wrap (L3-F4-twoArm: the 4 m/s runner along +X) met from another direction: the defender starts at (x, z)
+ * running a committed line at `v` (facing and leaning along it), and his finish drives along that line.
+ */
+const wrapFrom = (x: number, z: number, v: Vec3): FixtureDef => {
+  const d = twoArm();
+  const D = d.players.find((p) => p.id === 'D')!;
+  const c = D.controller as Extract<PlayerSetup['controller'], { kind: 'wrapAttempt' }>;
+  const dir = norm(v);
+  const yawDeg = (Math.atan2(dir.x, dir.z) * 180) / Math.PI;
+  return setPlayer(d, 'D', {
+    initial: { ...D.initial, x, z, yawDeg, velocity: v, leanDirWorld: dir },
+    controller: { ...c, approachSpeedMps: len(v), driveInMps: len(v), approachVelocityWorld: v, finish: { ...c.finish!, dirWorld: dir, speedMps: len(v) } },
+  });
+};
+export const l3f19 = (): FixtureDef[] => [
+  asL3(wrapFrom(2, 0, v3(-3, 0, 0)), 'L3-F19-front', 'Two-arm wrap from the front: a 3 m/s defender squares up to the 4 m/s runner, drives back along -X'),
+  // the practice area runs on to x = 16: the pair can run on together
+  { ...asL3(wrapFrom(-3.95, 0, v3(6, 0, 0)), 'L3-F19-rear', 'Two-arm wrap from behind: a 6 m/s defender runs down the 4 m/s runner, drives on along +X'), area: { halfX: 16, halfZ: 6 } },
+  // the committed line runs on after the pass (the controller keeps it until a retained contact): the case is the pass
+  { ...asL3(wrapFrom(-0.7, -3.85, v3(0, 0, 7)), 'L3-F19-miss', 'Wrap that misses: the side wrap\'s 7 m/s line passes 0.7 m behind the runner, the near hand brushes his back, 1.25 s'), durationS: 1.25 },
+];
+
 // ------------------------------------------------------------------ L3-F17 run start over steps
 /**
  * The request rises at the supplied Idle To Sprint's speed curve (about 6 m/s^2 up to speed), so a start from rest goes
@@ -357,4 +381,4 @@ export function runLab(o: RunLabOptions = RUN_LAB_DEFAULT): FixtureDef {
   };
 }
 
-export const transitionFixtures = (): FixtureDef[] => [...l3f1(), ...l3f2(), ...l3f3(), ...l3f4(), ...l3f5(), ...l3f6(), ...l3f7(), ...l3f8(), ...l3f9(), ...l3f10(), ...l3f11(), ...l3f13(), ...l3f14(), ...l3f15(), ...l3f16(), ...l3f17(), runLab()];
+export const transitionFixtures = (): FixtureDef[] => [...l3f1(), ...l3f2(), ...l3f3(), ...l3f4(), ...l3f5(), ...l3f6(), ...l3f7(), ...l3f8(), ...l3f9(), ...l3f10(), ...l3f11(), ...l3f13(), ...l3f14(), ...l3f15(), ...l3f16(), ...l3f17(), runLab(), ...l3f19()];

@@ -11,7 +11,7 @@ import { carriedBall, type PhysicalPose } from '../src/sim/pose';
 import type { FixtureDef } from '../src/sim/fixture';
 import { FOOTWORK_L3, HOLD_STILL_V1, holdStillAt } from '../src/sim/footwork';
 import { IDLE_POSE_RECORD, IDLE_STANCE_FADE_MPS } from '../src/sim/locomotion';
-import { add, dist, horiz, len, qConj, qMul, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
+import { add, dist, dot, horiz, len, qConj, qMul, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { expect } from './plain-expect';
 import { create, FIX, pace, run, traceRowsDiff } from './runs';
 import { armLengthErr, armProfile, count, L3, LIMBS, modes, peaks, ragOf, SIDES } from './transitions-shared';
@@ -1935,7 +1935,7 @@ export const ONE_BALL = check({
   name: 'the drawn ball, the rule reference and the evidence are one ball',
   fixtures: RULE_FIXTURES,
   watch(def) {
-    const e = { atEnding: null as Vec3 | null, live: new Map<number, Vec3>(), ticks: 0, seated: 0 };
+    const e = { atEnding: null as Vec3 | null, live: new Map<number, Vec3>(), ticks: 0, seated: 0, sub: [] as { t: number; p: Vec3 }[] };
     let R: PlayerRuntime | undefined;
     let prev: PoseKey | null = null;
     let prevRep: PlayerRuntime['representation'];
@@ -1943,9 +1943,11 @@ export const ONE_BALL = check({
     return {
       // the substep the ending is called on: the observer has just read this pose
       substep: (s) => {
-        if (!s.ending || e.atEnding) return;
+        if (e.atEnding) return;
         const R = runnerOf(s);
-        e.atEnding = drawnBall(R.pose, s.poseOf(R), s.rules!.profile).p;
+        const p = drawnBall(R.pose, s.poseOf(R), s.rules!.profile).p;
+        e.sub.push({ t: s.t, p });
+        if (s.ending) e.atEnding = p;
       },
       // before the first tick: the runner and its representation
       beforeTick: (sim) => {
@@ -1992,10 +1994,18 @@ export const ONE_BALL = check({
           const end = ev.events.filter((x) => x.type === 'ruleEnding');
           expect(end.length, def.id).toBe(1);
           expect(atEnding, def.id).not.toBeNull();
-          // the official spot is the drawn ball at the substep the ending was called
-          expect(dist(sim.ending.ballSpot, atEnding!), def.id).toBeLessThan(1e-12);
-          expect(dist(ev.fixture.ruleEnding!.ballSpot, atEnding!), def.id).toBeLessThan(1e-12);
-          expect(axisGap(vec(end[0]!.data.ballSpot!), atEnding!), def.id).toBeLessThanOrEqual(ROUND4);
+          // the official spot is the drawn ball at the substep the ending was called; a stopped forward progress is
+          // spotted where the progress stopped: the drawn ball furthest forward in the window (the first of equals)
+          let spotAt = atEnding!;
+          if (sim.ending.kind === 'progressStopped') {
+            const from = (sim.ending.evidence as { windowStartT: number }).windowStartT - 1e-4;
+            const fwd = sim.rules!.profile.forwardAxis;
+            for (const b of e.sub) if (b.t >= from && dot(b.p, fwd) > dot(spotAt, fwd)) spotAt = b.p;
+            spotAt = e.sub.find((b) => b.t >= from && dot(b.p, fwd) === dot(spotAt, fwd))!.p;
+          }
+          expect(dist(sim.ending.ballSpot, spotAt), def.id).toBeLessThan(1e-12);
+          expect(dist(ev.fixture.ruleEnding!.ballSpot, spotAt), def.id).toBeLessThan(1e-12);
+          expect(axisGap(vec(end[0]!.data.ballSpot!), spotAt), def.id).toBeLessThanOrEqual(ROUND4);
         } else expect(ev.fixture.ruleEnding, def.id).toBeNull();
         ONE_BALL_SEEN.set(def.id, { ticks: e.ticks, seated: e.seated, ending: !!sim.ending });
       },
