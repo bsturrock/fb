@@ -16,7 +16,9 @@ through it, on for L3, L4 and HC tackling defenders) is done ([handoff](../../ha
 rough-first slice (every falling L3 and HC player reacts: knees and hips flex, the ball stays tucked, a free arm
 reaches for the floor and, landed, gives under the body and lets go when unloaded; L4 keeps plan 09's response) is
 done ([handoff](../../handoff/contact-motion-m4.md)); next is the user's lab look at the whole tackle and fall, then
-polishing what looks worst.
+polishing what looks worst. The first polish planned, locked hands so the rear-wrap carrier is dragged down, was
+measured unreachable before any code (his hands stay 0.37 m or more apart around these bodies; M3 handoff, "Locked
+hands"): the rear-wrap carrier still runs on, and making it go down is a design step of its own.
 
 ## Direction (user-approved 2026-11-12; supersedes conflicting text below and in the milestone files)
 

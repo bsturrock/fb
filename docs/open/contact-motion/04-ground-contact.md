@@ -24,9 +24,9 @@ defender's legs cross in the front wrap (`L3-F19-front`); the carrier's passive 
 landing (`UPPER_ARM_IN_TRUNK`).
 
 Not in the slice: measured tolerances, hand-specific friction, knee/shin strike tuning, get-up. Logged for polish
-after it: the rear-wrap carrier still runs on because forearm clamps cannot carry the defender's weight; the
-candidate fix is locked hands (the wrapping hands grip each other or the own wrist, breakable), plus one-arm
-finishes for the side wrap.
+after it: the rear-wrap carrier still runs on because forearm clamps cannot carry the defender's weight (locked hands,
+the candidate fix, cannot reach each other around these bodies: measured in the M3 handoff, "Locked hands"), plus
+one-arm finishes for the side wrap.
 
 ## Visual target
 

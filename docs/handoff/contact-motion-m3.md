@@ -164,10 +164,11 @@ ms before he would go down): he stands back up and the pair run on as before.
 
 - **The rear-wrap carrier still runs on.** The defender's arms hold 0.37 s while he drops, then slide off: a forearm
   wrap pressed at 100 N cannot carry his weight (about 900 N against some 150 N of friction), and the falling owner
-  budget (350 N) would not carry it either. Only a palm grip (a passive link) or hands locked around the carrier could;
-  the wrap forms clamps, not grips. His limp legs drop him almost in free fall (no knee or hip effort, M4's).
+  budget (350 N) would not carry it either. Neither locked hands nor a palm grip can take over on these bodies (below,
+  "Locked hands").
 - **Holds last about half a second, not to the ground.** A forearm hold lives while solved contact renews it; as the
-  defender drops the contact thins and it lapses into a brace (0.37 to 0.65 s). Not a perpetual hold, by design.
+  defender drops the contact thins and it lapses into a brace (0.37 to 0.65 s; since M4's fall reaction 0.36 to
+  0.47 s). Not a perpetual hold, by design.
 - **L4 takedowns keep L4's own response** (L4-F9-transferFailed: `FALL_L4`, no press, its reaction delay): L4 runs are
   unchanged by the hold flip.
 - **One-arm holds do not commit** (out of the slice). In the side wrap (L3-F4-twoArm) the far arm's clamp slips
@@ -192,6 +193,54 @@ ms before he would go down): he stands back up and the pair run on as before.
     20 cm): his run, not a new mechanism.
 - **Supported snaps in L4-F9-transferFailed** rose from 9 to 13 per order (L4 total 28 to 36). They are the labelled
   invalid transfer's; the other ten (L4-F9-crowded, L4-F10-knee) are unchanged.
+
+## Locked hands: not reachable on these bodies (2026-11-13)
+
+Planned as the first polish after M4: his two hands lock (hand on hand, or hand on the other wrist) on the carrier's
+far side, so the arms close a loop around him and the hold stops depending on friction. Measured first, before any
+code: the hands never come within a lock's reach of each other, so nothing was built and the forearm clamps remain.
+A link no fixture can form would be a flag that can never be flipped (Direction item 5).
+
+| two-arm hold, forward / reversed | front (`L3-F19-front`) | rear (`L3-F19-rear`) | side (`L3-F4-twoArm`) |
+| --- | --- | --- | --- |
+| substeps with both arms holding the carrier | 159 / 172 | 148 / 52 | 2 / 4 (the far clamp slips) |
+| closest palm to palm in them | 0.52 / 0.52 m | 0.51 / 0.51 m | 0.48 / 0.48 m |
+| closest palm to the other arm's forearm | 0.57 / 0.57 m | 0.57 / 0.57 m | 0.52 / 0.52 m |
+| his shoulders above the band; behind the carrier's centre | 0.35 to 0.40; 0.37 to 0.46 m | 0.27 to 0.36; 0.33 to 0.38 m | 0.38 to 0.40; 0.37 to 0.39 m |
+
+- Over all 56 L3, L4 and HC wrap fixtures, both orders: nine have a two-arm hold, and the hands come no nearer than
+  0.37 m (`L4-F9-transferFailed`), every other at least 0.45 m. The palms stop just outside the carrier's far corners.
+- Why: his palm would have to go from the shoulder to outside the far corner (about 0.61 m) and then across the far
+  face to its middle (about 0.26 m), 0.87 m against a reach of 0.70 m (chain 0.72 m). Both proxy torso boxes are
+  0.40 m deep, so his chest on the carrier's back keeps his shoulders a third of a metre or more behind the carrier's
+  centre, and the carrier's box is 0.46 m wide at the band (the drawn trunk there is about 0.43 by 0.31 m). With
+  both torsos shrunk to 0.30 by 0.22 m the hands still stay 0.22 m or more apart: the reach, not the girth alone.
+- A close target at the far face's middle (180 deg, 5 or 15 cm in; 170 deg, 10 cm) brings the front and rear hands no
+  nearer (0.50 m or more) and takes the forearms off the flanks: the rear wrap's two clamps last 3 or 4 substeps
+  instead of 61 and he never commits (the front wrap too at 15 cm in). In the side wrap the hands meet only after the
+  carrier has fallen out of them, closing on air with no clamp. A regression, so the close target stays at 150 deg.
+- A palm grip on the far side is refused by the grip rule itself (`farSide`: a grip is a straight shoulder-to-anchor
+  tension, which cannot pull through the body); with the wrap's arms in grip mode every attempt is rejected and, with
+  no clamp either, there is no takedown.
+- The side wrap's far arm never gets round. From the side the carrier's far corner is 139 deg round; one arm gets to
+  115 or 116 deg, the other to 145 or 146 deg, where its clamp is lost and remade every substep, so both arms hold him
+  for 5 to 20 ms. The carrier falls by his own balance (0.74 s), the defender 0.2 s later over him (his core 0.36 m
+  above the carrier's as his trunk lands), and they touch for 0.3 to 0.4 s after the first fall.
+- `L3-F5-drag` (the 3 m/s defender dragged by the 4 m/s runner): never a two-arm hold. One arm gets 93 deg round and
+  clamps for some 25 ms at 0.96 s, the other 147 deg, its clamp flickering from 0.43 to 0.80 s; the palms stay 0.52 m
+  or more apart. The carrier falls by his own balance at 0.73 s; the defender follows 0.58 to 0.61 s later by losing
+  his own support and ends lying on him (his trunk never reaches the floor).
+- Design intent for a lock, when one is reachable (the user, 2026-11-13): a tackler never lets go of his own accord;
+  a lock lasts to the ground and ends only on physical overload, the wrap genuinely ending or the referee ending the
+  play, never on a timer or a short lapse of solved contact; the pair reach the ground connected.
+- What would make a lock reachable, each its own design step: a tackle that drives his shoulder into the carrier with
+  his head to one side (the shoulder at the carrier's flank, not a third of a metre behind his centre) and wraps
+  lower; trunk colliders nearer the drawn body (they move every L3, L4 and HC run); or a wrist, so each hand turns
+  round the far corner onto the far face (a hook that bears by normal contact, not a lock).
+- Probes (run from the ladder worktree): `.scratch/p1/scan.ts` (every wrap fixture; `<az> <depth>` for another close
+  target), `.scratch/p1/reach.ts` (close-target variants), `.scratch/p1/reachgeo.ts` (shoulder placement),
+  `.scratch/p1/slim.ts` (shrunk torsos), `.scratch/p1/grip.ts` (grip mode), `.scratch/p1/scene.ts <fixture>` (one
+  scene's arms, falls and landing). Outputs in the main checkout's `.scratch/p1/evidence/`.
 
 ## Lab
 
