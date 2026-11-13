@@ -1372,6 +1372,14 @@ export interface FallResponseProfile {
     maxElbowRateRadPerS: number;
     /** Keeps a shoulder target this far inside its envelope. */
     envelopeMarginDeg: number;
+    /**
+     * Contact motion M4: a landed brace bears load. From its floor contact the arm chases no pose: its shoulder and elbow
+     * only damp their own motion (the gains' damping times `dampScale`, under the ceilings), so the body's weight bends
+     * the elbow and moves the shoulder while the damping takes energy out, and no spring is left to throw the hand back
+     * up. With no palm or forearm on the floor for `releaseS` (a short hysteresis against flicker) it lets go: passive.
+     * Absent: plan 09's contact phase, the pose at contact held at `arms.yieldScale` of the gains.
+     */
+    load?: { dampScale: number; releaseS: number };
   };
   /**
    * Caps apply before the solve, and every realized substep is audited against them with `toleranceFraction`: any
@@ -1517,6 +1525,23 @@ export const FALL_REACT_V1: FallResponseProfile = {
   id: 'fall-react-v1',
   ceilingsNm: FALL_HOLD_V1.ceilingsNm,
   arms: { ...FALL_HOLD_V1.arms, holdOnset: { delayS: FALL_HOLD_V1.timing.delayS, rampS: FALL_HOLD_V1.timing.rampS } },
+};
+
+/**
+ * Contact motion M4 (rough slice step 2): FALL_REACT_V1 with a landed palm that bears load (`brace.load`). From the
+ * brace's floor contact its shoulder and elbow chase no pose and only damp their own motion, at the gains' damping
+ * (shoulder 6, elbow 3 N m s/rad, under the 30 and 20 N m ceilings): the body's weight bends the elbow and moves the
+ * shoulder while the damping takes the landing's energy out. FALL_REACT_V1 held the pose at contact on springs (35 % of
+ * the gains), which pushed the folded arm back toward it under the body and gave back what they stored (a median 1.2 J
+ * a landing, a tenth of them over 9 J, on L3). With neither palm nor forearm on the floor for 50 ms (three ticks,
+ * against contact flicker) the arm lets go and is passive, so nothing holds a hand the body has rolled off. Tried and
+ * not taken: twice the damping, and a brace elbow bent at least 30 deg (against 12) so a straight arm does not take the
+ * landing as a column; neither kept the palm on the floor longer (docs/handoff/contact-motion-m4.md).
+ */
+export const FALL_REACT_V2: FallResponseProfile = {
+  ...FALL_REACT_V1,
+  id: 'fall-react-v2',
+  brace: { ...FALL_REACT_V1.brace, load: { dampScale: 1, releaseS: 0.05 } },
 };
 
 export const RAGDOLL_G4: RagdollProfile = {

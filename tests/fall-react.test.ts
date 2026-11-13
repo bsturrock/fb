@@ -1,11 +1,12 @@
 // Contact motion M4 (rough slice step 1): FALL_REACT_V1, the plan 09 fall response for every L3 and HC conversion
 // (src/sim/profiles.ts; the hold onset and the hip target on the hard stops in src/sim/fall-response.ts, the build's
-// check and the arm system's profile in src/sim/simulation.ts). Each case has its fault twin: the same run with the rule
+// check and the arm system's profile in src/sim/simulation.ts). Step 2: FALL_REACT_V2, the landed palm bearing load
+// (`brace.load`, src/sim/fall-response.ts). Each case has its fault twin: the same run with the rule
 // it checks broken (a profile field taken away, or a joint group's effort off) fails for that reason.
 import { describe, expect, it } from 'vitest';
-import type { ArmSide } from '../src/sim/contracts';
+import { isGround, type ArmSide } from '../src/sim/contracts';
 import type { FixtureDef } from '../src/sim/fixture';
-import { ARM_G2, FALL_HOLD_V1, FALL_L4, FALL_REACT_V1, withoutHipStops, type FallResponseProfile } from '../src/sim/profiles';
+import { ARM_G2, FALL_HOLD_V1, FALL_L4, FALL_REACT_V1, FALL_REACT_V2, withoutHipStops, type FallResponseProfile } from '../src/sim/profiles';
 import { armSystemProfile, checkLimbContract, Simulation } from '../src/sim/simulation';
 import { hingeAngles, limbDirWorld } from '../src/sim/ragdoll';
 import { dot, qInvRot } from '../src/sim/vec';
@@ -179,4 +180,69 @@ describe('contact motion M4: every falling player on L3 and HC reacts (FALL_REAC
     for (const e of effort) expect(e.allocatedN).toBeLessThanOrEqual(e.ownerBudgetN + 1e-6);
     s.dispose();
   }, 60000);
+});
+
+/** One run's landed braces: per arm, the brace commands' realized work after its floor contact and the release. */
+async function landed(def: FixtureDef, untilS: number, pid: string, side: ArmSide) {
+  let probe: (() => void) | null = null;
+  const sim = await Simulation.create(def, { ledgers: true, onSubstep: () => probe?.() });
+  let contactS: number | null = null;
+  // per substep after the contact: whether the palm or forearm is on the floor, and the arm's task
+  const steps: { t: number; onFloor: boolean; task: string; opposed: boolean }[] = [];
+  probe = () => {
+    const ep = sim.fall?.episodes.get(pid);
+    if (!ep) return;
+    if (contactS === null && ep.arms[side].brace === 'contact') contactS = sim.t;
+    if (contactS === null) return;
+    let onFloor = false;
+    for (const c of sim.contacts) {
+      if (c.impulse <= 0) continue;
+      for (const [o, x] of [[c.a, c.b], [c.b, c.a]] as const) if (o.playerId === pid && o.side === side && (o.region === 'palm' || o.region === 'forearm') && isGround(x)) onFloor = true;
+    }
+    // each of the arm's applied commands against its joint's rate before the solve
+    const opposed = ep.applied.filter((a) => a.cmd.arm === side).every((a) => dot(a.cmd.torque, a.cmd.wPre) <= 1e-9);
+    steps.push({ t: sim.t, onFloor, task: ep.arms[side].task, opposed });
+  };
+  while (!sim.done && sim.t < untilS - 1e-9) sim.stepTick();
+  let posJ = 0;
+  for (const e of sim.fall!.ledger) if (e.owner === pid && e.task === 'brace' && contactS !== null && e.t >= contactS - 1e-9 && e.joint.startsWith(side) && e.realizedW > 0) posJ += e.realizedW * sim.dt;
+  const release = sim.events.filter((e) => e.type === 'braceRelease' && e.playerId === pid).map((e) => e.data as { arm: string; tS: number; loadedS: number });
+  sim.dispose();
+  return { contactS, steps, posJ, release };
+}
+
+describe('contact motion M4: a landed palm bears load (FALL_REACT_V2)', () => {
+  it('the profile is FALL_REACT_V1 with `brace.load`: the gains\' damping (scale 1) from the floor contact, let go after 50 ms off the floor', () => {
+    const { id, brace, ...rest } = FALL_REACT_V2;
+    const { id: id1, brace: brace1, ...rest1 } = FALL_REACT_V1;
+    expect([id, id1]).toEqual(['fall-react-v2', 'fall-react-v1']);
+    expect(rest).toEqual(rest1);
+    expect(brace).toEqual({ ...brace1, load: { dampScale: 1, releaseS: 0.05 } });
+  });
+
+  // L3-F9-convert-free: the carrier, a ragdoll from 0.658 s, lands his free left palm at 0.6625 s, the body coming down
+  // on it; the palm and forearm leave the floor at 0.6708 s for 54 ms (the elbow folding under him), then touch on and off
+  it('a landed brace bears load and lets go when unloaded: from the carrier\'s palm landing (L3-F9-convert-free) every command on that arm opposes its joint\'s motion and the arm gives back no work while loaded, and it goes passive once neither palm nor forearm has touched the floor for 50 ms (at 0.725 s). The fault twins: FALL_REACT_V1 (the pose at contact held on springs) pushes along the joints\' motion, gives back over 5 J and never lets go before its window ends; with no release time the arm lets go at the first substep off the floor', async () => {
+    const d = FIX('L3-F9-convert-free');
+    const v2 = await landed(reacting(d, FALL_REACT_V2), 1.6, 'R', 'left');
+    expect(v2.contactS).toBeCloseTo(0.6625, 4);
+    expect(v2.steps.every((s) => s.opposed)).toBe(true);
+    expect(v2.posJ).toBeLessThan(0.5);
+    expect(v2.release).toHaveLength(1);
+    const rel = v2.release[0];
+    expect(rel.tS - rel.loadedS).toBeGreaterThan(FALL_REACT_V2.brace.load!.releaseS);
+    const firstOff = v2.steps.find((s) => !s.onFloor)!.t;
+    const passiveAt = v2.steps.find((s) => s.task === 'passive')!.t;
+    expect(passiveAt - firstOff).toBeGreaterThanOrEqual(FALL_REACT_V2.brace.load!.releaseS - 1e-9);
+    expect(v2.steps.filter((s) => s.t >= passiveAt).every((s) => s.task === 'passive')).toBe(true);
+    const v1 = await landed(reacting(d, FALL_REACT_V1), 1.6, 'R', 'left');
+    expect(v1.contactS).toBeCloseTo(0.6625, 4);
+    expect(v1.steps.filter((s) => !s.opposed).length).toBeGreaterThan(10);
+    expect(v1.posJ).toBeGreaterThan(5);
+    expect(v1.release).toEqual([]);
+    expect(v1.steps.find((s) => s.task === 'passive')!.t).toBeGreaterThan(FALL_REACT_V1.timing.fadeStartS);
+    const now = await landed(reacting(d, { ...FALL_REACT_V2, id: 'fall-react-v2-no-hysteresis', brace: { ...FALL_REACT_V2.brace, load: { ...FALL_REACT_V2.brace.load!, releaseS: 0 } } }), 1.6, 'R', 'left');
+    const nowOff = now.steps.find((s) => !s.onFloor)!.t;
+    expect(now.steps.find((s) => s.task === 'passive')!.t - nowOff).toBeLessThan(0.01);
+  }, 120000);
 });

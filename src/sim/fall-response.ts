@@ -40,6 +40,8 @@ interface ArmState {
    * the arm system retains; null: never. A miss within the brace's shortest prediction horizon of it is `obstructed`.
    */
   obstructedAtS: number | null;
+  /** Contact motion M4 (`brace.load`): when a bracing arm's palm or forearm was last on the floor (s); null: never. */
+  loadedAtS: number | null;
 }
 
 interface JointCmd {
@@ -209,7 +211,7 @@ export class FallResponse {
     const mk = (side: ArmSide): ArmState => {
       const dir = qInvRot(rag.bodies.core.rotation(), limbDirWorld(rag, `${side}UpperArm`));
       const elbow = rad(hinge[`${side}Elbow`]);
-      return { side, task: 'passive', brace: 'none', refDirCore: dir, refElbowRad: elbow, targetDirCore: dir, targetElbowRad: elbow, reachable: false, everReachable: false, obstructedAtS: null };
+      return { side, task: 'passive', brace: 'none', refDirCore: dir, refElbowRad: elbow, targetDirCore: dir, targetElbowRad: elbow, reachable: false, everReachable: false, obstructedAtS: null, loadedAtS: null };
     };
     const ep: FallEpisode = {
       playerId,
@@ -308,10 +310,22 @@ export class FallResponse {
           this.setTask(ep, a, 'brace', 'holdLost');
         }
       }
+      // contact motion M4 (`brace.load`): a landed brace bears load while its palm or forearm is on the floor, and lets go
+      // once neither has been for the release time
+      const load = this.P.brace.load;
+      if (load && a.task === 'brace' && a.brace === 'contact') {
+        if (onFloor[side]) a.loadedAtS = this.host.t;
+        else if (this.host.t - a.loadedAtS! > load.releaseS + 1e-9) {
+          this.host.emit('braceRelease', ep.playerId, { arm: side, tS: round(this.host.t - ep.t0, 4), loadedS: round(a.loadedAtS! - ep.t0, 4) });
+          this.setTask(ep, a, 'passive', 'braceUnloaded');
+        }
+        continue;
+      }
       if (a.task !== 'brace' || a.brace !== 'seek') continue;
       const part = onFloor[side];
       if (part) {
         a.brace = 'contact';
+        a.loadedAtS = this.host.t;
         a.refDirCore = this.dirCore(ep, `${side}UpperArm`);
         a.refElbowRad = rad(hingeAngles(ep.rag)[`${side}Elbow`]);
         this.host.emit('braceContact', ep.playerId, { arm: side, part, tS: round(this.host.t - ep.t0, 4), palm: rv(landmarkWorld(ep.rag, `${side}Palm`), 4) });
@@ -496,7 +510,9 @@ export class FallResponse {
     const cur = limbDirWorld(ep.rag, `${a.side}UpperArm`);
     const w = relativeOmega(ep.rag, shoulder);
     const GS = P.gains.shoulder;
-    let ts = dirTorque(cur, qRot(this.coreQ(ep), dirCore), w, GS.kp * gain, GS.kd * gain);
+    // contact motion M4 (`brace.load`): a loaded brace chases no pose, its joints only damp their motion
+    const load = a.task === 'brace' && a.brace === 'contact' ? P.brace.load : undefined;
+    let ts = load ? dirTorque(cur, cur, w, 0, GS.kd * load.dampScale, false) : dirTorque(cur, qRot(this.coreQ(ep), dirCore), w, GS.kp * gain, GS.kd * gain);
     // contact motion M3: a forearm hold carried from a clamp presses its forearm, at the clamp's parameter, into the
     // patch it held, as the clamp's closing force did: the force's joint torques (r x F at the shoulder and the elbow)
     let pressElbow = 0;
@@ -515,7 +531,8 @@ export class FallResponse {
     const rate = dot(relativeOmega(ep.rag, elbow), axis);
     const GE = P.gains.elbow;
     const theta = rad(hingeAngles(ep.rag)[elbow.id]);
-    this.hingeCmd(ep, elbow, (GE.kp * (elbowRad - theta) - GE.kd * rate) * gain + pressElbow, P.ceilingsNm.elbow * e, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
+    const tauE = load ? -GE.kd * load.dampScale * rate : (GE.kp * (elbowRad - theta) - GE.kd * rate) * gain + pressElbow;
+    this.hingeCmd(ep, elbow, tauE, P.ceilingsNm.elbow * e, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
   }
 
   /**

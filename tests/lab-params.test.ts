@@ -7,7 +7,7 @@ import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../src/sim/controllers/wrap';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, preWrap, runSim } from './helpers';
@@ -531,9 +531,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(off, new URLSearchParams('wrap=maybe'))).toEqual({ def: off, opts: {}, label: 'wrap=maybe ignored' });
   });
 
-  // contact motion M4: fall=on|off registers or removes FALL_REACT_V1 on an L3 or HC fixture (tests/fall-react.test.ts has
-  // the twins that it changes the run)
-  it('fall=on runs an L3 or HC fixture with FALL_REACT_V1 (every falling player reacts), fall=off without it (limp); without the hip stops (hips=off) it is off; an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
+  // contact motion M4: fall=on|v2|off registers FALL_REACT_V1 or FALL_REACT_V2 on an L3 or HC fixture, or removes it
+  // (tests/fall-react.test.ts has the twins that it changes the run)
+  it('fall=on runs an L3 or HC fixture with FALL_REACT_V1 (every falling player reacts), fall=v2 with FALL_REACT_V2 (the landed palm bears load), fall=off without either (limp); without the hip stops (hips=off) it is off; an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
     const { fallResponse, ...off } = FIX('L3-F19-front');
     void fallResponse;
     const on: FixtureDef = { ...off, fallResponse: FALL_REACT_V1 };
@@ -544,6 +544,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(back).toEqual({ def: off, opts: {}, label: 'fall off' });
     expect('fallResponse' in back.def).toBe(false);
     expect(labRun(off, new URLSearchParams('fall=off'))).toEqual({ def: off, opts: {}, label: 'fall off (registered)' });
+    expect(labRun(on, new URLSearchParams('fall=v2'))).toEqual({ def: { ...off, fallResponse: FALL_REACT_V2 }, opts: {}, label: 'fall v2' });
+    expect(labRun(off, new URLSearchParams('fall=V2'))).toEqual({ def: { ...off, fallResponse: FALL_REACT_V2 }, opts: {}, label: 'fall v2' });
     const hc = FIX('HC-F3-lowRunner');
     expect(labRun(hc, new URLSearchParams('fall=on')).def.fallResponse).toBe(FALL_REACT_V1);
     for (const id of ['L4-F2-back-on', 'L4-F2-back-off']) {
@@ -560,5 +562,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(noStops.label).toBe('hip stops off · fall on (registered) · fall off (no hip stops)');
     expect('fallResponse' in noStops.def).toBe(false);
     expect(noStops.def.ragdoll!.hipStops).toBeUndefined();
+    const noStopsV2 = labRun(on, new URLSearchParams('hips=off&fall=v2'));
+    expect(noStopsV2.label).toBe('hip stops off · fall v2 · fall off (no hip stops)');
+    expect('fallResponse' in noStopsV2.def).toBe(false);
   });
 });
