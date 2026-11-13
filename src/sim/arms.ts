@@ -11,7 +11,7 @@
 //    thinnest obstacle (~0.26 m) in one substep (> 15 m/s at 1/60 s), outside every fixture.
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
-import type { ArmProfile, ArmSetup, BodyProfile, JointRangeProfile, RagdollProfile, RetentionMode, RideHoldProfile, SelfClearanceProfile } from './profiles';
+import type { ArmProfile, ArmSetup, BodyProfile, FallLinkProfile, JointRangeProfile, RagdollProfile, RetentionMode, RideHoldProfile, SelfClearanceProfile } from './profiles';
 import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
@@ -84,7 +84,7 @@ export interface ForceLedgerEntry {
   step: number;
   owner: PlayerId;
   arm: ArmSide;
-  kind: 'hold' | 'clamp' | 'passive';
+  kind: 'hold' | 'clamp' | 'passive' | 'link';
   id: string;
   target: PlayerId;
   /** Hold: raw tension; clamp: magnitude of the requested (cone-limited) force vector. */
@@ -242,6 +242,27 @@ interface ArmRt {
    * push-out lifts a pressing forearm off the surface every substep or two), for the carrier's conversion to carry.
    */
   rideLast?: { c: NonNullable<ArmRt['clamp']>; t: number } | null;
+  /** Contact motion polish 2.1, the fall link (`ArmSystem.fallLink`): the forearm clamp carried as a link (absent or null: none). */
+  link?: FallLink | null;
+}
+
+/**
+ * Polish 2.1, the fall link: the clamp's point on the owner's ragdoll forearm (`ownerPart`'s frame) and on the body part
+ * of the target it held (`part`'s frame; the outward normal there), the forearm parameter it held at, when it began, its
+ * overload exposure and its largest force so far.
+ */
+interface FallLink {
+  id: string;
+  targetId: PlayerId;
+  part: BodyPartId;
+  pointLocal: Vec3;
+  normalLocal: Vec3;
+  ownerPart: SegmentId;
+  ownerPointLocal: Vec3;
+  u: number;
+  since: number;
+  overloadExposureS: number;
+  peakN: number;
 }
 
 interface RidePatch {
@@ -298,6 +319,8 @@ export class ArmSystem {
   declare pressCarried?: boolean;
   /** Contact motion polish 1.2, the ride hold (`WrapRide.hold`; `noBreak`: the fault twin without its break rules). */
   declare rideHold?: RideHoldProfile & { noBreak?: boolean };
+  /** Contact motion polish 2.1, the fall link (`WrapProfile.fallLink`; `noBreak`: the fault twin without its break rules). */
+  declare fallLink?: FallLinkProfile & { noBreak?: boolean };
 
   constructor(
     readonly host: ArmHost,
@@ -599,7 +622,7 @@ export class ArmSystem {
       if (!rec && !effort) continue;
       const ownerPose = this.prePose(pl.rb);
       const obstacles = this.opponents(pl.id);
-      type Demand = { a: ArmRt; kind: 'hold' | 'clamp' | 'passive'; vec: Vec3; raw: number; normalReq: number; ftWanted: Vec3; ftCone: Vec3; frictionSat: boolean; grip?: Grip; n?: Vec3; p: Vec3; s?: Vec3; target: PlayerId; id: string; rbT: RAPIER.RigidBody; rbO: RAPIER.RigidBody };
+      type Demand = { a: ArmRt; kind: 'hold' | 'clamp' | 'passive' | 'link'; vec: Vec3; raw: number; normalReq: number; ftWanted: Vec3; ftCone: Vec3; frictionSat: boolean; grip?: Grip; link?: FallLink; n?: Vec3; p: Vec3; s?: Vec3; target: PlayerId; id: string; rbT: RAPIER.RigidBody; rbO: RAPIER.RigidBody };
       const demands: Demand[] = [];
       const falling = !!pl.falling;
       if (rec) for (const side of sides) {
@@ -609,6 +632,34 @@ export class ArmSystem {
           if (!a.enabled) continue;
           a.phase = 'physical';
           a.action = 'rest';
+          // polish 2.1, the fall link: a tension-only spring-damper from the forearm's point to the patch (`n` and the force
+          // pair as the passive link's below), its break rules at the substep's start (overload is the allocator's)
+          const L = a.link;
+          if (L && this.fallLink) {
+            const K = this.fallLink;
+            const tgt = this.player(L.targetId);
+            if (!tgt) this.endLink(pl, a, 'lostTarget');
+            else {
+              const rbT = this.partBody(tgt, L.part);
+              const rbO = pl.ragdoll.bodies[L.ownerPart];
+              const pT = toWorld(this.prePose(rbT), L.pointLocal);
+              const pO = toWorld(this.prePose(rbO), L.ownerPointLocal);
+              const e = sub(pT, pO);
+              const d = len(e);
+              const why = this.linkBreak(pl, a, pT, d);
+              if (why) this.endLink(pl, a, why);
+              else {
+                let raw = 0;
+                let n = v3();
+                if (d > 1e-6) {
+                  n = scale(e, 1 / d);
+                  const sep = dot(sub(vc(rbT.velocityAtPoint(pT)), vc(rbO.velocityAtPoint(pO))), n);
+                  raw = Math.max(0, K.stiffness * d + K.damping * sep);
+                }
+                demands.push({ a, kind: 'link', vec: scale(n, -raw), raw, normalReq: 0, ftWanted: v3(), ftCone: v3(), frictionSat: false, link: L, n, p: pT, s: pO, target: L.targetId, id: L.id, rbT, rbO });
+              }
+            }
+          }
           const g = a.gripId ? this.grips.get(a.gripId) : undefined;
           if (!g || !g.passive) continue;
           const tgt = this.player(g.targetId);
@@ -901,12 +952,19 @@ export class ArmSystem {
       }
       // ---------------- shared per-owner vector budget (reduced while the owner is falling)
       const budgetScale = pl.ragdoll ? this.passive?.budgetFraction ?? this.fallingBudgetFraction : falling ? this.fallingBudgetFraction : 1;
-      const ownerBudget = P.hold.ownerBudgetN * budgetScale;
-      const perArm = Math.min(P.hold.perArmCeilingN, ownerBudget);
+      // polish 2.1, the fall link: its own budget fraction (its per-arm ceiling, and the owner budget the larger of the
+      // two); every other demand and the arm torque keep theirs
+      const linkScale = this.fallLink && demands.some((d) => d.kind === 'link') ? this.fallLink.budgetFraction : null;
+      const baseBudget = P.hold.ownerBudgetN * budgetScale;
+      const ownerBudget = linkScale === null ? baseBudget : P.hold.ownerBudgetN * Math.max(budgetScale, linkScale);
+      const perArm = Math.min(P.hold.perArmCeilingN, baseBudget);
+      const linkArm = linkScale === null ? perArm : Math.min(P.hold.perArmCeilingN, P.hold.ownerBudgetN * linkScale);
+      const ceilOf = (d: Demand): number => (d.kind === 'link' ? linkArm : perArm);
       let sumDemand = 0;
       const capScales = demands.map((d) => {
         const m = len(d.vec);
-        const c = m > perArm ? perArm / m : 1;
+        const cl = ceilOf(d);
+        const c = m > cl ? cl / m : 1;
         sumDemand += m * c;
         return c;
       });
@@ -927,11 +985,12 @@ export class ArmSystem {
         for (const side of SIDES) {
           const e = effort[side];
           equiv[side] = e ? e.shoulderNm / P.upperArmM + e.elbowNm / P.forearmM : 0;
-          const room = Math.max(0, perArm - grasp[side]);
+          // (a link's arm: what its ceiling leaves, never more than the arm's own room without it)
+          const room = linkScale === null ? Math.max(0, perArm - grasp[side]) : Math.max(0, Math.min(perArm, (demands.some((d) => d.kind === 'link' && d.a.side === side) ? linkArm : perArm) - grasp[side]));
           armFactor[side] = equiv[side] > room ? room / equiv[side] : 1;
           sumEquiv += equiv[side] * armFactor[side];
         }
-        const ownerRoom = Math.max(0, ownerBudget - grasp.left - grasp.right);
+        const ownerRoom = linkScale === null ? Math.max(0, ownerBudget - grasp.left - grasp.right) : Math.max(0, Math.min(baseBudget, ownerBudget - grasp.left - grasp.right));
         effortShared = sumEquiv > ownerRoom ? ownerRoom / sumEquiv : 1;
         sumDemand += sumEquiv;
         this.effortScale.set(pl.id, { left: armFactor.left * effortShared, right: armFactor.right * effortShared });
@@ -952,11 +1011,13 @@ export class ArmSystem {
         let actual = 0;
         let normalActual = 0;
         let ftActual = v3();
-        if (d.kind === 'hold' || d.kind === 'passive') {
-          const g = d.grip!;
-          const demand = Math.min(d.raw, perArm);
+        if (d.kind === 'hold' || d.kind === 'passive' || d.kind === 'link') {
+          const g: { overloadExposureS: number } = d.link ?? d.grip!;
+          const cl = ceilOf(d);
+          const demand = Math.min(d.raw, cl);
           actual = demand * shared;
-          allocated = shared < 1 ? actual : perArm;
+          allocated = shared < 1 ? actual : cl;
+          if (d.link) d.link.peakN = Math.max(d.link.peakN, actual);
           forceOnTarget = scale(d.n!, -actual);
           pointOwner = d.s!;
           // overload exposure (guard zero capacity)
@@ -997,7 +1058,7 @@ export class ArmSystem {
             id: d.id,
             target: d.target,
             raw: d.raw,
-            demand: Math.min(len(d.vec), perArm),
+            demand: Math.min(len(d.vec), ceilOf(d)),
             actual,
             allocated,
             sharedScale: shared,
@@ -1010,7 +1071,7 @@ export class ArmSystem {
             pointOnTarget: d.p,
             forceOnOwner,
             pointOnOwner: pointOwner,
-            exposure: d.grip?.overloadExposureS ?? 0,
+            exposure: (d.link ?? d.grip)?.overloadExposureS ?? 0,
           xT: d.a.clamp ? len(d.a.clamp.tangentElasticDisplacementM) : 0,
         };
         this.lastForce.set(`${pl.id}:${d.a.side}`, entry);
@@ -1023,6 +1084,7 @@ export class ArmSystem {
           this.release(pl, d.a, 'overload', ownerPose);
         }
         if (d.kind === 'clamp' && d.a.ride && d.a.ride.exposureS >= P.hold.overloadThresholdS && !this.rideHold?.noBreak) this.endRide(pl, d.a, 'overload', true);
+        if (d.kind === 'link' && d.a.link === d.link && d.link!.overloadExposureS >= P.hold.overloadThresholdS && !this.fallLink?.noBreak) this.endLink(pl, d.a, 'overload');
       }
     }
   }
@@ -1385,6 +1447,13 @@ export class ArmSystem {
           if (len(sub(pT, pO)) > K.maxSeparationM) this.release(pl, a, 'separation', ownerPost);
         }
       }
+      // polish 2.1, the fall link: its target gone, or stretched past its separation after the solve
+      const L = a.link;
+      if (L && this.fallLink) {
+        const tgt = this.player(L.targetId);
+        if (!tgt) this.endLink(pl, a, 'lostTarget');
+        else if (!this.fallLink.noBreak && len(sub(toWorld(poseOfRb(this.partBody(tgt, L.part)), L.pointLocal), toWorld(poseOfRb(pl.ragdoll!.bodies[L.ownerPart]), L.ownerPointLocal))) > this.fallLink.maxSeparationM) this.endLink(pl, a, 'separation');
+      }
       this.physicalSolve(pl, a);
       const touch = this.physicalArmContact(pl, side);
       a.touching = touch?.target ?? null;
@@ -1408,6 +1477,28 @@ export class ArmSystem {
       const a = this.arms.get(g.ownerId)?.[g.arm];
       out.set(g.id, { anchor: toWorld(tp, g.targetPointLocal), normal: qRot(tp.q, g.targetNormalLocal), palm: a?.solve ? { ...a.solve.palm } : null });
     }
+    // polish 2.1, the fall link: a converting owner's clamps (the point on the body it holds, as that body is now) and the
+    // links on a converting target (keys of their own, so nothing else reads them)
+    if (this.fallLink)
+      for (const pl of this.host.players()) {
+        const rec = this.arms.get(pl.id);
+        if (!rec) continue;
+        for (const side of SIDES) {
+          const a = rec[side];
+          const c = a.clamp;
+          const ct = c && ids.includes(pl.id) ? this.player(c.targetId) : undefined;
+          if (c && ct) {
+            const tp = poseOfRb(this.partBody(ct, c.targetPart));
+            out.set(`${c.id}:link`, { anchor: toWorld(tp, c.pointTargetLocal), normal: c.outwardNormalWorld, palm: null });
+          }
+          const L = a.link;
+          const lt = L && ids.includes(L.targetId) ? this.player(L.targetId) : undefined;
+          if (L && lt) {
+            const tp = poseOfRb(this.partBody(lt, L.part));
+            out.set(L.id, { anchor: toWorld(tp, L.pointLocal), normal: qRot(tp.q, L.normalLocal), palm: null });
+          }
+        }
+      }
     return out;
   }
 
@@ -1478,6 +1569,8 @@ export class ArmSystem {
         const a = rec[side];
         // contact motion M3: a carried patch is on the body its target had (the hold itself goes on by solved contact)
         if (a.carried && switched.includes(a.carried.targetId)) a.carried = null;
+        // polish 2.1, the fall link: a target converting after its owner carries it to his new body at the same point
+        if (a.link && switched.includes(a.link.targetId)) this.linkRemap(pl, a, captured.get(a.link.id));
         // polish 1.2: the ride hold ends with the owner's switch (the clamp is carried below) or its target's
         if (a.ride && (switched.includes(pl.id) || switched.includes(a.ride.targetId))) this.endRide(pl, a, switched.includes(pl.id) ? 'ownerRagdoll' : 'targetSwitched');
         // (and a riding owner's clamp on the carrier that lapsed within the ride's contact memory is the hold his
@@ -1501,6 +1594,8 @@ export class ArmSystem {
             const tp = poseOfRb(this.partBody(tgt, a.clamp.targetPart));
             a.carried = { targetId: tgt.id, part: a.clamp.targetPart, pointLocal: toLocal(tp, cap?.anchor ?? a.clamp.pointWorld), normalLocal: qInvRot(tp.q, cap?.normal ?? a.clamp.outwardNormalWorld), u: a.clamp.forearmParameter };
           }
+          // polish 2.1, the fall link: the clamp goes on as a link from his ragdoll forearm
+          if (this.fallLink) this.linkBegin(pl, a, a.clamp, switched, captured.get(`${a.clamp.id}:link`));
           a.clamp = null;
           // plan 09: the physical forearm carries the hold on, for as long as solved contact keeps it alive
           if (this.holdMemoryS > 0) a.contactHoldUntil = host.t + this.holdMemoryS;
@@ -1580,14 +1675,7 @@ export class ArmSystem {
     const c = a.clamp!;
     const tgt = this.player(c.targetId);
     if (!tgt?.ragdoll) return;
-    let best: { o: Obstacle; d: number; p: Vec3 } | null = null;
-    for (const o of this.obstacles.get(tgt.id) ?? []) {
-      if (!ELIGIBLE.includes(o.region)) continue;
-      const pr = o.collider.projectPoint(c.pointWorld, false);
-      if (!pr) continue;
-      const d = len(sub(vc(pr.point), c.pointWorld)) * (pr.isInside ? -1 : 1);
-      if (!best || Math.abs(d) < Math.abs(best.d)) best = { o, d, p: vc(pr.point) };
-    }
+    const best = this.nearestSurface(tgt.id, c.pointWorld);
     const ok = !!best && Math.abs(best.d) <= this.rideHold!.remapM;
     this.host.emit('rideHoldRemap', pl.id, { arm: a.side, clamp: c.id, target: tgt.id, ok, from: c.targetPart, to: best?.o.part ?? null, region: best?.o.region ?? null, surfaceDistM: best ? round(best.d, 5) : null });
     if (!ok || !best) return;
@@ -1608,6 +1696,102 @@ export class ArmSystem {
       since: this.host.t,
       exposureS: 0,
     };
+  }
+
+  // ---------------------------------------------------------------- polish 2.1: the fall link
+  /** The nearest eligible surface of `tgt`'s colliders to `pW` (signed: negative inside), or null. */
+  private nearestSurface(tgt: PlayerId, pW: Vec3): { o: Obstacle; d: number; p: Vec3 } | null {
+    let best: { o: Obstacle; d: number; p: Vec3 } | null = null;
+    for (const o of this.obstacles.get(tgt) ?? []) {
+      if (!ELIGIBLE.includes(o.region)) continue;
+      const pr = o.collider.projectPoint(pW, false);
+      if (!pr) continue;
+      const d = len(sub(vc(pr.point), pW)) * (pr.isInside ? -1 : 1);
+      if (!best || Math.abs(d) < Math.abs(best.d)) best = { o, d, p: vc(pr.point) };
+    }
+    return best;
+  }
+
+  /**
+   * At the owner's switch, his clamp `c` as a link: its point (`cap`, captured before the switch) in the
+   * frames of the body it held (a target converting in the same batch: the nearest eligible surface of his new body,
+   * within `remapM`) and of the owner's ragdoll forearm, which must be within `maxSeparationM` of it. Zero length.
+   */
+  private linkBegin(pl: ArmHostPlayer, a: ArmRt, c: { id: string; targetId: PlayerId; targetPart: BodyPartId; forearmParameter: number }, switched: PlayerId[], cap: { anchor: Vec3; normal: Vec3 } | undefined): void {
+    const K = this.fallLink!;
+    const tgt = this.player(c.targetId);
+    const r = pl.ragdoll;
+    if (!tgt || !r || !cap) return;
+    let part = c.targetPart;
+    let rb = this.partBody(tgt, part);
+    if (switched.includes(tgt.id)) {
+      const best = this.nearestSurface(tgt.id, cap.anchor);
+      if (!best || Math.abs(best.d) > K.remapM) {
+        this.host.emit('fallLinkBegin', pl.id, { arm: a.side, clamp: c.id, target: tgt.id, ok: false, reason: 'targetSwitched', surfaceDistM: best ? round(best.d, 5) : null });
+        return;
+      }
+      part = best.o.part;
+      rb = best.o.rb;
+    }
+    const ownerPart = `${a.side}Forearm` as SegmentId;
+    const gap = segmentDistance(cap.anchor, landmarkWorld(r, `${a.side}Elbow`), landmarkWorld(r, `${a.side}Wrist`)) - this.profile.forearmRadiusM;
+    if (gap > K.maxSeparationM) {
+      this.host.emit('fallLinkBegin', pl.id, { arm: a.side, clamp: c.id, target: tgt.id, ok: false, reason: 'separation', gapM: round(gap, 5) });
+      return;
+    }
+    const tp = poseOfRb(rb);
+    a.link = {
+      id: `${c.id}:link`,
+      targetId: tgt.id,
+      part,
+      pointLocal: toLocal(tp, cap.anchor),
+      normalLocal: qInvRot(tp.q, cap.normal),
+      ownerPart,
+      ownerPointLocal: toLocal(poseOfRb(r.bodies[ownerPart]), cap.anchor),
+      u: c.forearmParameter,
+      since: this.host.t,
+      overloadExposureS: 0,
+      peakN: 0,
+    };
+    this.host.emit('fallLinkBegin', pl.id, { arm: a.side, clamp: c.id, link: a.link.id, target: tgt.id, ok: true, part, ownerPart, u: round(c.forearmParameter, 3), gapM: round(gap, 5) });
+  }
+
+  /** The link's break rules at the substep's start (null: it holds): stretched past `maxSeparationM`; the patch out of reach of the ragdoll's shoulder. */
+  private linkBreak(pl: ArmHostPlayer, a: ArmRt, pT: Vec3, d: number): string | null {
+    const K = this.fallLink!;
+    if (K.noBreak) return null;
+    if (d > K.maxSeparationM) return 'separation';
+    const P = this.profile;
+    if (len(sub(pT, landmarkWorld(pl.ragdoll!, `${a.side}Shoulder`))) > P.maxReachM + P.hold.reachTolM + P.forearmRadiusM) return 'unreachable';
+    return null;
+  }
+
+  /** A target converting after the owner: the link's point (`cap`) on the nearest eligible surface of his new body within `remapM`, else it ends. */
+  private linkRemap(pl: ArmHostPlayer, a: ArmRt, cap: { anchor: Vec3; normal: Vec3 } | undefined): void {
+    const L = a.link!;
+    const best = cap ? this.nearestSurface(L.targetId, cap.anchor) : null;
+    const ok = !!cap && !!best && Math.abs(best.d) <= this.fallLink!.remapM;
+    this.host.emit('fallLinkRemap', pl.id, { arm: a.side, link: L.id, target: L.targetId, ok, from: L.part, to: best?.o.part ?? null, surfaceDistM: best ? round(best.d, 5) : null });
+    if (!ok || !best || !cap) {
+      this.endLink(pl, a, 'targetSwitched');
+      return;
+    }
+    const sp = poseOfRb(best.o.rb);
+    L.part = best.o.part;
+    L.pointLocal = toLocal(sp, cap.anchor);
+    L.normalLocal = qInvRot(sp.q, cap.normal);
+  }
+
+  private endLink(pl: ArmHostPlayer, a: ArmRt, reason: string): void {
+    const L = a.link;
+    if (!L) return;
+    a.link = null;
+    this.host.emit('fallLinkEnd', pl.id, { arm: a.side, link: L.id, target: L.targetId, part: L.part, reason, heldS: round(this.host.t - L.since, 4), exposureS: round(L.overloadExposureS, 4), peakN: round(L.peakN, 1) });
+  }
+
+  /** Polish 2.1: the player a fall link of this arm holds (null: none). */
+  linkOf(id: PlayerId, side: ArmSide): PlayerId | null {
+    return this.arms.get(id)?.[side].link?.targetId ?? null;
   }
 
   // ---------------------------------------------------------------- observation
@@ -1651,10 +1835,12 @@ export class ArmSystem {
    * Plan 09: the hold this ragdoll owner's arm still has. A palm grip keeps its passive link; a forearm hold is the
    * clamp the arm had at conversion, kept by solved contact. Nothing here starts a new hold.
    */
-  retained(id: PlayerId, side: ArmSide): 'grip' | 'contact' | null {
+  retained(id: PlayerId, side: ArmSide): 'grip' | 'link' | 'contact' | null {
     const a = this.arms.get(id)?.[side];
     if (!a) return null;
     if (a.gripId && this.grips.get(a.gripId)?.passive) return 'grip';
+    // polish 2.1: a fall link holds while it lives, whatever solved contact does
+    if (a.link) return 'link';
     return a.contactHoldUntil !== null ? 'contact' : null;
   }
 
@@ -1665,7 +1851,8 @@ export class ArmSystem {
    */
   pressTarget(id: PlayerId, side: ArmSide): { point: Vec3; into: Vec3; u: number } | null {
     const a = this.arms.get(id)?.[side];
-    const c = a?.contactHoldUntil !== null ? a?.carried : null;
+    // polish 2.1: a fall link's patch while it lives (with `pressCarried`, the press the hold has)
+    const c = a?.link && this.pressCarried ? a.link : a?.contactHoldUntil !== null ? a?.carried : null;
     const tgt = c ? this.player(c.targetId) : undefined;
     if (!c || !tgt) return null;
     const tp = poseOfRb(this.partBody(tgt, c.part));

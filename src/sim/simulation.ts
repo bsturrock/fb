@@ -730,6 +730,9 @@ export class Simulation {
       // contact motion polish 1.2, the ride hold (`WrapRide.hold`): a riding tackler's clamp on the fallen carrier
       const RH = def.wrap?.ride?.hold;
       if (RH) this.arms.rideHold = { ...RH, ...(this.opts.debug?.wrap?.rideHoldNoBreak ? { noBreak: true } : {}) };
+      // contact motion polish 2.1, the fall link (`WrapProfile.fallLink`): a tackler's clamps carried through his switch
+      const FL = def.wrap?.fallLink;
+      if (FL) this.arms.fallLink = { ...FL, ...(this.opts.debug?.wrap?.fallLinkNoBreak ? { noBreak: true } : {}) };
     }
     // contact motion M3 (WRAP_V3's `commit.hold`): on a fixture without a fall response, the one a takedown starts
     const hold = takedownHold(def);
@@ -1293,6 +1296,9 @@ export class Simulation {
       for (const s of ['left', 'right'] as ArmSide[]) {
         const c = this.arms.clampOf(o.id, s);
         if (c && (o === pl || c.targetId === pl.id)) return true;
+        // polish 2.1: a fall link is the clamp carried on
+        const l = this.arms.fallLink ? this.arms.linkOf(o.id, s) : null;
+        if (l && (o === pl || l === pl.id)) return true;
       }
     return false;
   }

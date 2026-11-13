@@ -3,7 +3,7 @@
 // observed hand position / clamp contact. Timeouts only abandon or retry; they never create contact or a wrap.
 import type { ArmIntent, ArmSide, PlayerIntent, StanceRequest } from '../contracts';
 import { pairKey } from '../contracts';
-import type { BodyProfile, FallResponseProfile, MotorProfile, RideHoldProfile } from '../profiles';
+import type { BodyProfile, FallLinkProfile, FallResponseProfile, MotorProfile, RideHoldProfile } from '../profiles';
 import { FALL_HOLD_V1, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { Controller, ControllerContext } from './base';
@@ -70,6 +70,11 @@ export interface WrapProfile {
   ride?: WrapRide;
   /** Contact motion polish 1.4, the bound-legs fall (simulation; absent: nothing tells it a held man cannot run): `WrapBind`. */
   bind?: WrapBind;
+  /**
+   * Contact motion polish 2.1, the fall link (arm system; absent: his forearm holds go on after his switch only while
+   * solved contact keeps them): each clamp he has at his switch becomes a breakable link to the carrier (`FallLinkProfile`).
+   */
+  fallLink?: FallLinkProfile;
 }
 
 /**
@@ -337,6 +342,8 @@ export interface WrapDebug {
   bindAnySwing?: boolean;
   /** Polish 1.4, the bound-legs fall (simulation): no forward lean request while a clause's clock runs. */
   bindNoLean?: boolean;
+  /** Polish 2.1, the fall link (arms): no break rule (overload, separation, reach); only its target gone ends it. */
+  fallLinkNoBreak?: boolean;
   /**
    * The balance reads the pitched trunk, as with no hinge (simulation, support-runtime): the support pivot and the loss
    * envelope in the body's frame, so the trunk's pitch tips him as whole-body lean would.
@@ -473,6 +480,15 @@ export const WRAP_V6: WrapProfile = {
   },
   low: { bandYLocal: -0.05, walk: { leadDeg: 30, endDeg: 170, extraM: 0.02 } },
 };
+
+/**
+ * Contact motion polish 2.1, the fall link: WRAP_V8 whose tackler keeps each forearm clamp he has at his own switch as a
+ * breakable link to the carrier (`FallLinkProfile`) through his fall and the landing. No fixture uses it (the lab's
+ * `wrap=v9`). The owner budget at full strength (700 N per arm, 1000 N in all, as a supported clamp has); 10 kN/m puts
+ * the 700 N ceiling at 7 cm of stretch, the damping (150 N s/m) under the forearm's critical damping at the substep
+ * (a few kg behind the point), and a stretch past 25 cm or the patch out of reach lets go.
+ */
+export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: { stiffness: 10000, damping: 150, maxSeparationM: 0.25, budgetFraction: 1, remapM: 0.05 } };
 
 export interface WrapSpec {
   kind: 'wrapAttempt';

@@ -606,6 +606,27 @@ export interface RideHoldProfile {
   remapM: number;
 }
 
+/**
+ * Contact motion polish 2.1, the fall link (`WrapProfile.fallLink`, the arm system's `fallLink`; absent: a forearm hold
+ * carried through its owner's conversion lasts while solved contact keeps it, `FallResponseProfile.arms.holdMemoryS`): a
+ * forearm clamp its owner has at his conversion goes on as a tension-only spring-damper (rest length zero) from the
+ * clamp's point on his ragdoll forearm (that segment's frame) to the same point on the body part it held (that part's
+ * frame), so it starts with no force and no stored energy. Each substep its demand, `stiffness` x stretch plus `damping`
+ * x the points' separating speed (never pushing), goes through the shared allocator with the owner's budget at
+ * `budgetFraction` (the per-arm ceiling and the owner budget, one force pair, the ledger, overload exposure). While it
+ * lives the arm retains its hold. It breaks on overload (the grip's rule), a stretch past `maxSeparationM`, the patch out
+ * of the arm's reach (the ride hold's rule from the ragdoll's shoulder), or its target gone; never at the referee's
+ * ending. A target converting later carries it to the nearest eligible surface of his ragdoll at the point (within
+ * `remapM`, else it ends).
+ */
+export interface FallLinkProfile {
+  stiffness: number;
+  damping: number;
+  maxSeparationM: number;
+  budgetFraction: number;
+  remapM: number;
+}
+
 export interface ArmProfile {
   id: string;
   upperArmM: number;
