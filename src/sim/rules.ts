@@ -66,6 +66,11 @@ export interface RuleFrame {
   validHandoff: boolean;
   controlMode: 'supported' | 'falling';
   grounded: boolean;
+  /**
+   * The runner's balance is regained: his lean projected ahead is under the lean at which the recovery envelope starts
+   * to judge a loss (true without a balance model). Read only by a profile with `balancedClear`.
+   */
+  balanced: boolean;
   /** Runner core frame (proxy body or ragdoll core body). */
   corePose: Pose;
   /** Sim-owned physical pose (the same pose Presentation shows). */
@@ -281,7 +286,9 @@ export class RuleObserver {
     // plan 10e E2 (revision 2): a touch under the source impulse or an unloaded clamp or grip is still contact, and a
     // zero request then never reads as moving freely (before, `along` = 0 >= 0 held trivially)
     const untouched = this.profile.revision !== 2 || (f.opponentContacts.length === 0 && f.retention.length === 0);
-    const free = untouched && f.representation === 'proxy' && f.controlMode === 'supported' && f.grounded && along >= this.profile.influence.unrestrainedFraction * rq;
+    // contact motion M2 follow-up (balancedClear): regained supported balance, not only supported control
+    const balanced = !this.profile.balancedClear || f.balanced;
+    const free = untouched && balanced && f.representation === 'proxy' && f.controlMode === 'supported' && f.grounded && along >= this.profile.influence.unrestrainedFraction * rq;
     this.infl.freeS = free ? this.infl.freeS + f.dt : 0;
     if (this.infl.freeS >= this.profile.influence.clearAfterSupportedS - 1e-9) {
       this.emit('influenceCleared', this.runnerId, { since: round(this.infl.since, 5), lastSourceT: round(this.infl.lastT, 5), freeS: round(this.infl.freeS, 4), step: f.step });

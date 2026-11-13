@@ -35,7 +35,10 @@
 //   brace=on|off       the ball carrier bracing for a hit he sees coming (CARRIER_BRACE_V1, contact motion M2: knees
 //                      bent, hips down, chest forward, ball high and tight under the free hand), or not. Registered on
 //                      the L3, L4 and HC carriers: `brace=off` is the view before. A fixture without locomotion
-//                      composition (L3, L4, HC) or without a ball carrier is run as it is.
+//                      composition (L3, L4, HC) or without a ball carrier is run as it is;
+//   balclear=on|off    the referee's defensive influence clearing only once the runner has regained his balance (the
+//                      rule profile's `balancedClear`), or on supported control alone, as before. A fixture without
+//                      football rules is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -45,7 +48,7 @@ import type { FixtureDef } from '../sim/fixture';
 import {
   CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry,
   withHipStops, withKneeStop, withBornOverlap, withoutBornOverlap, withBornSeparation, withoutBornSeparation, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutMetArmStay, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
-  withClipArmSwing, withMetArmStay, withUpperArmClearance, type RagdollProfile,
+  withClipArmSwing, withMetArmStay, withUpperArmClearance, withBalancedClear, withoutBalancedClear, type RagdollProfile,
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import { CARRIER_BRACE_V1 } from '../sim/brace';
@@ -64,6 +67,7 @@ const UPPERARM = ['on', 'off'];
 const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'off'];
+const BALCLEAR = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -90,7 +94,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -231,6 +235,17 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
         out = { ...out, brace: b };
         if (!b) delete out.brace;
       }
+    }
+  }
+  const balclear = params.get('balclear');
+  if (balclear !== null && balclear !== '') {
+    const v = balclear.toLowerCase();
+    if (!BALCLEAR.includes(v)) parts.push(`balclear=${balclear} ignored`);
+    else if (out.rules?.kind !== 'footballTackleSubset') parts.push('balclear n/a (no football rules)');
+    else {
+      const r = v === 'off' ? withoutBalancedClear(out.rules) : withBalancedClear(out.rules);
+      parts.push(`balanced clear ${v}${r === out.rules ? ' (registered)' : ''}`);
+      if (r !== out.rules) out = { ...out, rules: r };
     }
   }
   return { def: out, opts, label: parts.join(' · ') };

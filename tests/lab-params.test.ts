@@ -6,7 +6,7 @@ import { HOLD_STILL_V1 } from '../src/sim/footwork';
 import { CARRIER_BRACE_V1 } from '../src/sim/brace';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, runSim } from './helpers';
@@ -473,4 +473,19 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(g, new URLSearchParams('brace=on'))).toEqual({ def: g, opts: {}, label: 'brace n/a (no composed ball carrier)' });
     expect(labRun(d, new URLSearchParams('brace=maybe'))).toEqual({ def: d, opts: {}, label: 'brace=maybe ignored' });
   }, 120000);
+
+  // contact motion M2 follow-up: balclear=on|off sets the rule profile's `balancedClear` (tests/rules-balance.test.ts
+  // has the twin that it changes the run)
+  it('balclear=on referees the fixture with influence cleared out of a regained balance; balclear=off as before; a fixture without football rules and unknown values change nothing', () => {
+    const d = FIX('L3-F1-falling');
+    const off = { ...d, rules: withoutBalancedClear(d.rules!) };
+    const on = { ...d, rules: withBalancedClear(d.rules!) };
+    expect(labRun(off, new URLSearchParams('balclear=on'))).toEqual({ def: on, opts: {}, label: 'balanced clear on' });
+    expect(labRun(on, new URLSearchParams('balclear=OFF'))).toEqual({ def: off, opts: {}, label: 'balanced clear off' });
+    expect(labRun(on, new URLSearchParams('balclear=on'))).toEqual({ def: on, opts: {}, label: 'balanced clear on (registered)' });
+    expect(labRun(off, new URLSearchParams('balclear=off'))).toEqual({ def: off, opts: {}, label: 'balanced clear off (registered)' });
+    const g = allFixtures().find((x) => !x.rules)!;
+    expect(labRun(g, new URLSearchParams('balclear=on'))).toEqual({ def: g, opts: {}, label: 'balclear n/a (no football rules)' });
+    expect(labRun(d, new URLSearchParams('balclear=maybe'))).toEqual({ def: d, opts: {}, label: 'balclear=maybe ignored' });
+  });
 });

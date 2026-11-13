@@ -734,7 +734,7 @@ describe('G4-F7 completion semantics (event matrix)', () => {
         const tag = (region: string) => ({ playerId: 'R', part: 'leftForearm' as const, region: region as 'forearm', key: `leftForearm:${region}` });
         const floor = { playerId: null, part: 'floor' as const, region: 'floor' as const, key: 'floor' };
         const frame = (points: { region: string; y: number }[], t: number) => ({
-          t, tick: 1, step: 1, dt: 1 / 240, runnerId: 'R', representation: 'ragdoll' as const, validHandoff: true, controlMode: 'falling' as const, grounded: true,
+          t, tick: 1, step: 1, dt: 1 / 240, runnerId: 'R', representation: 'ragdoll' as const, validHandoff: true, controlMode: 'falling' as const, grounded: true, balanced: true,
           corePose: { p: v3(), q: { x: 0, y: 0, z: 0, w: 1 } }, pose, velocity: v3(), request: v3(),
           contacts: points.map((p) => ({ a: tag(p.region), b: floor, normalAB: v3(0, -1, 0), impulse: 1, points: [{ pointWorld: pt(p.y), dist: -0.001, impulse: 1 }] })),
           opponentContacts: [], retention: [{ id: 'D:right:g1', owner: 'D', kind: 'grip' as const, forceOnRunner: v3(0, 0, 50), loadN: 50 }], minClampNormalN: 1,
@@ -977,7 +977,7 @@ const HIST = RULES_FOOTBALL('R', { sideline: false });
 const REV2 = rulesRevision2(HIST);
 
 /** One supported, grounded proxy runner substep with no ground contact (the ball on the core offset). */
-const frame = (i: number, o: { request?: Vec3; velocity?: Vec3; opponentContacts?: PlayerContactObs[]; retention?: RetentionObs[] } = {}): RuleFrame => ({
+const frame = (i: number, o: { request?: Vec3; velocity?: Vec3; opponentContacts?: PlayerContactObs[]; retention?: RetentionObs[]; balanced?: boolean } = {}): RuleFrame => ({
   t: i * DT,
   tick: Math.floor(i / 4),
   step: i,
@@ -987,6 +987,7 @@ const frame = (i: number, o: { request?: Vec3; velocity?: Vec3; opponentContacts
   validHandoff: false,
   controlMode: 'supported',
   grounded: true,
+  balanced: o.balanced ?? true,
   corePose: { p: v3(0, 1, 0), q: { x: 0, y: 0, z: 0, w: 1 } },
   pose: null,
   velocity: o.velocity ?? v3(),

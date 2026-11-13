@@ -1542,6 +1542,14 @@ export interface RuleProfile {
    * retention force opposing it, not its magnitude (E3).
    */
   revision?: 2;
+  /**
+   * Contact motion M2 follow-up: influence clears only after the runner has regained his balance, as Gate 4 section 12
+   * states it ("at least 0.20 s of regained supported balance"): a free substep also needs his lean, projected ahead
+   * (`projectedLean`), under the lean at which the recovery envelope starts to judge a loss (`BalanceProfile.minLeanRad`).
+   * Without it, a carrier knocked off balance who keeps his feet and his line for 0.2 s while he topples counts as
+   * moving freely, and the fall that follows is not ruled down. Absent on every historical profile; `withBalancedClear`.
+   */
+  balancedClear?: true;
 }
 
 const FOOTBALL_ELIGIBLE = ['torso', 'pelvis', 'head', 'upperArm', 'elbow', 'forearm', 'thigh', 'knee', 'shin'];
@@ -1588,6 +1596,15 @@ export const ruleVariant = (base: RuleProfile, label: string, patch: Partial<Omi
 
 /** Plan 10e: a rule profile on the corrected revision (`+revision=2`); a profile already on it is returned as it is. */
 export const rulesRevision2 = (r: RuleProfile): RuleProfile => (r.revision === 2 ? r : ruleVariant(r, 'revision=2', { revision: 2 }));
+/** Contact motion M2 follow-up: a rule profile whose influence clears only out of a regained balance (`+balancedClear`). */
+export const withBalancedClear = (r: RuleProfile): RuleProfile => (r.balancedClear ? r : ruleVariant(r, 'balancedClear', { balancedClear: true }));
+/** A rule profile without `balancedClear`, under the id it had before it. */
+export const withoutBalancedClear = (r: RuleProfile): RuleProfile => {
+  if (!r.balancedClear) return r;
+  const { balancedClear, ...o } = r;
+  void balancedClear;
+  return { ...o, id: r.id.replace('+balancedClear', '') };
+};
 
 export const RULES_LAB_CORE = (runnerId: string): RuleProfile => ({
   ...RULES_FOOTBALL(runnerId, { progress: false, sideline: false }),

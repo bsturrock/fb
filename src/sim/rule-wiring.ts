@@ -10,6 +10,8 @@ import type { Simulation } from './simulation';
 export type RuleWiringHost = Pick<
   Simulation,
   | 'arms'
+  | 'balanced'
+  | 'balanceProfile'
   | 'bulk'
   | 'byId'
   | 'contactObs'
@@ -58,6 +60,7 @@ export function observeRules(host: RuleWiringHost): void {
     validHandoff: !!pl.handoff?.accepted,
     controlMode: pl.controlMode,
     grounded: pl.grounded,
+    balanced: !host.balanced || pl.balance.projected < host.balanceProfile.minLeanRad,
     corePose: { p: vc(core.translation()), q: { ...core.rotation() } },
     pose: pl.pose,
     velocity: host.bulk(pl).v,
