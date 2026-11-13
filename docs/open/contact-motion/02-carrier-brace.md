@@ -1,5 +1,23 @@
 # Milestone 2 — Carrier prepares for contact and falls with control
 
+## Rough-first slice (2026-11-13; do this before anything else in this file)
+
+Per the direction in the [README](README.md): a rough, visible brace end to end, judged in the lab, polish later.
+
+1. **Decision, flag off.** A brace weight 0..1 on the carrier from an observed, visible, closing opponent and a
+   predicted contact time (port the intent of sim-6 `src/logic/brace.ts`: acquire about 0.45 s out, hold with
+   hysteresis, release smoothly on a miss, none for unseen or rear approaches, none when unthreatened).
+2. **Pose, flag off.** One authored brace pose blended by that weight (start from sim-6 `CARRY.brace`: hips about
+   5 cm lower, trunk about 17 degrees forward, carry arm high and tight, free palm onto the ball, arm swing
+   reduced), for either carry side. Arms use the three-stage shape: authored pose, then task, then the final pass;
+   no new per-case guard.
+3. **On for L3, L4 and HC carriers**, as its own step. Judged on the visible bar and by the user's look; changed
+   fall outcomes are listed, not blocking.
+
+Not in the slice: conversion carry-over and fall control (step 4 below), free-arm landing priority, tuning of
+horizons and angles. Known items to look at while here: the carrier's leg nearest a wrapping defender moves oddly
+(`L3-F5-drag`); a held ragdoll's trailing legs read as running (`HC-F3-lowRunner`).
+
 ## Visual target
 
 Before an approaching defender reaches them, the carrier bends knees, lowers the hips slightly and brings chest/shoulders forward over the advancing base. The ball stays tight against the ribs; the carrying elbow closes toward the body and the free forearm can cover the exposed ball. This is a short athletic crouch, not a waist collapse or head-first dive. On a forward-moving tackle, the runner continues down and forward from that posture; the carrying arm protects the ball while the free arm becomes available for landing.
