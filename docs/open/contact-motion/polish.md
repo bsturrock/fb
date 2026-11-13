@@ -72,6 +72,18 @@ in real life."
       him, who then tries to roll him. Steps: a bound-legs rule (a secure hold at or below the pelvis, or his steps
       blocked by the holder for about 0.2 s, converts the carrier with his momentum); the low tackle rebuilt on the
       ride-down so the tackler keeps driving and comes down on him.
+      **Bound-legs fall on for L3, L4 and HC** (`fc616d3` built, `082465a` on; `WRAP_V8` = V7 plus `bind`; lab
+      `&wrap=v7` is before). A supported, secure holder (two arms, or one arm plus body) converts the carrier after
+      0.2 s of either both holds below his pelvis centre, or a stranded foot with no new plant while he still
+      leans 5 degrees or moves 0.5 m/s; his lean request points 12 degrees toward his travel meanwhile (it barely
+      matters: momentum and the hold at his hips take him forward). Who falls: only `L3-F5-drag` (the carrier is
+      bound at 0.69 s, goes down before the tackler, forward onto his side instead of onto his back). A braced
+      carrier with no hold, a carrier surviving a hit and a miss are not felled. Tracked: `RAISED_ARM_TWIST` on
+      `L3-F19-rear` (`tests/bind-defects.test.ts`). `WRAP_V6` (the low tackle) now sits on V8: on the low rear
+      wrap the carrier goes down forward at the bind instead of late and backward. Open on the low tackle: the
+      tackler ends 0.9 to 1.7 m beside or behind him, never on top (with one arm on he drops to the old one-arm
+      reposition and the come-down starts late); a posed hip twist 37 degrees past range at his conversion; the
+      long front approach never gets a secure hold.
    3. Stay connected to the ground. Locked hands were measured impossible with today's upright wrap (the hands
       stop 0.5 m apart; M3 handoff, "Locked hands"). Re-measure after 1.1 puts the shoulder at the carrier's flank;
       build the lock if the hands then meet. The rear-wrap carrier (`L3-F19-rear`) must go down (under the drive he
