@@ -2,7 +2,9 @@
 
 Plan: [03-wrap-and-finish](../open/contact-motion/03-wrap-and-finish.md), rough-first slice, on branch `prereq-ladder`:
 `02fa1b8` the slice, `23551d8` open and close (flag off), `aea0caa` its flip, `01f9dfb` the committed finish (flag
-off), `51a7f4b` its flip, `e886c0f` the hold through the takedown (flag off), `a02a5fc` its flip.
+off), `51a7f4b` its flip, `e886c0f` the hold through the takedown (flag off), `a02a5fc` its flip. Polish 1.1, the
+strike: `5f85796` (flag off), `cd4d92e` its flip. Polish 1.2, the drive: `b328144` (flag off; its flip is parked,
+below).
 
 ## What the defender does
 
@@ -32,6 +34,54 @@ Before: the Gate 2 progression. His hands hung at the carrier's sides as they me
 median 3 cm inside his silhouette, as far as 22 cm), an arm closed on an arc threshold up to 0.78 s after its touch,
 and he stayed on his feet over the carrier until a later trip.
 
+## The strike (polish 1.1, WRAP_V4, on)
+
+As contact nears (0.6 s to it, or the gap under 0.8 m) he hinges at the hips: trunk pitched 40 deg toward the carrier,
+hips 8 cm lower, facing turned up to 30 deg toward his head's side and his line steered so his centre passes 0.3 m to
+that side (the near shoulder leads), arms open wide from the shoulders (upper arms about 100 to 112 deg from hanging,
+elbows out and up). The head goes to the side behind the carrier's motion across the approach, never across his front.
+On contact the arms close as before. On a miss he unwinds to upright and pursues; he never loses balance before
+contact. Before (`wrap=v3`): upright trunk, hands at elbow width.
+
+- Flag and lab: `FixtureDef.wrap` = `WRAP_V4` on every fixture that had `WRAP_V3` (`fixtures/index.ts` `strikeFlip`);
+  lab `wrap=v3` is before it. `tests/runs.ts` `preWrapV4` gives a definition as before.
+- Model: the hip hinge (`src/sim/hinge.ts`). The supported proxy is one rigid body, so the pitched trunk is the proxy
+  pitched about its level lateral axis; the legs' frame is that rotation with the hinge's share taken out. Loss
+  envelope and lean scale read the legs; the balance torque serves the legs first and gives the hinge PD what is left.
+  The legs are posed in the travel frame, so the pitched core reads as hip flexion.
+- Who falls (`.scratch/p2/s2-falls.txt` in the main checkout, 78 of 106 runs change): the carrier now goes down from
+  the hit itself, earlier, in most runs. In 34 runs (L3-F1-phase0/1/2/4/6/7, L3-F1-mirror0/4, L3-F1-low, L3-F4-twoArm,
+  L3-F4-oneArm, HC-F3-mirror/phase0/phase50 rev/phase75/lowRunner, L4-F10-wrap-on/off) the tackler then stays on his
+  feet over the felled carrier, where before he tripped over him. The front wrap's carrier goes down at 0.75 s (was
+  1.05) and the tackler, his hold gone, falls on his own at 1.31 s. The rear wrap's takedown comes later (2.5 s, was
+  0.90 forward); reversed, both now go down (tackler 2.50, carrier 3.58 s; before, neither), forward the carrier
+  still runs on. The misses (`L3-F19-miss`, `L3-F2-miss`) stay up; `L3-F1-low`'s runner still falls.
+- Known issues: the tackler standing over a hit-felled carrier is what the drive (1.2) addresses. Head-first contact
+  in `L3-F19-front`. Tracked defects the flip reached, none made worse by it (`tests/strike-defects.test.ts`, each on
+  a capture with its twin):
+
+  | defect | capture | what |
+  | --- | --- | --- |
+  | `HIT_MOVES_CLIP_REQUEST` | L3-F10-bothMirror (0.583 s), L3-F1-mirror4 (0.433 s) | the hit moves the clip leg request past B3 at its onset (the carrier's walk stride scale; the defender's jolted root); `tests/l3-pass.ts` excepts those onset jumps there |
+  | `REJECTED_PROXY_PRESS` | HC-F5-invalidOne (1.167 s) | a labelled invalid (rejected) candidate's rigid proxy presses the carrier's arm back past the held bar; excepted there alone |
+  | `STEP_SEEDS_CLEARANCE_JUMP` | L3-F1-phase7 (0.483 s) | a step seeded from a clearance jump of the achieved ankle runs the foot behind the hips to a supported hip snap (the seed exists in 19 runs before and after the flip); a footwork fix of its own |
+
+  Trend only: L4 over-power substeps (7 runs 0 to 1); passive energy L3 and HC down, L4 442 to 477 J, largest solve
+  down; worst shape-query tick 3048.
+
+## The drive (polish 1.2, WRAP_V5, flag off)
+
+Built, no fixture uses it (`WrapProfile.drive`, `src/sim/controllers/wrap.ts`; the hold carried through his own loss,
+`src/sim/conversion.ts`; `tests/wrap-drive.test.ts`). With a secure hold (both arms on the carrier, or one arm holding
+with his body touching him, for 50 ms) he keeps the strike posture and keeps running through the carrier: request the
+carrier's velocity plus 3 m/s along the line through him, full effort, the ordinary drive force (no new force path),
+the extra eased off as his own lean goes from 12 to 25 deg. He leaves his feet only (a) when the carrier is down, (b)
+when the carrier leans past 30 deg, (c) on his own loss of balance (the takedown's hold carried through it), or (d) on a
+stall (0.9 s without the carrier's lean past 15 deg or rising 2 deg in 0.3 s; 1.6 s at most); (a), (b), (d) by the
+`takedown` conversion. A hold lost for over 50 ms ends the drive. The flip is parked with its evidence
+(`.scratch/p2/parked/` in the main checkout: suite green, older families byte-identical; under it the tackler goes down
+with the carrier in most felled-by-the-hit runs and the rear-wrap carrier is driven over forward).
+
 ## Flags, lab and code
 
 - `FixtureDef.wrap` = `WRAP_V3` (`src/sim/controllers/wrap.ts`). Registered on every L3, L4 and HC fixture with a
@@ -39,8 +89,9 @@ and he stayed on his feet over the carrier until a later trip.
 - Not registered on a defender who stops to stand in a hold (`standAfterS`, the L3-F6 stationary holds): their wrap and
   hold settle check (`HOLD_SETTLES`, the plan 13e known limit) is about a standing hold, and under the cradle its free
   gap is 0.21 m against 0.05.
-- Lab `wrap=on|v2|v1|off`: `on` is `WRAP_V3`, `v2` the takedown with his arms let go at it (before the hold flip),
-  `v1` the cradle without the committed finish (before its flip), `off` the Gate 2 progression (before M3).
+- (Since polish 1.1 the registered profile is `WRAP_V4`, above; lab `wrap=on|v3|v2|v1|off`, `v3` the hold before the
+  strike.) Lab `wrap=on|v2|v1|off` as M3 left it: `on` was `WRAP_V3`, `v2` the takedown with his arms let go at it
+  (before the hold flip), `v1` the cradle without the committed finish (before its flip), `off` the Gate 2 progression (before M3).
   `tests/runs.ts` `preWrapV3`, `preWrapV2` and `preWrap` give a definition as before each flip (the head of
   `BEFORE_FLIPS`).
 - Code:
@@ -244,8 +295,13 @@ A link no fixture can form would be a flag that can never be flipped (Direction 
 
 ## Lab
 
-Port 5180. Each link at the moment before the arms open; add `&wrap=v2` for the takedown with his arms let go at it,
-`&wrap=v1` for the cradle without the takedown and `&wrap=off` for before M3.
+Port 5180. The strike (add `&wrap=v3` for before it): front `?fixture=L3-F19-front&cam=side&speed=0.25&t=0.15`, rear
+`?fixture=L3-F19-rear&cam=side&speed=0.25&t=0.30`, side `?fixture=L3-F4-twoArm&cam=front&speed=0.25&t=0.15`, a
+hit-felled carrier with the tackler left standing `?fixture=L3-F1-low&cam=side&speed=0.25&t=0.40`.
+
+The M3 links below were taken under `WRAP_V3`: add `&wrap=v3` to see them as described. Each link at the moment
+before the arms open; add `&wrap=v2` for the takedown with his arms let go at it, `&wrap=v1` for the cradle without
+the takedown and `&wrap=off` for before M3.
 
 - Front wrap, going down together: `?fixture=L3-F19-front&cam=side&speed=0.25&t=0.15` (and `cam=front`). The hold
   through the takedown from 0.74 s: `?fixture=L3-F19-front&cam=side&speed=0.25&t=0.65` (`&wrap=v2` before it; reversed

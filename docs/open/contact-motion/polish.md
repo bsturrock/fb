@@ -22,9 +22,11 @@ in real life."
 ## Order
 
 1. **Real tackle form.**
-   1. Strike posture and wide arms: the tackler leans in, shoulder leads with the head to the side, arms open wide
-      from the shoulders (today: upright trunk, hands at elbow width, "robotic").
-   2. Drive: with the wrap on, the tackler keeps his legs driving through the carrier and goes down with him,
+   1. **Done** (`cd4d92e`, M3 handoff "The strike"). Strike posture and wide arms: the tackler leans in, shoulder
+      leads with the head to the side, arms open wide from the shoulders (was: upright trunk, hands at elbow width,
+      "robotic").
+   2. Drive (built flag off, `b328144`; flip parked, M3 handoff "The drive"): with the wrap on, the tackler keeps
+      his legs driving through the carrier and goes down with him,
       instead of lowering and going limp. Covers the user's notes on the front wrap, the drag tackle
       (`L3-F5-drag`: he falls on top) and the side wrap (`L3-F4-twoArm`).
    3. Stay connected to the ground. Locked hands were measured impossible with today's upright wrap (the hands
