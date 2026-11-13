@@ -28,6 +28,28 @@ export interface HingeState {
    * with the trunk, the support pivot under the body's own frame (as without the hinge), not the legs'.
    */
   bodyPivot?: true;
+  /**
+   * Polish 1.2, the come-down arriving (`HingeArrive`): the body's pitch rate has come to need the planned braking to
+   * reach the full fold at its end rate (latched for the come-down); the weight-forward topple ends with it.
+   */
+  braking?: true;
+}
+
+/**
+ * Contact motion polish 1.2, the ride-down's come-down arriving (`WrapRideDown.arrive`): the fold arrives at its end
+ * slowing down. The commanded pitch moves on at the commanded rate but never more than `leadDeg` ahead of the pitch the
+ * body has reached (a trunk the carrier blocks is not left far behind a command that saturates the cap and then throws
+ * him at it), and its rate is the hinge's top rate until the body's own pitch rate needs the planned braking to reach
+ * the full fold at `endDegPerS`; from then on it is the rate of that braking at the pitch the body has reached
+ * (`brakeDegPerS2`, well within what the balance cap brakes on the proxy's pitch inertia, 240 N m on about 15.7 kg m^2,
+ * some 870 deg/s^2: the legs' share and the contacts take the rest), and the command leads the body by at most
+ * `brakeLeadDeg` (enough to keep the pitch the hinge's, so the legs' balance does not read it as lean).
+ */
+export interface HingeArrive {
+  leadDeg: number;
+  brakeLeadDeg: number;
+  brakeDegPerS2: number;
+  endDegPerS: number;
 }
 
 /** The hinge's bounds (`WrapStrike.hinge`). */
@@ -110,7 +132,8 @@ export function hingePivot(h: HingeState, q: Quat, origin: Vec3, com: Vec3, loca
 /**
  * One substep of the hinge from its request (undefined: none). The pitch moves toward the bounded request along a
  * speed- and acceleration-bounded path, the drop at its rate; the hinge ends once nothing is requested and both have
- * unwound with the body (returns undefined).
+ * unwound with the body (returns undefined). With `arrive` (polish 1.2, the come-down: `HingeArrive`, the body's
+ * angular velocity `omega`) the pitch's path is re-based on the body's achieved pitch and brakes to the full fold.
  */
 export function advanceHinge(
   h: HingeState | undefined,
@@ -119,6 +142,7 @@ export function advanceHinge(
   q: Quat,
   legsUp: Vec3,
   dt: number,
+  arrive?: { law: HingeArrive; omega: Vec3 },
 ): HingeState | undefined {
   const want = req ? clamp(req.rad, 0, (L.maxDeg * Math.PI) / 180) : 0;
   const wantDrop = req ? clamp(req.dropM, 0, L.maxDropM) : 0;
@@ -129,13 +153,32 @@ export function advanceHinge(
   // the pitch's trajectory: speed and acceleration bounded, braking in time to stop at the request
   const vmax = (L.rateDegPerS * Math.PI) / 180;
   const amax = (L.accelDegPerS2 * Math.PI) / 180;
-  const e = want - h.rad;
-  const vt = Math.sign(e) * Math.min(vmax, Math.sqrt(2 * amax * Math.abs(e)));
-  h.rateRadPerS += clamp(vt - h.rateRadPerS, -amax * dt, amax * dt);
-  h.rad += h.rateRadPerS * dt;
-  if ((want - h.rad) * e < 0 || e === 0) {
-    h.rad = want;
-    h.rateRadPerS = 0;
+  if (arrive && req) {
+    // (the come-down arriving: the path from the pitch the body has reached, braking once his own rate needs it)
+    const d2r = Math.PI / 180;
+    const lead = arrive.law.leadDeg * d2r;
+    const brakeLead = arrive.law.brakeLeadDeg * d2r;
+    const brake = arrive.law.brakeDegPerS2 * d2r;
+    const end = arrive.law.endDegPerS * d2r;
+    const p = hingePitch(q, legsUp);
+    const w = dot(arrive.omega, hingeAxis(q));
+    const e = want - p;
+    if (e <= 0 || (w > end && w * w - end * end >= 2 * brake * e)) h.braking = true;
+    const vt = e <= 0 ? 0 : h.braking ? Math.min(vmax, Math.sqrt(end * end + 2 * brake * e)) : vmax;
+    h.rateRadPerS = Math.min(h.rateRadPerS + amax * dt, vt);
+    // (braking, never ahead of the body: the lead's push would be braking's loss)
+    const base = Math.max(0, p);
+    h.rad = clamp(Math.min(h.rad + h.rateRadPerS * dt, base + (h.braking ? brakeLead : lead)), 0, want);
+  } else {
+    if (h.braking) delete h.braking;
+    const e = want - h.rad;
+    const vt = Math.sign(e) * Math.min(vmax, Math.sqrt(2 * amax * Math.abs(e)));
+    h.rateRadPerS += clamp(vt - h.rateRadPerS, -amax * dt, amax * dt);
+    h.rad += h.rateRadPerS * dt;
+    if ((want - h.rad) * e < 0 || e === 0) {
+      h.rad = want;
+      h.rateRadPerS = 0;
+    }
   }
   h.dropM += clamp(wantDrop - h.dropM, -L.dropRateMps * dt, L.dropRateMps * dt);
   h.capRad = Math.max(h.rad, Math.min(h.capRad, Math.max(0, hingePitch(q, legsUp))));

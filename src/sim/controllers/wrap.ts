@@ -8,7 +8,7 @@ import { FALL_HOLD_V1, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { Controller, ControllerContext } from './base';
 import { add, addScaled, clamp, cross, dot, horiz, len, norm, qRot, scale, sub, upOf, v3, UP, type Vec3 } from '../vec';
-import type { HingeLimits } from '../hinge';
+import { hingeAxis, type HingeArrive, type HingeLimits } from '../hinge';
 
 export type ArmPlan = 'wrap' | 'palmFlank' | 'none';
 export type WrapArmPhase = 'ready' | 'open' | 'spread' | 'arc' | 'close' | 'sustain' | 'recover' | 'palmReach' | 'palmClose' | 'palmPull' | 'idle';
@@ -137,6 +137,16 @@ export interface WrapRideDown {
   maxS: number;
   hinge: { rateDegPerS: number; accelDegPerS2: number; dropRateMps: number };
   weightForward: boolean;
+  /**
+   * The come-down arriving (absent: the fold at the hinge's bounds, the topple to the end, exit (h) at any pitch rate, the
+   * drive's extra speed): he comes down on the carrier slowing down. With the carrier off his support the fold's path is
+   * re-based on the pitch he has reached and brakes to the full fold (`HingeArrive`, hinge.ts), his weight-forward topple
+   * ends as that braking begins, exit (h) for the full fold waits for his body's pitch rate to fall to
+   * `foldedRateDegPerS` (his chest low still converts him at once), and the drive asks for the carrier's velocity without
+   * its extra speed: a body still pitching fast at the switch hands its spin to a folded ragdoll of half the pitch
+   * inertia (twice the rate, twice the rotational energy: the somersault over the carrier).
+   */
+  arrive?: HingeArrive & { foldedRateDegPerS: number };
 }
 
 /**
@@ -399,7 +409,10 @@ export const WRAP_V6: WrapProfile = {
  * follows the carrier to 85 deg and the hips to the stance floor as his lean goes from 15 to 45 deg or his core drops 0.4 m. He
  * converts with his chest 0.5 m off the ground, sinking faster than 1.6 m/s, or the carrier's core within 0.35 m of the
  * ground (the drive 0.3 s old), a stall, 2.5 s, or the hold lost on a carrier off his support. The carrier counts as his
- * support while his legs lean under 45 deg.
+ * support while his legs lean under 45 deg. The come-down arrives (`WrapRideDown.arrive`): the fold leads his pitch by at
+ * most 8 deg (1 deg braking) and brakes at 350 deg/s^2 to reach the full fold at 10 deg/s, exit (h) for the fold waits
+ * for 50 deg/s, the drive asks for the carrier's velocity (rear, front and drag-mirror wraps: 20-90 deg/s at the switch
+ * in place of 180-310, no roll over the carrier).
  */
 export const WRAP_V7: WrapProfile = {
   ...WRAP_V5,
@@ -418,7 +431,7 @@ export const WRAP_V7: WrapProfile = {
     fullDropM: 0.4,
     leanDeg: 45,
     hold: { memoryS: 0.2, separationM: 0.15, remapM: 0.05 },
-    down: { maxS: 0.4, hinge: { rateDegPerS: 300, accelDegPerS2: 2500, dropRateMps: 1 }, weightForward: true },
+    down: { maxS: 0.4, hinge: { rateDegPerS: 300, accelDegPerS2: 2500, dropRateMps: 1 }, weightForward: true, arrive: { leadDeg: 8, brakeLeadDeg: 1, brakeDegPerS2: 350, endDegPerS: 10, foldedRateDegPerS: 50 } },
   },
 };
 
@@ -665,6 +678,9 @@ export class WrapAttemptController implements Controller {
         } else if (tk.since !== null && ctx.t - tk.lastT > C.graceS) tk.since = null;
         // the drive, once begun, lasts while an arm still holds him (its clock with it)
         const DN = RD?.down;
+        // (the come-down arriving: with the carrier off his support the drive asks for the carrier's velocity, no more)
+        const AR = DN?.arrive;
+        const extraMps = AR && tb.controlMode !== 'supported' ? 0 : DV.extraMps;
         if (onTarget > 0) dv.holdT = ctx.t;
         else if (DN && dv.at !== null && ctx.t - dv.holdT > C.graceS && tb.controlMode !== 'supported') {
           // (the come-down: the hold lost with the carrier off his support begins it; he goes on down after him)
@@ -690,7 +706,7 @@ export class WrapAttemptController implements Controller {
           // (he eases the push as his own lean nears the loss; riding, never: the carrier he holds is his support)
           const own = ((ctx.observed.balance[ctx.self]?.leanAngleRad ?? 0) * 180) / Math.PI;
           const ease = RD ? 1 : clamp((DV.ease.toDeg - own) / (DV.ease.toDeg - DV.ease.fromDeg), 0, 1);
-          vel = addScaled(vR, d, this.fault?.driveLimp ? 0 : DV.extraMps * ease);
+          vel = addScaled(vR, d, this.fault?.driveLimp ? 0 : extraMps * ease);
           effortOut = this.fault?.driveLimp ? 0 : 1;
           posture = { leanDirWorld: d, leanRad: 0 };
         }
@@ -700,7 +716,7 @@ export class WrapAttemptController implements Controller {
           // the come-down: the drive goes on toward the carrier's core, held or not (his weight is committed to him)
           this.finishMode = 'down';
           const d = norm(horiz(sub(R, me.position)), this.lastFacing);
-          vel = addScaled(vR, d, this.fault?.driveLimp ? 0 : DV.extraMps);
+          vel = addScaled(vR, d, this.fault?.driveLimp ? 0 : extraMps);
           effortOut = this.fault?.driveLimp ? 0 : 1;
           posture = { leanDirWorld: d, leanRad: 0 };
         }
@@ -725,7 +741,9 @@ export class WrapAttemptController implements Controller {
             // (and with the come-down, (f) his support gone: the suspension's probe finds no ground under him, he is on the
             // carrier or off his feet; a posed body without it would fall stiff)
             // (with the come-down, (h) too once his body has pitched to the full fold: past it he is falling, not folding)
-            const folded = !!DN && (Math.acos(clamp(upOf(me.rotation).y, -1, 1)) * 180) / Math.PI >= RD.pitchDeg - 1e-9;
+            // (arriving, only once his pitch rate has fallen: a body pitching fast at the switch rolls over the carrier)
+            const pitchRate = (dot(me.angularVelocity, hingeAxis(me.rotation)) * 180) / Math.PI;
+            const folded = !!DN && (Math.acos(clamp(upOf(me.rotation).y, -1, 1)) * 180) / Math.PI >= RD.pitchDeg - 1e-9 && (!AR || Math.abs(pitchRate) <= AR.foldedRateDegPerS);
             const lowOrFast = guard && (chestM <= RD.groundM || folded) ? 'h' : guard && -me.linearVelocity.y >= RD.sinkMps ? 's' : guard && DN && dv.down !== undefined && !me.grounded ? 'f' : null;
             exit = lowOrFast ?? (DN && dv.down !== undefined ? (ctx.t - dv.down >= DN.maxS - 1e-9 ? 't' : null) : DN ? null : coreDown ? 'g' : null);
             if (!exit && dv.down === undefined) exit = held && !this.fault?.noStall && ((s >= DV.stallS - 1e-9 && !going) || s >= RD.maxS - 1e-9) ? 'd' : null;

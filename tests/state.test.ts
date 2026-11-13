@@ -9,6 +9,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, runSim } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
 import { ARM_G2, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
+import { WRAP_V7 } from '../src/sim/controllers/wrap';
 
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace });
 const copy = (c: StateCapture): StateCapture => JSON.parse(JSON.stringify(c));
@@ -147,6 +148,7 @@ describe('asCaptured: a capture\'s definition out of the flip chain', () => {
     // (before the solved impulse reading of rung 7c: tests/carried.test.ts resumes it under the solved reading)
     if (/^L4-F9-defenderFalling~v3@/.test(file)) return { as: (d) => ({ ...d, legGuard: LEG_GUARD_V3 }), variant: ['solver'] };
     if (/~v3/.test(file)) return { as: (d) => ({ ...d, legGuard: LEG_GUARD_V3 }) };
+    if (/~wrapv7/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V7 }) };
     return {};
   };
 

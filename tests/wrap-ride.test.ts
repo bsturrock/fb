@@ -1,15 +1,25 @@
 // Contact motion polish 1.2, the ride-down (WRAP_V7, `WrapProfile.ride`, src/sim/controllers/wrap.ts; the carrier counted
-// as support, `Simulation.rideSupported`; the come-down, `WrapRideDown`). No fixture uses it. Each case has its fault twin: WRAP_V5 (the ride absent) or
-// the same run with the rule it checks broken (`SimDebug.wrap`) fails for that reason.
+// as support, `Simulation.rideSupported`; the come-down, `WrapRideDown`; its arrival, `WrapRideDown.arrive`). No fixture
+// uses it. Each case has its fault twin: WRAP_V5 (the ride absent) or the same run with the rule it checks broken
+// (`SimDebug.wrap`, or the profile without it) fails for that reason.
 import { describe, expect, it } from 'vitest';
 import { lowestY, WRAP_V5, WRAP_V7, type WrapDebug, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
+import { hingeAxis } from '../src/sim/hinge';
 import { BALANCE_G3, upperBodyCompound } from '../src/sim/profiles';
+import { SEGMENTS } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
-import { cross, deg, horiz, norm, qFromAxisAngle, scale, sub, UP, upOf, v3, vc } from '../src/sim/vec';
-import { FIX } from './helpers';
+import { add, cross, deg, dot, horiz, m3Add, m3Inverse, m3ParallelAxis, m3Vec, norm, qFromAxisAngle, qMul, scale, sub, UP, upOf, v3, vc, worldInertia, type Mat3, type Vec3 } from '../src/sim/vec';
+import { asCaptured, FIX } from './helpers';
+import { loadState, resumeState } from './state';
 
 const RD = WRAP_V7.ride!;
+/**
+ * WRAP_V7 without the come-down's arrival (`WrapRideDown.arrive`): the ride's and the come-down's other rules, which the
+ * cases before the arrival's measure (its slower fold holds the carrier longer and converts by the no-support guard).
+ */
+const { arrive: _arrive, ...DOWN_PRE } = RD.down!;
+const V7_PRE_ARRIVE: WrapProfile = { ...WRAP_V7, ride: { ...RD, down: DOWN_PRE } };
 interface Priv {
   rideSupported(pl: unknown, theta: number, up: unknown): boolean;
   evaluateBalance(): void;
@@ -53,7 +63,7 @@ describe('polish 1.2, the ride-down (WRAP_V7, no fixture uses it)', () => {
 
   it('(a) with a secure hold and the carrier going over (off his support in the side wrap, leaning past 30 deg in the front wrap) the rider does not ask to leave his feet; WRAP_V5 asks at once (exits a and b)', async () => {
     for (const [id, want] of [['L3-F4-twoArm', 'a'], ['L3-F19-front', 'b']] as const) {
-      const ride = await overRun({ ...FIX(id), wrap: WRAP_V7 });
+      const ride = await overRun({ ...FIX(id), wrap: V7_PRE_ARRIVE });
       expect(ride.over, id).toBeGreaterThan(0);
       expect(ride.asked, id).toBeNull();
       // twin: the ride absent
@@ -182,14 +192,14 @@ async function downRun(id: string, wrap: WrapProfile, fault?: WrapDebug): Promis
   sim.dispose();
   return out;
 }
-const DN = RD.down!;
+const DN = DOWN_PRE;
 /** WRAP_V7 as before the come-down: exits (g), (l) and the referee's ending convert him where he is. */
 const V7_AT_ONCE: WrapProfile = { ...WRAP_V7, ride: { ...RD, down: undefined } };
 
 describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down, no fixture uses it)', () => {
   it('(a) after the referee\'s ending the rider keeps the full fold and never rises, and converts low by (h) or (t); twin: the old at-once conversion converts him at the ending, higher', async () => {
     for (const id of ['L3-F5-dragMirror', 'L3-F19-rear']) {
-      const ok = await downRun(id, WRAP_V7);
+      const ok = await downRun(id, V7_PRE_ARRIVE);
       expect(ok.endAt, id).not.toBeNull();
       expect(ok.downAt, id).not.toBeNull();
       expect(ok.conv, id).not.toBeNull();
@@ -209,25 +219,149 @@ describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down, no fixture 
   }, 120_000);
 
   it('(b) on the ride\'s own bounds the trunk reaches 60 deg of pitch within 0.25 s of the carrier\'s conversion (L3-F19-rear, measured 0.23 s); twin on the strike\'s hinge bounds it never does', async () => {
-    const ok = await downRun('L3-F19-rear', WRAP_V7);
+    const ok = await downRun('L3-F19-rear', V7_PRE_ARRIVE);
     expect(ok.pitch60At).not.toBeNull();
     expect(ok.pitch60At! - ok.rConvAt!).toBeLessThanOrEqual(0.25);
     const S = WRAP_V7.strike!.hinge;
-    const twin = await downRun('L3-F19-rear', { ...WRAP_V7, ride: { ...RD, down: { ...DN, hinge: { rateDegPerS: S.rateDegPerS, accelDegPerS2: S.accelDegPerS2, dropRateMps: S.dropRateMps } } } });
+    const twin = await downRun('L3-F19-rear', { ...V7_PRE_ARRIVE, ride: { ...RD, down: { ...DN, hinge: { rateDegPerS: S.rateDegPerS, accelDegPerS2: S.accelDegPerS2, dropRateMps: S.dropRateMps } } } });
     expect(twin.pitch60At).toBeNull();
   }, 60_000);
 
   it('(c) the time bound converts a rider who cannot get low (exits h, s, f and the no-support guard off): by (t), maxS after the come-down began; twin: with no bound he stays posed to the trial\'s end', async () => {
     const off: WrapDebug = { noRideGuard: true, noRideLoose: true };
     for (const id of ['L3-F5-dragMirror', 'L3-F4-twoArm']) {
-      const ok = await downRun(id, WRAP_V7, off);
+      const ok = await downRun(id, V7_PRE_ARRIVE, off);
       expect(ok.downAt, id).not.toBeNull();
       expect(ok.conv?.exit, id).toBe('t');
       expect(ok.conv!.t - ok.downAt!, id).toBeGreaterThanOrEqual(DN.maxS - 1e-9);
       expect(ok.conv!.t - ok.downAt!, id).toBeLessThanOrEqual(DN.maxS + 2 / 240 + 1e-9);
-      const twin = await downRun(id, { ...WRAP_V7, ride: { ...RD, down: { ...DN, maxS: 10 } } }, off);
+      const twin = await downRun(id, { ...V7_PRE_ARRIVE, ride: { ...RD, down: { ...DN, maxS: 10 } } }, off);
       expect(twin.downAt, id).not.toBeNull();
       expect(twin.conv, id).toBeNull();
     }
   }, 120_000);
+});
+
+/**
+ * Polish 1.2, the come-down arriving (`WrapRideDown.arrive`), from L3-F19-rear under WRAP_V7 at 2.15 s (tick 129,
+ * `scripts/capture-state.ts L3-F19-rear 129 --wrap=v7`): the carrier off his support since 1.89 s, the rider's fold
+ * braking at about 64 deg of pitch, 0.25 s before his conversion. The twin resumes the same state under V7_PRE_ARRIVE
+ * (the fold at the hinge's bounds, the topple to the end, exit (h) at any pitch rate, the drive's extra speed).
+ */
+const ARRIVE_CAP = 'tests/data/state/L3-F19-rear~wrapv7@129.json.gz';
+const AR = RD.down!.arrive!;
+
+/** The definition the capture ran under, with `wrap` in place of WRAP_V7 (V7_PRE_ARRIVE keeps its id). */
+function arriveDef(wrap: WrapProfile): FixtureDef {
+  return { ...asCaptured(loadState(ARRIVE_CAP), (d) => ({ ...d, wrap: WRAP_V7 })), wrap };
+}
+
+interface ArriveRun {
+  /**
+   * His conversion: its audit's energy gain (J) and the bound a conversion inside exit (h)'s rate gate can reach: the
+   * orbital term of the centre-of-mass offset (the proxy's COM off the ragdoll's, times his momentum) and a spin of
+   * `arrive.foldedRateDegPerS` about his hinge axis, both on the ragdoll's inertia: (sqrt(E_orb) + sqrt(E_spin))^2.
+   */
+  conv: { t: number; dE: number; orbJ: number; boundJ: number } | null;
+  /** The first substep after it with a shin above his hips by 0.15 m and above his head by 0.3 m (his feet over his head). */
+  feetOverAt: number | null;
+}
+
+async function arriveRun(wrap: WrapProfile): Promise<ArriveRun> {
+  const cap = loadState(ARRIVE_CAP);
+  let probe: (() => void) | null = null;
+  const sim = await resumeState(cap, { def: arriveDef(wrap), opts: { onSubstep: () => probe?.() } });
+  const D = sim.players.find((p) => p.id === 'D')!;
+  const out: ArriveRun = { conv: null, feetOverAt: null };
+  let Ip: Mat3 | null = null;
+  let axis: Vec3 = v3(1, 0, 0);
+  probe = () => {
+    if (D.controlMode === 'supported') {
+      const b = D.proxy.body;
+      Ip = worldInertia(vc(b.principalInertia()), { ...b.principalInertiaLocalFrame() }, { ...b.rotation() });
+      axis = hingeAxis({ ...b.rotation() });
+      return;
+    }
+    if (!D.rag) return;
+    const B = D.rag.bodies;
+    if (!out.conv) {
+      // the ragdoll's assembly inertia about its COM (one substep after the switch)
+      const parts = SEGMENTS.map((sg) => ({ m: B[sg].mass(), C: vc(B[sg].worldCom()), I: worldInertia(vc(B[sg].principalInertia()), { ...B[sg].principalInertiaLocalFrame() }, { ...B[sg].rotation() }) }));
+      const M = parts.reduce((s, p) => s + p.m, 0);
+      const C = scale(parts.reduce((s, p) => add(s, scale(p.C, p.m)), v3()), 1 / M);
+      let I: Mat3 = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      for (const p of parts) I = m3Add(I, m3Add(p.I, m3ParallelAxis(p.m, sub(p.C, C))));
+      const J = m3Inverse(I)!;
+      const A = D.handoff!.audit!;
+      const v = (x: number[]): Vec3 => v3(x[0], x[1], x[2]);
+      const Lo = cross(sub(v(A.before.com), v(A.after.com)), v(A.before.P));
+      const Lb = m3Vec(Ip!, scale(axis, (AR.foldedRateDegPerS * Math.PI) / 180));
+      const orbJ = 0.5 * dot(Lo, m3Vec(J, Lo));
+      const spinJ = 0.5 * dot(Lb, m3Vec(J, Lb));
+      out.conv = { t: sim.t, dE: A.energyDeltaJ, orbJ, boundJ: (Math.sqrt(orbJ) + Math.sqrt(spinJ)) ** 2 };
+    }
+    const feet = Math.max(B.leftShin.translation().y, B.rightShin.translation().y);
+    if (out.feetOverAt === null && feet > B.core.translation().y + 0.15 && feet > B.head.translation().y + 0.3) out.feetOverAt = sim.t;
+  };
+  while (!sim.done) sim.stepTick();
+  sim.dispose();
+  return out;
+}
+
+/**
+ * From the capture, his body set pitched `pitchDeg` toward the carrier about his own lateral axis, pitching on at
+ * `rateDegPerS`, the exit the next decision asks (his chest height there, m).
+ */
+async function foldedAsk(wrap: WrapProfile, pitchDeg: number, rateDegPerS: number): Promise<{ exit: string | null; chest: number }> {
+  const cap = loadState(ARRIVE_CAP);
+  let probe: (() => void) | null = null;
+  const sim = await resumeState(cap, { def: arriveDef(wrap), opts: { onSubstep: () => probe?.() } });
+  const D = sim.players.find((p) => p.id === 'D')!;
+  const R = sim.players.find((p) => p.id === 'R')!;
+  const b = D.proxy.body;
+  const p = vc(b.translation());
+  const Rc = vc(R.rag ? R.rag.bodies.core.translation() : R.proxy.body.translation());
+  const d = norm(horiz(sub(Rc, p)));
+  const yaw = qFromAxisAngle(UP, Math.atan2(d.x, d.z));
+  const a = hingeAxis(yaw);
+  const q = qMul(qFromAxisAngle(a, (pitchDeg * Math.PI) / 180), yaw);
+  b.setRotation(q, true);
+  b.setAngvel(scale(a, (rateDegPerS * Math.PI) / 180), true);
+  const chest = lowestY(D.body, p, q);
+  let exit: string | null | undefined;
+  probe = () => {
+    exit ??= (D.intent.debug as { drive?: { exit: string | null } } | undefined)?.drive?.exit ?? null;
+  };
+  sim.stepTick();
+  sim.dispose();
+  return { exit: exit ?? null, chest };
+}
+
+describe('polish 1.2, the come-down arriving (WRAP_V7 ride.down.arrive, no fixture uses it)', () => {
+  it('(a) his conversion gains no more than the centre-of-mass offset and the exit\'s own rate gate allow; twin: the come-down without the arrival gains several times its bound', async () => {
+    const ok = await arriveRun(WRAP_V7);
+    expect(ok.conv).not.toBeNull();
+    expect(ok.conv!.dE).toBeLessThanOrEqual(ok.conv!.boundJ);
+    const twin = await arriveRun(V7_PRE_ARRIVE);
+    expect(twin.conv!.dE).toBeGreaterThan(2 * twin.conv!.boundJ);
+  }, 60_000);
+
+  it('(b) after his conversion his feet never pass over his head (he comes down on the carrier, legs trailing); twin: without the arrival he rolls over him', async () => {
+    const ok = await arriveRun(WRAP_V7);
+    expect(ok.conv).not.toBeNull();
+    expect(ok.feetOverAt).toBeNull();
+    const twin = await arriveRun(V7_PRE_ARRIVE);
+    expect(twin.feetOverAt).not.toBeNull();
+  }, 60_000);
+
+  it('(c) pitched past the full fold with his chest above ride.groundM, exit (h) waits for his pitch rate to fall under arrive.foldedRateDegPerS (asked at rest); twin: without the arrival it is asked at any rate', async () => {
+    const fast = await foldedAsk(WRAP_V7, RD.pitchDeg + 1, 3 * AR.foldedRateDegPerS);
+    expect(fast.chest).toBeGreaterThan(RD.groundM);
+    expect(fast.exit).not.toBe('h');
+    const still = await foldedAsk(WRAP_V7, RD.pitchDeg + 1, 0);
+    expect(still.chest).toBeGreaterThan(RD.groundM);
+    expect(still.exit).toBe('h');
+    const twin = await foldedAsk(V7_PRE_ARRIVE, RD.pitchDeg + 1, 3 * AR.foldedRateDegPerS);
+    expect(twin.exit).toBe('h');
+  }, 60_000);
 });

@@ -1166,11 +1166,18 @@ export class Simulation {
     // support, his weight forward (the support under his body's own frame)
     const DN = pl.intent.ride ? this.def.wrap!.ride?.down : undefined;
     const L = DN ? { ...this.def.wrap!.strike!.hinge, ...DN.hinge } : this.def.wrap!.strike!.hinge;
-    const h = advanceHinge(pl.hinge, pl.intent.posture?.hinge, L, { ...this.coreBody(pl).rotation() }, pl.balance.desiredUp, this.physics.dt);
-    if (h && DN?.weightForward) {
+    // (the come-down arriving, `WrapRideDown.arrive`: with the carrier off his support the fold brakes to its end)
+    const AR = DN?.arrive;
+    const downTgt = (): boolean => {
       const tid = this.def.focus?.[pl.id];
       const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
-      if (tgt && tgt.controlMode !== 'supported') h.bodyPivot = true;
+      return !!tgt && tgt.controlMode !== 'supported';
+    };
+    const arrive = AR && downTgt() ? { law: AR, omega: vc(this.coreBody(pl).angvel()) } : undefined;
+    const h = advanceHinge(pl.hinge, pl.intent.posture?.hinge, L, { ...this.coreBody(pl).rotation() }, pl.balance.desiredUp, this.physics.dt, arrive);
+    if (h && DN?.weightForward) {
+      // (arriving, the topple ends as the braking begins)
+      if (downTgt() && !h.braking) h.bodyPivot = true;
       else delete h.bodyPivot;
     } else if (h) delete h.bodyPivot;
     if (h) pl.hinge = h;
