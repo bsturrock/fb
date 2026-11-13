@@ -35,6 +35,25 @@ in real life."
       leans on the carrier. The ride-down: he stays supported through the takedown, feet driving without easing
       off, trunk following the carrier down on the hinge, hips sinking; he converts when his chest is within about
       0.5 m of the ground, the carrier is flat, or the hold is lost and he is truly falling. Before the low tackle.
+      Built flag off (`e478bb8`, `eadf8fc`; `WRAP_V7` = V5 plus `ride`, lab `&wrap=v7`, no fixture uses it). He
+      converts on: chest 0.5 m from the ground, sinking faster than 1.6 m/s, the carrier's core within 0.35 m of the
+      ground, a stall or 2.5 s, the hold lost on a downed carrier, the referee's ending. His forearm hold is pinned
+      to the carrier's ragdoll torso or pelvis through the carrier's fall (it lapsed in 0.03 to 0.08 s before: the
+      ragdoll's own limbs cover his trunk, and the palm push-out lifts the forearm off every other substep). State:
+      the rear wrap rides to chest 0.5 m; where the hit fells the carrier fast (side, `L3-F1-low`, HC-F3) he still
+      converts at shoulder 1.25 m because the trunk follows too slowly (pitch lags the hinge request, 54 against 84
+      degrees) and the play ends 0.2 s later. On his feet the lowest chest is 0.56 m. Open: trunk follow speed,
+      riding on after the ending, a ride-only lower stance or kneel.
+      **User intent 2026-11-13 (standing): the ball carrier always biases forward and tries to fall forward** for
+      the extra yards. An intention, not an outcome: a hard hit from the front can still put him on his back. It
+      applies to the brace, to a held carrier on his feet (never settling leaning back), to the bound-legs fall
+      below, and to the ragdoll's fall effort (within its joint limits, no external force).
+      **User review of the low rear wrap (`L3-F19-rear&wrap=v6`): if his legs cannot run he falls, then, not
+      later.** Today the wrapped carrier stays supported on legs that cannot step, leans back, kneels and falls
+      late while the tackler slides off behind. Wanted: he goes down forward with the tackler landing on top of
+      him, who then tries to roll him. Steps: a bound-legs rule (a secure hold at or below the pelvis, or his steps
+      blocked by the holder for about 0.2 s, converts the carrier with his momentum); the low tackle rebuilt on the
+      ride-down so the tackler keeps driving and comes down on him.
    3. Stay connected to the ground. Locked hands were measured impossible with today's upright wrap (the hands
       stop 0.5 m apart; M3 handoff, "Locked hands"). Re-measure after 1.1 puts the shoulder at the carrier's flank;
       build the lock if the hands then meet. The rear-wrap carrier (`L3-F19-rear`) must go down (under the drive he
