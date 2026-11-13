@@ -55,6 +55,47 @@ export interface WrapProfile {
   commit?: { secureS: number; lowerS: number; heightM: number; leanDeg: number; graceS: number; hold?: FallResponseProfile };
   /** Contact motion polish 1.1 (absent: the upright approach as it was): the strike posture and wide arms. */
   strike?: WrapStrike;
+  /**
+   * Contact motion polish 1.2 (with `commit`; absent: the committed finish lowers him and takes him down on its timer): the
+   * drive. A hold no longer lowers him and takes him down after `commit.lowerS`: he stays on his feet and drives through the
+   * carrier until he has a reason to leave them (`WrapDrive`).
+   */
+  drive?: WrapDrive;
+}
+
+/**
+ * Contact motion polish 1.2: the tackler's drive. A hold he drives on, held for `commit.secureS`, starts it: he keeps the
+ * strike's posture (its hinge and drop; the stance as asked), faces the carrier and asks, at full effort, for the
+ * carrier's velocity plus `extraMps` along the line from his centre through the carrier's (a rear wrap pushes the carrier
+ * forward, a front wrap back, a side wrap across), eased out as his own lean nears the loss (`ease`). The existing drive
+ * motor turns that into force within its caps. He
+ * leaves his feet only for a reason, through the validated conversion (`PlayerIntent.leaveSupport` 'takedown'):
+ *  (a) the carrier is off his support: he goes down with him at once (as the committed finish did);
+ *  (b) the carrier is going over: his observed lean is past `goLeanDeg`;
+ *  (c) his own balance fails: the ordinary loss of support, his holds carried onto his ragdoll's arms by the fixture's
+ *      fall response (under the takedown's hold, `commit.hold`, the loss starts it too while an arm holds);
+ *  (d) a stall: he has driven `stallS` and the carrier is not going over (his lean under `progress.leanDeg` and grown
+ *      less than `progress.riseDeg` over the last `progress.windowS`), or `maxS` in all: he commits his weight (the
+ *      committed finish's takedown, the last resort).
+ * A hold lost for longer than `commit.graceS` ends the drive and its clock: the finish's own modes again (one arm
+ * repositions, none pursues).
+ */
+export interface WrapDrive {
+  /** One arm retaining on the carrier with his body touching the carrier's is a hold he drives on (else both arms). */
+  oneArmBody: boolean;
+  /** Speed asked for beyond the carrier's, along the line through him (m/s). */
+  extraMps: number;
+  /** Exit (b): the carrier's lean (deg). */
+  goLeanDeg: number;
+  /** Exit (d): the drive's time (s) after which a carrier not going over is a stall (`progress`), and its limit. */
+  stallS: number;
+  progress: { leanDeg: number; riseDeg: number; windowS: number };
+  maxS: number;
+  /**
+   * The extra speed eased out as his own lean (the legs', observed) goes from `fromDeg` to `toDeg`: a tackler knocked
+   * off balance stops pushing before he falls (the drive motor's own lean scale leaves most of its cap near the loss).
+   */
+  ease: { fromDeg: number; toDeg: number };
 }
 
 /**
@@ -120,6 +161,14 @@ export interface WrapDebug {
   strikeHeld?: boolean;
   /** No elbow pole request (the cradle's palms wide, the elbows the arm's own). */
   noPole?: boolean;
+  /** Polish 1.2: the drive asks for nothing (effort 0, no extra speed): he goes limp on the hold. */
+  driveLimp?: boolean;
+  /** Polish 1.2: exits (a) and (b) off: he does not go down with a carrier who is down or going over. */
+  noFollow?: boolean;
+  /** Polish 1.2: exit (d) off: a stalled drive never commits his weight. */
+  noStall?: boolean;
+  /** Polish 1.2 (simulation, conversion): under the takedown's hold a loss of support starts no fall response (he lets go). */
+  noLossHold?: boolean;
   /**
    * The balance reads the pitched trunk, as with no hinge (simulation, support-runtime): the support pivot and the loss
    * envelope in the body's frame, so the trunk's pitch tips him as whole-body lean would.
@@ -184,6 +233,15 @@ export const WRAP_V4: WrapProfile = {
     hinge: { maxDeg: 40, rateDegPerS: 120, accelDegPerS2: 600, maxDropM: 0.12, dropRateMps: 0.4 },
   },
 };
+
+/**
+ * Contact motion polish 1.2: WRAP_V4 with the drive. A hold of one arm with his body on the carrier counts (the rear and
+ * drag wraps rarely close both clamps); 3 m/s beyond the carrier's speed (the velocity error that saturates the 1400 N
+ * drive over its 0.25 s response), eased out between 12 deg of his own lean (the posture cap) and 25 (the loss); he goes
+ * with a carrier leaning past 30 deg; a stall after 0.9 s with the carrier under 15 deg and his lean grown under 2 deg
+ * in the last 0.3 s, 1.6 s at most. Values and reasons: docs/handoff/contact-motion-m3.md.
+ */
+export const WRAP_V5: WrapProfile = { ...WRAP_V4, id: 'wrap-drive-v5', drive: { oneArmBody: true, extraMps: 3, goLeanDeg: 30, stallS: 0.9, progress: { leanDeg: 15, riseDeg: 2, windowS: 0.3 }, maxS: 1.6, ease: { fromDeg: 12, toDeg: 25 } } };
 
 export interface WrapSpec {
   kind: 'wrapAttempt';
@@ -301,6 +359,8 @@ export class WrapAttemptController implements Controller {
   declare private sk?: { on: boolean; w: number; v: number; head: number; hd: Vec3 };
   /** Contact motion polish 1.1 fault switches (set only when given). */
   declare private readonly fault?: WrapDebug;
+  /** Contact motion polish 1.2: the drive's start (s; set at the first finish decision under a profile with one). */
+  declare private dv?: { at: number | null; holdT: number; leans: { t: number; deg: number }[] };
 
   constructor(
     readonly spec: WrapSpec,
@@ -361,6 +421,7 @@ export class WrapAttemptController implements Controller {
     let effortOut = standing ? P.standEffort : P.effort;
     let stanceOut = this.stanceReq();
     let leave = false;
+    let driveDebug: { s: number; leanDeg: number; exit: string | null; driving: boolean } | undefined;
     let posture: PlayerIntent['posture'] = P.approachLeanDeg > 0 ? { leanDirWorld: this.lastFacing, leanRad: (P.approachLeanDeg * Math.PI) / 180 } : undefined;
     // ---------------- connection bookkeeping (observed arm retention or body contact with the runner)
     const armsObs = ctx.observed.arms[ctx.self] ?? {};
@@ -408,7 +469,54 @@ export class WrapAttemptController implements Controller {
         this.finishMode = 'recover';
       } else this.finishMode = 'contact';
       const C = this.wp?.commit;
-      if (C) {
+      const DV = this.wp?.drive;
+      if (C && DV) {
+        // polish 1.2, the drive: a hold keeps him on his feet driving through the carrier until a reason to leave them
+        const tk = (this.tk ??= { since: null, lastT: -Infinity });
+        const dv = (this.dv ??= { at: null, holdT: -Infinity, leans: [] });
+        const onTarget = retaining.filter((s) => armsObs[s]?.touchingTarget === tid).length;
+        const secure = onTarget === 2 || (DV.oneArmBody && onTarget === 1 && bodyContact);
+        if (secure) {
+          tk.lastT = ctx.t;
+          tk.since ??= ctx.t;
+        } else if (tk.since !== null && ctx.t - tk.lastT > C.graceS) tk.since = null;
+        // the drive, once begun, lasts while an arm still holds him (its clock with it)
+        if (onTarget > 0) dv.holdT = ctx.t;
+        else if (dv.at !== null && ctx.t - dv.holdT > C.graceS) {
+          dv.at = null;
+          dv.leans = [];
+        }
+        const held = tk.since !== null && ctx.t - tk.lastT <= C.graceS;
+        const carrierDown = tb.controlMode !== 'supported';
+        if (held && (carrierDown || ctx.t - tk.since! >= C.secureS - 1e-9)) {
+          dv.at ??= ctx.t;
+          this.finishMode = 'drive+';
+          const d = norm(horiz(sub(R, me.position)), this.lastFacing);
+          // (he eases the push as his own lean nears the loss)
+          const own = ((ctx.observed.balance[ctx.self]?.leanAngleRad ?? 0) * 180) / Math.PI;
+          const ease = clamp((DV.ease.toDeg - own) / (DV.ease.toDeg - DV.ease.fromDeg), 0, 1);
+          vel = addScaled(vR, d, this.fault?.driveLimp ? 0 : DV.extraMps * ease);
+          effortOut = this.fault?.driveLimp ? 0 : 1;
+          posture = { leanDirWorld: d, leanRad: 0 };
+        }
+        if (dv.at !== null) {
+          // the exits: (a) the carrier is down, (b) going over, with an arm still holding him; (d) a stall, while the hold
+          // drives; (c), his own loss, is the simulation's
+          const leanDeg = ((ctx.observed.balance[tid]?.leanAngleRad ?? 0) * 180) / Math.PI;
+          const s = ctx.t - dv.at;
+          const Q = DV.progress;
+          dv.leans.push({ t: ctx.t, deg: leanDeg });
+          while (dv.leans.length > 1 && dv.leans[1]!.t <= ctx.t - Q.windowS + 1e-9) dv.leans.shift();
+          const going = leanDeg >= Q.leanDeg || leanDeg - dv.leans[0]!.deg >= Q.riseDeg;
+          const follow = onTarget > 0 && !this.fault?.noFollow;
+          const exit = follow && carrierDown ? 'a' : follow && leanDeg >= DV.goLeanDeg ? 'b' : held && !this.fault?.noStall && ((s >= DV.stallS - 1e-9 && !going) || s >= DV.maxS - 1e-9) ? 'd' : null;
+          driveDebug = { s, leanDeg, exit, driving: this.finishMode === 'drive+' };
+          if (exit) {
+            this.finishMode = 'takedown';
+            leave = true;
+          }
+        }
+      } else if (C) {
         // the committed finish: a secure hold lowers and leans him in, then takes him down with the carrier
         const tk = (this.tk ??= { since: null, lastT: -Infinity });
         const secure = retaining.length === 2 && retaining.every((s) => armsObs[s]?.touchingTarget === tid);
@@ -625,7 +733,7 @@ export class WrapAttemptController implements Controller {
       arms,
       posture,
       ...(leave ? { leaveSupport: 'takedown' as const } : {}),
-      debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true, ...(sk ? { strike: { on: sk.on, w: sk.w, head: sk.head } } : {}) },
+      debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true, ...(sk ? { strike: { on: sk.on, w: sk.w, head: sk.head } } : {}), ...(driveDebug ? { drive: driveDebug } : {}) },
     };
   }
 

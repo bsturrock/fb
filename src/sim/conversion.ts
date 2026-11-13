@@ -238,8 +238,12 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
     // until clear
     if (host.def.legGuard?.physicalLegs) legsOffInsideConverted(host, switched.map((id) => host.byId.get(id)!));
     host.arms?.onRepresentationChange(switched, captured);
-    // contact motion M3: under a takedown's hold (no fall response of the fixture's own), only a takedown starts one
+    // contact motion M3: under a takedown's hold (no fall response of the fixture's own), only a takedown starts one;
+    // polish 1.2 (the wrap's drive): a loss of support too, while an arm of his holds (he tripped, he does not let go)
     const takedownOnly = !!takedownHold(host.def);
+    const lossHolds = !!host.def.wrap?.drive && !host.opts.debug?.wrap?.noLossHold;
+    const starts = (pl: PlayerRuntime): boolean =>
+      !takedownOnly || pl.handoff!.reason === 'takedown' || (lossHolds && pl.handoff!.reason === 'lossOfSupport' && (['left', 'right'] as const).some((s) => !!host.arms?.retained(pl.id, s)));
     for (const id of switched) {
       const pl = host.byId.get(id)!;
       pl.pose = ragdollPose(pl.rag!);
@@ -247,7 +251,7 @@ export function convertPlayers(host: ConversionHost, list: { pl: PlayerRuntime; 
       initEnvelope(pl.rag!);
       // ladder rung 9a: own-leg groups that start deeper inside each other than the skin stay out of the solve
       holdOverlappingSelfLegs(host.physics, pl.rag!);
-      if (host.fall && pl.handoff?.accepted && (!takedownOnly || pl.handoff.reason === 'takedown')) pl.fall = host.fall.begin(pl.id, pl.rag!, pl.setup.role, host.arms, host.carrySide(pl));
+      if (host.fall && pl.handoff?.accepted && starts(pl)) pl.fall = host.fall.begin(pl.id, pl.rag!, pl.setup.role, host.arms, host.carrySide(pl));
     }
   }
 }
