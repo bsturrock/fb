@@ -3,15 +3,18 @@
 // defect present in its captured state and fails once the defect is gone from it (it then becomes the fix's test, with
 // its fault twin). A capture under the wrap cannot be resumed without it (the defender's controller holds its profile,
 // read from the definition), so the twin is the run before the flip constructed to reach the same moment: where the
-// defect is there too, the flip reaches it and does not make it. The defects and their dispositions:
-// docs/handoff/contact-motion-m3.md, "Tracked defects".
+// defect is there too, the flip reaches it and does not make it. A capture under WRAP_V2 resumes under WRAP_V1 (the
+// takedown flip's twin, `preWrapV2`). The defects and their dispositions: docs/handoff/contact-motion-m3.md, "Known
+// issues".
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_POSE_PROFILE } from '../src/sim/profiles';
+import { SEGMENTS } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
 import type { FixtureDef } from '../src/sim/fixture';
-import { asCaptured, create, FIX, preWrap } from './runs';
+import { passiveEnergyMeter, type SolveEnergy } from './passive-energy';
+import { asCaptured, create, FIX, preWrap, preWrapV2 } from './runs';
 import { loadState, resumeState } from './state';
-import { depth, drawnShapes } from './visible';
+import { depth, drawnShapes, jointQuats, qAngle, SNAP_RADPS } from './visible';
 
 /** Per tick to `untilS`, the deepest the supported carrier's right upper arm (drawn) goes into the defender's drawn trunk. */
 function armInDefender(sim: Simulation, untilS: number): { m: number; t: number; ticks: number } {
@@ -58,5 +61,45 @@ describe('contact motion M3 tracked defects (rule 5)', () => {
     expect(twin.m, said).toBeGreaterThan(0.1);
     expect(before.m, said).toBeGreaterThan(0.05);
     expect(before.m, said).toBeLessThan(0.1);
+  }, 60000);
+
+  // (b) The takedown flip, L4-F9-transferFailed (the validation profile allowing 1 %: the defender's takedown is flagged
+  // for its energy gain, as his loss of support was before). He goes down at 0.804 s (was 1.383 s) and the carrier at
+  // 0.875 s; afterwards, both ragdolls, the defender's left shoulder turns past the snap rate for two ticks in the air
+  // (61.3 and 65.9 rad/s at 1.450 and 1.467 s, the upper arm 0.53 m up), and his body gains 38.8 J in one solve at 1.271 s
+  // with no other player touching (in contact, no pinch). The only ragdoll snaps and the largest such L4 gain the flip
+  // adds. Captured at 1.200 s under WRAP_V2; twin, WRAP_V1 from there: the same ticks, the same solve, the same bodies to
+  // the last digit at 1.6 s. Reached (once both are ragdolls the commit reads nothing).
+  it('FALLING_SHOULDER_SNAP and PASSIVE_GAIN (L4-F9-transferFailed, from 1.200 s, both ragdolls): the defender\'s left shoulder turns past the snap rate at 1.450 and 1.467 s and he gains over 30 J in one solve at 1.271 s, under the takedown and without it, the bodies identical', async () => {
+    const cap = loadState('tests/data/state/L4-F9-transferFailed@72.json.gz');
+    const def = asCaptured(cap);
+    expect(def.wrap?.commit).toBeDefined();
+    const look = async (commit: boolean) => {
+      const sim = await resumeState(cap, commit ? { def } : { def: preWrapV2(def), variant: ['wrap'] });
+      const D = sim.byId.get('D')!;
+      const gains: SolveEnergy[] = [];
+      const meter = passiveEnergyMeter(sim, (e) => void (e.pid === 'D' && !e.touched && e.passiveJ > 30 && gains.push(e)));
+      const dt = sim.def.solver.outerTickS;
+      const snaps: string[] = [];
+      let prev: ReturnType<typeof jointQuats> | null = null;
+      while (!sim.done && sim.t < 1.6 - 1e-9) {
+        sim.stepTick();
+        if (!D.pose || D.representation !== 'ragdoll') continue;
+        const q = jointQuats(D.pose);
+        if (prev) for (const [j, x] of Object.entries(q)) if (qAngle(prev[j], x) / dt > SNAP_RADPS) snaps.push(`${sim.t.toFixed(4)} ${j}`);
+        prev = q;
+      }
+      meter.restore();
+      const bodies = sim.players.map((p) => SEGMENTS.map((s) => Object.values(p.rag!.bodies[s].translation()).join(',')).join(';')).join('|');
+      sim.dispose();
+      return { snaps, gains: gains.map((e) => e.t.toFixed(4)), bodies };
+    };
+    const on = await look(true);
+    const off = await look(false);
+    for (const [r, w] of [[on, 'takedown'], [off, 'twin']] as const) {
+      expect(r.snaps, w).toEqual(['1.4500 leftShoulder', '1.4667 leftShoulder']);
+      expect(r.gains, w).toEqual(['1.2708']);
+    }
+    expect(off.bodies).toBe(on.bodies);
   }, 60000);
 });
