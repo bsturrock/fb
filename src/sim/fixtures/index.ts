@@ -13,7 +13,7 @@ import { handoffContactFixtures } from './handoff-contact';
 import { FALL_REACT_V1, FALL_REACT_V2, hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
-import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7 } from '../controllers/wrap';
+import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8 } from '../controllers/wrap';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -158,6 +158,16 @@ function rideFlip(d: FixtureDef): FixtureDef {
 }
 
 /**
+ * Contact motion polish 1.4, the bound-legs flip: every fixture the ride-down flip gave WRAP_V7 runs WRAP_V8 (a carrier
+ * held securely whose legs cannot run, both holds below his pelvis or a foot stranded with no new plant while he still
+ * leans or moves, goes down after 0.2 s, forward if physics allows). WRAP_V6, the low strike, stays unregistered. The
+ * lab's `wrap=v7` is the view before it; tests/runs.ts `preWrapV8` gives a definition as before it.
+ */
+function bindFlip(d: FixtureDef): FixtureDef {
+  return d.wrap === WRAP_V7 ? { ...d, wrap: WRAP_V8 } : d;
+}
+
+/**
  * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
  * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
  * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
@@ -206,6 +216,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip));
   return registry.slice();
 }

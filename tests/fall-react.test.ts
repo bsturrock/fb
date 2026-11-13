@@ -10,15 +10,15 @@ import { ARM_G2, FALL_HOLD_V1, FALL_L4, FALL_REACT_V1, FALL_REACT_V2, withoutHip
 import { armSystemProfile, checkLimbContract, Simulation } from '../src/sim/simulation';
 import { hingeAngles, limbDirWorld } from '../src/sim/ragdoll';
 import { dot, qInvRot } from '../src/sim/vec';
-import { FIX, preWrapV4, preWrapV5, preWrapV7 } from './helpers';
+import { FIX, preWrapV4, preWrapV5, preWrapV7, preWrapV8 } from './helpers';
 
 const SIDES: ArmSide[] = ['left', 'right'];
 /**
- * A wrap fixture as before the strike flip (`preWrapV4` after the drive's `preWrapV5` and the ride-down's `preWrapV7`, WRAP_V3), where the M4 samples were taken: under the strike
+ * A wrap fixture as before the strike flip (`preWrapV4` after the drive's `preWrapV5` the ride-down's `preWrapV7` and the bound-legs fall's `preWrapV8`, WRAP_V3), where the M4 samples were taken: under the strike
  * (WRAP_V4) the front wrap's carrier goes down from the hit and the tackler later loses his own support, so neither the
  * takedown nor the tackler's held arms at it are in that run. Every other fixture as registered.
  */
-const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(FIX(id))));
+const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(FIX(id)))));
 const MEMORY = FALL_REACT_V1.arms.holdMemoryS;
 const deg = (r: number): number => (r * 180) / Math.PI;
 

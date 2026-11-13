@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -131,8 +131,8 @@ import {
   type Watch,
 } from './l3-pass';
 
-/** A fixture as before the strike flip (WRAP_V3): the ride-down flip's `preWrapV7`, the drive flip's `preWrapV5`, then the strike flip's `preWrapV4`. */
-const preStrikeFlip = (d: FixtureDef): FixtureDef => preWrapV4(preWrapV5(preWrapV7(d)));
+/** A fixture as before the strike flip (WRAP_V3): the bound-legs flip's `preWrapV8`, the ride-down flip's `preWrapV7`, the drive flip's `preWrapV5`, then the strike flip's `preWrapV4`. */
+const preStrikeFlip = (d: FixtureDef): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(d))));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The pass
@@ -891,11 +891,11 @@ describe('plan 08 pass 3: contact integration', () => {
   it('plan 13d known limits gone (plan 14), natural sample: the L3-F9 one-arm defenders and L3-F1-falling convert at their labelled conversion (taken before CARRIER_BRACE_V2)', async () => {
     // under V2 L3-F9-defenderRising's D loses support at 0.796 s, before its label: the sample is kept as it was taken.
     // (The drive flip: under WRAP_V5 these defenders take their carriers down before their labels; the sample is in the
-    // runs before it, `preWrapV5` after the ride-down's `preWrapV7`)
+    // runs before it, `preWrapV5` after the ride-down's `preWrapV7` and the bound-legs fall's `preWrapV8`)
     const fails: string[] = [];
     const rep = (m: string): void => void fails.push(m);
     for (const id of DEFENDER_13F_SAMPLE.fixtures as string[]) {
-      const def = preBraceV2(preWrapV5(preWrapV7(FIX(id))));
+      const def = preBraceV2(preWrapV5(preWrapV7(preWrapV8(FIX(id)))));
       await runWatched(def, [{ w: DEFENDER_13F_SAMPLE.watch(def, rep), fail: rep }], { transitionAudit: true });
     }
     expect(fails).toEqual([]);

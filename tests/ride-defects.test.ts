@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, preWrapV7 } from './runs';
+import { asCaptured, preWrapV7, preWrapV8 } from './runs';
 import { loadState, resumeState, type StateCapture } from './state';
 import { jointAngles } from './visible';
 
@@ -52,7 +52,7 @@ async function hipTwin(cap: StateCapture, untilS: number) {
   };
   return {
     on: await look(def),
-    off: await look(preWrapV7(def), ['wrap']),
+    off: await look(preWrapV7(preWrapV8(def)), ['wrap']),
     bound: await look({ ...def, jointRange: JOINT_RANGE_V3 }, ['jointRange', 'ragdoll']),
   };
 }
@@ -106,7 +106,7 @@ describe('contact motion polish 1.2, the ride-down: tracked defects (rule 5)', (
       return out;
     };
     const on = await look(def);
-    const off = await look(preWrapV7(def), ['wrap']);
+    const off = await look(preWrapV7(preWrapV8(def)), ['wrap']);
     const said = JSON.stringify({ on, off });
     for (const r of [on, off]) {
       expect(r.peak, said).toBeGreaterThan(60);

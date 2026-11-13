@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -143,9 +143,9 @@ const D = Math.PI / 180;
 // which a run without the profile has not, so the twin's wrap is the one before the hold, as the twin is before plan 12)
 // (contact motion M4, the fall flip: likewise FALL_REACT_V1, which drives the shoulders inside that envelope too; and the
 // strike, drive and ride-down flips, whose wraps are the hold's)
-const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(preWrapV4(preWrapV5(preWrapV7(preFallReact(d))))), id: `${d.id}-noRange`, jointRange: undefined });
-/** `d` as before the strike flip (`preWrapV4` after `preWrapV5` after `preWrapV7`), under its own id (the runs are cached by id). */
-const preStrike = (d: FixtureDef): FixtureDef => ({ ...preWrapV4(preWrapV5(preWrapV7(d))), id: `${d.id}~wrapV3` });
+const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(preWrapV4(preWrapV5(preWrapV7(preWrapV8(preFallReact(d)))))), id: `${d.id}-noRange`, jointRange: undefined });
+/** `d` as before the strike flip (`preWrapV4` after `preWrapV5` after `preWrapV7` after `preWrapV8`), under its own id (the runs are cached by id). */
+const preStrike = (d: FixtureDef): FixtureDef => ({ ...preWrapV4(preWrapV5(preWrapV7(preWrapV8(d)))), id: `${d.id}~wrapV3` });
 /** Ladder rung 7d: `d` pinned to LEG_GUARD_V1, the guard a natural sample was taken under (its own id while it registers V1, the runs being cached by id). */
 const pinV1 = (d: FixtureDef): FixtureDef => (!d.legGuard || d.legGuard.id === LEG_GUARD_V1.id ? d : { ...d, id: `${d.id}~v1`, legGuard: LEG_GUARD_V1 });
 const SIDES = ['left', 'right'] as const;
