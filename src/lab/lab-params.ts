@@ -40,7 +40,10 @@
 //   balclear=on|off    the referee's defensive influence clearing only once the runner has regained his balance (the
 //                      rule profile's `balancedClear`), or on supported control alone. Registered on the L3, L4 and HC
 //                      football rules: `balclear=off` is the view before. A fixture without football rules is run as it
-//                      is.
+//                      is;
+//   wrap=on|off        the wrapping defender's arms (WRAP_V1, contact motion M3): carried ahead of the chest, opened into
+//                      a cradle wider than the carrier ahead of contact, closed on the first valid touch; or the Gate 2
+//                      progression. A fixture without a wrapping defender (a `wrapAttempt` controller) is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -54,6 +57,7 @@ import {
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
+import { WRAP_V1 } from '../sim/controllers/wrap';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
@@ -70,6 +74,7 @@ const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
+const WRAP = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -96,7 +101,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`, `wrap`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -249,6 +254,21 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
       const r = v === 'off' ? withoutBalancedClear(out.rules) : withBalancedClear(out.rules);
       parts.push(`balanced clear ${v}${r === out.rules ? ' (registered)' : ''}`);
       if (r !== out.rules) out = { ...out, rules: r };
+    }
+  }
+  const wrap = params.get('wrap');
+  if (wrap !== null && wrap !== '') {
+    const v = wrap.toLowerCase();
+    if (!WRAP.includes(v)) parts.push(`wrap=${wrap} ignored`);
+    else if (!out.players.some((p) => p.controller.kind === 'wrapAttempt')) parts.push('wrap n/a (no wrapping defender)');
+    else {
+      const want = v === 'off' ? undefined : WRAP_V1;
+      const w = want && out.wrap?.id === want.id ? out.wrap : want;
+      parts.push(`wrap ${v}${w === out.wrap ? ' (registered)' : ''}`);
+      if (w !== out.wrap) {
+        out = { ...out, wrap: w };
+        if (!w) delete out.wrap;
+      }
     }
   }
   return { def: out, opts, label: parts.join(' · ') };

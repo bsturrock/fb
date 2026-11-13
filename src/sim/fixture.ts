@@ -9,7 +9,7 @@ import type { LocomotionProfile } from './locomotion';
 import type { RunClipProfile } from './run-clip';
 import type { ScriptSpec } from './controllers/base';
 import type { CoachedEntrySpec } from './controllers/coached';
-import type { WrapSpec } from './controllers/wrap';
+import type { WrapProfile, WrapSpec } from './controllers/wrap';
 import type { Vec3 } from './vec';
 
 export type ControllerSpec = ScriptSpec | CoachedEntrySpec | WrapSpec;
@@ -105,6 +105,11 @@ export interface FixtureDef {
    * the carrier's posture, stance and pose only.
    */
   brace?: CarrierBraceProfile;
+  /**
+   * Contact motion M3: how every wrapping defender (a `wrapAttempt` controller) opens and closes his arms
+   * (controllers/wrap.ts; absent: the Gate 2 progression). Requests only.
+   */
+  wrap?: WrapProfile;
   /** Plan 09: active fall response of accepted ragdolls (absent: passive). Needs a ragdoll profile with an envelope. */
   fallResponse?: FallResponseProfile;
   /** Clearly labelled diagnostic interventions (never contact-driven outcomes). */

@@ -594,7 +594,7 @@ export class Simulation {
       }
       const pose = { p: v3(setup.initial.x, y0, setup.initial.z), q: q0 };
       const proxy = this.physics.createProxy(setup.id, setup.body, def.stance, pose, S ?? undefined);
-      const controller = makeController(setup.controller, setup, motor);
+      const controller = makeController(setup.controller, setup, motor, this.def.wrap);
       const pl: PlayerRuntime = {
         id: setup.id,
         setup,

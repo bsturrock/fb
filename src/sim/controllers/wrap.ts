@@ -10,7 +10,47 @@ import type { Controller, ControllerContext } from './base';
 import { add, addScaled, clamp, cross, dot, horiz, len, norm, qRot, scale, sub, v3, UP, type Vec3 } from '../vec';
 
 export type ArmPlan = 'wrap' | 'palmFlank' | 'none';
-export type WrapArmPhase = 'ready' | 'spread' | 'arc' | 'close' | 'sustain' | 'recover' | 'palmReach' | 'palmClose' | 'palmPull' | 'idle';
+export type WrapArmPhase = 'ready' | 'open' | 'spread' | 'arc' | 'close' | 'sustain' | 'recover' | 'palmReach' | 'palmClose' | 'palmPull' | 'idle';
+
+/**
+ * Contact motion M3 (`FixtureDef.wrap`; absent: the Gate 2 progression unchanged): how a wrapping defender's arms open
+ * and close. Requests only, through the same arm system (every acquisition guard, the shared budget and the break rules
+ * stay). The hands ride in front of his chest until the carrier is about to arrive, then open into a cradle wider than
+ * the carrier's torso; a valid touch closes them at once.
+ */
+export interface WrapProfile {
+  id: string;
+  /** Carriage while the carrier is far: each palm `forwardM` ahead of the chest, `lateralM` off the centre line, at the band. */
+  ready: { forwardM: number; lateralM: number };
+  /**
+   * The cradle: each palm `forwardM` ahead of the chest and `marginM` outside the carrier's torso (its half width across
+   * the approach), at the band. Opens once the predicted contact (gap over the observed closing speed) is `leadS` away
+   * or the gap is below `gapM`; back to the carriage once both are more than doubled (a miss going by).
+   */
+  open: { leadS: number; gapM: number; forwardM: number; marginM: number };
+  /**
+   * A valid touch closes at once: the palm or forearm on the target at or past the torso's near corner (its azimuth from
+   * the near face, less `slackDeg`), or the bodies meeting with the hand there. null: the Gate 2 arc thresholds.
+   */
+  closeOnTouch: { slackDeg: number } | null;
+  /** The closing target: on the ring at `azDeg`, `depthM` inside the carrier's torso. null: the Gate 2 target. */
+  close: { azDeg: number; depthM: number } | null;
+}
+
+/**
+ * M3 step 1: hands carried 20 cm ahead of the chest; the cradle opened 0.25 s ahead of contact (or inside 0.5 m), the
+ * palms 35 cm ahead of the chest and 12 cm outside the carrier (elbows bent and out); closed on the first valid touch
+ * toward the far corner (150 deg, 5 cm in), which draws the forearms along the flanks so the clamps can form. A nearer
+ * closing target (the Gate 2 125 deg, 10 cm in) leaves the palm on the flank and the forearm off it (L3-F19-rear: no
+ * clamp at all).
+ */
+export const WRAP_V1: WrapProfile = {
+  id: 'wrap-open-v1',
+  ready: { forwardM: 0.2, lateralM: 0.2 },
+  open: { leadS: 0.25, gapM: 0.5, forwardM: 0.35, marginM: 0.12 },
+  closeOnTouch: { slackDeg: 0 },
+  close: { azDeg: 150, depthM: 0.05 },
+};
 
 export interface WrapSpec {
   kind: 'wrapAttempt';
@@ -120,12 +160,16 @@ export class WrapAttemptController implements Controller {
   private arm: Record<ArmSide, ArmCtl>;
   private near: Vec3 = v3(0, 0, -1);
   private lastFacing: Vec3;
+  /** Contact motion M3 (set only when the fixture has one: a state capture's layout stays the one it was taken with). */
+  declare private readonly wp?: WrapProfile;
 
   constructor(
     readonly spec: WrapSpec,
     readonly setup: PlayerSetup,
     readonly motor: MotorProfile,
+    profile?: WrapProfile,
   ) {
+    if (profile) this.wp = profile;
     this.p = { ...DEF, ...stripUndef(spec) } as Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance'>>;
     const mk = (s: ArmSide): ArmCtl => ({ phase: spec.plan[s] === 'none' ? 'idle' : spec.plan[s] === 'wrap' ? 'ready' : 'palmReach', since: 0, bestAz: -180, lastProgressT: 0, lastClampT: -1 });
     this.arm = { left: mk('left'), right: mk('right') };
@@ -237,6 +281,19 @@ export class WrapAttemptController implements Controller {
       return v3(R.x + d.x * r, band, R.z + d.z * r);
     };
     const debugArms: Record<string, unknown> = {};
+    // contact motion M3: the defender's chest and the carrier's torso across the approach (`near` points from the
+    // carrier to him: the carrier is on his forward line)
+    const W = this.wp;
+    const fwd = scale(near, -1);
+    const chest = W ? addScaled(me.position, fwd, this.support(ctx.bodies[ctx.self], me.rotation, fwd)) : me.position;
+    const halfW = W ? this.support(tBody, tb.rotation, side) : 0;
+    const cornerDeg = W ? (Math.atan2(halfW, this.support(tBody, tb.rotation, near)) * 180) / Math.PI : 0;
+    const closingMps = dot(sub(horiz(me.linearVelocity), vR), fwd);
+    const ttc = closingMps > 1e-3 ? gap / closingMps : Infinity;
+    const carriage = (forwardM: number, lateral: number, sgn: number): Vec3 => {
+      const p = addScaled(addScaled(chest, fwd, forwardM), side, sgn * lateral);
+      return v3(p.x, band, p.z);
+    };
     for (const s of SIDES) {
       const plan = this.spec.plan[s];
       const st = this.arm[s];
@@ -272,10 +329,23 @@ export class WrapAttemptController implements Controller {
         if (st.phase === 'palmPull' && !ob.gripId) go('palmReach');
         action = st.phase === 'palmReach' ? 'reach' : st.phase === 'palmClose' ? 'close' : 'pull';
       } else {
+        const touchClose = !!W?.closeOnTouch && az >= cornerDeg - W.closeOnTouch.slackDeg && (ob.touchingTarget === tid || (bodyContact && gap <= 0.02));
         switch (st.phase) {
           case 'ready':
+            if (W) {
+              target = carriage(W.ready.forwardM, W.ready.lateralM, sgn);
+              if (ttc <= W.open.leadS || gap < W.open.gapM) go('open');
+              break;
+            }
             target = addScaled(ring(0, sgn, 0.12), side, sgn * 0.18);
             if (gap < P.engageGapM) go('spread');
+            break;
+          case 'open':
+            // the cradle: wide of the carrier, ahead of the chest; the carrier's torso arrives between the hands
+            target = carriage(W!.open.forwardM, halfW + W!.open.marginM, sgn);
+            if (touchClose || az >= P.wrapAzDeg - 25) go('close');
+            else if (gap <= 0.02 && t - st.since > 0.1) go('arc');
+            else if (ttc > 2 * W!.open.leadS && gap > 2 * W!.open.gapM) go('ready');
             break;
           case 'spread':
             target = ring(P.spreadAzDeg, sgn, P.marginM + 0.06);
@@ -283,23 +353,23 @@ export class WrapAttemptController implements Controller {
             break;
           case 'arc':
             target = ring(Math.min(P.wrapAzDeg, Math.max(az, P.spreadAzDeg - 10) + P.arcLeadDeg), sgn, P.marginM);
-            if (az >= P.wrapAzDeg - 25 || ob.touchingTarget === tid && az >= 70) go('close');
+            if (az >= P.wrapAzDeg - 25 || ob.touchingTarget === tid && az >= 70 || touchClose) go('close');
             else if (t - st.lastProgressT > P.stuckS) go('recover');
             break;
           case 'close':
-            target = ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
+            target = W?.close ? ring(W.close.azDeg, sgn, -W.close.depthM) : ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
             action = 'close';
             if (ob.clampContactId || ob.gripId) go('sustain');
             else if (t - st.since > P.stuckS) go('arc');
             break;
           case 'sustain':
-            target = ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
+            target = W?.close ? ring(W.close.azDeg, sgn, -W.close.depthM) : ring(P.wrapAzDeg + 10, sgn, -P.closeDepthM);
             action = 'close';
             if (!ob.clampContactId && !ob.gripId && t - st.lastClampT > 0.15) go(az < 50 ? 'arc' : 'close');
             break;
           case 'recover':
             target = ring(20, sgn, 0.2);
-            if (t - st.since > P.recoverS) go('spread');
+            if (t - st.since > P.recoverS) go(W ? 'open' : 'spread');
             break;
           default:
             target = ob.palmContactWorld;
