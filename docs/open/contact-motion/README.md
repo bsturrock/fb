@@ -12,8 +12,11 @@ land before M2 (hard ragdoll joint stops, own-leg contact, physical supported le
 [prerequisites ladder](prerequisites-ladder.md)). M2's rough-first slice (the carrier's brace: decision, pose, on for
 L3, L4 and HC carriers) is done on the same branch ([handoff](../../handoff/contact-motion-m2.md)). Status
 (2026-11-13): M3's rough-first slice (the defender's cradle, close on touch, committed takedown and the hold carried
-through it, on for L3, L4 and HC tackling defenders) is done ([handoff](../../handoff/contact-motion-m3.md)); next,
-after the user's lab look at the tackle, is M4.
+through it, on for L3, L4 and HC tackling defenders) is done ([handoff](../../handoff/contact-motion-m3.md)). M4's
+rough-first slice (every falling L3 and HC player reacts: knees and hips flex, the ball stays tucked, a free arm
+reaches for the floor and, landed, gives under the body and lets go when unloaded; L4 keeps plan 09's response) is
+done ([handoff](../../handoff/contact-motion-m4.md)); next is the user's lab look at the whole tackle and fall, then
+polishing what looks worst.
 
 ## Direction (user-approved 2026-11-12; supersedes conflicting text below and in the milestone files)
 
