@@ -3,6 +3,7 @@
 // `SimOptions.debug`, passes them in each foot plan and pose input, and exports every switch that is on.
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { Vec3 } from './vec';
+import type { BraceDebug } from './brace';
 
 /** Foot plan switches (A/B probes and negative controls); each is off by default and changes behaviour when on. */
 export interface FootDebug {
@@ -141,6 +142,8 @@ export interface SimDebug {
   foot?: FootDebug;
   pose?: PoseDebug;
   conversion?: ConversionDebug;
+  /** Contact motion M2: fault switches of the carrier's brace decision (brace.ts). */
+  brace?: BraceDebug;
   /** Diagnostics only; not a switch, so not exported. */
   poseProbe?: PoseProbe;
   /** Diagnostics only (ladder 18): each born pair's separating force as it is applied. */
@@ -148,7 +151,7 @@ export interface SimDebug {
 }
 
 /** The switches that are on, for the export (null when every switch is off). */
-export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug } | null {
+export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug; brace?: BraceDebug } | null {
   const on = <T extends object>(o: T | undefined): T | undefined => {
     const e = Object.entries(o ?? {}).filter(([, v]) => v);
     return e.length ? (Object.fromEntries(e) as T) : undefined;
@@ -156,5 +159,6 @@ export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?:
   const foot = on(d?.foot);
   const pose = on(d?.pose);
   const conversion = on(d?.conversion);
-  return foot || pose || conversion ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}) } : null;
+  const brace = on(d?.brace);
+  return foot || pose || conversion || brace ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}), ...(brace ? { brace } : {}) } : null;
 }

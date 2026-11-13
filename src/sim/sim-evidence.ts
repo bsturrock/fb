@@ -96,6 +96,7 @@ export function recordTrace(host: EvidenceHost): void {
     }
     if (pl.rag?.envelope) players[pl.id].lim = round(Math.max(0, ...pl.rag.envelope.map((e) => e.maxOverDeg)), 2);
     if (pl.feet && !pl.rag) players[pl.id].ft = footTrace(pl.feet);
+    if (pl.brace) players[pl.id].br = { w: round(pl.brace.w, 4), th: pl.brace.threat, tc: pl.brace.tcS === null ? null : round(pl.brace.tcS, 4) };
     if (pl.loco && !pl.rag) players[pl.id].loco = { m: pl.loco.mode, why: pl.loco.reason, p: round(pl.loco.prepW, 3), c: round(pl.loco.contactW, 3), s: round(pl.loco.swing, 3), d: round(host.prepDrop(pl), 4) };
     if (pl.run && host.def.runClips && !pl.rag) {
       const st = pl.run;
@@ -200,6 +201,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       footwork: def.footwork?.id,
       locomotion: def.locomotion?.id,
       carry: def.carry?.id,
+      brace: def.brace?.id,
       fallResponse: def.fallResponse?.id,
       selfClearance: def.selfClearance?.id,
       jointRange: def.jointRange?.id,
@@ -219,6 +221,7 @@ export function fixtureExport(host: EvidenceHost): Record<string, unknown> {
       footwork: def.footwork,
       locomotion: def.locomotion,
       carry: def.carry,
+      brace: def.brace,
       fallResponse: def.fallResponse,
       selfClearance: def.selfClearance,
       jointRange: def.jointRange,

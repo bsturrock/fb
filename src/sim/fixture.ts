@@ -1,4 +1,5 @@
 // Fixture definition: starting conditions and requests, never post-contact trajectories.
+import type { CarrierBraceProfile } from './brace';
 import type { CarryProfile } from './carry';
 import type { ArmSide, PlayerId, Role, StanceRequest } from './contracts';
 import type { ArmProfile, ArmSetup, BalanceProfile, BodyProfile, FallResponseProfile, JointRangeProfile, LegGuardProfile, MotorProfile, RagdollProfile, RuleProfile, SelfClearanceProfile, SolverProfile, StanceProfile, SupportProfile } from './profiles';
@@ -99,6 +100,11 @@ export interface FixtureDef {
   locomotion?: LocomotionProfile;
   /** Plan 08a: the ball carrier's right-arm carry and football seat; absent: the plan 06 hold. */
   carry?: CarryProfile;
+  /**
+   * Contact motion M2: the ball carrier (the runner) braces for a hit he sees coming (brace.ts; absent: never). Read by
+   * the carrier's posture, stance and pose only.
+   */
+  brace?: CarrierBraceProfile;
   /** Plan 09: active fall response of accepted ragdolls (absent: passive). Needs a ragdoll profile with an envelope. */
   fallResponse?: FallResponseProfile;
   /** Clearly labelled diagnostic interventions (never contact-driven outcomes). */

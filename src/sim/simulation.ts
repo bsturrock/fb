@@ -8,7 +8,7 @@ import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
 import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, isSupportedLeg, PhysicsWorld, RAPIER, solvedImpulses, type MassReport, type ProxyBody } from './physics';
 import {
-  ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, sideSignX, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
+  ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, sideSignX, torsoHalf, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
 } from './profiles';
 import {
@@ -16,6 +16,7 @@ import {
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
 import { advanceGait, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type ProxyPoseInput } from './pose';
+import { newCarrierBrace, stepBrace, type BraceBody, type BraceSelf, type CarrierBraceState } from './brace';
 import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newLocoState, sampleIdle, type LocoState } from './locomotion';
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
@@ -144,6 +145,11 @@ export interface PlayerRuntime {
   loco: LocoState | null;
   /** Plan 06: run-clip playback (phase, weight) when the fixture has a run-clip profile; reset with the player. */
   run: RunPlayback | null;
+  /**
+   * Contact motion M2 (`FixtureDef.brace`): the ball carrier's brace decision and weight, set at the intent composition
+   * point each substep (advanceBrace). Absent for every other player and without the profile.
+   */
+  brace?: CarrierBraceState;
   /** Plan 06a: suspension support state (probe, height target, force, work); null under the legacy support. */
   sus: SuspensionRuntime | null;
   /** Bulk vertical velocity before the last solve (RH-F7 extremum conversions: [prevVy, lastVy] spans the last solve). */
@@ -262,6 +268,8 @@ export interface PlayerTraceRow {
   run?: { clip: string; u: number; w: number; wt: number; r: number; b: number; v: number; s?: number; res: Record<string, number> };
   /** Plan 08 locomotion mode m, why it changed, preparation and contact weights p c, arm swing s, height drop d (m). */
   loco?: { m: string; why: string; p: number; c: number; s: number; d: number };
+  /** Contact motion M2 (`FixtureDef.brace`, the carrier): brace weight w, threat th (null: none), its predicted contact tc (s). */
+  br?: { w: number; th: PlayerId | null; tc: number | null };
   /**
    * Plan 06a suspension support (last substep of the tick): probed root height h, target ht and its rate vt, stance
    * request req (before the range clamp), clip-derived running height run (null when no clip plays) and its bob scale s,
@@ -612,6 +620,7 @@ export class Simulation {
         poseMemory: {},
         feet: def.footwork && S && setup.body.kind === 'upperBodyCompound' ? newFootPlan(def.footwork, def.ragdoll ?? DEFAULT_POSE_PROFILE) : null,
         loco: def.locomotion ? newLocoState() : null,
+        ...(def.brace && setup.role === 'runner' ? { brace: newCarrierBrace() } : {}),
         handoff: null,
         ragStats: null,
         fall: null,
@@ -932,6 +941,8 @@ export class Simulation {
         pl.intent = { locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: norm(horiz(forwardOf(f.rotation())), v3(0, 0, 1)), effort: 1, ...keep } };
         decided = true;
       }
+      // contact motion M2: the carrier's brace from what he observes, for every carrier controller
+      if (pl.brace) this.advanceBrace(pl);
       // plan 10b: the ramp reads this substep's locomotion mode (decided from the last solve's contacts and motion, which
       // nothing changes before 4b), not the previous substep's
       if (this.suspension && !pl.rag && pl.sus) this.advanceLocoMode(pl, this.physics.dt);
@@ -1060,6 +1071,27 @@ export class Simulation {
     // an extremum lies in the last solve: the vertical velocity changed sign across it
     if (when === 'top') return pl.prevVy > 0 && vy <= 0;
     return pl.prevVy < 0 && vy >= 0;
+  }
+
+  /**
+   * Contact motion M2: the carrier's brace from his observed snapshot (his controller's delay): the opponents' centres of
+   * mass and velocities, his achieved facing, the snapshot's solved contacts. A ragdoll keeps its last state (nothing reads
+   * it); a falling proxy or a referee ending lets the brace go.
+   */
+  private advanceBrace(pl: PlayerRuntime): void {
+    const P = this.def.brace!;
+    const st = pl.brace!;
+    if (pl.rag) return;
+    const snap = this.observed(pl.controller.observationDelayS);
+    const body = (o: PlayerRuntime): BraceBody => {
+      const b = snap.bodies[o.id];
+      return { id: o.id, com: b.centerOfMassWorld, v: b.linearVelocity, halfWidthM: torsoHalf(o.body).x };
+    };
+    const self: BraceSelf = { ...body(pl), forward: forwardOf(snap.bodies[pl.id].rotation) };
+    const others = this.players.filter((o) => o !== pl);
+    const touching = new Set((snap.contacts[pl.id] ?? []).map((c) => c.other));
+    const ch = stepBrace(P, st, self, others.filter((o) => o.setup.role !== pl.setup.role).map(body), others.map(body), touching, pl.controlMode === 'supported' && !this.rules?.ending, this.physics.dt, this.opts.debug?.brace);
+    if (ch) this.emit('brace', pl.id, { ...ch, tcS: ch.tcS === null ? null : round(ch.tcS, 4), bearingDeg: ch.bearingDeg === null ? null : round(ch.bearingDeg, 2) });
   }
 
   /** Plan 08: the locomotion mode from this substep's observations (solved contact, retention, opponents, falling). */
