@@ -1,5 +1,22 @@
 # Milestone 3 — Open, close, retain, and go down together
 
+## Rough-first slice (2026-11-13; do this before anything else in this file)
+
+Per the direction in the [README](README.md): rough and visible end to end, judged in the lab, polish later.
+
+1. **Open and close, flag off then on.** On approach the defender's arms open wider than the carrier's torso, early
+   enough at the measured closing speed; a valid hand contact requests close at once instead of waiting for the arc
+   threshold. Every acquisition guard and the shared arm budget stay.
+2. **Committed finish, flag off then on.** With a secure hold (two retained arms to start) the defender lowers,
+   leans in and commits to going down with the carrier through the existing validated conversion path, with a policy
+   reason; if the held carrier falls first, the defender follows promptly. He never waits for a later trip, and he
+   does not stand over a fallen carrier. The carrier is not converted by this: his own balance decides.
+3. Each flip for L3, L4 and HC is its own step, judged on the visible bar and by the user's look; changed fall
+   outcomes are listed, not blocking. Misses, broken holds and evasions must stay escapable.
+
+Not in the slice: one-arm finishes, grip stiffness tuning, measured tolerances, carrying the carrier's brace into
+his fall (M2 step 4), landing on hands and knees (M4).
+
 ## Visual target
 
 On approach, elbows and hands open outside the carrier's silhouette, creating a visible cradle. As the torso enters it, forearms sweep inward promptly and hands settle against reachable sides/back of the torso. There is no long pause with hands hovering beside the target. Once securely connected, the defender lowers and commits their chest/hips into the takedown, knees yielding as both players descend. The defender stays attached through the first part of the fall rather than standing upright over the fallen carrier and tripping afterward.
