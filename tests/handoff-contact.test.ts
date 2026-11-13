@@ -20,7 +20,7 @@ import { stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
 import { POSE_GUARD_C6, withoutBornOverlap } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
-import { breathe, create, FIX, metArmStayed, pace, preBornSeparation, preWrap, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
+import { breathe, create, FIX, metArmStayed, pace, preBornSeparation, preFallReact, preWrap, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
 import { heldBornBar, limbAndTrunk, limbInBody, LIMB_DEEP_M, LIMB_HELD_M, LIMB_HELD_S } from './visible-bar';
 
 const HC = (): FixtureDef[] => allFixtures().filter((d) => d.id.startsWith('HC-'));
@@ -190,8 +190,8 @@ function supportCounters(sim: Simulation): { tick: () => void; result: () => { f
 /** The required cases checked over the first solved steps after acceptance (24 substeps). */
 /** Plan 13e: the substep after A's acceptance at which HC-F2-bothFall's A first touches B again, and A's part that does
  * (pinned below; 18 at 13e, 19 under the plan 13f leg guard, the right upper arm; 17 under the visible flip, the right
- * forearm; 18 with own-leg contact, ladder 9). */
-const HC_F2_IMPACT = { k: 18, part: 'rightForearm' } as const;
+ * forearm; 18 with own-leg contact, ladder 9; 17 under the contact motion M4 fall flip, the right forearm). */
+const HC_F2_IMPACT = { k: 17, part: 'rightForearm' } as const;
 const HC_F2_IMPACT_K = HC_F2_IMPACT.k;
 const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFeet', 'HC-F1-mirror', 'HC-F2-bothFall', 'HC-F3-mirror', 'L3-F4-twoArm', 'L3-F9-convert-contact', 'L3-F9-noProbe-contact', 'L3-F9-defenderRising', 'L3-F10-both', 'L3-F10-defender'];
 /**
@@ -203,7 +203,7 @@ const POST_SWITCH = ['RH-F6-simultaneous', 'RH-F5-playerBelow', 'L2-F14-oneArmFe
  * falling right upper arm meets B's head, a fall impact, not the switch. Plan 13f: the window is the substeps before
  * that contact, 18 (at 13e the contact substep, +18, was itself clean and the impact came on the next solve; under the
  * leg guard the contact comes at +19 and its own solve takes the impact; 16 under the visible flip, contact at +17; 17
- * with own-leg contact, contact at +18).
+ * with own-leg contact, contact at +18; 16 under the fall flip, contact at +17).
  */
 const POST_N: Record<string, number> = { ...Object.fromEntries(POST_SWITCH.map((id) => [id, 24])), 'HC-F2-lift1.4': 1, 'HC-F2-bothFall': HC_F2_IMPACT_K - 1 };
 /** Limb-snap bounds of the required cases (the HC variants: 0.3 m, or a known case's bound). */
@@ -363,7 +363,8 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
   it('ladder 18, the rule\'s twin on a run: HC-F1-at1.6 reversed under the met-arm flip, R converted with his left upper arm 8 cm in D\'s torso; left to part (V1, the born pairs held, not pushed) the arm stays over 5 cm in D for over 0.4 s and fails the rule; pushed apart (V2, the registered born overlap) it passes', async () => {
     const said: string[] = [];
     // (contact motion M3: a natural sample, before the wrap flip: under it R converts with that arm 4 cm in D)
-    const at16 = preWrap(FIX('HC-F1-at1.6'));
+    // (contact motion M4: and before the fall flip: under it V1 leaves the arm over 5 cm in D for 0.32 s only)
+    const at16 = preWrap(preFallReact(FIX('HC-F1-at1.6')));
     for (const [def, fails] of [[metArmStayed(preBornSeparation(at16)), true], [metArmStayed(at16), false]] as const) {
       const bar = heldBornBar();
       const sim = await runSim(await create(def, { reverseOrder: true, onSubstep: bar.substep }));
@@ -387,7 +388,9 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
     // here, so the window is re-measured when the fall changes. Re-measured at the visible flip (ladder 8l): its right
     // forearm meets B's head first, at +17, closing at 3.65 m/s (the hip stops, PGS and the knee stop each move it:
     // +15, +18 and +20 with one of them off). Re-measured at own-leg contact (ladder 9): the right forearm first at +18,
-    // closing at 3.66 m/s
+    // closing at 3.66 m/s. Re-measured at the contact motion M4 fall flip (A reacts as he falls): the right forearm first
+    // at +17; his right upper arm (+21) and core (+24) follow it onto B's head inside the 24 substeps observed, after the
+    // window has ended
     const sim = await create(FIX('HC-F2-bothFall'));
     const S = sim as unknown as { stepSubstep: (i: number) => void };
     const orig = S.stepSubstep.bind(sim);
@@ -418,7 +421,9 @@ describe('HC required natural-contact cases: audited articulated falls', () => {
     while (!sim.done) sim.stepTick();
     sim.dispose();
     const late = Object.entries(firstWith).filter(([, k]) => k > 1);
-    expect(late.map(([pair, k]) => `${pair} +${k}`)).toEqual([`${HC_F2_IMPACT.part}:right>head +${HC_F2_IMPACT_K}`]);
+    const first = Math.min(...late.map(([, k]) => k));
+    expect(late.filter(([, k]) => k === first).map(([pair, k]) => `${pair} +${k}`)).toEqual([`${HC_F2_IMPACT.part}:right>head +${HC_F2_IMPACT_K}`]);
+    for (const [pair] of late) expect(pair, pair).toMatch(/>head$/);
     expect(closing).toBeGreaterThan(2);
   });
 

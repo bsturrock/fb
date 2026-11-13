@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preBraceV2, preFlip, preHoldStill, preMetArmStay, preV3, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -360,7 +360,8 @@ describe('plan 08 transition audit', () => {
     // changes and the faulted crossing there stays under 1 cm. Ladder rung 7d: with the planted pose off
     // (`noPlantedPole`): under the swept leg guard (V2, V3) the knee-pole plant holds D's left leg there and the faulted
     // crossing takes no clearance variant (no change under V1, which has no planted pose)
-    const sim = await run({ ...FIX('L3-F7-loadRelease'), jointRange: undefined }, { transitionAudit: true, debug: { foot: { crossingBodyHeading: true }, pose: { noPlantedPole: true } } });
+    // (contact motion M4: and before the fall flip, whose response needs the joint-range profile's shoulder envelope)
+    const sim = await run({ ...preFallReact(FIX('L3-F7-loadRelease')), jointRange: undefined }, { transitionAudit: true, debug: { foot: { crossingBodyHeading: true }, pose: { noPlantedPole: true } } });
     const ds = sim.transitionDeltas;
     sim.dispose();
     const x = ds.filter((b) => b.deltaM > 0.01);
@@ -736,7 +737,8 @@ describe('plan 13e faults put back', () => {
     // where it was (kept to 1.99 s otherwise, and that later release crosses its boundary by 1.01 cm). Ladder rung 7d:
     // pinned to LEG_GUARD_V1; under the physical legs the defender's core no longer holds that foot off its home. Ladder
     // 8l: and to the profile before the visible flip (under it the step home comes at 1.4000 s, each of its parts moving it)
-    const sim = await run({ ...preHoldStill(preFlip(FIX('L3-F4-gripOwner'))), legGuard: LEG_GUARD_V1 });
+    // (contact motion M4: and before the fall flip, whose response needs the visible flip's hip stops)
+    const sim = await run({ ...preHoldStill(preFlip(preFallReact(FIX('L3-F4-gripOwner')))), legGuard: LEG_GUARD_V1 });
     const steps = sim.events.filter((e) => e.type === 'footSwing' && e.playerId === 'R' && (e.data as { side?: string }).side === 'left' && (e.data as { reason?: string }).reason === 'step');
     sim.dispose();
     expect(steps.map((e) => e.t.toFixed(4))).toContain('1.3875');

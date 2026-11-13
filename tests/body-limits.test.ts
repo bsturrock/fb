@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preBrace, preFlip, preMetArmStay, preWrap, preWrapV3, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preMetArmStay, preWrap, preWrapV3, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -141,7 +141,8 @@ const J = JOINT_RANGE_V1;
 const D = Math.PI / 180;
 // (contact motion M3, the hold flip: the takedown's hold drives the shoulder inside the joint-range profile's envelope,
 // which a run without the profile has not, so the twin's wrap is the one before the hold, as the twin is before plan 12)
-const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(d), id: `${d.id}-noRange`, jointRange: undefined });
+// (contact motion M4, the fall flip: likewise FALL_REACT_V1, which drives the shoulders inside that envelope too)
+const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(preFallReact(d)), id: `${d.id}-noRange`, jointRange: undefined });
 /** Ladder rung 7d: `d` pinned to LEG_GUARD_V1, the guard a natural sample was taken under (its own id while it registers V1, the runs being cached by id). */
 const pinV1 = (d: FixtureDef): FixtureDef => (!d.legGuard || d.legGuard.id === LEG_GUARD_V1.id ? d : { ...d, id: `${d.id}~v1`, legGuard: LEG_GUARD_V1 });
 const SIDES = ['left', 'right'] as const;
@@ -420,7 +421,9 @@ describe('arm self-clearance: ragdoll forearms collide with their own trunk', ()
   const RAGDOLL = ['HC-F1-low', 'L3-F3-recover', 'L3-F16-handoff'];
   // contact motion M1: the twin also takes plan 12's joint-range-v1: with the twist kept in range L3-F3-recover's runner
   // converts with its forearm clear of the trunk, so without self-clearance alone it no longer crosses (0 cm)
-  const withoutV1 = (def: FixtureDef): FixtureDef => ({ ...without(def), id: `${def.id}-noSelf-v1`, jointRange: JOINT_RANGE_V1 });
+  // contact motion M4: and before the fall flip (`preFallReact`): the reacting carrier's arms keep L3-F16-handoff's forearm
+  // off his trunk on their own (2.7 cm without the profile), so the twin falls limp as the runs did before it
+  const withoutV1 = (def: FixtureDef): FixtureDef => ({ ...without(preFallReact(def)), id: `${def.id}-noSelf-v1`, jointRange: JOINT_RANGE_V1 });
   measureDepth(RAGDOLL.flatMap((id) => [FIX(id), withoutV1(FIX(id)), pulled(FIX(id)), pulled(without(FIX(id)))]));
 
   it('ragdoll forearms stay out of the trunk; without the profile they pass through, on every ragdoll fixture listed', async () => {
@@ -584,7 +587,8 @@ describe('plan 12 joint range: shoulders', () => {
     // physical legs the twin's arm stays 3.6 deg inside the cone). Ladder 8l: and to the profile before the visible flip
     // (under it the twin's arm stays inside the cone, 0.01 deg past at most; with any one of its hip stops, PGS and knee
     // stop off, 47-64 deg past)
-    const pile = pinV1(preFlip(FIX('L3-F10-bothMirror')));
+    // (contact motion M4: and before the fall flip, whose response needs the visible flip's hip stops)
+    const pile = pinV1(preFlip(preFallReact(FIX('L3-F10-bothMirror'))));
     const on = await probe(pile);
     const off = await probe(twin(pile));
     expect(off.worst.ragdoll.ex).toBeGreaterThan(5);
@@ -712,7 +716,8 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
         // the fault twins' thigh in a shoe converts, held out of the solve; ladder 18e: and before the met-arm flip, under
         // which the run differs from its first met arm and the guard this case is for rejects D: the closing shoe is a
         // sample of the run before it. Registered (LEG_GUARD_V3), D converts as before the flip)
-        const def = pinV1(preFlip(preBornOverlap(preMetArmStay(FIX(id)))));
+        // (contact motion M4: and before the fall flip, whose response needs the visible flip's hip stops)
+        const def = pinV1(preFlip(preBornOverlap(preMetArmStay(preFallReact(FIX(id))))));
         const on = await handoffOf(def, o);
         expect(on.outcome, id).toBe('accepted');
         expect(on.newM, id).toBeLessThan(0.012);

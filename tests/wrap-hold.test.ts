@@ -8,13 +8,15 @@ import type { ArmSide } from '../src/sim/contracts';
 import type { FixtureDef } from '../src/sim/fixture';
 import { ENVELOPE_L4, FALL_HOLD_V1, type FallResponseProfile } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
-import { FIX } from './helpers';
+import { FIX, preFallReact } from './helpers';
 
 const SIDES: ArmSide[] = ['left', 'right'];
 const SUB = 1 / 240;
 const MEMORY = FALL_HOLD_V1.arms.holdMemoryS;
 
-const withWrap = (d: FixtureDef, w: WrapProfile, o: Partial<FixtureDef> = {}): FixtureDef => ({ ...d, wrap: w, ...o });
+// (contact motion M4: as before the fall flip, `preFallReact`, the defender's hold FALL_HOLD_V1, the takedown's own; under the
+// flip's FALL_REACT_V1 the same hold, tests/fall-react.test.ts)
+const withWrap = (d: FixtureDef, w: WrapProfile, o: Partial<FixtureDef> = {}): FixtureDef => ({ ...preFallReact(d), wrap: w, ...o });
 const holdWith = (h: Partial<FallResponseProfile>): WrapProfile => ({ ...WRAP_V3, commit: { ...WRAP_V3.commit!, hold: { ...FALL_HOLD_V1, ...h, id: 'fall-hold-twin' } } });
 
 interface Run {

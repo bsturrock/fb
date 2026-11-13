@@ -52,6 +52,7 @@
 //                      accepted conversion (the knees and hips flex, the free arm braces, the carry arm keeps the ball,
 //                      a holding arm keeps its hold); off: limp (a takedown's hold only under WRAP_V3, the M3 view). An
 //                      L4 fixture (its own response, or its motor-off twin) or one without a ragdoll is run as it is.
+//                      A view without the hip stops (hips=off) is limp: the response bounds the hips by them.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -295,6 +296,14 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
         if (!want) delete out.fallResponse;
       }
     }
+  }
+  // contact motion M4: FALL_REACT_V1 bounds an L3 or HC hip by its hard stops alone (the ragdoll has no hip envelope), so a
+  // view without them (hips=off, the view before the visible flip) is limp, as every fall was then
+  if (out.fallResponse?.id === FALL_REACT_V1.id && out.ragdoll && !out.ragdoll.hipStops && !out.ragdoll.envelope?.hip) {
+    parts.push('fall off (no hip stops)');
+    const { fallResponse, ...rest } = out;
+    void fallResponse;
+    out = rest;
   }
   return { def: out, opts, label: parts.join(' · ') };
 }

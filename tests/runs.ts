@@ -9,7 +9,7 @@ import { RAPIER } from '../src/sim/physics';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3 } from '../src/sim/controllers/wrap';
 import {
-  HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
+  FALL_REACT_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
   withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, withoutBalancedClear, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
@@ -100,6 +100,17 @@ export const preWrap = (d: FixtureDef): FixtureDef => {
  */
 export const preWrapV2 = (d: FixtureDef): FixtureDef => (d.wrap?.id === WRAP_V2.id ? { ...d, wrap: WRAP_V1 } : d);
 /**
+ * Contact motion M4 (the fall flip): `d` as before it, without FALL_REACT_V1 where it has it (the L3 and HC falls limp,
+ * a takedown's hold under WRAP_V3 alone): what every state capture and natural sample taken before it ran under.
+ * Composes with the other `pre*` helpers.
+ */
+export const preFallReact = (d: FixtureDef): FixtureDef => {
+  if (d.fallResponse?.id !== FALL_REACT_V1.id) return d;
+  const { fallResponse, ...rest } = d;
+  void fallResponse;
+  return rest;
+};
+/**
  * Contact motion M3 (the hold flip): `d` as before it, its wrap profile WRAP_V2 where it has V3 (the takedown without the
  * hold carried through it): what every state capture and natural sample taken before it ran under. Composes with the
  * other `pre*` helpers.
@@ -159,11 +170,11 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
 
 /**
  * The flips registered on L3, L4 and HC since the first state capture, the latest first: each gives a definition as
- * before its flip (M3 the hold, M3 the takedown, M3 the wrap, M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
+ * before its flip (M4 the fall, M3 the hold, M3 the takedown, M3 the wrap, M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
  * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
  * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before

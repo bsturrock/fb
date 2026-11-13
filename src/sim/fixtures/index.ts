@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
+import { FALL_REACT_V1, hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
 import { WRAP_V3 } from '../controllers/wrap';
@@ -127,6 +127,18 @@ function wrapFlip(d: FixtureDef): FixtureDef {
   return VISIBLE_FLIP.test(d.id) && tackles ? { ...d, wrap: WRAP_V3 } : d;
 }
 
+/**
+ * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
+ * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
+ * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
+ * braces when it lapses. L4 keeps its own responses and motor-off twins; G, L1, L2 and RH keep their definitions. The
+ * lab's `fall=off` is the view before it; tests/runs.ts `preFallReact` gives a definition as before it.
+ */
+const FALL_FLIP = /^(L3|HC)-/;
+function fallFlip(d: FixtureDef): FixtureDef {
+  return d.ragdoll && FALL_FLIP.test(d.id) ? { ...d, fallResponse: FALL_REACT_V1 } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -155,6 +167,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip));
   return registry.slice();
 }

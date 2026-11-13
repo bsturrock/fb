@@ -6,12 +6,14 @@ import { describe, expect, it } from 'vitest';
 import { WRAP_V1, WRAP_V2, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import { Simulation } from '../src/sim/simulation';
-import { FIX } from './helpers';
+import { FIX, preFallReact } from './helpers';
 
 const C = WRAP_V2.commit!;
 const SUB = 1 / 240;
 
-const withWrap = (d: FixtureDef, w: WrapProfile, o: Partial<FixtureDef> = {}): FixtureDef => ({ ...d, wrap: w, ...o });
+// (contact motion M4: as before the fall flip, `preFallReact`: the takedown's rules are the wrap's own; under the flip the
+// reacting carrier converted 0.6 s in takes the WRAP_V1 twin's defender down with him inside half a second)
+const withWrap = (d: FixtureDef, w: WrapProfile, o: Partial<FixtureDef> = {}): FixtureDef => ({ ...preFallReact(d), wrap: w, ...o });
 const commitWith = (c: Partial<typeof C>): WrapProfile => ({ ...WRAP_V2, commit: { ...C, ...c } });
 /** `d` with the defender's arms off from `s` (released: the hold he had breaks). */
 const armsOffAt = (d: FixtureDef, s: number): FixtureDef => ({

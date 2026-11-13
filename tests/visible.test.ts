@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { labRun } from '../src/lab/lab-params';
-import { preFlip } from './runs';
+import { preFallReact, preFlip } from './runs';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { modelBody } from '../src/sim/model/profiles';
 import type { PhysicalPose } from '../src/sim/pose';
@@ -155,7 +155,8 @@ describe('visible quality: shoulder rotation in the anatomical measure (ladder 1
 describe('visible quality: the screenshot run (L3-F9-convert-free, legs=v3, forward)', () => {
   it('reads the visible audit\'s values: red\'s left hip rotation -94 at 0.90 s, blue\'s right thigh folded forward past 180 (unwrapped 221) at 1.13-1.35 s, then 123 deg behind at 1.45 s, each past the impossible margin; read in world axes instead (fault twin) they read otherwise', async () => {
     // (the audited run: the profile before the visible flip, which removes these poses)
-    const base = preFlip(allFixtures().find((d) => d.id === 'L3-F9-convert-free')!);
+    // (and before the contact motion M4 fall flip, whose response needs the visible flip's hip stops)
+    const base = preFlip(preFallReact(allFixtures().find((d) => d.id === 'L3-F9-convert-free')!));
     const { def, opts } = labRun(base, new URLSearchParams('legs=v3'));
     const sim = await Simulation.create(def, opts);
     type World = ReturnType<typeof hipAngles>;

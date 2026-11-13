@@ -10,7 +10,7 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, preWrap, runSim } from './helpers';
+import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, preWrap, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -85,8 +85,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   // ladder rung 8h: pgs=<n> and knees=off|140|145 with hips, composed in that order: the assessments' variant (8i)
   it('hips=on&pgs=4&knees=140 runs the fixture as the 8i variant (L3-F9-convert-free: the 8d box with the approach zone, PGS +4, knee stop 140), its profile to the id, named in the label; on L4 hips=on takes the same box (rung 8k), hips=l4 the 8i backstop; without them the run differs', async () => {
     const id = 'L3-F9-convert-free';
-    // (the profile before the visible flip, which registers this variant with the deferred conversion)
-    const d = preFlip(FIX(id));
+    // (the profile before the visible flip, which registers this variant with the deferred conversion; and before the
+    // contact motion M4 fall flip, whose response needs the hip stops)
+    const d = preFlip(preFallReact(FIX(id)));
     const r = d.ragdoll!;
     const variant = withKneeStop(withAdditionalPgsIterations(withHipStops(r, hipStopsFor(r)), 4), 140);
     expect(variant.id).toBe(`${r.id}+hip-stops-v2+pgs4+knee140`);
@@ -108,8 +109,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   }, 120000);
 
   it('knees=off, pgs=0 and hips=off undo their parameter to the profile it had, id and all; a value already registered, a fixture without a ragdoll profile and unknown values are named in the label and change nothing', () => {
-    // (the profile before the visible flip)
-    const d = preFlip(FIX('L3-F9-convert-free'));
+    // (the profile before the visible flip, and before the fall flip, whose response needs the hip stops)
+    const d = preFlip(preFallReact(FIX('L3-F9-convert-free')));
     const on = labRun(d, new URLSearchParams('hips=on&pgs=4&knees=145'));
     const back = labRun(on.def, new URLSearchParams('hips=off&pgs=0&knees=off'));
     expect(back.label).toBe('hip stops off · pgs +0 · knee stop off');
@@ -135,8 +136,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     // the ladder 10 flip: under V3 the variant alone converts D, its posed legs held out of R; and before the ladder 17b
     // flip, under which the variant alone converts D too, its thigh in R's palm held out of the solve; and before the
     // 18e met-arm flip, under which the variant alone converts D as well; and before the contact motion M2 brace flip;
-    // and before the M3 wrap flip, under which the variant alone converts D too)
-    const d = preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preWrap(FIX(id)))))));
+    // and before the M3 wrap flip, under which the variant alone converts D too; and before the M4 fall flip, under which
+    // the variant alone converts D as well, the carrier's reaction moving the fall)
+    const d = preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preWrap(preFallReact(FIX(id))))))));
     const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
     expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
     const want = withConversionRetry(flip8i(d).ragdoll!);
@@ -165,25 +167,29 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   it('on a fixture registered with the visible, own-leg and leg-guard flips, legs=v1&hips=off&pgs=0&knees=off&retry=off&selfleg=off is the view before them: the definition before the flips, ids and all, and its run (an L3, L4 and HC fixture the flips change); without legs=v1 the view keeps the registered leg guard and is another run; the flips\' own values are the registered run', async () => {
     for (const id of ['L3-F1-phase2', 'L4-F12-base', 'HC-F5-strictTransfer']) {
       const d = FIX(id);
+      // (contact motion M4: on L3 and HC the view before them is also before the fall flip, whose response needs the hip
+      // stops: limp, named last)
+      const fall = id.startsWith('L4') ? '' : ' · fall off (no hip stops)';
+      const limp = id.startsWith('L4') ? (x: FixtureDef): FixtureDef => x : preFallReact;
       const before = labRun(d, new URLSearchParams(`fixture=${id}&legs=v1&hips=off&pgs=0&knees=off&retry=off&selfleg=off`));
-      expect(before.label, id).toBe('legs V1 · hip stops off · pgs +0 · knee stop off · conversion retry off · own-leg contact off');
-      expect(before.def, id).toEqual(preV3(preFlip(d)));
+      expect(before.label, id).toBe(`legs V1 · hip stops off · pgs +0 · knee stop off · conversion retry off · own-leg contact off${fall}`);
+      expect(before.def, id).toEqual(limp(preV3(preFlip(d))));
       expect(before.def.legGuard, id).toBe(LEG_GUARD_V1);
       expect(before.def.ragdoll!.id, id).toBe(preFlip(d).ragdoll!.id);
       const run = await summaryOf(before.def, before.opts);
-      expect(run, id).toBe(await summaryOf(preV3(preFlip(d)), {}));
+      expect(run, id).toBe(await summaryOf(limp(preV3(preFlip(d))), {}));
       // the twin: the registered run, which the flips change
       expect(await summaryOf(d, {}), id).not.toBe(run);
       // without legs=v1 (the 9d before-view) the leg guard stays the registered V3: not the view before the flips
       const noLegs = labRun(d, new URLSearchParams(`fixture=${id}&hips=off&pgs=0&knees=off&retry=off&selfleg=off`));
       expect(noLegs.def.legGuard, id).toBe(LEG_GUARD_V3);
-      expect(noLegs.def, id).toEqual(preFlip(d));
+      expect(noLegs.def, id).toEqual(limp(preFlip(d)));
       const after = labRun(d, new URLSearchParams(`fixture=${id}&legs=v3&hips=on&pgs=4&knees=140&retry=on&selfleg=on`));
       expect(after.def, id).toBe(d);
       expect(after.label, id).toBe('legs V3 (registered) · hip stops on (registered) · pgs +4 (registered) · knee stop 140 (registered) · conversion retry on (registered) · own-leg contact on (registered)');
     }
     // the leg guard alone moves the before-view's run (HC-F5-strictTransfer: D's thigh met by R's under V3)
-    const hc = FIX('HC-F5-strictTransfer');
+    const hc = preFallReact(FIX('HC-F5-strictTransfer'));
     expect(await summaryOf(preFlip(hc), {})).not.toBe(await summaryOf(preV3(preFlip(hc)), {}));
   }, 120000);
 
@@ -212,10 +218,12 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(back.def).toEqual(d);
     expect(await summaryOf(back.def, back.opts)).toBe(run);
     expect(labRun(d, new URLSearchParams('selfleg=on'))).toEqual({ def: d, opts: {}, label: 'own-leg contact on (registered)' });
-    // composed after the others: on the view before both flips, its id is named last
-    const pre = labRun(preFlip(d), new URLSearchParams('selfleg=on&hips=off&pgs=0&knees=off&retry=off'));
+    // composed after the others: on the view before both flips (and before the contact motion M4 fall flip, whose
+    // response needs the hip stops), its id is named last
+    const p0 = preFlip(preFallReact(d));
+    const pre = labRun(p0, new URLSearchParams('selfleg=on&hips=off&pgs=0&knees=off&retry=off'));
     expect(pre.label).toBe('hip stops off (registered) · pgs +0 (registered) · knee stop off (registered) · conversion retry off (registered) · own-leg contact on');
-    expect(pre.def).toEqual({ ...preFlip(d), ragdoll: withSelfLegs(preFlip(d).ragdoll!) });
+    expect(pre.def).toEqual({ ...p0, ragdoll: withSelfLegs(p0.ragdoll!) });
     // a fixture without a ragdoll profile and an unknown value change nothing
     const g = allFixtures().find((x) => !x.ragdoll)!;
     expect(labRun(g, new URLSearchParams('selfleg=on'))).toEqual({ def: g, opts: {}, label: 'selfleg on n/a (no ragdoll profile)' });
@@ -373,7 +381,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   // the contact motion M2 brace flip and the M3 wrap flip (under which the run before the born overlap does not defer D)
   it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling before the 17b and 18e flips: D converts at his first try, where that run defers him), which is the registered fixture before the born separation; born=off takes it off again and on a fixture without it is that run; on the registered fixture it keeps V2; a fixture without a ragdoll and unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
-    const reg = preMetArmStay(preBrace(preWrap(FIX(id))));
+    // (contact motion M4: and before the fall flip, under which the run before the born overlap does not defer D either)
+    const reg = preMetArmStay(preBrace(preWrap(preFallReact(FIX(id)))));
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const d = preBornOverlap(reg);
     expect(d.ragdoll!.bornOverlap).toBeUndefined();
@@ -411,7 +420,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   // M2 brace flip and the M3 wrap flip (under which no born pair of D's is released by 1.3 s)
   it('bornsep=on runs the fixture with its born pairs pushed apart (BORN_OVERLAP_V2 in V1\'s place, its id renamed in place: L3-F1-falling before the 18c and 18e flips, where D\'s palm pair is released with the separation\'s work, which V1\'s release has no part of), which is the registered fixture before the met-arm flip; bornsep=off takes it back; born=on keeps V2; with born=off, or a fixture without a born overlap, it is n/a; unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
-    const registered = preMetArmStay(preBrace(preWrap(FIX(id))));
+    // (contact motion M4: and before the fall flip, under which no born pair of D's is released by 1.3 s either)
+    const registered = preMetArmStay(preBrace(preWrap(preFallReact(FIX(id)))));
     expect(registered.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const reg = preBornSeparation(registered);
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
@@ -523,11 +533,11 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion M4: fall=on|off registers or removes FALL_REACT_V1 on an L3 or HC fixture (tests/fall-react.test.ts has
   // the twins that it changes the run)
-  it('fall=on runs an L3 or HC fixture with FALL_REACT_V1 (every falling player reacts), fall=off without it (limp); an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
+  it('fall=on runs an L3 or HC fixture with FALL_REACT_V1 (every falling player reacts), fall=off without it (limp); without the hip stops (hips=off) it is off; an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
     const { fallResponse, ...off } = FIX('L3-F19-front');
     void fallResponse;
     const on: FixtureDef = { ...off, fallResponse: FALL_REACT_V1 };
-    expect(FIX('L3-F19-front').fallResponse).toBeUndefined();
+    expect(FIX('L3-F19-front').fallResponse).toBe(FALL_REACT_V1);
     expect(labRun(off, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on' });
     expect(labRun(on, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on (registered)' });
     const back = labRun(on, new URLSearchParams('fall=OFF'));
@@ -545,5 +555,10 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((d) => d.id.startsWith('G'))!;
     expect(labRun(g, new URLSearchParams('fall=on'))).toEqual({ def: g, opts: {}, label: 'fall n/a (not an L3 or HC fixture)' });
     expect(labRun(off, new URLSearchParams('fall=maybe'))).toEqual({ def: off, opts: {}, label: 'fall=maybe ignored' });
+    // the response bounds an L3 or HC hip by its hard stops: a view without them is limp, named last
+    const noStops = labRun(on, new URLSearchParams('hips=off&fall=on'));
+    expect(noStops.label).toBe('hip stops off · fall on (registered) · fall off (no hip stops)');
+    expect('fallResponse' in noStops.def).toBe(false);
+    expect(noStops.def.ragdoll!.hipStops).toBeUndefined();
   });
 });
