@@ -568,7 +568,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion polish 1.4: wrap=v6 runs the low strike (no fixture registers it; tests/wrap-low.test.ts has the twins
   // that it changes the run)
-  it('wrap=v6 runs the wrapping defender with WRAP_V6 (the low strike on WRAP_V5), which no fixture registers; wrap=on takes it back to WRAP_V7; a fixture without a wrapping defender changes nothing', () => {
+  it('wrap=v6 runs the wrapping defender with WRAP_V6 (the low strike, on WRAP_V8 since the bound-legs fall), which no fixture registers; wrap=on takes it back to WRAP_V7; a fixture without a wrapping defender changes nothing', () => {
     const on = FIX('L3-F19-front');
     expect(on.wrap).toBe(WRAP_V7);
     const v6: FixtureDef = { ...on, wrap: WRAP_V6 };

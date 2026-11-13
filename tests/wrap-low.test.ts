@@ -2,7 +2,9 @@
 // `WrapProfile.low`, src/sim/controllers/wrap.ts). No fixture uses it: the cases are the front and rear wraps run with
 // the profile, the front one constructed with a longer approach (the registered one meets the carrier 0.43 s in, inside
 // the 0.85 s the hinge's rate bounds need to fold 75 deg). Each case has its twin: WRAP_V5 (or V6 with V5's onset, or V6
-// without the walk) fails it for the reason it checks.
+// without the walk) fails it for the reason it checks. The cases measure the low strike as it was built, on WRAP_V5
+// (`WRAP_V6_PRE`): WRAP_V6 now rides on WRAP_V8, whose bound-legs fall takes the rear-wrap carrier down before the near
+// palm gets round him (tests/wrap-bind.test.ts).
 import { describe, expect, it } from 'vitest';
 import { WRAP_V5, WRAP_V6, shapeAt, walkAzDeg, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
@@ -10,6 +12,17 @@ import { Simulation } from '../src/sim/simulation';
 import { cross, deg, dot, horiz, len, norm, sub, vc, UP, type Vec3 } from '../src/sim/vec';
 import { sideSignX } from '../src/sim/profiles';
 import { FIX } from './helpers';
+
+/**
+ * WRAP_V6 as built (commit f14f7f7 to 0e6c637): the low strike and the low arms on WRAP_V5, its hinge bounded at 75 deg. The
+ * same values as WRAP_V6's own strike and low arms, without the ride-down and the bound-legs fall it now has.
+ */
+const WRAP_V6_PRE: WrapProfile = {
+  ...WRAP_V5,
+  id: 'wrap-low-v6',
+  strike: { ...WRAP_V6.strike!, hinge: { ...WRAP_V6.strike!.hinge, maxDeg: 75 } },
+  low: WRAP_V6.low!,
+};
 
 const SIDES = ['left', 'right'] as const;
 
@@ -87,9 +100,9 @@ async function lowRun(def: FixtureDef, untilS: number): Promise<LowRun> {
   return out;
 }
 
-describe('contact motion polish 1.4: the low strike (WRAP_V6)', () => {
+describe('contact motion polish 1.4: the low strike (WRAP_V6_PRE)', () => {
   it('arrives folded at his lowest stance: on a front wrap with time to fold (constructed: the defender 4 m further back), at the first touch the hinge asks over 70 deg and the stance target is at its floor, the shoulders under 0.95 m (the carrier\'s hip). The twins: WRAP_V5 asks its 40 deg cap and stands higher; V6 with V5\'s onset (0.6 s, 0.8 m) is still folding at the touch', async () => {
-    const on = await lowRun(low('L3-F19-front', WRAP_V6, 4), 1.3);
+    const on = await lowRun(low('L3-F19-front', WRAP_V6_PRE, 4), 1.3);
     expect(on.contact, JSON.stringify(on.contact)).not.toBeNull();
     expect(on.contact!.hingeDeg, JSON.stringify(on.contact)).toBeGreaterThan(70);
     expect(on.contact!.targetM, JSON.stringify(on.contact)).toBeLessThanOrEqual(on.floorM + 0.005);
@@ -98,7 +111,7 @@ describe('contact motion polish 1.4: the low strike (WRAP_V6)', () => {
     expect(v5.contact!.hingeDeg, JSON.stringify(v5.contact)).toBeLessThanOrEqual(40 + 1e-6);
     expect(v5.contact!.targetM, JSON.stringify(v5.contact)).toBeGreaterThan(v5.floorM + 0.02);
     expect(v5.contact!.shoulderY, JSON.stringify(v5.contact)).toBeGreaterThan(1.1);
-    const late = await lowRun(low('L3-F19-front', { ...WRAP_V6, strike: { ...WRAP_V6.strike!, leadS: WRAP_V5.strike!.leadS, gapM: WRAP_V5.strike!.gapM } }, 4), 1.3);
+    const late = await lowRun(low('L3-F19-front', { ...WRAP_V6_PRE, strike: { ...WRAP_V6_PRE.strike!, leadS: WRAP_V5.strike!.leadS, gapM: WRAP_V5.strike!.gapM } }, 4), 1.3);
     expect(late.contact!.hingeDeg, JSON.stringify(late.contact)).toBeLessThan(65);
   }, 60_000);
 
@@ -106,14 +119,14 @@ describe('contact motion polish 1.4: the low strike (WRAP_V6)', () => {
     const tBody = FIX('L3-F19-rear').players.find((p) => p.id === 'R')!.body;
     const C = tBody.compound;
     // the shape at the band: below the pelvis box, the capsule alone; at V5's band, the torso box
-    expect(WRAP_V6.low!.bandYLocal).toBeLessThan(C.pelvis.center.y - C.pelvis.halfExtents.y);
+    expect(WRAP_V6_PRE.low!.bandYLocal).toBeLessThan(C.pelvis.center.y - C.pelvis.halfExtents.y);
     const q = { x: 0, y: 0, z: 0, w: 1 };
-    expect(shapeAt(tBody, q, { x: 1, y: 0, z: 0 }, WRAP_V6.low!.bandYLocal)).toBeCloseTo(C.support.radius, 9);
+    expect(shapeAt(tBody, q, { x: 1, y: 0, z: 0 }, WRAP_V6_PRE.low!.bandYLocal)).toBeCloseTo(C.support.radius, 9);
     expect(shapeAt(tBody, q, { x: 1, y: 0, z: 0 }, 0.22)).toBeCloseTo(C.torso.halfExtents.x, 9);
-    const want = C.support.radius + WRAP_V6.low!.walk!.extraM;
-    const on = await lowRun(low('L3-F19-rear', WRAP_V6), 0.8);
+    const want = C.support.radius + WRAP_V6_PRE.low!.walk!.extraM;
+    const on = await lowRun(low('L3-F19-rear', WRAP_V6_PRE), 0.8);
     expect(on.openY.length).toBeGreaterThan(0);
-    expect(Math.max(...on.openY.map((y) => Math.abs(y - WRAP_V6.low!.bandYLocal)))).toBeLessThan(0.01);
+    expect(Math.max(...on.openY.map((y) => Math.abs(y - WRAP_V6_PRE.low!.bandYLocal)))).toBeLessThan(0.01);
     expect(on.closeR.length).toBeGreaterThan(0);
     expect(Math.max(...on.closeR.map((r) => Math.abs(r - want))), JSON.stringify(on.closeR.slice(0, 4))).toBeLessThan(0.02);
     const v5 = await lowRun(low('L3-F19-rear', WRAP_V5), 0.8);
@@ -122,7 +135,7 @@ describe('contact motion polish 1.4: the low strike (WRAP_V6)', () => {
   }, 60_000);
 
   it('walks the closing palm round the carrier\'s shape (constructed: palms round from his near corner, on and off the support capsule at the band): the target leads the palm by up to 30 deg toward his back and is reached on a straight line that stays outside the capsule. The twin: the old target (150 deg, 5 cm inside) is behind the surface from the palm', () => {
-    const W = WRAP_V6.low!.walk!;
+    const W = WRAP_V6_PRE.low!.walk!;
     const rc = FIX('L3-F19-rear').players.find((p) => p.id === 'R')!.body.compound.support.radius;
     const at = (azDeg: number, r: number): Vec3 => ({ x: r * Math.sin((azDeg * Math.PI) / 180), y: 0, z: r * Math.cos((azDeg * Math.PI) / 180) });
     const corner = 45;
@@ -135,14 +148,14 @@ describe('contact motion polish 1.4: the low strike (WRAP_V6)', () => {
         expect(t - Math.max(a, corner)).toBeLessThanOrEqual(W.leadDeg + 1e-9);
         expect(t).toBeLessThanOrEqual(W.endDeg);
         expect(segMin(p, at(t, rc + W.extraM)), `palm ${a} r ${r}`).toBeGreaterThanOrEqual(rc);
-        if (a >= 100 && a <= 125 && segMin(p, at(WRAP_V6.close!.azDeg, rc - WRAP_V6.close!.depthM)) < rc) oldBehind++;
+        if (a >= 100 && a <= 125 && segMin(p, at(WRAP_V6_PRE.close!.azDeg, rc - WRAP_V6_PRE.close!.depthM)) < rc) oldBehind++;
       }
     // the twin: from the palm where it stopped (110-125 deg), the old target is reached only through the capsule
     expect(oldBehind).toBe(4 * 6);
   });
 
   it('on a rear wrap with time to fold (constructed: the defender 2 m further back) every closing target leads its palm round the capsule and is reached on a straight line outside it, and the near palm gets further round him than the old target let it. The twin: V6 without the walk aims behind the surface and its near palm stops short', async () => {
-    const on = await lowRun(low('L3-F19-rear', WRAP_V6, 2), 2.4);
+    const on = await lowRun(low('L3-F19-rear', WRAP_V6_PRE, 2), 2.4);
     const rc = FIX('L3-F19-rear').players.find((p) => p.id === 'R')!.body.compound.support.radius;
     // (on the capsule: the palm round from his near face's corner; the target decided at the tick's start)
     const round = on.closing.filter((c) => c.palmAz > 60 && c.palmR < rc + 0.08);
@@ -151,7 +164,7 @@ describe('contact motion polish 1.4: the low strike (WRAP_V6)', () => {
       expect(c.targetAz - c.palmAz, JSON.stringify(c)).toBeGreaterThan(-3);
       expect(c.segMinR, JSON.stringify(c)).toBeGreaterThan(rc - 0.01);
     }
-    const old = await lowRun(low('L3-F19-rear', { ...WRAP_V6, low: { bandYLocal: WRAP_V6.low!.bandYLocal } }, 2), 2.4);
+    const old = await lowRun(low('L3-F19-rear', { ...WRAP_V6_PRE, low: { bandYLocal: WRAP_V6_PRE.low!.bandYLocal } }, 2), 2.4);
     const oldRound = old.closing.filter((c) => c.palmAz > 60 && c.palmR < rc + 0.08);
     expect(oldRound.filter((c) => c.segMinR < rc - 0.03).length).toBeGreaterThan(oldRound.length / 2);
     expect(Math.max(...on.closing.map((c) => c.palmAz))).toBeGreaterThan(Math.max(...old.closing.map((c) => c.palmAz)) + 5);

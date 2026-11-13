@@ -1,5 +1,5 @@
 // Full-state capture of a registered fixture at a tick boundary (tests/state.ts), for a test to resume from:
-//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v7]
+//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8]
 // Runs the fixture with the fixture export's defaults (ledgers off, as `npm run fixtures`; `--ledgers` keeps them, for a
 // test that reads them, at about twice the size) to the end of tick <tick>, writes the
 // capture (default tests/data/state/<fixture>@<tick>.json.gz) and checks it: the run resumed from the file reproduces
@@ -17,9 +17,11 @@
 // JOINT_RANGE_V4 } }`. `--brace=v1`: the fixture as before the M2 lean flip (tests/runs.ts `preBraceV2`, its carrier's brace
 // CARRIER_BRACE_V1), suffix `bracev1`; a test resumes it with `{ def: asCaptured(cap) }`. `--wrap=v7`: the fixture's
 // defender under WRAP_V7 (polish 1.2, the ride-down; registered on L3, L4 and HC since its flip), suffix `wrapv7`; a test resumes
-// it with `{ def: asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V7 })) }`. See tests/README.md.
+// it with `{ def: asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V7 })) }`; `--wrap=v8` (WRAP_V8, the bound-legs fall) and
+// `--wrap=v6` (WRAP_V6, the low strike on it), which no fixture registers, the same way (suffix `wrapv8`, `wrapv6`). See
+// tests/README.md.
 import { statSync } from 'node:fs';
-import { WRAP_V7 } from '../src/sim/controllers/wrap';
+import { WRAP_V6, WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
 import { HIP_STOPS_V1, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 import { SIM_DEFAULTS, Simulation } from '../src/sim/simulation';
 import { FIX, flip8i, preBraceV2 } from '../tests/runs';
@@ -35,11 +37,13 @@ if (jointsArg !== undefined && !(jointsArg in JOINTS)) throw new Error(`--joints
 const braceArg = process.argv.find((a) => a.startsWith('--brace='))?.slice('--brace='.length);
 if (braceArg !== undefined && braceArg !== 'v1') throw new Error(`--brace=${braceArg}: expected v1`);
 const wrapArg = process.argv.find((a) => a.startsWith('--wrap='))?.slice('--wrap='.length);
-if (wrapArg !== undefined && wrapArg !== 'v7') throw new Error(`--wrap=${wrapArg}: expected v7`);
+const WRAPS = { v6: WRAP_V6, v7: WRAP_V7, v8: WRAP_V8 } as const;
+if (wrapArg !== undefined && !(wrapArg in WRAPS)) throw new Error(`--wrap=${wrapArg}: expected v6, v7 or v8`);
+const wrap = wrapArg ? WRAPS[wrapArg as keyof typeof WRAPS] : undefined;
 const args = process.argv.slice(2).filter((a) => !FLAGS.includes(a) && !a.startsWith('--hips=') && !a.startsWith('--joints=') && !a.startsWith('--brace=') && !a.startsWith('--wrap='));
 const [id, tickArg, outArg] = args;
 const tick = Number(tickArg);
-if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v7]');
+if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8]');
 SIM_DEFAULTS.ledgers = process.argv.includes('--ledgers');
 const v3 = process.argv.includes('--v3');
 const audit = process.argv.includes('--audit');
@@ -50,12 +54,12 @@ const joints = jointsArg ? JOINTS[jointsArg as keyof typeof JOINTS] : undefined;
 if (joints && !FIX(id).jointRange) throw new Error(`${id} has no joint range profile for --joints`);
 const fix = braceArg ? preBraceV2(FIX(id)) : FIX(id);
 if (braceArg && fix.brace?.id === FIX(id).brace?.id) throw new Error(`${id} has no CARRIER_BRACE_V2 for --brace=v1`);
-const base = { ...(v3 ? { ...fix, legGuard: LEG_GUARD_V3 } : fix), ...(joints ? { jointRange: joints } : {}), ...(wrapArg ? { wrap: WRAP_V7 } : {}) };
+const base = { ...(v3 ? { ...fix, legGuard: LEG_GUARD_V3 } : fix), ...(joints ? { jointRange: joints } : {}), ...(wrap ? { wrap } : {}) };
 const hips = hipsArg ? HIPS[hipsArg as keyof typeof HIPS] : undefined;
 if ((hips || flip) && !base.ragdoll) throw new Error(`${id} has no ragdoll profile for --hips or --flip8i`);
 if (hips && flip) throw new Error('--hips and --flip8i: one ragdoll variant at a time');
 const def = hips ? { ...base, ragdoll: withHipStops(base.ragdoll!, hips) } : flip ? flip8i(base) : base;
-const suffix = [wrapArg && 'wrapv7', braceArg && 'bracev1', v3 && 'v3', joints && `jr${jointsArg}`, hips && `hips${hipsArg}`, flip && 'flip8i', rev && 'rev', audit && 'audit'].filter(Boolean).join('-');
+const suffix = [wrapArg && `wrap${wrapArg}`, braceArg && 'bracev1', v3 && 'v3', joints && `jr${jointsArg}`, hips && `hips${hipsArg}`, flip && 'flip8i', rev && 'rev', audit && 'audit'].filter(Boolean).join('-');
 const out = outArg ?? `tests/data/state/${id}${suffix ? `~${suffix}` : ''}@${tick}.json.gz`;
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace, ...(audit ? { audit: s.transitionDeltas } : {}) });
 
@@ -70,5 +74,5 @@ const back = await resumeState(loadState(out), { def });
 back.runToEnd();
 const same = exportOf(back) === whole;
 back.dispose();
-console.log(`${out}: ${id}${v3 ? ' (V3)' : ''}${joints ? ` (${joints.id})` : ''}${hips ? ` (${hips.id})` : ''}${flip ? ' (8i flip)' : ''}${braceArg ? ' (brace V1)' : ''}${wrapArg ? ' (WRAP_V7)' : ''}${rev ? ' (reversed)' : ''}${audit ? ' (audit)' : ''} tick ${tick} (t ${(tick * def.solver.outerTickS).toFixed(3)} s), ${(statSync(out).size / 1024).toFixed(0)} KB; resumed run ${same ? 'identical' : 'DIFFERS'} to the end`);
+console.log(`${out}: ${id}${v3 ? ' (V3)' : ''}${joints ? ` (${joints.id})` : ''}${hips ? ` (${hips.id})` : ''}${flip ? ' (8i flip)' : ''}${braceArg ? ' (brace V1)' : ''}${wrapArg ? ` (WRAP_${wrapArg.toUpperCase()})` : ''}${rev ? ' (reversed)' : ''}${audit ? ' (audit)' : ''} tick ${tick} (t ${(tick * def.solver.outerTickS).toFixed(3)} s), ${(statSync(out).size / 1024).toFixed(0)} KB; resumed run ${same ? 'identical' : 'DIFFERS'} to the end`);
 if (!same) process.exit(1);

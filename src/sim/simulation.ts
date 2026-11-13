@@ -20,6 +20,7 @@ import { newCarrierBrace, stepBrace, type BraceBody, type BraceSelf, type Carrie
 import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newLocoState, sampleIdle, type LocoState } from './locomotion';
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
+import { heldOff } from './foot-compose';
 import {
   applyEnvelope, applyHipApproaches, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, releaseSelfLegs, SEGMENTS, SELF_ARM_KEY, SELF_LEG_KEY, SELF_TRUNK_KEY, selfLegNear, selfLegPair,
   selfLegPairs, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll, type RagdollCollider, type TransferAudit,
@@ -162,6 +163,12 @@ export interface PlayerRuntime {
    * Absent otherwise.
    */
   rideLooseT?: number;
+  /**
+   * Contact motion polish 1.4, the bound-legs fall (`WrapBind`): each clause's clock on a supported carrier (since when
+   * its condition has held, and when it last held), and the holder of the last secure hold. Absent without the profile,
+   * and for every player until the first evaluation of him under it.
+   */
+  bind?: { a: { since: number | null; lastT: number }; b: { since: number | null; lastT: number }; holder: PlayerId | null };
   /** Plan 06a: suspension support state (probe, height target, force, work); null under the legacy support. */
   sus: SuspensionRuntime | null;
   /** Bulk vertical velocity before the last solve (RH-F7 extremum conversions: [prevVy, lastVy] spans the last solve). */
@@ -1019,6 +1026,14 @@ export class Simulation {
       }
       // contact motion M2: the carrier's brace from what he observes, for every carrier controller
       if (this.def.brace && pl.setup.role === 'runner') this.advanceBrace(pl);
+      // contact motion polish 1.4, the bound-legs fall: while a clause's clock runs he leans toward his travel (the
+      // posture cap bounds it; never after the referee's ending, which takes posture lean away)
+      if (pl.bind && this.def.wrap?.bind && !this.rules?.ending && pl.controlMode === 'supported' && !this.opts.debug?.wrap?.bindNoLean && (pl.bind.a.since !== null || pl.bind.b.since !== null)) {
+        const b = this.coreBody(pl);
+        const hv = horiz(vc(b.linvel()));
+        const dir = len(hv) >= this.def.wrap.bind.pushMps ? norm(hv) : norm(horiz(forwardOf(b.rotation())), v3(0, 0, 1));
+        pl.intent = { ...pl.intent, posture: { ...pl.intent.posture, leanDirWorld: dir, leanRad: rad(this.def.wrap.bind.leanDeg) } };
+      }
       // contact motion polish 1.1: a striking tackler's hip hinge from his posture request
       if (this.def.wrap?.strike && (pl.hinge || pl.intent.posture?.hinge)) this.advanceHinge(pl);
       // plan 10b: the ramp reads this substep's locomotion mode (decided from the last solve's contacts and motion, which
@@ -1372,6 +1387,66 @@ export class Simulation {
     return !(['left', 'right'] as ArmSide[]).some((s) => this.arms?.clampOf(pl.id, s)?.targetId === tid || grips.some((g) => g.ownerId === pl.id && g.arm === s && g.targetId === tid));
   }
 
+  /**
+   * Contact motion polish 1.4, the bound-legs fall (`WrapBind`): runs the clauses' clocks of a supported carrier and
+   * returns the clause that has bound him (held for `confirmS`), with his holder and the clock's age; null otherwise. The
+   * holder is a supported player whose focus he is, with a secure hold on him (the drive's test, from the arms' and the
+   * contacts' observation of this solve).
+   */
+  private boundLegs(pl: PlayerRuntime, thetaRad: number): { clause: 'a' | 'b'; holder: PlayerId; heldS: number } | null {
+    const W = this.def.wrap!;
+    const BD = W.bind!;
+    const dbg = this.opts.debug?.wrap;
+    const grace = W.commit?.graceS ?? 0;
+    const st = (pl.bind ??= { a: { since: null, lastT: -Infinity }, b: { since: null, lastT: -Infinity }, holder: null });
+    const sides: ArmSide[] = ['left', 'right'];
+    let low = false;
+    let holder: PlayerRuntime | undefined;
+    for (const h of this.players) {
+      if (h === pl || h.controlMode !== 'supported' || h.rag || this.def.focus?.[h.id] !== pl.id || !this.arms) continue;
+      const ob = this.arms.obs(h.id) ?? {};
+      // the drive's secure test (the fault: any contact with him, an arm touching him held or not or the bodies meeting)
+      const on = sides.filter((s) => (dbg?.bindAnyTouch ? true : !!(ob[s]?.clampContactId || ob[s]?.gripId)) && ob[s]?.touchingTarget === pl.id);
+      const body = (this.contactObs[h.id] ?? []).some((c) => c.other === pl.id);
+      if (!(on.length === 2 || (W.drive?.oneArmBody && on.length === 1 && body) || (dbg?.bindAnyTouch && (on.length > 0 || body)))) continue;
+      holder = h;
+      // (a) both holds at or below his pelvis: each hold's point (the clamp's, else the palm's) under his pelvis box's centre
+      if (on.length === 2 && pl.body.kind !== 'legacyCapsule') {
+        const cb = this.coreBody(pl);
+        const root = vc(cb.translation());
+        const q = { ...cb.rotation() };
+        low = on.every((s) => {
+          const c = this.arms!.clampOf(h.id, s);
+          const p = c && c.targetId === pl.id ? c.pointWorld : ob[s]!.palmContactWorld;
+          return qInvRot(q, sub(p, root)).y <= pl.body.compound.pelvis.center.y + 1e-9;
+        });
+      }
+      break;
+    }
+    st.holder = holder ? holder.id : st.holder;
+    // (b) his legs cannot step: a foot stranded (held off its target by the leg guard, or past its planned time), no plant
+    // since the clock began, and still pushed or dragged
+    let blocked = false;
+    if (holder && pl.feet) {
+      const F = pl.feet;
+      const stranded = sides.some((s) => F.feet[s].mode === 'swing' && (!!dbg?.bindAnySwing || heldOff(F, F.feet[s]) || (F.feet[s].source === 'step' && F.feet[s].elapsedS > F.feet[s].durS)));
+      const pushed = thetaRad >= rad(BD.pushLeanDeg) - 1e-12 || len(horiz(vc(this.coreBody(pl).linvel()))) >= BD.pushMps - 1e-12;
+      blocked = stranded && pushed;
+      if (st.b.since !== null && sides.some((s) => F.feet[s].mode === 'planted' && F.feet[s].plantedAtS > st.b.since! + 1e-9)) st.b.since = null;
+    }
+    const run = (c: { since: number | null; lastT: number }, on: boolean): number | null => {
+      if (on) {
+        c.lastT = this.t;
+        c.since ??= this.t;
+      } else if (c.since !== null && this.t - c.lastT > grace + 1e-9) c.since = null;
+      return c.since !== null && this.t - c.lastT <= grace + 1e-9 && this.t - c.since >= BD.confirmS - 1e-9 ? this.t - c.since : null;
+    };
+    const a = run(st.a, !!holder && low);
+    const b = run(st.b, blocked);
+    if (a === null && b === null) return null;
+    return { clause: a !== null ? 'a' : 'b', holder: st.holder!, heldS: round(a ?? b!, 5) };
+  }
+
   /** Measure actual lean from the solved state and run the loss criterion (supported players only). */
   private evaluateBalance(measureOnly = false): void {
     const B = this.balanceProfile;
@@ -1393,7 +1468,9 @@ export class Simulation {
       // contact motion polish 1.2, the ride-down: the carrier he holds is his support (a lean against him is no loss); the
       // counter runs on, so with the hold or the contact gone the envelope's verdict stands at once
       if (v.loss && v.reason === 'recoveryEnvelope' && this.rideSupported(pl, m.theta, m.bodyUp)) continue;
-      if (v.loss) {
+      // contact motion polish 1.4, the bound-legs fall: a carrier whose legs a holder has bound cannot support himself
+      const bound = this.def.wrap?.bind ? this.boundLegs(pl, m.theta) : null;
+      if (v.loss || bound) {
         bal.pendingLoss = true;
         bal.lossT = this.t;
         const ids: string[] = [];
@@ -1404,7 +1481,8 @@ export class Simulation {
         }
         for (const o of this.contactObs[pl.id] ?? []) ids.push(`contact:${pl.id}>${o.other}:${o.ownClass}>${o.otherClass}`);
         this.emit('lossOfSupport', pl.id, {
-          reason: v.reason,
+          reason: v.loss ? v.reason : 'boundLegs',
+          ...(!v.loss && bound ? { bind: bound } : {}),
           leanAngleRad: round(m.theta, 5),
           leanDeg: round(deg(m.theta), 3),
           outwardLeanRateRadPerS: round(m.outwardRate, 5),
