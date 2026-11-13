@@ -52,6 +52,16 @@ in real life."
       still convert high because no foot plants after the impact (item 2's leg guard cause); he never lands
       squarely on the carrier; a posed hip turn 71 degrees past range on the reversed drag mirror just before his
       conversion; a possible 0.16 s pause posed over the downed carrier.
+      **On for L3, L4 and HC** (`a5a9ece`; lab `&wrap=v5` is before). Who falls: the drag-mirror tackler now goes
+      down in both orders and its carrier 0.3 s earlier; the tackler goes ragdoll 0.14 to 0.49 s later; four
+      diagnostic fixtures reach their labelled switch instead of the takedown; `HC-F5-strictTransfer` flags the
+      tackler's switch too (66 to 72 J against its 0 J allowance; the play was already an invalid transfer).
+      Shoulder height at his conversion: rear 0.77 m, drag mirror 0.81 to 0.84, front 0.88 to 0.91; still 1.13 to
+      1.28 m in the fast falls (side wrap, `L3-F1` phases, low runner, HC-F3, `L4-F10`). Tracked, reached not
+      caused (`tests/ride-defects.test.ts`): `CLEARANCE_KNEE_TURNS_BACK` on `L3-F1-phase1` (posed knee turned
+      back 0.15 s) and the reversed drag mirror (0.05 s); `OVERHEAD_TWIST_UNHELD` on `L3-F1-phase5` reversed. Not
+      twinned: carrier shoulder twists on `L3-F1-phase5` forward, `L3-F19-front`, `HC-F3-phase0` reversed; an 82 J
+      one-solve gain on the `L3-F1-phase1` carrier's forearm (looks like `CARRY_PINCH`).
       **User intent 2026-11-13 (standing): the ball carrier always biases forward and tries to fall forward** for
       the extra yards. An intention, not an outcome: a hard hit from the front can still put him on his back. It
       applies to the brace, to a held carrier on his feet (never settling leaning back), to the bound-legs fall
@@ -114,6 +124,13 @@ in real life."
    for 0.6 s (39 degrees past range) and two snaps appear. Next: a destination that is never inside another
    body, a held-off leg that lands under the hip, a planted foot released before the hip passes its range.
    Evidence: main checkout `.scratch/p7/gallop-fix/summary.txt`.
+   That next step was tried and parked (main checkout `.scratch/p7/parked/`, patch and README): four rules, each
+   helping one scene and worsening another. What it found: the over-extended hip is the stranded swing leg
+   trailing, not a stance foot; the stranding starts at the switch from clip to contact, where a foot 0.48 m up
+   gets 0.58 s to come down and so aims under the hip predicted 3 m ahead, past the man in its path. One narrow
+   mechanism remains to try (a high foot whose hip path meets a body comes down first, in a normal step time,
+   with the hip path stopped at the body; twin on a capture of `L3-F3-collision` at 0.60 s). Decided: no more
+   footwork rounds before the bound-legs fall, which covers the carrier's case the way the user asked.
 3. **Brace amount.** A bit more forward lean and crouch. `L3-F2-miss` shows no brace at all: check whether that is
    intended (never a real threat) or a decision bug.
 4. **Falls.** The reaching arm palm down with give, some body control ("falls like a bag of wooden blocks"); the
