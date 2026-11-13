@@ -44,6 +44,19 @@ export interface CarrierBracePose {
   leanDeg: number;
   /** Below this speed (m/s) the lean turns from the travel toward the body's facing (continuously, from 0 at rest). */
   travelMps: number;
+  /**
+   * While braced, the rate (deg/s) the desired up turns toward the posture request; absent: the balance profile's
+   * (`postureRateRadPerS`, 30 deg/s, which takes 0.4 s to form the 12 deg lean).
+   */
+  leanRateDegPerS?: number;
+  /**
+   * While braced, the posture gravity hold for the lean the body has reached while it is short of the desired lean
+   * (`reached`: about the body's own lean axis, m g L sin of its lean); absent, or once the body leans as far as the
+   * desired up or further: the desired lean's, as for every other player. The desired lean's hold already holds the full
+   * lean while the body is still near upright, so it cancels most of the position term and the lean forms with a time
+   * constant of about kd / (kp - m g L) = 1 s.
+   */
+  leanHold?: 'reached';
   /** The carry arm's high-and-tight key (chest frame, anatomical left +X, as the carry's keys). */
   carryKey: CarryKey;
   /** Share of the clip's carry-arm swing the braced carry keeps. */
@@ -93,6 +106,17 @@ export const CARRIER_BRACE_V1: CarrierBraceProfile = {
     holdBallRadiusM: 0.085,
     coverPole: norm(v3(0.61, -0.78, 0.16)),
   },
+};
+
+/**
+ * Contact motion M2 follow-up: CARRIER_BRACE_V1 with the lean formed in time for the hit: the desired up turns at
+ * 60 deg/s while braced (the 12 deg in 0.2 s, the weight's ramp), and the hold is the reached lean's while short of it.
+ * On a head-on hit (L3-F3-collision) the chest is 10-11 deg forward at contact, where V1 reaches 4.
+ */
+export const CARRIER_BRACE_V2: CarrierBraceProfile = {
+  ...CARRIER_BRACE_V1,
+  id: 'carrier-brace-v2',
+  pose: { ...CARRIER_BRACE_V1.pose, leanRateDegPerS: 60, leanHold: 'reached' },
 };
 
 /** Per-carrier brace state (pose and request consumers read `w`). */

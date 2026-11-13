@@ -52,10 +52,11 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
       ls = leanScale(bal.theta, B);
       // posture request: desired up, rate-limited toward the requested lean (<= max posture lean); contact motion M2: the
       // carrier's brace leans him toward his travel by its weight
-      const pr = host.def.brace && pl.brace && pl.brace.w > 0 ? bracePosture(host.def.brace.pose, pl.brace.w, pl.intent.posture, b.linearVelocity, forwardOf(b.rotation)) : pl.intent.posture;
+      const braced = host.def.brace && pl.brace && pl.brace.w > 0 ? host.def.brace.pose : null;
+      const pr = braced ? bracePosture(braced, pl.brace!.w, pl.intent.posture, b.linearVelocity, forwardOf(b.rotation)) : pl.intent.posture;
       const target = pr ? desiredUpFrom(clamp(pr.leanRad, 0, B.maxPostureLeanRad), pr.leanDirWorld) : { ...UP };
       const ang = Math.acos(clamp(dot(bal.desiredUp, target), -1, 1));
-      const maxStep = B.postureRateRadPerS * host.physics.dt;
+      const maxStep = (braced?.leanRateDegPerS !== undefined ? (braced.leanRateDegPerS * Math.PI) / 180 : B.postureRateRadPerS) * host.physics.dt;
       if (ang <= maxStep || ang < 1e-9) bal.desiredUp = target;
       else {
         const ax = cross(bal.desiredUp, target);
@@ -88,8 +89,13 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
             : Sb?.balanceCeiling === 'appliedLoad'
               ? Math.min(B.maxBalanceTorqueNm, pl.sus.appliedN * pl.body.supportRadiusM)
               : availableBalanceTorque(B, b.massKg, g, pl.body.supportRadiusM);
-        const hold = pl.sus ? postureGravityHold(bal.desiredUp, pl.sus.pivotN / Math.abs(g), g, pl.sus.leverM) : postureGravityHold(bal.desiredUp, b.massKg, g, bal.leverM);
-        const bt = computeBalanceTorque(upOf(b.rotation), bal.desiredUp, b.angularVelocity, B, balCap, hold);
+        // contact motion M2 follow-up: a braced carrier short of his desired lean holds the lean he has reached
+        // (CarrierBracePose.leanHold)
+        const up = upOf(b.rotation);
+        const reached = host.def.brace?.pose.leanHold === 'reached' && pl.brace && pl.brace.w > 0 && up.y > bal.desiredUp.y;
+        const holdUp = reached ? up : bal.desiredUp;
+        const hold = pl.sus ? postureGravityHold(holdUp, pl.sus.pivotN / Math.abs(g), g, pl.sus.leverM) : postureGravityHold(holdUp, b.massKg, g, bal.leverM);
+        const bt = computeBalanceTorque(up, bal.desiredUp, b.angularVelocity, B, balCap, hold, holdUp);
         balReq = bt.requested;
         balCapped = bt.capped;
         balSat = bt.saturated;

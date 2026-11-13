@@ -79,6 +79,8 @@ export function computeBalanceTorque(
   b: BalanceProfile,
   cap: number,
   gravityHoldNm = 0,
+  /** The up the hold is taken for (its axis); the desired up when absent. */
+  holdUp: Vec3 = desiredUp,
 ): BalanceTorque {
   const thetaError = Math.acos(clamp(dot(bodyUp, desiredUp), -1, 1));
   const c = cross(bodyUp, desiredUp);
@@ -86,7 +88,7 @@ export function computeBalanceTorque(
   const omegaTilt = sub(omega, scale(UP, dot(omega, UP)));
   let req = scale(omegaTilt, -b.kd);
   if (cl > 1e-6 && thetaError > b.zeroTiltRad) req = { x: req.x + (b.kp * thetaError * c.x) / cl, y: req.y + (b.kp * thetaError * c.y) / cl, z: req.z + (b.kp * thetaError * c.z) / cl };
-  const dc = cross(desiredUp, UP);
+  const dc = cross(holdUp, UP);
   const dcl = len(dc);
   if (gravityHoldNm > 0 && dcl > 1e-9) req = { x: req.x + (gravityHoldNm * dc.x) / dcl, y: req.y + (gravityHoldNm * dc.y) / dcl, z: req.z + (gravityHoldNm * dc.z) / dcl };
   const capped = clampLen(req, cap);

@@ -5,7 +5,7 @@
 // The pose: the carrier of a fixture run up to its first contact, with the profile and without it. Each case has its
 // fault twin (`BraceDebug`, `PoseDebug`): the same case with one rule broken fails for that reason.
 import { describe, expect, it } from 'vitest';
-import { CARRIER_BRACE_V1, newCarrierBrace, stepBrace, type BraceBody, type BraceChange, type BraceDebug, type CarrierBraceProfile } from '../src/sim/brace';
+import { CARRIER_BRACE_V1, CARRIER_BRACE_V2, newCarrierBrace, stepBrace, type BraceBody, type BraceChange, type BraceDebug, type CarrierBraceProfile } from '../src/sim/brace';
 import type { SimDebug } from '../src/sim/debug';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
@@ -304,6 +304,29 @@ describe('contact motion M2: the braced carrier pose', () => {
     expect(dist(tickAt(off.ticks, 0.5).leftPalm, tickAt(off.ticks, 0.5).ball!)).toBeGreaterThan(0.5);
     await check(undefined, true);
     await check({ brace: { contactOnly: true } }, false);
+  }, 60000);
+
+  it('V2: the chest is 7-12 deg forward at a head-on hit, the lean formed in time and held as reached, with no loss of support before contact (the twin under V1 reaches under 4 deg)', async () => {
+    // contact motion M2 follow-up. V1 leans the desired up at the balance profile's 30 deg/s, and the posture hold of the
+    // desired lean, already full while the body is near upright, leaves an effective stiffness of kp - m g L against kd:
+    // the lean forms with a time constant of about 1 s, 2-4 deg by contact. V2 turns the desired up at 60 deg/s and holds
+    // the reached lean while short of the desired one. Measured at the flip's scan: V1 -0.3 to 3.0 deg at the first
+    // contact of the 37 braced runs with one, V2 7.6 to 10.8.
+    expect(CARRIER_BRACE_V2).toEqual({ ...CARRIER_BRACE_V1, id: 'carrier-brace-v2', pose: { ...CARRIER_BRACE_V1.pose, leanRateDegPerS: 60, leanHold: 'reached' } });
+    await rows(['L3-F3-collision', 'L3-F1-phase0', 'HC-F3-phase0'], (id) => id, async (id) => {
+      const at = async (brace: CarrierBraceProfile) => {
+        const r = await carrierTicks({ ...unbraced(FIX(id)), brace }, 0.7);
+        expect(r.contactS, id).not.toBeNull();
+        const before = within(r.ticks, 0, r.contactS!);
+        // still supported at contact: a tick of his up to it, every one
+        expect(before.length, id).toBe(Math.round(r.contactS! * 60));
+        return tickAt(before, r.contactS!).pitchDeg;
+      };
+      const v2 = await at(CARRIER_BRACE_V2);
+      expect(v2, id).toBeGreaterThan(7);
+      expect(v2, id).toBeLessThan(12);
+      expect(await at(CARRIER_BRACE_V1), id).toBeLessThan(4);
+    });
   }, 60000);
 
   it('the free arm covering the ball stays out of the chest (the twin that swings it out reaches into the pec)', async () => {
