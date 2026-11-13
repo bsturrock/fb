@@ -42,8 +42,16 @@ in real life."
       ragdoll's own limbs cover his trunk, and the palm push-out lifts the forearm off every other substep). State:
       the rear wrap rides to chest 0.5 m; where the hit fells the carrier fast (side, `L3-F1-low`, HC-F3) he still
       converts at shoulder 1.25 m because the trunk follows too slowly (pitch lags the hinge request, 54 against 84
-      degrees) and the play ends 0.2 s later. On his feet the lowest chest is 0.56 m. Open: trunk follow speed,
-      riding on after the ending, a ride-only lower stance or kneel.
+      degrees) and the play ends 0.2 s later. On his feet the lowest chest is 0.56 m.
+      Since then (`5acbb9a`, `cd525bf`): the come-down. Once the carrier is converted he folds fully at ride-only
+      hinge limits, keeps coming down after the carrier is down and after the whistle, and the fold arrives slowing
+      down so he converts with little spin (the user saw a somersault over the carrier: the rigid proxy's spin
+      handed to a folded ragdoll doubled its rate; 474 J at the switch, now 30 to 61 J, the rest being the
+      centre-of-mass offset between proxy and ragdoll). Rear, front and drag-mirror wraps convert at shoulder 0.77
+      to 0.91 m, no feet over head, ending beside or half on the carrier. Open before the flip: the fast falls
+      still convert high because no foot plants after the impact (item 2's leg guard cause); he never lands
+      squarely on the carrier; a posed hip turn 71 degrees past range on the reversed drag mirror just before his
+      conversion; a possible 0.16 s pause posed over the downed carrier.
       **User intent 2026-11-13 (standing): the ball carrier always biases forward and tries to fall forward** for
       the extra yards. An intention, not an outcome: a hard hit from the front can still put him on his back. It
       applies to the brace, to a held carrier on his feet (never settling leaning back), to the bound-legs fall
@@ -98,7 +106,14 @@ in real life."
    Fix, one compose flag, two steps: a late step fixes its destination in world space and is judged against the
    target its pose was given; a new step is never shorter than its acceleration floor (`fitStance` is called
    before the destination is set, about 1120-1126; inferred, not twin-tested). Probe and results: worktree
-   `.scratch/p4/gallop.ts`, main checkout `.scratch/p4/gallop/`. Queued after the low strike.
+   `.scratch/p4/gallop.ts`, main checkout `.scratch/p4/gallop/`.
+   Built flag off (`dea9d82`, `compose.lateLanding`, lab `&latestep=on`). It fixes the squeezed step only: the
+   carrier after a hit runs an even stride. Under the brace, in the drive and in the ride-down the stranded leg
+   has another cause: the step aims inside the other player's body, the leg guard holds the leg off him, and it
+   re-aims into him. Not to be flipped as it is: with the flag on the braced carrier's trailing hip over-extends
+   for 0.6 s (39 degrees past range) and two snaps appear. Next: a destination that is never inside another
+   body, a held-off leg that lands under the hip, a planted foot released before the hip passes its range.
+   Evidence: main checkout `.scratch/p7/gallop-fix/summary.txt`.
 3. **Brace amount.** A bit more forward lean and crouch. `L3-F2-miss` shows no brace at all: check whether that is
    intended (never a real threat) or a decision bug.
 4. **Falls.** The reaching arm palm down with give, some body control ("falls like a bag of wooden blocks"); the
