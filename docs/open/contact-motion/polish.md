@@ -32,7 +32,14 @@ in real life."
       stop 0.5 m apart; M3 handoff, "Locked hands"). Re-measure after 1.1 puts the shoulder at the carrier's flank;
       build the lock if the hands then meet. The rear-wrap carrier (`L3-F19-rear`) must go down (under the drive he
       is driven over at 1.90 s).
-   4. Low hit: wrap the legs and roll.
+      **Decided 2026-11-13: no hand lock at torso height.** Re-measured with the strike and the drive on: the hands
+      stay 0.52 to 0.60 m apart in the hold (0.45 m side on), and a 2D model of the arm matches that within 3 cm,
+      so the arms already deliver what the geometry allows. The taut path round the trunk is 0.90 m or more against
+      a 0.70 m reach; a rounded trunk still leaves 0.30 m; the shoulder is a fixed point. The drive already takes
+      the rear-wrap carrier down, which was this item's must-have. The lock moves to the low wrap (1.4), where the
+      model says the hands meet (thighs at drawn size, or the standing carrier's support capsule). Numbers and
+      probes: main checkout `.scratch/p3/hand-gap/`, worktree `.scratch/p1/handgap.ts`, `handgeo.ts`.
+   4. Low hit: wrap the legs, lock the hands if they meet, and roll.
 2. **Leg gallop.** The carrier's legs gallop under the brace (`L3-F3-collision`) and both legs gallop to catch up
    with the body after a hit he survives.
 3. **Brace amount.** A bit more forward lean and crouch. `L3-F2-miss` shows no brace at all: check whether that is
