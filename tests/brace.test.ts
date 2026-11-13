@@ -1,13 +1,20 @@
-// Contact motion M2: the ball carrier's brace decision (src/sim/brace.ts, `FixtureDef.brace`, used by no fixture yet).
-// Constructed cases on the decision itself: bodies at constant velocity on the flat, the carrier facing his travel, one
-// decision substep at the gate 4 substep (1/240 s), "touching" when the torsos meet (both half widths, no margin). Each
-// case has its fault twin (`BraceDebug`): the same case with one rule broken fails for that reason.
+// Contact motion M2: the ball carrier's brace (src/sim/brace.ts, `FixtureDef.brace`, used by no fixture yet).
+// The decision: constructed cases on it alone, bodies at constant velocity on the flat, the carrier facing his travel,
+// one decision substep at the gate 4 substep (1/240 s), "touching" when the torsos meet (both half widths, no margin).
+// The pose: the carrier of a fixture run up to its first contact, with the profile and without it. Each case has its
+// fault twin (`BraceDebug`, `PoseDebug`): the same case with one rule broken fails for that reason.
 import { describe, expect, it } from 'vitest';
 import { CARRIER_BRACE_V1, newCarrierBrace, stepBrace, type BraceBody, type BraceChange, type BraceDebug, type CarrierBraceProfile } from '../src/sim/brace';
+import type { SimDebug } from '../src/sim/debug';
+import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
+import { carriedBall } from '../src/sim/pose';
+import { DEFAULT_POSE_PROFILE } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
-import { addScaled, dist, horiz, norm, v3, type Vec3 } from '../src/sim/vec';
-import { FIX, rows } from './helpers';
+import { addScaled, deg, dist, dot, horiz, norm, qInvRot, qRot, sub, v3, vc, type Vec3 } from '../src/sim/vec';
+import { FIX, rows, traceRowsDiff } from './helpers';
+import { depth, drawnShapes, selfPairs } from './visible';
+import { LIMB_HELD_M } from './visible-bar';
 
 const DT = 1 / 240;
 const HALF_W = 0.23;
@@ -205,4 +212,152 @@ describe('contact motion M2: the carrier sees a hit coming and braces', () => {
     expect(on.x.profileIds.brace).toBe('carrier-brace-v1');
     expect(twin.wAtContact!).toBeLessThan(0.05);
   }, 60000);
+});
+
+/** The fixture without the brace profile (whether or not it has one). */
+const unbraced = (d: FixtureDef): FixtureDef => {
+  const { brace, ...o } = d;
+  void brace;
+  return o;
+};
+const braced = (id: string): FixtureDef => ({ ...unbraced(FIX(id)), brace: CARRIER_BRACE_V1 });
+
+/** One tick of the carrier while supported: his proxy's height and forward pitch, and his pose in the proxy frame. */
+interface CarrierTick {
+  t: number;
+  w: number;
+  y: number;
+  pitchDeg: number;
+  /** The drawn ball's centre, its distance to the published landmark, the free (left) palm. */
+  ball: Vec3 | null;
+  ballVsLandmark: number;
+  leftPalm: Vec3;
+  /** The free arm's upper arm in his own pec slab (the trunk hull piece in front of the chest), m. */
+  leftUpperArmInChest: number;
+}
+
+async function carrierTicks(def: FixtureDef, untilS: number, debug?: SimDebug): Promise<{ ticks: CarrierTick[]; contactS: number | null }> {
+  const sim = await Simulation.create(def, debug ? { debug } : {});
+  const R = def.players.find((p) => p.role === 'runner')!.id;
+  const RP = def.ragdoll ?? DEFAULT_POSE_PROFILE;
+  const ticks: CarrierTick[] = [];
+  let contactS: number | null = null;
+  while (!sim.done && sim.t < untilS - 1e-9) {
+    sim.stepTick();
+    const pl = sim.byId.get(R)!;
+    if (contactS === null && (sim.contactObs[R] ?? []).length) contactS = sim.t;
+    if (!pl.pose || pl.rag) continue;
+    const b = pl.proxy.body;
+    const p = vc(b.translation());
+    const q = b.rotation();
+    const local = (x: Vec3): Vec3 => qInvRot(q, sub(x, p));
+    const up = qRot(q, v3(0, 1, 0));
+    const ball = carriedBall(pl.pose);
+    const chest = selfPairs(drawnShapes(pl.pose, pl.body, RP)).filter((x) => x.cls === 'armTrunk' && x.a.key.startsWith('leftUpperArm') && x.b.key === 'trunk4');
+    ticks.push({
+      t: sim.t,
+      w: pl.brace?.w ?? 0,
+      y: p.y,
+      pitchDeg: deg(Math.atan2(dot(up, norm(horiz(qRot(q, v3(0, 0, 1))))), up.y)),
+      ball: ball ? local(ball.p) : null,
+      ballVsLandmark: ball ? dist(ball.p, pl.pose.jointLandmarksWorld.carriedBall) : 0,
+      leftPalm: local(pl.pose.jointLandmarksWorld.leftPalm),
+      leftUpperArmInChest: Math.max(0, ...chest.map((x) => depth(x.a, x.b))),
+    });
+  }
+  sim.dispose();
+  return { ticks, contactS };
+}
+const tickAt = (ts: CarrierTick[], s: number): CarrierTick => ts.reduce((a, b) => (Math.abs(b.t - s) < Math.abs(a.t - s) ? b : a));
+const within = (ts: CarrierTick[], from: number, to: number): CarrierTick[] => ts.filter((x) => x.t >= from - 1e-9 && x.t <= to + 1e-9);
+/** Largest one-tick move of the drawn ball in the proxy frame over the ticks (consecutive supported ticks). */
+const ballStep = (ts: CarrierTick[]): number => Math.max(0, ...ts.map((x, i) => (i && x.ball && ts[i - 1].ball ? dist(x.ball, ts[i - 1].ball!) : 0)));
+const range = (xs: number[]): number => Math.max(...xs) - Math.min(...xs);
+
+describe('contact motion M2: the braced carrier pose', () => {
+  it('L3-F3-collision before contact: hips lower, chest forward, the ball held still at the ribs, the free palm on it (the twin without anticipation keeps the running pose)', async () => {
+    // acquired at 0.15 s, contact about 0.53 s; at 0.5 s fully braced
+    const off = await carrierTicks(unbraced(FIX('L3-F3-collision')), 0.5);
+    const check = async (debug: SimDebug | undefined, expectBraced: boolean): Promise<void> => {
+      const on = await carrierTicks(braced('L3-F3-collision'), 0.5, debug);
+      const a = tickAt(off.ticks, 0.5);
+      const b = tickAt(on.ticks, 0.5);
+      const swing = (r: CarrierTick[]): number => range(within(r, 0.25, 0.5).map((x) => x.ball!.y));
+      const fails: string[] = [];
+      if (!(b.w > 0.9)) fails.push(`weight ${b.w}`);
+      // the support drop of the pose (5 cm) on top of the running height
+      if (!(b.y - a.y < -0.8 * CARRIER_BRACE_V1.pose.dropM)) fails.push(`hips ${(b.y - a.y).toFixed(3)} m`);
+      if (!(b.pitchDeg - a.pitchDeg > 1.5)) fails.push(`pitch ${(b.pitchDeg - a.pitchDeg).toFixed(1)} deg`);
+      // the running carry swings the ball 26 cm up and down over these 0.25 s; braced it stays under half of that
+      if (!(swing(on.ticks) < 0.5 * swing(off.ticks))) fails.push(`ball swing ${swing(on.ticks).toFixed(3)} vs ${swing(off.ticks).toFixed(3)} m`);
+      // the cover: the palm at the ball's inner side, one ball radius, a palm radius and the gap from its centre
+      if (!(dist(b.leftPalm, b.ball!) < 0.2)) fails.push(`free palm ${dist(b.leftPalm, b.ball!).toFixed(3)} m from the ball`);
+      if (expectBraced) expect(fails).toEqual([]);
+      else expect(fails.length).toBeGreaterThanOrEqual(5);
+      // the drawn ball is the published landmark on every tick
+      expect(Math.max(...on.ticks.map((x) => x.ballVsLandmark))).toBeLessThan(1e-9);
+    };
+    expect(dist(tickAt(off.ticks, 0.5).leftPalm, tickAt(off.ticks, 0.5).ball!)).toBeGreaterThan(0.5);
+    await check(undefined, true);
+    await check({ brace: { contactOnly: true } }, false);
+  }, 60000);
+
+  it('the free arm covering the ball stays out of the chest (the twin that swings it out reaches into the pec)', async () => {
+    // L3-F1-phase0: braced from the start, contact at 0.52 s; the met-arm swing-out takes the cover arm forward toward
+    // the threat with the elbow up, its upper arm into the pec slab
+    const peak = async (debug?: SimDebug): Promise<number> => {
+      const r = await carrierTicks(braced('L3-F1-phase0'), 0.52, debug);
+      const win = within(r.ticks, 0.45, 0.52);
+      expect(Math.min(...win.map((x) => x.w))).toBeGreaterThan(0.9);
+      return Math.max(...win.map((x) => x.leftUpperArmInChest));
+    };
+    expect(await peak()).toBeLessThan(LIMB_HELD_M);
+    expect(await peak({ pose: { braceCoverSwingOut: true } })).toBeGreaterThan(LIMB_HELD_M);
+  }, 60000);
+
+  it('the brace ramps in: the ball moves no further in one tick than the running carry does (the twin that steps the weight jumps it)', async () => {
+    // L3-F1-phase0: the threat is acquired on the first substeps, the ball goes from the running carry to the brace key
+    const off = await carrierTicks(unbraced(FIX('L3-F1-phase0')), 0.5);
+    const runStep = ballStep(off.ticks);
+    const rampStep = async (debug?: SimDebug): Promise<number> => {
+      const r = await carrierTicks(braced('L3-F1-phase0'), 0.3, debug);
+      expect(r.ticks.at(-1)!.w).toBeGreaterThan(0.9);
+      return ballStep(r.ticks);
+    };
+    expect(runStep).toBeGreaterThan(0.01);
+    expect(await rampStep()).toBeLessThan(runStep);
+    expect(await rampStep({ brace: { noRamp: true } })).toBeGreaterThan(runStep);
+  }, 60000);
+
+  it('unthreatened running is unchanged by the profile: the whole run as without it (the twin without the miss test braces for the passing line)', async () => {
+    const strip = (sim: Simulation) =>
+      sim.trace.map((r) => ({ ...r, players: Object.fromEntries(Object.entries(r.players).map(([k, v]) => [k, { ...v, br: undefined }])) }));
+    const runOf = async (def: FixtureDef, debug?: SimDebug) => {
+      const sim = await Simulation.create(def, debug ? { debug } : {});
+      while (!sim.done) sim.stepTick();
+      const out = { trace: strip(sim), braces: sim.events.filter((e) => e.type === 'brace').length, result: sim.result };
+      sim.dispose();
+      return out;
+    };
+    await rows(
+      [
+        // the defender's line passes ahead of the carrier (no contact); the sprint has no opponent (no twin)
+        ['L3-F2-miss', true],
+        ['L3-F16-sprint', false],
+      ] as const,
+      ([id]) => id,
+      async ([id, twinBraces]) => {
+        const off = await runOf(unbraced(FIX(id)));
+        const on = await runOf(braced(id));
+        expect(on.braces).toBe(0);
+        expect(on.result).toBe(off.result);
+        expect(traceRowsDiff(off.trace, on.trace)).toBeNull();
+        if (twinBraces) {
+          const twin = await runOf(braced(id), { brace: { noMissTest: true } });
+          expect(twin.braces).toBeGreaterThan(0);
+          expect(traceRowsDiff(off.trace, twin.trace)).not.toBeNull();
+        }
+      },
+    );
+  }, 120000);
 });

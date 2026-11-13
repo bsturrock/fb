@@ -620,7 +620,6 @@ export class Simulation {
         poseMemory: {},
         feet: def.footwork && S && setup.body.kind === 'upperBodyCompound' ? newFootPlan(def.footwork, def.ragdoll ?? DEFAULT_POSE_PROFILE) : null,
         loco: def.locomotion ? newLocoState() : null,
-        ...(def.brace && setup.role === 'runner' ? { brace: newCarrierBrace() } : {}),
         handoff: null,
         ragStats: null,
         fall: null,
@@ -942,7 +941,7 @@ export class Simulation {
         decided = true;
       }
       // contact motion M2: the carrier's brace from what he observes, for every carrier controller
-      if (pl.brace) this.advanceBrace(pl);
+      if (this.def.brace && pl.setup.role === 'runner') this.advanceBrace(pl);
       // plan 10b: the ramp reads this substep's locomotion mode (decided from the last solve's contacts and motion, which
       // nothing changes before 4b), not the previous substep's
       if (this.suspension && !pl.rag && pl.sus) this.advanceLocoMode(pl, this.physics.dt);
@@ -1080,7 +1079,8 @@ export class Simulation {
    */
   private advanceBrace(pl: PlayerRuntime): void {
     const P = this.def.brace!;
-    const st = pl.brace!;
+    // made on the first substep (a state captured without the profile resumes under it from rest)
+    const st = (pl.brace ??= newCarrierBrace());
     if (pl.rag) return;
     const snap = this.observed(pl.controller.observationDelayS);
     const body = (o: PlayerRuntime): BraceBody => {

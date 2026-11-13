@@ -93,6 +93,11 @@ export interface PoseDebug {
    * another body (not pushed out of it as registered, so the retry may find the ragdoll inside the other body again).
    */
   metArmStayDeferred?: boolean;
+  /**
+   * Fault (contact motion M2, `FixtureDef.brace`): the carrier's braced free arm covering the ball is moved off another
+   * body as any met arm is (the swing-out, then hanging), not kept in the tuck as the carry arm is.
+   */
+  braceCoverSwingOut?: boolean;
 }
 
 /** Read-only pose diagnostics (never change a result, never exported). */

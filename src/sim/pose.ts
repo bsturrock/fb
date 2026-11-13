@@ -13,6 +13,7 @@ import { hipLocal, shoulderLocal, sideSignX, type BodyProfile, type JointRangePr
 import { segmentDistanceSq } from './physics';
 import { armAnatomicalTwistRad, armTwistRad, behindDeg, clampDirToEnvelope, fitElbowTwist, fitThighTwist, guardEnvelopeTwist, turnForearmTwist, twistWindow } from './joint-cone';
 import type { PoseDebug, PoseProbe } from './debug';
+import type { CarrierBracePose } from './brace';
 import {
   add, addScaled, clamp, clampLen, cross, dist, dot, len, lerp, neg, norm, qFromAxisAngle, qFromBasis, qFromUnitVectors, qInvRot, qMul, qRot, qSlerp, scale, sub, toWorld, upOf, v3,
   type Pose, type Quat, type Vec3,
@@ -520,7 +521,13 @@ export interface ProxyPoseInput {
     contactW: number;
     /** Plan 13e: the idle cycle sampled at this player's phase and its weight (a profile with a cycle only). */
     idle?: { sample: IdleSample; w: number };
-  };  /** Plan 10f (F2): this simulation's pose switches (`SimOptions.debug.pose`); absent: all off. */
+  };  /**
+   * Contact motion M2 (`FixtureDef.brace`, the ball carrier): the brace pose and its weight. The carry arm's key goes
+   * toward the brace key (or, without a carry profile, its hold toward that key's palm) with its swing quietened, and the
+   * free arm's request toward a palm on the ball in place of locomotion's free-arm brace. Absent or 0: none.
+   */
+  brace?: { w: number; pose: CarrierBracePose };
+  /** Plan 10f (F2): this simulation's pose switches (`SimOptions.debug.pose`); absent: all off. */
   debug?: PoseDebug;
   /** Plan 10f (F2): read-only diagnostics (`SimOptions.debug.poseProbe`). */
   probe?: PoseProbe;
@@ -928,7 +935,19 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
   const tipAlong = body.measured?.handTipM;
   let seat: CarrySeat | null = null;
   // ---------------- arms
-  for (const s of ['left', 'right'] as ArmSide[]) {
+  const mirrorX = (p: Vec3): Vec3 => v3(p.x * (sideSignX(body, 'left') > 0 ? 1 : -1), p.y, p.z);
+  // contact motion M2: the carrier's brace weight and pose (0 and null without one)
+  const bw = inp.brace && inp.carriesBall && inp.brace.w > 0 ? Math.min(1, inp.brace.w) : 0;
+  const BP = bw > 0 ? inp.brace!.pose : null;
+  const carryRaw0 = (smp?.weight ?? 0) * (smp?.carryRaw ?? 0);
+  const carryReq = inp.carry && inp.carriesBall ? carryRequest(inp.carry, BP ? carryRaw0 * (1 - bw * (1 - BP.swingKeep)) : carryRaw0, R.lengths.forearm, mirrorX, BP ? { key: BP.carryKey, w: bw } : undefined) : null;
+  // without a carry profile (the plan 06 hold): the hold's palm and pole toward the brace key's arm (as the carry's
+  // request is posed, the hand straight on the forearm)
+  const holdKey = BP && !carryReq ? chestArm(body, R, CARRY_ARM, mirrorX(BP.carryKey.upper), mirrorX(BP.carryKey.fore)) : null;
+  // the free palm covers the ball as this pose shows it (the hold's hand without a carry profile), so the carry arm is
+  // posed first under the brace (the arms are otherwise independent)
+  const armOrder: ArmSide[] = BP ? [CARRY_ARM, CARRY_ARM === 'left' ? 'right' : 'left'] : ['left', 'right'];
+  for (const s of armOrder) {
     const sx = sideSignX(body, s);
     const sh = W(shoulderLocal(body, s));
     const given = inp.arms?.[s];
@@ -938,7 +957,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     // the arm's clearance shapes (D4). An achieved arm (an arm task's) keeps its solve and its own hand: the hand's share
     // of the carry roll and flex passes to 0 over the profile's `handBlendS` and back when the carry has the arm again (D3);
     // the ball stays seated on the achieved forearm.
-    const carryArm = inp.carry && inp.carriesBall && s === CARRY_ARM ? carryRequest(inp.carry, (smp?.weight ?? 0) * (smp?.carryRaw ?? 0), R.lengths.forearm, (p) => v3(p.x * (sideSignX(body, 'left') > 0 ? 1 : -1), p.y, p.z)) : null;
+    const carryArm = s === CARRY_ARM ? carryReq : null;
     const carried = given ? null : carryArm;
     let handW = 1;
     if (carryArm) {
@@ -1098,12 +1117,33 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         palm0 = toward(fromPalm, toPalm, smp!.weight);
         pole0 = towardDir(fromPole, toPole, smp!.weight);
       }
-      // plan 08: a free arm braces while braking (carry and ready hands keep their own pose; achieved arms never get here)
-      const braced = freeArm ? Math.max(lo!.brakeB, lo!.contactW) : 0;
+      // contact motion M2: the hold of a carrier without a carry profile goes toward the brace key's palm
+      if (holdKey && carry && !carried) {
+        palm0 = toward(palm0, holdKey.palmLocal, bw);
+        pole0 = towardDir(pole0, holdKey.poleLocal, bw);
+      }
+      // plan 08: a free arm braces while braking (carry and ready hands keep their own pose; achieved arms never get here);
+      // contact motion M2: the carrier's free arm covers the ball instead, by the brace weight: its palm on the ball's
+      // exposed side, off its surface by the palm's radius and the gap
+      const braced0 = freeArm ? Math.max(lo!.brakeB, lo!.contactW) : 0;
+      const braced = BP && freeArm ? braced0 * (1 - bw) : braced0;
       if (braced > 0) {
         const bp = lo!.profile.brace;
         palm0 = toward(palm0, proceduralLocal(body, s, v3(bp.palm.x * sx, bp.palm.y, bp.palm.z)), braced);
         pole0 = towardDir(pole0, v3(bp.pole.x * sx, bp.pole.y, bp.pole.z), braced);
+      }
+      if (BP && freeArm) {
+        // the shown ball; without a carry profile, a ball seated as the brace key seats it on the hold's shown forearm
+        let ballW = lm.carriedBall;
+        if (!ballW) {
+          const e = lm[`${CARRY_ARM}Elbow`];
+          const f = norm(sub(lm[`${CARRY_ARM}Wrist`], e), qRot(pose.q, v3(0, 0, 1)));
+          const i0 = qRot(pose.q, mirrorX(BP.carryKey.inside));
+          ballW = addScaled(addScaled(e, f, BP.carryKey.along), norm(addScaled(i0, f, -dot(i0, f)), i0), BP.carryKey.out);
+        }
+        const cover = addScaled(qInvRot(pose.q, sub(ballW, pose.p)), mirrorX(BP.coverDir), (inp.carry?.ball.radiusM ?? BP.holdBallRadiusM) + R.radii.palm + BP.coverGapM);
+        palm0 = toward(palm0, cover, bw);
+        pole0 = towardDir(pole0, v3(BP.coverPole.x * sx, BP.coverPole.y, BP.coverPole.z), bw);
       }
       // plan 08: a composed free or carry arm is judged like a sampled arm: the plan 07 path stood in a raised alternative
       // for a few millimetres of padded self overlap (and blended clips and stops through that stale variant). Another body is
@@ -1148,8 +1188,10 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         const okReq = (c: ArmC) => okAt(c, fromHang ? CLEAR_OK : HARD_OK);
         // the ball's carry arm keeps its tuck whatever presses it: moved off the other body, the ball went with the hand
         // (as registered up to the raised alternatives, the ball at the head: L3-F16-contactStop R at 0.73 s; swung out,
-        // the elbow rose to the shoulder and the hand crossed the chest: HC-F1-lowMirror R at 0.9 s)
-        if (carry || okReq(s0)) r = { best: s0, index: 0 };
+        // the elbow rose to the shoulder and the hand crossed the chest: HC-F1-lowMirror R at 0.9 s). Contact motion M2:
+        // so does the carrier's braced free arm covering the ball (in front of the chest, the swing-out takes it forward,
+        // into the threat, its elbow up and the upper arm through the chest: L3-F1-phase0 R's left at 0.48 s)
+        if (carry || (!!BP && freeArm && !inp.debug?.braceCoverSwingOut) || okReq(s0)) r = { best: s0, index: 0 };
         else {
           const u = norm(v3(palm0.x, 0, palm0.z), v3(sx, 0, 0));
           const at = (d: number) => procedural(addScaled(palm0, u, d), pole0)();

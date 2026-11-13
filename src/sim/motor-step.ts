@@ -4,8 +4,9 @@
 import type { Snapshot } from './contracts';
 import { computeDrive, computeYaw } from './motors';
 import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, desiredUpFrom, leanScale, postureGravityHold } from './balance';
-import { add, v3, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, UP } from './vec';
+import { add, v3, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, UP } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
+import { bracePosture } from './brace';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
@@ -49,8 +50,9 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
     let ls = 1;
     if (host.balanced) {
       ls = leanScale(bal.theta, B);
-      // posture request: desired up, rate-limited toward the requested lean (<= max posture lean)
-      const pr = pl.intent.posture;
+      // posture request: desired up, rate-limited toward the requested lean (<= max posture lean); contact motion M2: the
+      // carrier's brace leans him toward his travel by its weight
+      const pr = pl.brace && pl.brace.w > 0 ? bracePosture(host.def.brace!.pose, pl.brace.w, pl.intent.posture, b.linearVelocity, forwardOf(b.rotation)) : pl.intent.posture;
       const target = pr ? desiredUpFrom(clamp(pr.leanRad, 0, B.maxPostureLeanRad), pr.leanDirWorld) : { ...UP };
       const ang = Math.acos(clamp(dot(bal.desiredUp, target), -1, 1));
       const maxStep = B.postureRateRadPerS * host.physics.dt;

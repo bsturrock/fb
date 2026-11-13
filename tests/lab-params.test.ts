@@ -3,6 +3,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1 } from '../src/sim/footwork';
+import { CARRIER_BRACE_V1 } from '../src/sim/brace';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation,
@@ -10,7 +11,7 @@ import {
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing` and `armstay` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -21,7 +22,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, born, bornsep, holdstill, upperarm, armswing and armstay', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, born, bornsep, holdstill, upperarm, armswing, armstay and brace', () => {
   it('order=rev&legs=v1 runs the matrices\' reversed V1 row of the fixture (L3-F1-phase6, the guard before the ladder 10 flip), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v1'));
@@ -440,5 +441,31 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((x) => !x.ragdoll)!;
     expect(labRun(g, new URLSearchParams('bornsep=on'))).toEqual({ def: g, opts: {}, label: 'bornsep n/a (no born overlap)' });
     expect(labRun(reg, new URLSearchParams('bornsep=maybe'))).toEqual({ def: reg, opts: {}, label: 'bornsep=maybe ignored' });
+  }, 120000);
+
+  // contact motion M2: brace=on|off sets the fixture's carrier brace profile (used by no fixture yet)
+  it('brace=on runs the fixture with the carrier\'s brace (CARRIER_BRACE_V1: L3-F3-collision, another run); brace=off takes it off again and on a fixture without it is that run; a fixture without a composed ball carrier and unknown values change nothing', async () => {
+    const id = 'L3-F3-collision';
+    const d = FIX(id);
+    expect(d.brace).toBeUndefined();
+    const on = labRun(d, new URLSearchParams(`fixture=${id}&brace=on`));
+    expect(on).toEqual({ def: { ...d, brace: CARRIER_BRACE_V1 }, opts: {}, label: 'carrier brace on' });
+    // the twin: the brace changes the run (the carrier's right palm, the ball's, at 0.45 s: braced, before contact)
+    const palmAt = async (def: FixtureDef): Promise<string> => {
+      const s = await create(def, {});
+      while (!s.done && s.t < 0.45) s.stepTick();
+      const out = JSON.stringify(s.players.find((p) => p.setup.role === 'runner')!.pose!.jointLandmarksWorld.rightPalm);
+      s.dispose();
+      return out;
+    };
+    expect(await palmAt(on.def)).not.toBe(await palmAt(d));
+    const back = labRun(on.def, new URLSearchParams('brace=OFF'));
+    expect(back).toEqual({ def: d, opts: {}, label: 'carrier brace off' });
+    expect('brace' in back.def).toBe(false);
+    expect(labRun(d, new URLSearchParams('brace=off'))).toEqual({ def: d, opts: {}, label: 'carrier brace off (registered)' });
+    expect(labRun(on.def, new URLSearchParams('brace=on'))).toEqual({ def: on.def, opts: {}, label: 'carrier brace on (registered)' });
+    const g = allFixtures().find((x) => !x.locomotion)!;
+    expect(labRun(g, new URLSearchParams('brace=on'))).toEqual({ def: g, opts: {}, label: 'brace n/a (no composed ball carrier)' });
+    expect(labRun(d, new URLSearchParams('brace=maybe'))).toEqual({ def: d, opts: {}, label: 'brace=maybe ignored' });
   }, 120000);
 });

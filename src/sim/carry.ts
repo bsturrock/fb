@@ -111,6 +111,19 @@ export const CARRY_L3: CarryProfile = {
 const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
 const lerpDir = (a: Vec3, b: Vec3, t: number): Vec3 => norm(v3(mix(a.x, b.x, t), mix(a.y, b.y, t), mix(a.z, b.z, t)), a);
 
+/** Two keys mixed: directions normalized, the inside direction as it is (`carryRequest` takes it off the forearm). */
+function mixKey(a: CarryKey, b: CarryKey, t: number): CarryKey {
+  return {
+    upper: lerpDir(a.upper, b.upper, t),
+    fore: lerpDir(a.fore, b.fore, t),
+    inside: v3(mix(a.inside.x, b.inside.x, t), mix(a.inside.y, b.inside.y, t), mix(a.inside.z, b.inside.z, t)),
+    along: mix(a.along, b.along, t),
+    out: mix(a.out, b.out, t),
+    tilt: mix(a.tilt, b.tilt, t),
+    wristFlex: mix(a.wristFlex, b.wristFlex, t),
+  };
+}
+
 /** Pitch (rad, + forward) of a chest-frame upper-arm direction. */
 const pitch = (u: Vec3): number => Math.atan2(u.z, -u.y);
 
@@ -124,18 +137,12 @@ const arc = (C: CarryProfile, a: number): Quat => qMul(qFromAxisAngle(Y, C.swing
  * Chest-frame upper arm, forearm and seat for an arm swing (0 = the static carry) on a forearm of `forearmM`; `M` maps to
  * the body's side convention.
  */
-export function carryRequest(C: CarryProfile, raw: number, forearmM: number = C.fitForearmM, M: (p: Vec3) => Vec3 = (p) => p): CarryRequest {
+export function carryRequest(C: CarryProfile, raw: number, forearmM: number = C.fitForearmM, M: (p: Vec3) => Vec3 = (p) => p, toward?: { key: CarryKey; w: number }): CarryRequest {
   const [b0, b1] = C.swingRange;
   const blend = clamp((raw - b0) / (b1 - b0), 0, 1);
-  const K: CarryKey = {
-    upper: lerpDir(C.back.upper, C.fwd.upper, blend),
-    fore: lerpDir(C.back.fore, C.fwd.fore, blend),
-    inside: v3(mix(C.back.inside.x, C.fwd.inside.x, blend), mix(C.back.inside.y, C.fwd.inside.y, blend), mix(C.back.inside.z, C.fwd.inside.z, blend)),
-    along: mix(C.back.along, C.fwd.along, blend),
-    out: mix(C.back.out, C.fwd.out, blend),
-    tilt: mix(C.back.tilt, C.fwd.tilt, blend),
-    wristFlex: mix(C.back.wristFlex, C.fwd.wristFlex, blend),
-  };
+  const K0 = mixKey(C.back, C.fwd, blend);
+  // contact motion M2: the carrier's brace takes the swing's key toward its own by its weight (absent or 0: unchanged)
+  const K = toward && toward.w > 0 ? mixKey(K0, toward.key, clamp(toward.w, 0, 1)) : K0;
   const swing = C.swing * raw;
   const qF = arc(C, swing * C.foreSwing);
   const upper = M(qRot(arc(C, swing), K.upper));

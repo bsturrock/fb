@@ -114,6 +114,8 @@ export function updatePoses(host: PoseHost, dt: number): void {
       ...(host.def.selfClearance?.clipArmSwing ? { clipArmSwing: true } : {}),
       ...(host.def.selfClearance?.metArmStay ? { metArmStay: true } : {}),
       ...(host.def.locomotion ? { loco: { profile: host.def.locomotion, brakeB: pl.sus?.brakeB ?? 0, swing: walkSwing(pl, host.def.locomotion, core, sp, dt), contactW: pl.loco?.braceW ?? 0, ...idleOf(host, pl, sp) } } : {}),
+      // contact motion M2: the carrier's brace (a ragdoll has no proxy pose; a falling proxy's weight is already ramping out)
+      ...(pl.brace && pl.brace.w > 0 && host.def.brace ? { brace: { w: pl.brace.w, pose: host.def.brace.pose } } : {}),
       ...(host.opts.debug?.pose ? { debug: host.opts.debug.pose } : {}),
       ...(host.opts.debug?.poseProbe ? { probe: host.opts.debug.poseProbe } : {}),
     };

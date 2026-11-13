@@ -31,7 +31,10 @@
 //                      `metArmStay`, rung 16b): pressing a little into the other body, at most hanging at its side, never
 //                      sent to a raised or forward alternative; or as before. Registered with `clipArmSwing` on L3, L4
 //                      and HC (ladder 18e): `armstay=off&armswing=off` is the view before. A fixture without
-//                      self-clearance is run as it is.
+//                      self-clearance is run as it is;
+//   brace=on|off       the ball carrier bracing for a hit he sees coming (CARRIER_BRACE_V1, contact motion M2: knees
+//                      bent, hips down, chest forward, ball high and tight under the free hand), or not. A fixture without
+//                      locomotion composition (L3, L4, HC) or without a ball carrier is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -44,6 +47,7 @@ import {
   withClipArmSwing, withMetArmStay, withUpperArmClearance, type RagdollProfile,
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withoutHoldStill } from '../sim/footwork';
+import { CARRIER_BRACE_V1 } from '../sim/brace';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
@@ -58,6 +62,7 @@ const HOLDSTILL = ['on', 'off'];
 const UPPERARM = ['on', 'off'];
 const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
+const BRACE = ['on', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -84,7 +89,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay`, `brace`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -211,6 +216,20 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
       const sc = v === 'off' ? withoutMetArmStay(out.selfClearance) : withMetArmStay(out.selfClearance);
       parts.push(`met arm stay ${v}${sc === out.selfClearance ? ' (registered)' : ''}`);
       if (sc !== out.selfClearance) out = { ...out, selfClearance: sc };
+    }
+  }
+  const brace = params.get('brace');
+  if (brace !== null && brace !== '') {
+    const v = brace.toLowerCase();
+    if (!BRACE.includes(v)) parts.push(`brace=${brace} ignored`);
+    else if (!out.locomotion || !out.players.some((p) => p.role === 'runner')) parts.push('brace n/a (no composed ball carrier)');
+    else {
+      const b = v === 'off' ? undefined : out.brace?.id === CARRIER_BRACE_V1.id ? out.brace : CARRIER_BRACE_V1;
+      parts.push(`carrier brace ${v}${b === out.brace ? ' (registered)' : ''}`);
+      if (b !== out.brace) {
+        out = { ...out, brace: b };
+        if (!b) delete out.brace;
+      }
     }
   }
   return { def: out, opts, label: parts.join(' · ') };

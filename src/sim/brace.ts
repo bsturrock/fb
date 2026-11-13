@@ -6,8 +6,9 @@
 // Decision only reads observations: the carrier's observed snapshot (its controller's delay), the opponents' centres of
 // mass and velocities there, the carrier's achieved body facing, and the solved contacts of that snapshot. No fixture
 // time, no future collision. The weight it produces is read by the posture, stance and pose consumers (simulation.ts).
-import type { PlayerId } from './contracts';
-import { addScaled, clamp, closestOnSegment, deg, dot, horiz, len, norm, scale, sub, v3, type Vec3 } from './vec';
+import type { CarryKey } from './carry';
+import type { PlayerId, PostureIntent } from './contracts';
+import { add, addScaled, clamp, closestOnSegment, deg, dot, horiz, len, norm, scale, sub, v3, type Vec3 } from './vec';
 
 export interface CarrierBraceProfile {
   id: string;
@@ -27,6 +28,36 @@ export interface CarrierBraceProfile {
   occluderRadiusM: number;
   /** The weight's critically damped approach to its target (natural frequency, rad/s): no velocity step at a reversal. */
   rampRadPerS: number;
+  /** What the weight does to the carrier (each at full weight, blended by it). */
+  pose: CarrierBracePose;
+}
+
+/**
+ * The brace pose: one authored pose blended by the weight, composed with locomotion. The trunk is the proxy's rigid
+ * body, so the chest comes forward by leaning the body (the posture request, which the balance profile bounds and rate
+ * limits); the hips drop through the support's height target (the legs keep stepping on the ground and bend to it).
+ */
+export interface CarrierBracePose {
+  /** Hip drop (m) taken from the support's height target, on top of locomotion's own preparation drop. */
+  dropM: number;
+  /** Forward lean (deg) toward the travel, added to the controller's posture request (the balance profile bounds the sum). */
+  leanDeg: number;
+  /** Below this speed (m/s) the lean turns from the travel toward the body's facing (continuously, from 0 at rest). */
+  travelMps: number;
+  /** The carry arm's high-and-tight key (chest frame, anatomical left +X, as the carry's keys). */
+  carryKey: CarryKey;
+  /** Share of the clip's carry-arm swing the braced carry keeps. */
+  swingKeep: number;
+  /**
+   * The free palm on the ball as the pose shows it: on its exposed side (chest frame, anatomical left +X, as the keys),
+   * off its surface by the palm's radius and this gap (m).
+   */
+  coverDir: Vec3;
+  coverGapM: number;
+  /** Without a carry profile (no drawn ball): the radius of the ball the key's seat would hold on the shown forearm (m). */
+  holdBallRadiusM: number;
+  /** The covering arm's elbow pole (chest frame, x signed for the left arm). */
+  coverPole: Vec3;
 }
 
 /**
@@ -44,6 +75,24 @@ export const CARRIER_BRACE_V1: CarrierBraceProfile = {
   minClosingMps: 0.5,
   occluderRadiusM: 0.3,
   rampRadPerS: 20,
+  pose: {
+    dropM: 0.05,
+    leanDeg: 12,
+    travelMps: 1,
+    // the carry's forward key with the elbow down at the ribs (upper arm near vertical) and the ball further up the
+    // forearm: on the L3 model, from the shoulder, the ball centre 2 cm higher and 3 cm closer to the chest than the
+    // rest carry's, at the front of the ribs below the pec, the hand over its nose; with a quarter of the swing kept it
+    // moves 8 cm over a stride where the run swings it 26 cm (L3-F3-collision)
+    carryKey: { upper: norm(v3(-0.09, -0.95, 0.3)), fore: norm(v3(0.13, 0.395, 0.903)), inside: v3(0.42, 0.82, -0.39), along: 0.2, out: 0.117, tilt: -0.314, wristFlex: 1.065 },
+    swingKeep: 0.25,
+    // on the ball's inner side toward the front (the free arm reaches no further across: the model's upper arm is 10 cm
+    // thick, and further in it passes through the chest), the elbow low and out in front, so the upper arm passes down
+    // the side of the chest and the forearm rises across its front
+    coverDir: norm(v3(0.9, -0.1, 0.42)),
+    coverGapM: 0.03,
+    holdBallRadiusM: 0.085,
+    coverPole: norm(v3(0.61, -0.78, 0.16)),
+  },
 };
 
 /** Per-carrier brace state (pose and request consumers read `w`). */
@@ -100,6 +149,8 @@ export interface BraceDebug {
   noMissTest?: boolean;
   /** Fault: no anticipation: a threat is acquired only once it touches the carrier. */
   contactOnly?: boolean;
+  /** Fault: no ramp: the weight steps to its target in one substep (the pose jumps). */
+  noRamp?: boolean;
 }
 
 export function threatOf(P: CarrierBraceProfile, self: BraceSelf, o: BraceBody, faults?: BraceDebug): BraceThreat {
@@ -202,10 +253,31 @@ export function stepBrace(
   }
   // the weight: critically damped toward its target, stopped at its bounds (a clamped rate is not integrated on)
   const target = st.threat !== null ? 1 : 0;
+  if (faults?.noRamp) {
+    st.w = target;
+    st.v = 0;
+    return change;
+  }
   const k = P.rampRadPerS;
   st.v += (k * k * (target - st.w) - 2 * k * st.v) * dt;
   const w = st.w + st.v * dt;
   st.w = clamp(w, 0, 1);
   if (st.w !== w) st.v = 0;
   return change;
+}
+
+/**
+ * The carrier's posture request under the brace: the controller's request plus `w` of the brace lean toward the travel
+ * (toward the facing as the speed falls below `travelMps`), as a lean vector sum. `w` 0: the request unchanged.
+ */
+export function bracePosture(P: CarrierBracePose, w: number, req: PostureIntent | undefined, velocity: Vec3, forward: Vec3): PostureIntent | undefined {
+  if (!(w > 0)) return req;
+  const hv = horiz(velocity);
+  const sp = len(hv);
+  const t = clamp(sp / P.travelMps, 0, 1);
+  const f = norm(horiz(forward), v3(0, 0, 1));
+  const dir = norm(add(scale(sp > 1e-9 ? scale(hv, 1 / sp) : f, t), scale(f, 1 - t)), f);
+  const lean = add(req ? scale(norm(horiz(req.leanDirWorld), dir), req.leanRad) : v3(), scale(dir, (w * P.leanDeg * Math.PI) / 180));
+  const r = len(lean);
+  return r > 1e-12 ? { leanDirWorld: scale(lean, 1 / r), leanRad: r } : req;
 }
