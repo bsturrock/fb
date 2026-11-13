@@ -35,6 +35,16 @@ export interface WrapProfile {
   closeOnTouch: { slackDeg: number } | null;
   /** The closing target: on the ring at `azDeg`, `depthM` inside the carrier's torso. null: the Gate 2 target. */
   close: { azDeg: number; depthM: number } | null;
+  /**
+   * The committed finish (absent: the supported finish as it was), on a defender with one (`WrapSpec.finish`). A secure
+   * hold is both arms retaining (an observed clamp or grip) on his target (the arm touching the focus); one-arm holds
+   * never commit, and the observational wrap status is not read (it grants nothing). Held secure for `secureS`, the finish lowers his stance to `heightM` and leans him `leanDeg` toward its
+   * direction while it drives; `lowerS` later he asks to leave support (`PlayerIntent.leaveSupport`: the simulation's
+   * validated conversion, reason 'takedown'). If the carrier he holds securely is off his support first, he asks at once.
+   * A hold not secure for longer than `graceS` starts it over (a broken hold or a miss never commits); the carrier is never
+   * converted by it.
+   */
+  commit?: { secureS: number; lowerS: number; heightM: number; leanDeg: number; graceS: number };
 }
 
 /**
@@ -51,6 +61,13 @@ export const WRAP_V1: WrapProfile = {
   closeOnTouch: { slackDeg: 0 },
   close: { azDeg: 150, depthM: 0.05 },
 };
+
+/**
+ * M3 step 3: WRAP_V1 with the committed finish. Secure for 50 ms (twelve substeps: past a clamp's flicker), then 0.2 s
+ * lowering to 0.78 m (11 cm under the standing height at the stance's 0.6 m/s) leaning 12 deg (the balance profile's
+ * cap), then down; a hold lost for over 50 ms starts it over.
+ */
+export const WRAP_V2: WrapProfile = { ...WRAP_V1, id: 'wrap-takedown-v2', commit: { secureS: 0.05, lowerS: 0.2, heightM: 0.78, leanDeg: 12, graceS: 0.05 } };
 
 export interface WrapSpec {
   kind: 'wrapAttempt';
@@ -162,6 +179,8 @@ export class WrapAttemptController implements Controller {
   private lastFacing: Vec3;
   /** Contact motion M3 (set only when the fixture has one: a state capture's layout stays the one it was taken with). */
   declare private readonly wp?: WrapProfile;
+  /** The committed finish's hold clock (set at the first finish decision under a profile with one). */
+  declare private tk?: { since: number | null; lastT: number };
 
   constructor(
     readonly spec: WrapSpec,
@@ -218,6 +237,8 @@ export class WrapAttemptController implements Controller {
     let vel = standing ? v3() : len(want) > maxV ? scale(want, maxV / len(want)) : want;
     this.lastFacing = norm(horiz(sub(R, me.position)), this.lastFacing);
     let effortOut = standing ? P.standEffort : P.effort;
+    let stanceOut = this.stanceReq();
+    let leave = false;
     let posture: PlayerIntent['posture'] = P.approachLeanDeg > 0 ? { leanDirWorld: this.lastFacing, leanRad: (P.approachLeanDeg * Math.PI) / 180 } : undefined;
     // ---------------- connection bookkeeping (observed arm retention or body contact with the runner)
     const armsObs = ctx.observed.arms[ctx.self] ?? {};
@@ -264,6 +285,27 @@ export class WrapAttemptController implements Controller {
       } else if (ctx.t - this.lastContactT > 0.3) {
         this.finishMode = 'recover';
       } else this.finishMode = 'contact';
+      const C = this.wp?.commit;
+      if (C) {
+        // the committed finish: a secure hold lowers and leans him in, then takes him down with the carrier
+        const tk = (this.tk ??= { since: null, lastT: -Infinity });
+        const secure = retaining.length === 2 && retaining.every((s) => armsObs[s]?.touchingTarget === tid);
+        if (secure) {
+          tk.lastT = ctx.t;
+          tk.since ??= ctx.t;
+        } else if (tk.since !== null && ctx.t - tk.lastT > C.graceS) tk.since = null;
+        const held = tk.since !== null && ctx.t - tk.lastT <= C.graceS;
+        const carrierDown = tb.controlMode !== 'supported';
+        if (held && (carrierDown || ctx.t - tk.since! >= C.secureS - 1e-9)) {
+          this.finishMode = 'lower';
+          stanceOut = { stance: { ...this.spec.stance, heightM: C.heightM } };
+          posture = { leanDirWorld: fdir, leanRad: (Math.max(C.leanDeg, F.leanDeg ?? 0) * Math.PI) / 180 };
+          if (carrierDown || ctx.t - tk.since! >= C.secureS + C.lowerS - 1e-9) {
+            this.finishMode = 'takedown';
+            leave = true;
+          }
+        }
+      }
       if (len(vel) > maxV) vel = scale(vel, maxV / len(vel));
     } else this.finishMode = this.connectedAt === null ? 'approach' : 'engaged';
     // ---------------- arms
@@ -379,9 +421,10 @@ export class WrapAttemptController implements Controller {
       debugArms[s] = { phase: st.phase, az: Math.round(az), target };
     }
     return {
-      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: this.lastFacing, effort: effortOut, ...this.stanceReq() },
+      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: this.lastFacing, effort: effortOut, ...stanceOut },
       arms,
       posture,
+      ...(leave ? { leaveSupport: 'takedown' as const } : {}),
       debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true },
     };
   }

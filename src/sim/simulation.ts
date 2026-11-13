@@ -203,7 +203,7 @@ export interface HandoffRecord {
   outcome: 'accepted' | 'rejected' | 'transferFailed';
   t: number;
   step: number;
-  reason: 'lossOfSupport' | 'diagnostic';
+  reason: 'lossOfSupport' | 'diagnostic' | 'takedown';
   report: CandidateReport;
   audit?: TransferAudit;
   activeBodies?: { before: number; after: number; proxyRemoved: boolean };
@@ -872,6 +872,8 @@ export class Simulation {
       let reason: HandoffRecord['reason'] | null = null;
       let edit: CandidateEdit | undefined;
       if (pl.balance.pendingLoss && pl.controlMode === 'supported') reason = 'lossOfSupport';
+      // contact motion M3: the committed finish's request, decided on the last substep (never after the referee's ending)
+      if (!reason && pl.controlMode === 'supported' && pl.intent.leaveSupport === 'takedown' && this.def.wrap?.commit && !this.rules?.ending) reason = 'takedown';
       diag.forEach((d, i) => {
         if (d.playerId === pl.id && !this.diagDone.has(i) && this.t >= d.atS - 1e-9 && this.conversionCondition(pl, d.when)) {
           this.diagDone.add(i);

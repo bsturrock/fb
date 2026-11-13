@@ -96,6 +96,12 @@ export interface PlayerIntent {
   locomotion: LocomotionIntent;
   arms?: Partial<Record<ArmSide, ArmIntent>>;
   posture?: PostureIntent;
+  /**
+   * Contact motion M3: a supported player's request to leave support (the committed finish's 'takedown', under a wrap
+   * profile with one). The simulation converts him through the validated path at the next substep's boundary, as a loss
+   * of support would, unless the referee has ended the play.
+   */
+  leaveSupport?: 'takedown';
   /** Controller-reported diagnostics (phase names, aim points). Never read by mechanics. */
   debug?: Record<string, unknown>;
 }
