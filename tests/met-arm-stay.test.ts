@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { PoseDebug } from '../src/sim/debug';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
-import { MET_ARM_STAY_ID, withClipArmSwing, withMetArmStay, withoutMetArmStay } from '../src/sim/profiles';
+import { CLIP_ARM_SWING_ID, MET_ARM_STAY_ID, withClipArmSwing, withMetArmStay, withoutMetArmStay } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { armProbe, firstDifference, watch, type Seen, type Watched } from './arm-watch';
-import { asCaptured, FIX, preBornOverlap } from './runs';
+import { asCaptured, FIX, preBornOverlap, preMetArmStay } from './runs';
 import { captureState, loadState, resumeState, type StateCapture } from './state';
 import { DEEP_M, SNAP_RADPS } from './visible';
 
 // Ladder 16b: a composed arm another body has met keeps its natural pose (SelfClearanceProfile.metArmStay,
-// MET_ARM_FIXED_ALTERNATIVE). As registered, a met arm whose swing-out found nothing clear of the other body took the
+// MET_ARM_FIXED_ALTERNATIVE; registered on L3, L4 and HC with clipArmSwing in 18e). Before, a met arm whose swing-out found nothing clear of the other body took the
 // first clear of eight body-fixed alternatives (ARM_ALTS: 1-6 raised, forward or back; 7 and 8 hanging at the side) and
 // travelled there; each push-out was kept as the next step's start (L3-F5-drag, the user's report: the carrier's left
 // hand, natural at its side when the wrap lands, travels to its facemask and goes haywire). With metArmStay it keeps its
@@ -18,6 +18,8 @@ import { DEEP_M, SNAP_RADPS } from './visible';
 // side; only 0, 7 and 8 are ever shown.
 
 const stay = (d: FixtureDef): FixtureDef => ({ ...d, selfClearance: withMetArmStay(d.selfClearance!) });
+/** Fixture `id` as before the 18e flip (no metArmStay, no clipArmSwing): the fault twins' run. */
+const PRE = (id: string): FixtureDef => preMetArmStay(FIX(id));
 const RAISED = [1, 2, 3, 4, 5, 6];
 const shown = (w: Watched, arm: string): number[] => Object.keys(w.arms[arm].variants).map(Number);
 
@@ -39,16 +41,21 @@ async function stayCapture(id: string, tick: number, def = FIX(id)): Promise<Sta
 }
 
 describe('ladder 16b: a composed arm another body has met keeps its natural pose (metArmStay)', () => {
-  it('the profile: the id part, the round trip, used by no fixture', () => {
-    for (const d of allFixtures()) expect(d.selfClearance?.metArmStay, d.id).toBeUndefined();
-    const s = FIX('L3-F5-drag').selfClearance!;
+  it('the profile: the id part, the round trip; registered with clipArmSwing on every L3, L4 and HC self-clearance (18e), on no other fixture', () => {
+    for (const d of allFixtures()) {
+      const on = /^(L3|L4|HC)-/.test(d.id) && !!d.selfClearance;
+      expect(d.selfClearance?.metArmStay, d.id).toBe(on ? true : undefined);
+      expect(d.selfClearance?.clipArmSwing, d.id).toBe(on ? true : undefined);
+      if (on) expect(d.selfClearance!.id, d.id).toBe(`${preMetArmStay(d).selfClearance!.id}+${CLIP_ARM_SWING_ID}+${MET_ARM_STAY_ID}`);
+    }
+    const s = PRE('L3-F5-drag').selfClearance!;
     const on = withMetArmStay(s);
     expect(on).toEqual({ ...s, id: `${s.id}+${MET_ARM_STAY_ID}`, metArmStay: true });
     expect(withMetArmStay(on)).toBe(on);
     expect(withoutMetArmStay(on)).toEqual(s);
   });
 
-  it('L3-F5-drag from 0.35 s, the user\'s report: as registered (the fault twin) the carrier\'s left arm, met by the wrap at 0.40 s, takes the raised alternatives, its palm 0.98 m above its core, its hand through its own head (5 cm, 0.97 s) and its shoulder snapping (116 rad/s at 1.27 s); with metArmStay it stays low (its request, else hanging at its side), its hand never in its head, no snap', async () => {
+  it('L3-F5-drag from 0.35 s, the user\'s report: as before 18e (the fault twin) the carrier\'s left arm, met by the wrap at 0.40 s, takes the raised alternatives, its palm 0.98 m above its core, its hand through its own head (5 cm, 0.97 s) and its shoulder snapping (116 rad/s at 1.27 s); with metArmStay it stays low (its request, else hanging at its side), its hand never in its head, no snap', async () => {
     const cap = loadState('tests/data/state/L3-F5-drag@21.json.gz');
     const reg = await resume(cap);
     expect(reg.firstContact).toBeCloseTo(0.4, 3);
@@ -69,7 +76,7 @@ describe('ladder 16b: a composed arm another body has met keeps its natural pose
     expect(on.snap.w).toBeLessThanOrEqual(SNAP_RADPS);
   }, 120000);
 
-  it('L3-F16-contactStop from 0.30 s: as registered (the fault twin) the defender\'s left forearm, in a raised alternative 0.67 m off its request, passes 10 cm into its own trunk at 0.567 s, its bone axis inside it, and the runner\'s carry arm leaves its tuck for the raised alternatives; with metArmStay no forearm or palm passes through its own trunk (none past DEEP_M, no bone axis more than 2 cm inside it), the defender\'s left only on its request or hanging, the carry arm on its tuck', async () => {
+  it('L3-F16-contactStop from 0.30 s: as before 18e (the fault twin) the defender\'s left forearm, in a raised alternative 0.67 m off its request, passes 10 cm into its own trunk at 0.567 s, its bone axis inside it, and the runner\'s carry arm leaves its tuck for the raised alternatives; with metArmStay no forearm or palm passes through its own trunk (none past DEEP_M, no bone axis more than 2 cm inside it), the defender\'s left only on its request or hanging, the carry arm on its tuck', async () => {
     const cap = loadState('tests/data/state/L3-F16-contactStop@18.json.gz');
     const reg = await resume(cap);
     const dl = reg.arms['D:left'];
@@ -97,7 +104,7 @@ describe('ladder 16b: a composed arm another body has met keeps its natural pose
     expect(twin.arms['R:left'].jumpAt).toBe('Palm 0.633');
   }, 120000);
 
-  it('no stiff player: in L3-F4-gripBoth from 0.80 s both handoffs, deferred at 0.90 s for overlapping the other body, convert, the met arms pushed out as registered while the handoff is deferred; the fault twin, the arms kept on their rules then, rejects both at the window\'s end and the players stand stiff', async () => {
+  it('no stiff player: in L3-F4-gripBoth from 0.80 s both handoffs, deferred at 0.90 s for overlapping the other body, convert, the met arms pushed out as before 18e while the handoff is deferred; the fault twin, the arms kept on their rules then, rejects both at the window\'s end and the players stand stiff', async () => {
     // (the deferral is the case: before the ladder 17b flip, which converts both at once with the met arms' born pairs
     // held out of the solve)
     const before = preBornOverlap(FIX('L3-F4-gripBoth'));
@@ -115,16 +122,16 @@ describe('ladder 16b: a composed arm another body has met keeps its natural pose
   }, 120000);
 
   it('what nothing has met is unchanged: the free run (L3-F18-runLab) runs identically; in the grips (L3-F4-gripBoth), the two-palm hold (L4-F5-twoPalm-on), the wrap (L4-F10-wrap-on) and the hold (L3-F6-hold) the first difference is a composed arm, not an arm task; with it clipArmSwing changes nothing (L3-F5-drag). The fault twins: the rules on for every composed arm change the free run\'s carry tuck; without it clipArmSwing changes L3-F5-drag', async () => {
-    expect(await firstDifference(FIX('L3-F18-runLab'), stay(FIX('L3-F18-runLab')))).toBeNull();
+    expect(await firstDifference(PRE('L3-F18-runLab'), stay(PRE('L3-F18-runLab')))).toBeNull();
     for (const id of ['L3-F4-gripBoth', 'L4-F5-twoPalm-on', 'L4-F10-wrap-on', 'L3-F6-hold']) {
-      const d = await firstDifference(FIX(id), stay(FIX(id)));
+      const d = await firstDifference(PRE(id), stay(PRE(id)));
       expect(d, id).not.toBeNull();
       expect(d!.task, id).toBe(false);
     }
-    const twin = await firstDifference(FIX('L3-F18-runLab'), stay(FIX('L3-F18-runLab')), { clipArmSwingUngated: true });
+    const twin = await firstDifference(PRE('L3-F18-runLab'), stay(PRE('L3-F18-runLab')), { clipArmSwingUngated: true });
     expect(twin).toMatchObject({ player: 'R', arm: 'right', task: false });
     const swing = (d: FixtureDef): FixtureDef => ({ ...d, selfClearance: withClipArmSwing(d.selfClearance!) });
-    const drag = FIX('L3-F5-drag');
+    const drag = PRE('L3-F5-drag');
     expect(await firstDifference(stay(drag), stay(swing(drag)))).toBeNull();
     expect(await firstDifference(drag, swing(drag))).not.toBeNull();
   }, 240000);

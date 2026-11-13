@@ -298,10 +298,10 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('upperarm=maybe'))).toEqual({ def: d, opts: {}, label: 'upperarm=maybe ignored' });
   }, 120000);
 
-  // ladder rung 14b: armswing=on|off on the fixture's self-clearance profile; no fixture registers it yet
-  it('armswing=on runs the fixture with its met clip arms keeping their swing (`clipArmSwing` on its profile, id and all: L3-F16-contactStop, another run); armswing=off takes it off again and on the registered fixture is the registered run; it composes after upperarm; a fixture without self-clearance and unknown values change nothing', async () => {
+  // ladder rung 14b: armswing=on|off on the fixture's self-clearance profile; registered on L3, L4 and HC with metArmStay (18e)
+  it('armswing=on runs the fixture with its met clip arms keeping their swing (`clipArmSwing` on its profile, id and all: L3-F16-contactStop as before 18e, another run); armswing=off takes it off again and on a fixture without it is that run; it composes after upperarm; a fixture without self-clearance and unknown values change nothing', async () => {
     const id = 'L3-F16-contactStop';
-    const d = FIX(id);
+    const d = preMetArmStay(FIX(id));
     expect(d.selfClearance!.clipArmSwing).toBeUndefined();
     const on = labRun(d, new URLSearchParams(`fixture=${id}&armswing=on`));
     expect(on.label).toBe('clip arm swing on');
@@ -330,10 +330,10 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('armswing=maybe'))).toEqual({ def: d, opts: {}, label: 'armswing=maybe ignored' });
   }, 120000);
 
-  // ladder rung 16b: armstay=on|off on the fixture's self-clearance profile; no fixture registers it yet
-  it('armstay=on runs the fixture with its met arms keeping their natural pose (`metArmStay` on its profile, id and all: L3-F5-drag, another run); armstay=off takes it off again and on the registered fixture is the registered run; it composes after armswing; a fixture without self-clearance and unknown values change nothing', async () => {
+  // ladder rung 16b: armstay=on|off on the fixture's self-clearance profile; registered on L3, L4 and HC with clipArmSwing (18e)
+  it('armstay=on runs the fixture with its met arms keeping their natural pose (`metArmStay` on its profile, id and all: L3-F5-drag as before 18e, another run); armstay=off takes it off again and on a fixture without it is that run; it composes after armswing, and armswing=on&armstay=on on the fixture before 18e is the registered fixture (armstay=off&armswing=off the view before it); a fixture without self-clearance and unknown values change nothing', async () => {
     const id = 'L3-F5-drag';
-    const d = FIX(id);
+    const d = preMetArmStay(FIX(id));
     expect(d.selfClearance!.metArmStay).toBeUndefined();
     const on = labRun(d, new URLSearchParams(`fixture=${id}&armstay=on`));
     expect(on.label).toBe('met arm stay on');
@@ -357,6 +357,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const both = labRun(d, new URLSearchParams('armswing=on&armstay=on'));
     expect(both.def.selfClearance!.id).toBe(`${d.selfClearance!.id}+clip-swing-v1+met-arm-stay-v1`);
     expect(both.label).toBe('clip arm swing on · met arm stay on');
+    expect(both.def).toEqual(FIX(id));
+    expect(labRun(FIX(id), new URLSearchParams('armstay=off&armswing=off')).def).toEqual(d);
     const g = allFixtures().find((x) => !x.selfClearance)!;
     expect(labRun(g, new URLSearchParams('armstay=on'))).toEqual({ def: g, opts: {}, label: 'armstay n/a (no self-clearance)' });
     expect(labRun(d, new URLSearchParams('armstay=maybe'))).toEqual({ def: d, opts: {}, label: 'armstay=maybe ignored' });

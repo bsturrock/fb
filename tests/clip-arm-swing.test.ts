@@ -4,7 +4,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { withClipArmSwing } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { armProbe, firstDifference, watch, type Seen, type Watched } from './arm-watch';
-import { asCaptured, FIX } from './runs';
+import { asCaptured, FIX, preMetArmStay } from './runs';
 import { loadState, resumeState } from './state';
 import { DEEP_M, SNAP_RADPS } from './visible';
 
@@ -17,6 +17,8 @@ import { DEEP_M, SNAP_RADPS } from './visible';
 // player's own measured trunk (past the idle baseline), or the forearm's or hand's bone axis inside the trunk.
 
 const withSwing = (d: FixtureDef): FixtureDef => ({ ...d, selfClearance: withClipArmSwing(d.selfClearance!) });
+/** Fixture `id` as before ladder 18e registered `metArmStay` with `clipArmSwing` (under it `clipArmSwing` changes nothing). */
+const PRE = (id: string): FixtureDef => preMetArmStay(FIX(id));
 
 /** L3-F16-contactStop resumed from 0.30 s (before D's left arm meets the runner's carry arm and ball at 0.35 s), as captured or with `variant` applied to its self-clearance. */
 async function contactStop(variant?: (d: FixtureDef) => FixtureDef, pose?: PoseDebug): Promise<Watched> {
@@ -54,7 +56,7 @@ describe('ladder 14b: a composed arm another body has met keeps its swing (clipA
     const run = async (pose?: PoseDebug): Promise<Watched> => {
       const seen: Seen = {};
       const probe = armProbe(seen);
-      const sim = await Simulation.create(withSwing(FIX('L3-F7-mirror0')), { debug: { poseProbe: probe, ...(pose ? { pose } : {}) } });
+      const sim = await Simulation.create(withSwing(PRE('L3-F7-mirror0')), { debug: { poseProbe: probe, ...(pose ? { pose } : {}) } });
       const w = await watch(sim, seen);
       sim.dispose();
       return w;
@@ -66,13 +68,13 @@ describe('ladder 14b: a composed arm another body has met keeps its swing (clipA
   }, 120000);
 
   it('what nothing has met is unchanged: the free run\'s carry tuck (L3-F18-runLab), the grips (L3-F4-gripBoth) and the two-palm hold (L4-F5-twoPalm-on) run identically with clipArmSwing; in the wrap (L4-F10-wrap-on) and the hold (L3-F6-hold) the first difference is a composed arm, not an arm task. The fault twin, the rules on for every composed arm (not only one another body has met), changes the carry tuck', async () => {
-    for (const id of ['L3-F18-runLab', 'L3-F4-gripBoth', 'L4-F5-twoPalm-on']) expect(await firstDifference(FIX(id), withSwing(FIX(id)))).toBeNull();
+    for (const id of ['L3-F18-runLab', 'L3-F4-gripBoth', 'L4-F5-twoPalm-on']) expect(await firstDifference(PRE(id), withSwing(PRE(id)))).toBeNull();
     for (const id of ['L4-F10-wrap-on', 'L3-F6-hold']) {
-      const d = await firstDifference(FIX(id), withSwing(FIX(id)));
+      const d = await firstDifference(PRE(id), withSwing(PRE(id)));
       expect(d).not.toBeNull();
       expect(d!.task).toBe(false);
     }
-    const twin = await firstDifference(FIX('L3-F18-runLab'), withSwing(FIX('L3-F18-runLab')), { clipArmSwingUngated: true });
+    const twin = await firstDifference(PRE('L3-F18-runLab'), withSwing(PRE('L3-F18-runLab')), { clipArmSwingUngated: true });
     expect(twin).toMatchObject({ player: 'R', arm: 'right', task: false });
   }, 240000);
 });

@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withConversionRetry, withHipStops, withKneeStop, withSelfLegs } from '../profiles';
+import { hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs } from '../profiles';
 import { withHoldStill } from '../footwork';
 
 /**
@@ -75,6 +75,18 @@ function bornSepFlip(d: FixtureDef): FixtureDef {
   return d.ragdoll?.bornOverlap && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withBornSeparation(d.ragdoll) } : d;
 }
 
+/**
+ * Ladder 18e (16c's and 17c's parked flip), the met-arm flip: every L3, L4 and HC fixture's supported arms keep their
+ * natural pose when another body meets them (`metArmStay`, rung 16b, with 14b's `clipArmSwing`, which it makes inert):
+ * pressing a little into the other body, at most hanging at the side, never a raised or forward alternative. A met arm
+ * pressed into the other player when he converts is a born pair (17b), pushed apart (18c). G, L1, L2 and RH keep their
+ * profiles. The lab's `armstay=off&armswing=off` is the view before it; tests/runs.ts `preMetArmStay` gives a definition
+ * as before it.
+ */
+function metArmStayFlip(d: FixtureDef): FixtureDef {
+  return d.selfClearance && VISIBLE_FLIP.test(d.id) ? { ...d, selfClearance: withMetArmStay(withClipArmSwing(d.selfClearance)) } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -103,6 +115,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip));
   return registry.slice();
 }

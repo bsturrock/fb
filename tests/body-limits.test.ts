@@ -23,7 +23,7 @@ import { armSelfShapes, buildProxyPose, CONT_LEG_MPS, HARD_OK, hingeChain, LEG_S
 import { initPhysics, RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX, withoutBornOverlap, withoutConversionRetry } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX, withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutConversionRetry } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
@@ -335,7 +335,13 @@ describe('arm self-clearance: profile and geometry', () => {
       [
         'is on for exactly the L3, L4 and HC fixtures',
         () => {
-          for (const d of allFixtures()) expect(d.selfClearance, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? SELF_CLEARANCE_V1 : undefined);
+          // (with the met-arm flip's parts since ladder 18e; before it, the profile itself)
+          const stayed = withMetArmStay(withClipArmSwing(SELF_CLEARANCE_V1));
+          for (const d of allFixtures()) {
+            const on = /^(L3|L4|HC)$/.test(d.milestone);
+            expect(d.selfClearance, d.id).toEqual(on ? stayed : undefined);
+            if (on) expect(preMetArmStay(d).selfClearance, d.id).toEqual(SELF_CLEARANCE_V1);
+          }
         },
       ],
       [

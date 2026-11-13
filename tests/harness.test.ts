@@ -38,7 +38,7 @@ import { FOOTWORK_L2, FOOTWORK_L3, HOLD_STILL_V1, withHoldStill } from '../src/s
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
-import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1 } from '../src/sim/profiles';
+import { FALL_L4, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1, withClipArmSwing, withMetArmStay } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
 import { asCaptured, breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 import { loadState, resumeState } from './state';
@@ -388,8 +388,10 @@ const EXPORTS: Row[] = [
     async () => {
       const on = await Simulation.create(FIX('L3-F16-sprint'));
       const e = on.exportFixture() as { profileIds: Record<string, unknown>; profiles: { body: Record<string, { measured?: { trunkHull?: unknown[] } }>; selfClearance?: unknown } };
-      expect(e.profileIds.selfClearance).toBe(SELF_CLEARANCE_V1.id);
-      expect(e.profiles.selfClearance).toEqual(SELF_CLEARANCE_V1);
+      // (with the met-arm flip's parts since ladder 18e)
+      const stayed = withMetArmStay(withClipArmSwing(SELF_CLEARANCE_V1));
+      expect(e.profileIds.selfClearance).toBe(stayed.id);
+      expect(e.profiles.selfClearance).toEqual(stayed);
       for (const b of Object.values(e.profiles.body)) expect(b.measured?.trunkHull).toHaveLength(7);
       on.dispose();
       // L2-F3-runStop uses the model body: its export keeps the measured block without the trunk or hand tip

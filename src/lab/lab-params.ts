@@ -29,8 +29,9 @@
 //                      as it is;
 //   armstay=on|off     a supported arm another body has met keeping its natural pose (the self-clearance profile's
 //                      `metArmStay`, rung 16b): pressing a little into the other body, at most hanging at its side, never
-//                      sent to a raised or forward alternative; or as before. A fixture without self-clearance is run as
-//                      it is.
+//                      sent to a raised or forward alternative; or as before. Registered with `clipArmSwing` on L3, L4
+//                      and HC (ladder 18e): `armstay=off&armswing=off` is the view before. A fixture without
+//                      self-clearance is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
