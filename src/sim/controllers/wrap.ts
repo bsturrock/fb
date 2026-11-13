@@ -61,6 +61,34 @@ export interface WrapProfile {
    * carrier until he has a reason to leave them (`WrapDrive`).
    */
   drive?: WrapDrive;
+  /** Contact motion polish 1.4 (absent: the arms at the spec's band round the carrier's torso, as before): the low strike's arms. */
+  low?: WrapLow;
+}
+
+/**
+ * Contact motion polish 1.4, the deep crouch tackle's entry: the arms go round the carrier at pelvis height, where the
+ * hands can meet. Every arm target sits at `bandYLocal` above the carrier's root (in place of `WrapSpec.bandYLocal`),
+ * and the ring, the cradle's width and the near corner are the carrier's shape at that height (`shapeAt`: below his
+ * pelvis box, the support capsule), not his torso box. The carriage and the cradle are measured ahead of the tackler's
+ * shoulders, and the strike's line steers his head (not his centre) `strike.offsetM` to the carrier's side: his trunk
+ * pitched deep carries both well ahead of his hips. Requests only.
+ */
+export interface WrapLow {
+  bandYLocal: number;
+}
+
+/**
+ * The horizontal support distance along world direction `d` of the widest of a body's proxy shapes at height `y` above
+ * its root (the torso and pelvis boxes, each at its own half extents, and the support capsule's radius), as if upright.
+ */
+export function shapeAt(body: BodyProfile, rq: { x: number; y: number; z: number; w: number }, d: Vec3, y: number): number {
+  if (body.kind === 'legacyCapsule') return body.legacy.radius;
+  const C = body.compound;
+  const rx = qRot(rq, v3(1, 0, 0));
+  const rz = qRot(rq, v3(0, 0, 1));
+  const box = (b: { center: Vec3; halfExtents: Vec3 }): number => (Math.abs(y - b.center.y) <= b.halfExtents.y ? Math.abs(dot(d, rx)) * b.halfExtents.x + Math.abs(dot(d, rz)) * b.halfExtents.z : 0);
+  const s = C.support;
+  return Math.max(box(C.torso), box(C.pelvis), Math.abs(y - s.center.y) <= s.halfHeight + s.radius ? s.radius : 0);
 }
 
 /**
@@ -242,6 +270,29 @@ export const WRAP_V4: WrapProfile = {
  * in the last 0.3 s, 1.6 s at most. Values and reasons: docs/handoff/contact-motion-m3.md.
  */
 export const WRAP_V5: WrapProfile = { ...WRAP_V4, id: 'wrap-drive-v5', drive: { oneArmBody: true, extraMps: 3, goLeanDeg: 30, stallS: 0.9, progress: { leanDeg: 15, riseDeg: 2, windowS: 0.3 }, maxS: 1.6, ease: { fromDeg: 12, toDeg: 25 } } };
+
+/**
+ * Contact motion polish 1.4, the low strike of the deep crouch tackle: WRAP_V5 with the trunk pitched 75 deg on the
+ * hinge at his lowest stance (the hinge's drop, 0.2 m, takes the root to the stance floor), on 1.0 s ahead of contact
+ * (or inside 1.4 m: the hinge's unchanged rate bounds need about 0.85 s to fold it), so the shoulder meets the carrier's
+ * hip; his line steers his head 0.35 m to the carrier's side (the pelvis box's half width and the head's radius: beside
+ * the hip, never across his front, at whatever pitch the hinge has reached); the arms round him 5 cm below his root,
+ * under his pelvis box, on the support capsule. Values and reasons: docs/handoff/contact-motion-m3.md.
+ */
+export const WRAP_V6: WrapProfile = {
+  ...WRAP_V5,
+  id: 'wrap-low-v6',
+  strike: {
+    ...WRAP_V5.strike!,
+    leadS: 1.0,
+    gapM: 1.4,
+    pitchDeg: 75,
+    dropM: 0.2,
+    offsetM: 0.35,
+    hinge: { ...WRAP_V5.strike!.hinge, maxDeg: 75, maxDropM: 0.2 },
+  },
+  low: { bandYLocal: -0.05 },
+};
 
 export interface WrapSpec {
   kind: 'wrapAttempt';
@@ -602,8 +653,10 @@ export class WrapAttemptController implements Controller {
           if (len(across) > 1e-6) this.lastFacing = norm(add(scale(myFwd, Math.cos(lim)), scale(norm(across), Math.sin(lim))), myFwd);
         }
         if (this.connectedAt === null && !standing) {
-          // steer the line so his centre passes `offsetM` to the head's side of the carrier's
-          const e = dot(sub(addScaled(R, hd, SK.offsetM), me.position), hd);
+          // steer the line so his centre (polish 1.4, the low strike: his head) passes `offsetM` to the head's side of the
+          // carrier's
+          const pt = this.wp?.low ? add(me.position, qRot(me.rotation, ctx.bodies[ctx.self].compound.head.center)) : me.position;
+          const e = dot(sub(addScaled(R, hd, SK.offsetM), pt), hd);
           vel = addScaled(vel, hd, w * clamp(SK.offsetGainPerS * e, -SK.offsetMps, SK.offsetMps));
           if (len(vel) > maxV) vel = scale(vel, maxV / len(vel));
         }
@@ -611,7 +664,10 @@ export class WrapAttemptController implements Controller {
     }
     // ---------------- arms
     const arms: Partial<Record<ArmSide, ArmIntent>> = {};
-    const band = R.y + P.bandYLocal;
+    // polish 1.4: the low strike's band, and the carrier's shape there (absent: his torso box at the spec's band)
+    const LOW = this.wp?.low;
+    const band = R.y + (LOW ? LOW.bandYLocal : P.bandYLocal);
+    const shape = (d: Vec3): number => (LOW ? shapeAt(tBody, tb.rotation, d, LOW.bandYLocal) : this.support(tBody, tb.rotation, d));
     const myArms = ctx.observed.arms[ctx.self] ?? {};
     const azOf = (pt: Vec3, sgn: number): number => {
       const r = horiz(sub(pt, R));
@@ -620,7 +676,7 @@ export class WrapAttemptController implements Controller {
     const ring = (azDeg: number, sgn: number, extra: number): Vec3 => {
       const a = (azDeg * Math.PI) / 180;
       const d = norm(add(scale(near, Math.cos(a)), scale(side, sgn * Math.sin(a))));
-      const r = this.support(tBody, tb.rotation, d) + extra;
+      const r = shape(d) + extra;
       return v3(R.x + d.x * r, band, R.z + d.z * r);
     };
     const debugArms: Record<string, unknown> = {};
@@ -628,9 +684,11 @@ export class WrapAttemptController implements Controller {
     // carrier to him: the carrier is on his forward line)
     const W = this.wp;
     const fwd = scale(near, -1);
-    const chest = W ? addScaled(me.position, fwd, this.support(ctx.bodies[ctx.self], me.rotation, fwd)) : me.position;
-    const halfW = W ? this.support(tBody, tb.rotation, side) : 0;
-    const cornerDeg = W ? (Math.atan2(halfW, this.support(tBody, tb.rotation, near)) * 180) / Math.PI : 0;
+    // (polish 1.4: under the low strike, his shoulders' line along the approach where it is further ahead)
+    const shoulders = LOW && myArms.left && myArms.right ? dot(sub(scale(add(myArms.left.shoulderWorld, myArms.right.shoulderWorld), 0.5), me.position), fwd) : -Infinity;
+    const chest = W ? addScaled(me.position, fwd, Math.max(this.support(ctx.bodies[ctx.self], me.rotation, fwd), shoulders)) : me.position;
+    const halfW = W ? shape(side) : 0;
+    const cornerDeg = W ? (Math.atan2(halfW, shape(near)) * 180) / Math.PI : 0;
     const closingMps = dot(sub(horiz(me.linearVelocity), vR), fwd);
     const ttc = closingMps > 1e-3 ? gap / closingMps : Infinity;
     const carriage = (forwardM: number, lateral: number, sgn: number): Vec3 => {
@@ -666,7 +724,7 @@ export class WrapAttemptController implements Controller {
       let target: Vec3;
       let pole: Vec3 | undefined;
       if (plan === 'palmFlank') {
-        const flank = addScaled(addScaled(R, near, this.support(tBody, tb.rotation, near) - 0.07), side, sgn * 0.1);
+        const flank = addScaled(addScaled(R, near, shape(near) - 0.07), side, sgn * 0.1);
         target = v3(flank.x, band, flank.z);
         if (st.phase === 'palmReach' && gap < P.engageGapM && t - st.since > 0.2) go('palmClose');
         if (st.phase === 'palmClose' && ob.gripId && t - st.since > 0.2) go('palmPull');
