@@ -63,6 +63,17 @@ export const preBornSeparation = (d: FixtureDef): FixtureDef => (d.ragdoll?.born
  * every state capture and natural sample taken before it, ran under. Composes with the other `pre*` helpers.
  */
 export const preMetArmStay = (d: FixtureDef): FixtureDef => (d.selfClearance?.metArmStay ? { ...d, selfClearance: withoutClipArmSwing(withoutMetArmStay(d.selfClearance)) } : d);
+/**
+ * Contact motion M2 (the brace flip): `d` as before it, without the carrier's brace profile (the same definition on a
+ * fixture without one): what every state capture and natural sample taken before it ran under. Composes with the other
+ * `pre*` helpers.
+ */
+export const preBrace = (d: FixtureDef): FixtureDef => {
+  if (!d.brace) return d;
+  const { brace, ...o } = d;
+  void brace;
+  return o;
+};
 /** Ladder 18: `d` with the met-arm flip's self-clearance (`metArmStay` and `clipArmSwing`; as it is when it has them). */
 export const metArmStayed = (d: FixtureDef): FixtureDef => (d.selfClearance ? { ...d, selfClearance: withMetArmStay(withClipArmSwing(d.selfClearance)) } : d);
 /** Ladder 8i: the hip stops the 8i assessment gave a ragdoll (`hipStopsFor` before rung 8k: on L4 the backstop). */

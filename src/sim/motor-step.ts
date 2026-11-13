@@ -52,7 +52,7 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
       ls = leanScale(bal.theta, B);
       // posture request: desired up, rate-limited toward the requested lean (<= max posture lean); contact motion M2: the
       // carrier's brace leans him toward his travel by its weight
-      const pr = pl.brace && pl.brace.w > 0 ? bracePosture(host.def.brace!.pose, pl.brace.w, pl.intent.posture, b.linearVelocity, forwardOf(b.rotation)) : pl.intent.posture;
+      const pr = host.def.brace && pl.brace && pl.brace.w > 0 ? bracePosture(host.def.brace.pose, pl.brace.w, pl.intent.posture, b.linearVelocity, forwardOf(b.rotation)) : pl.intent.posture;
       const target = pr ? desiredUpFrom(clamp(pr.leanRad, 0, B.maxPostureLeanRad), pr.leanDirWorld) : { ...UP };
       const ang = Math.acos(clamp(dot(bal.desiredUp, target), -1, 1));
       const maxStep = B.postureRateRadPerS * host.physics.dt;

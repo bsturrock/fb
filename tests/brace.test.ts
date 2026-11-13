@@ -12,7 +12,8 @@ import { carriedBall } from '../src/sim/pose';
 import { DEFAULT_POSE_PROFILE } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { addScaled, deg, dist, dot, horiz, norm, qInvRot, qRot, sub, v3, vc, type Vec3 } from '../src/sim/vec';
-import { FIX, rows, traceRowsDiff } from './helpers';
+import { FIX, preBrace, rows, traceRowsDiff } from './helpers';
+import { captureState, resumeState } from './state';
 import { depth, drawnShapes, selfPairs } from './visible';
 import { LIMB_HELD_M } from './visible-bar';
 
@@ -215,11 +216,7 @@ describe('contact motion M2: the carrier sees a hit coming and braces', () => {
 });
 
 /** The fixture without the brace profile (whether or not it has one). */
-const unbraced = (d: FixtureDef): FixtureDef => {
-  const { brace, ...o } = d;
-  void brace;
-  return o;
-};
+const unbraced = preBrace;
 const braced = (id: string): FixtureDef => ({ ...unbraced(FIX(id)), brace: CARRIER_BRACE_V1 });
 
 /** One tick of the carrier while supported: his proxy's height and forward pitch, and his pose in the proxy frame. */
@@ -360,4 +357,29 @@ describe('contact motion M2: the braced carrier pose', () => {
       },
     );
   }, 120000);
+
+  it('a state captured braced resumes without the profile: the carrier stands out of the brace (the twin resumed with it stays braced)', async () => {
+    // L3-F3-collision at 0.35 s, fully braced, to 0.5 s (before contact); the twin's change is the profile (resumeState's
+    // variant), as a capture-based twin of a brace on/off question resumes it
+    const def = braced('L3-F3-collision');
+    const sim = await Simulation.create(def);
+    while (sim.t < 0.35 - 1e-9) sim.stepTick();
+    const R = def.players.find((p) => p.role === 'runner')!.id;
+    expect(sim.byId.get(R)!.brace!.w).toBeGreaterThan(0.9);
+    const cap = captureState(sim);
+    sim.dispose();
+    const at = async (d: FixtureDef, variant: string[]): Promise<{ y: number; palmToBall: number }> => {
+      const s = await resumeState(cap, { def: d, variant });
+      while (s.t < 0.5 - 1e-9) s.stepTick();
+      const pl = s.byId.get(R)!;
+      const out = { y: pl.proxy.body.translation().y, palmToBall: dist(pl.pose!.jointLandmarksWorld.leftPalm, carriedBall(pl.pose)!.p) };
+      s.dispose();
+      return out;
+    };
+    const on = await at(def, []);
+    const off = await at(unbraced(def), ['brace']);
+    expect(on.palmToBall).toBeLessThan(0.2);
+    expect(off.palmToBall).toBeGreaterThan(0.3);
+    expect(off.y - on.y).toBeGreaterThan(0.03);
+  }, 60000);
 });

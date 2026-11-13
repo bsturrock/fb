@@ -84,7 +84,7 @@ export function supportTargets(host: SupportHost, pl: PlayerRuntime, S: Suspensi
     advanceBraking(st, B, want, dt);
   }
   // contact motion M2: the carrier's brace drops the hips by its weight, on top of the preparation drop
-  composeTarget(st, S, runM, pl.run?.w ?? 0, dt, pl.brace && pl.brace.w > 0 ? prepDropM(host, pl) + host.def.brace!.pose.dropM * pl.brace.w : prepDropM(host, pl));
+  composeTarget(st, S, runM, pl.run?.w ?? 0, dt, host.def.brace && pl.brace && pl.brace.w > 0 ? prepDropM(host, pl) + host.def.brace.pose.dropM * pl.brace.w : prepDropM(host, pl));
 }
 
 /** Plan 08: the bounded height drop preparation requests (m), continuous with its weight; 0 without a locomotion profile. */

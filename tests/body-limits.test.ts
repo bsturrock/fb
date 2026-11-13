@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preFlip, preMetArmStay, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFlip, preMetArmStay, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -556,11 +556,12 @@ describe('plan 12 joint range: shoulders', () => {
     // 49.99 deg behind against the twin's 64.2, inside the margin)
     // Ladder 18: the comparison with the twin runs on the definition before the met-arm flip (`preMetArmStay`), whose
     // supported arms load the runner's arm behind at the conversion: under the flip a met arm keeps its natural pose and
-    // HC-F3-phase0's twin arm goes only 23.6 deg behind (the case no longer loads it); the registered run keeps the bar
+    // HC-F3-phase0's twin arm goes only 23.6 deg behind (the case no longer loads it); the registered run keeps the bar.
+    // Contact motion M2: and before the carrier's brace flip (under it HC-F3-phase0's twin arm goes 32.3 deg behind)
     const said: string[] = [];
     for (const id of ['HC-F3-phase0', 'HC-F3-lowRunner', 'HC-F3-mirror', 'L3-F1-low']) {
       const d = id === 'HC-F3-lowRunner' ? pinV1(FIX(id)) : FIX(id);
-      const pre = preMetArmStay(d);
+      const pre = preMetArmStay(preBrace(d));
       const on = await probe(d);
       const onPre = pre === d ? on : await probe(pre);
       const off = await probe(twin(pre));
@@ -1169,8 +1170,10 @@ describe('contact motion M1: upper-arm twist', () => {
       expect(on.pose.jump, `${id} ${on.pose.jat}`).toBeLessThanOrEqual(tick + 1);
       // ladder 18: the twin is the arm before the met-arm flip (`preMetArmStay`), which the met contact sends to a raised or
       // forward alternative the pole rolls past the range; under the flip a met arm keeps its natural pose, which the
-      // range holds without the fit (L3-F4-twoArm's and L4-F9-contact's twins no longer roll past)
-      const off = await twistRun(v1(preMetArmStay(FIX(id))));
+      // range holds without the fit (L3-F4-twoArm's and L4-F9-contact's twins no longer roll past). Contact motion M2: and
+      // before the carrier's brace flip (under it L3-F4-twoArm's twin met arm no longer rolls past: the braced carrier
+      // meets the defender's arm elsewhere)
+      const off = await twistRun(v1(preMetArmStay(preBrace(FIX(id)))));
       expect(Math.max(off.pose.over, off.pose.jump - tick - 1), `${id} twin ${off.pose.at} ${off.pose.jat}`).toBeGreaterThan(5);
     });
   }, 240000);

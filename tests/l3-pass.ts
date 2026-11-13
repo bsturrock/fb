@@ -377,13 +377,15 @@ export const LANDINGS = check({
   name: 'a landing compared with the old step path as it is',
   // L3-F3-side: before 10b, R's step at 0.32 s ran out of time at the speed cap and its old path stood still 5 cm past
   // the plant the substep after (the stop the stepStopM reference carried on); across L3 that correction carried 14
-  // boundaries over 1 cm, up to 6.9 cm. Now every step-to-plant landing passes with nothing set aside
+  // boundaries over 1 cm, up to 6.9 cm. Now every step-to-plant landing passes with nothing set aside. Each fixture lands
+  // at least once (contact motion M2: under the carrier's brace L3-F3-sideMirror's D no longer steps to a plant before the
+  // end, R lands once; 19 landings over the four)
   fixtures: ['L3-F3-side', 'L3-F3-sideMirror', 'L3-F5-drag', 'L3-F8-recontact'],
   watch: (d) => ({
     finish(sim) {
       const id = d.id;
       const landings = sim.transitionDeltas.filter((b) => SIDES.some((s) => b.legs[s].old.kind === 'target' && b.legs[s].now.kind === 'plant'));
-      expect(landings.length, id).toBeGreaterThan(1);
+      expect(landings.length, id).toBeGreaterThan(0);
       // (ladder 15: no pop, POP_M; was 1 cm)
       for (const x of landings) {
         expect(x.rawM, `${id} ${x.t.toFixed(4)} ${x.playerId}`).toBeLessThanOrEqual(POP_M);
