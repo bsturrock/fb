@@ -234,8 +234,9 @@ export class FallResponse {
       const a = ep.arms[side];
       if (!this.P.enable.arms) continue;
       if (side === carry) a.task = 'protect';
-      else if (arms?.retained(playerId, side)) a.task = 'hold';
-      else {
+      else if (arms?.retained(playerId, side)) {
+        a.task = 'hold';
+      } else {
         a.task = 'brace';
         a.brace = 'seek';
       }
@@ -351,7 +352,7 @@ export class FallResponse {
     if (e <= 0) return;
     if (this.P.enable.knee) for (const side of SIDES) this.kneeCmd(ep, side, tS, e);
     if (this.P.enable.hip) for (const side of SIDES) this.hipCmd(ep, side, tS, e);
-    if (this.P.enable.arms) for (const side of SIDES) this.armCmds(ep, ep.arms[side], e);
+    if (this.P.enable.arms) for (const side of SIDES) this.armCmds(ep, ep.arms[side], e, arms);
     const held = this.impactsAhead(ep, contacts);
     if (held.size) {
       ep.stats.heldSubsteps++;
@@ -462,7 +463,7 @@ export class FallResponse {
     ep.cmds.push({ joint: j, torque: clampLen(t, capNm), requestedNm: len(t), capNm, wPre: w, inertia: this.inertia(ep, `${side}Thigh`, ep.rag.profile.lengths.thigh) });
   }
 
-  private armCmds(ep: FallEpisode, a: ArmState, e: number): void {
+  private armCmds(ep: FallEpisode, a: ArmState, e: number, arms: ArmSystem | null): void {
     if (a.task === 'passive') return;
     const P = this.P;
     const shoulder = this.joint(ep, `${a.side}Shoulder`);
@@ -481,7 +482,18 @@ export class FallResponse {
     const cur = limbDirWorld(ep.rag, `${a.side}UpperArm`);
     const w = relativeOmega(ep.rag, shoulder);
     const GS = P.gains.shoulder;
-    const ts = dirTorque(cur, qRot(this.coreQ(ep), dirCore), w, GS.kp * gain, GS.kd * gain);
+    let ts = dirTorque(cur, qRot(this.coreQ(ep), dirCore), w, GS.kp * gain, GS.kd * gain);
+    // contact motion M3: a forearm hold carried from a clamp presses its forearm, at the clamp's parameter, into the
+    // patch it held, as the clamp's closing force did: the force's joint torques (r x F at the shoulder and the elbow)
+    let pressElbow = 0;
+    const press = a.task === 'hold' && P.arms.holdPressN ? arms?.pressTarget(ep.playerId, a.side) : null;
+    if (press) {
+      const eW = landmarkWorld(ep.rag, `${a.side}Elbow`);
+      const p = addScaled(eW, sub(landmarkWorld(ep.rag, `${a.side}Wrist`), eW), press.u);
+      const F = scale(press.into, P.arms.holdPressN! * e);
+      ts = add(ts, cross(sub(p, landmarkWorld(ep.rag, `${a.side}Shoulder`)), F));
+      pressElbow = dot(cross(sub(p, eW), F), hingeAxisWorld(ep.rag, elbow));
+    }
     const capS = P.ceilingsNm.shoulder * e;
     const L = ep.rag.profile.lengths;
     ep.cmds.push({ joint: shoulder, torque: clampLen(ts, capS), requestedNm: len(ts), capNm: capS, wPre: w, inertia: this.inertia(ep, `${a.side}UpperArm`, L.upperArm), arm: a.side, task: a.task });
@@ -489,7 +501,7 @@ export class FallResponse {
     const rate = dot(relativeOmega(ep.rag, elbow), axis);
     const GE = P.gains.elbow;
     const theta = rad(hingeAngles(ep.rag)[elbow.id]);
-    this.hingeCmd(ep, elbow, (GE.kp * (elbowRad - theta) - GE.kd * rate) * gain, P.ceilingsNm.elbow * e, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
+    this.hingeCmd(ep, elbow, (GE.kp * (elbowRad - theta) - GE.kd * rate) * gain + pressElbow, P.ceilingsNm.elbow * e, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
   }
 
   /**

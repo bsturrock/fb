@@ -1342,6 +1342,13 @@ export interface FallResponseProfile {
     yieldScale: number;
     /** How long a forearm hold survives without a solved contact. */
     holdMemoryS: number;
+    /**
+     * Contact motion M3: a forearm hold carried from a clamp also presses its forearm (at the clamp's parameter) into the
+     * patch the clamp held (`ArmSystem.pressTarget`), with this force (N) along its normal, as joint torques (r x F at the
+     * shoulder and the elbow) added to the hold's, under the same ceilings, caps and shared budget: the clamp's closing
+     * force, carried onto the ragdoll arm. Absent: no press.
+     */
+    holdPressN?: number;
   };
   brace: {
     /** Prediction horizon, and the shoulder height the prediction aims at inside it. */
@@ -1460,6 +1467,31 @@ export const FALL_L4: FallResponseProfile = {
   power: { maxPositiveW: 150, maxPositiveWorkJ: 100, toleranceFraction: 0.05, planFraction: 0.9, impactOmegaRadPerS: 1 },
   impactGuard: { closingMPerS: 0.5, bodyClosingMPerS: 2, impulseNs: 10, lookaheadSubsteps: 1.5, predictionM: 0.1, skinM: 0.002, jointResidual: true, manifoldPoints: true, carried: true },
   enable: { knee: true, hip: true, arms: true },
+};
+
+/**
+ * Contact motion M3 (the hold through the takedown, WRAP_V3's `commit.hold`): the fall response a takedown conversion
+ * starts on a fixture without a fall response of its own (L3 and HC: their ragdolls have a shoulder envelope only).
+ * FALL_L4's arm tasks, power and work caps and impact guard, under the shared falling arm budget: an arm still holding
+ * at the switch (a palm grip carried as its passive link, a forearm clamp as the forearm kept on by solved contact for
+ * `holdMemoryS`) holds its achieved shape and presses where it touches the carrier (`holdPressN`); a hold that breaks
+ * lets the arm brace. Changed from FALL_L4, each because the hold lapsed at its 0.1 s memory without it (front and rear
+ * wraps, `.scratch/m3b`):
+ * - no reaction delay (`timing` 0 s, 20 ms ramp): the takedown is his own committed fall and the arms were already
+ *   holding; under FALL_L4's 40 ms delay and 80 ms ramp the drive is near zero for the memory's whole span;
+ * - `holdScale` 1 and ceilings 30 N m (shoulder), 20 N m (elbow): 15 N m does not hold a horizontal arm up against
+ *   gravity. Both arms at these ceilings ask 290 N of the 350 N falling owner budget (torque over upper arm plus torque
+ *   over forearm, the allocator's equivalent);
+ * - the press, 100 N into the carrier, as the clamp's closing force pressed the supported forearm.
+ * No knee or hip effort: how he lands is M4's.
+ */
+export const FALL_HOLD_V1: FallResponseProfile = {
+  ...FALL_L4,
+  id: 'fall-hold-v1',
+  timing: { ...FALL_L4.timing, delayS: 0, rampS: 0.02 },
+  ceilingsNm: { ...FALL_L4.ceilingsNm, shoulder: 30, elbow: 20 },
+  arms: { ...FALL_L4.arms, holdScale: 1, holdPressN: 100 },
+  enable: { knee: false, hip: false, arms: true },
 };
 
 export const RAGDOLL_G4: RagdollProfile = {

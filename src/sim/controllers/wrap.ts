@@ -3,8 +3,8 @@
 // observed hand position / clamp contact. Timeouts only abandon or retry; they never create contact or a wrap.
 import type { ArmIntent, ArmSide, PlayerIntent, StanceRequest } from '../contracts';
 import { pairKey } from '../contracts';
-import type { BodyProfile, MotorProfile } from '../profiles';
-import { sideSignX } from '../profiles';
+import type { BodyProfile, FallResponseProfile, MotorProfile } from '../profiles';
+import { FALL_HOLD_V1, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { Controller, ControllerContext } from './base';
 import { add, addScaled, clamp, cross, dot, horiz, len, norm, qRot, scale, sub, v3, UP, type Vec3 } from '../vec';
@@ -43,8 +43,15 @@ export interface WrapProfile {
    * validated conversion, reason 'takedown'). If the carrier he holds securely is off his support first, he asks at once.
    * A hold not secure for longer than `graceS` starts it over (a broken hold or a miss never commits); the carrier is never
    * converted by it.
+   *
+   * `hold` (absent: his arms go limp at the switch, the clamps ending with his proxy): the holds he has at the takedown
+   * carry across it onto his ragdoll's arms. The simulation starts this fall response for a takedown conversion on a
+   * fixture without one of its own (a fixture with one runs its own for every conversion, holds included): each arm
+   * still holding keeps its shape and presses where it touches the carrier, under the response's bounded drive, while the
+   * existing transfer carries the hold (a palm grip as its passive link, a forearm clamp as the forearm kept on by solved
+   * contact), inside the shared falling arm budget; a hold breaks by the existing rules and frees that arm to brace.
    */
-  commit?: { secureS: number; lowerS: number; heightM: number; leanDeg: number; graceS: number };
+  commit?: { secureS: number; lowerS: number; heightM: number; leanDeg: number; graceS: number; hold?: FallResponseProfile };
 }
 
 /**
@@ -68,6 +75,13 @@ export const WRAP_V1: WrapProfile = {
  * cap), then down; a hold lost for over 50 ms starts it over.
  */
 export const WRAP_V2: WrapProfile = { ...WRAP_V1, id: 'wrap-takedown-v2', commit: { secureS: 0.05, lowerS: 0.2, heightM: 0.78, leanDeg: 12, graceS: 0.05 } };
+
+/**
+ * Contact motion M3, the hold through the takedown: WRAP_V2 whose takedown carries the defender's holds onto his ragdoll
+ * arms (`commit.hold` FALL_HOLD_V1: FALL_L4's arm tasks at once and stronger, pressing on the carrier, no knee or hip
+ * effort), so they keep holding the carrier while he goes down, for as long as solved contact keeps the hold.
+ */
+export const WRAP_V3: WrapProfile = { ...WRAP_V2, id: 'wrap-hold-v3', commit: { ...WRAP_V2.commit!, hold: FALL_HOLD_V1 } };
 
 export interface WrapSpec {
   kind: 'wrapAttempt';

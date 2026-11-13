@@ -221,6 +221,12 @@ interface ArmRt {
   clampSerial: number;
   /** Plan 09: a forearm hold kept physically after its owner converted: the time it lapses without a solved contact. */
   contactHoldUntil: number | null;
+  /**
+   * Contact motion M3 (`pressCarried`): the clamp a forearm hold was carried from, on the target body it held: the patch
+   * (point and outward normal, that body's frame) and the forearm parameter it held at. Set at the owner's switch, kept
+   * while the hold lasts and its target keeps its representation (absent or null: none).
+   */
+  carried?: { targetId: PlayerId; part: BodyPartId; pointLocal: Vec3; normalLocal: Vec3; u: number } | null;
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -260,6 +266,8 @@ export class ArmSystem {
   readonly effortScale = new Map<PlayerId, Record<ArmSide, number>>();
   /** Plan 09: how long a forearm hold survives without a solved contact (0: no physical holds are tracked). */
   holdMemoryS = 0;
+  /** Contact motion M3: a forearm hold keeps the patch of the clamp it was carried from, for a fall response's press (`pressTarget`). */
+  declare pressCarried?: boolean;
 
   constructor(
     readonly host: ArmHost,
@@ -1295,6 +1303,7 @@ export class ArmSystem {
       if (a.contactHoldUntil !== null) {
         if (this.host.t > a.contactHoldUntil) a.contactHoldUntil = null;
         else if (touch) a.contactHoldUntil = this.host.t + this.holdMemoryS;
+        if (a.contactHoldUntil === null && a.carried) a.carried = null;
       }
     }
     this.classifyWrap(pl, rec, ownerPost);
@@ -1379,10 +1388,19 @@ export class ArmSystem {
       if (!rec) continue;
       for (const side of SIDES) {
         const a = rec[side];
+        // contact motion M3: a carried patch is on the body its target had (the hold itself goes on by solved contact)
+        if (a.carried && switched.includes(a.carried.targetId)) a.carried = null;
         if (!a.clamp) continue;
         if (switched.includes(pl.id)) {
           // owner converted: the virtual closing normal/friction force stops before the first ragdoll step
           host.emit('clampEnd', pl.id, { arm: side, clamp: a.clamp.id, reason: 'ownerRagdoll', gap: null });
+          // contact motion M3: the patch the hold presses on, unless its target switched in the same batch
+          const tgt = this.pressCarried && this.holdMemoryS > 0 && !switched.includes(a.clamp.targetId) ? this.player(a.clamp.targetId) : undefined;
+          if (tgt) {
+            const cap = captured.get(a.clamp.id);
+            const tp = poseOfRb(this.partBody(tgt, a.clamp.targetPart));
+            a.carried = { targetId: tgt.id, part: a.clamp.targetPart, pointLocal: toLocal(tp, cap?.anchor ?? a.clamp.pointWorld), normalLocal: qInvRot(tp.q, cap?.normal ?? a.clamp.outwardNormalWorld), u: a.clamp.forearmParameter };
+          }
           a.clamp = null;
           // plan 09: the physical forearm carries the hold on, for as long as solved contact keeps it alive
           if (this.holdMemoryS > 0) a.contactHoldUntil = host.t + this.holdMemoryS;
@@ -1450,6 +1468,20 @@ export class ArmSystem {
     if (!a) return null;
     if (a.gripId && this.grips.get(a.gripId)?.passive) return 'grip';
     return a.contactHoldUntil !== null ? 'contact' : null;
+  }
+
+  /**
+   * Contact motion M3: where a retained forearm hold of `id` presses: the patch of the clamp it was carried from, on its
+   * target as that body is now (world point and the unit normal into it), and the forearm parameter it held at. Null
+   * when the arm holds no carried forearm hold (`pressCarried` off, a grip, a lapsed hold, a target that switched).
+   */
+  pressTarget(id: PlayerId, side: ArmSide): { point: Vec3; into: Vec3; u: number } | null {
+    const a = this.arms.get(id)?.[side];
+    const c = a?.contactHoldUntil !== null ? a?.carried : null;
+    const tgt = c ? this.player(c.targetId) : undefined;
+    if (!c || !tgt) return null;
+    const tp = poseOfRb(this.partBody(tgt, c.part));
+    return { point: toWorld(tp, c.pointLocal), into: scale(qRot(tp.q, c.normalLocal), -1), u: c.u };
   }
 
   clampOf(id: PlayerId, side: ArmSide): ClampContact | null {

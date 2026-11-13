@@ -40,7 +40,7 @@ import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
-import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs } from './conversion';
+import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
 import { carrySideOf, disablePhysicalLegs, footInputOf, legMeets, legPointMove, observePhysicalLegs, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
 import { EMPTY_APPLIED, applyMotors } from './motor-step';
@@ -678,10 +678,14 @@ export class Simulation {
       checkLimbContract(def.armProfile ?? ARM_G2, def.ragdoll ?? DEFAULT_POSE_PROFILE);
       this.arms = new ArmSystem(this.armHost(), def.armProfile ?? ARM_G2, this.balanced ? this.balanceProfile.fallingArmBudgetFraction : 1, def.ragdoll?.passiveGrip, def.selfClearance, def.jointRange);
     }
-    if (def.fallResponse) {
+    // contact motion M3 (WRAP_V3's `commit.hold`): on a fixture without a fall response, the one a takedown starts
+    const hold = takedownHold(def);
+    const fallP = def.fallResponse ?? hold;
+    if (fallP) {
       const sim = this;
-      if (!def.ragdoll?.envelope?.hip) throw new Error(`fixture ${def.id}: a fall response needs a ragdoll profile with a shoulder and hip envelope`);
-      this.fall = new FallResponse(def.fallResponse, {
+      if (def.fallResponse && !def.ragdoll?.envelope?.hip) throw new Error(`fixture ${def.id}: a fall response needs a ragdoll profile with a shoulder and hip envelope`);
+      if (hold && ((hold.enable.arms && !def.ragdoll?.envelope?.shoulder) || (hold.enable.hip && !def.ragdoll?.envelope?.hip))) throw new Error(`fixture ${def.id}: the takedown's hold ${hold.id} needs a ragdoll envelope for every ball joint it drives`);
+      this.fall = new FallResponse(fallP, {
         get dt() {
           return sim.physics.dt;
         },
@@ -697,7 +701,9 @@ export class Simulation {
         carriedImpacts: (rag, segs, lookaheadS, predictionM, skinM, landMPerS, closeMPerS) => sim.carriedImpacts(rag, segs, lookaheadS, predictionM, skinM, landMPerS, closeMPerS),
         selfImpulses: (rag) => sim.selfImpulses(rag),
       });
-      if (this.arms) this.arms.holdMemoryS = def.fallResponse.arms.holdMemoryS;
+      if (this.arms) this.arms.holdMemoryS = fallP.arms.holdMemoryS;
+      // contact motion M3: a hold that presses keeps the patch of the clamp it was carried from
+      if (this.arms && fallP.arms.holdPressN) this.arms.pressCarried = true;
     }
     const keep = this.opts.ledgers ?? SIM_DEFAULTS.ledgers;
     if (this.arms) this.arms.keepLedger = keep;
