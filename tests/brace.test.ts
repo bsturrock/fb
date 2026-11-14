@@ -13,7 +13,7 @@ import { carriedBall } from '../src/sim/pose';
 import { DEFAULT_POSE_PROFILE } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { addScaled, deg, dist, dot, horiz, norm, qInvRot, qRot, sub, v3, vc, type Vec3 } from '../src/sim/vec';
-import { FIX, preBrace, rows, traceRowsDiff } from './helpers';
+import { FIX, preBrace, preWrapV12, rows, traceRowsDiff } from './helpers';
 import { captureState, resumeState } from './state';
 import { depth, drawnShapes, selfPairs } from './visible';
 import { LIMB_HELD_M } from './visible-bar';
@@ -314,9 +314,12 @@ describe('contact motion M2: the braced carrier pose', () => {
     // the reached lean while short of the desired one. Measured at the flip's scan: V1 -0.3 to 3.0 deg at the first
     // contact of the 37 braced runs with one, V2 7.6 to 10.8.
     expect(CARRIER_BRACE_V2).toEqual({ ...CARRIER_BRACE_V1, id: 'carrier-brace-v2', pose: { ...CARRIER_BRACE_V1.pose, leanRateDegPerS: 60, leanHold: 'reached' } });
+    // (HC-F3-phase0 as a wrap, WRAP_V11 with no request: since the hit flip its tackler hits, the bodies touch for a few
+    // substeps and part, and the tick-end contact read here first sees them at the runner's switch, 0.6 s)
+    const asWrap = (id: string): FixtureDef => (id === 'HC-F3-phase0' ? preWrapV12(FIX(id)) : FIX(id));
     await rows(['L3-F3-collision', 'L3-F1-phase0', 'HC-F3-phase0'], (id) => id, async (id) => {
       const at = async (brace: CarrierBraceProfile) => {
-        const r = await carrierTicks({ ...unbraced(FIX(id)), brace }, 0.7);
+        const r = await carrierTicks({ ...unbraced(asWrap(id)), brace }, 0.7);
         expect(r.contactS, id).not.toBeNull();
         const before = within(r.ticks, 0, r.contactS!);
         // still supported at contact: a tick of his up to it, every one

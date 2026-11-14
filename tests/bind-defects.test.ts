@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preWrapV8, preWrapV9, preWrapV10, preWrapV11 } from './runs';
+import { asCaptured, create, FIX, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -46,7 +46,7 @@ describe('contact motion polish 1.4, the bound-legs fall: tracked defects (rule 
     const on = await look(def);
     const off = await look(preWrapV8(def), ['wrap']);
     const pinned = (r: { peak: number; impS: number }): boolean => r.peak > 60 && r.impS > 0.1;
-    const v7Sim = await create(preWrapV8(preWrapV9(preWrapV10(preWrapV11(FIX('L3-F19-rear'))))));
+    const v7Sim = await create(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(FIX('L3-F19-rear')))))));
     const v7 = ragdollShoulderTwist(v7Sim);
     v7Sim.dispose();
     const said = JSON.stringify({ on, off, v7 });

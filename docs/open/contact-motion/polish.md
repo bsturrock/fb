@@ -156,6 +156,12 @@ to keep stepping while wrapped. Direction is ours. In order:
    along his run; the tackler stays up at 4.5-5.0 m/s 0.3 s after contact (V11 3.3-3.7, then a takedown). Open for the
    flip: 35 who-falls changes (tackler stays up); `L3-F19-front` head-on is a hit with the head still taking half;
    runner landing rebounds up to 114 J (`LANDING_REBOUND`); G4 body tucked forearm 6 cm for 0.07 s at strike start.
+   **On for the five** (`WRAP_V12` registered on L3, L4 and HC, lab `&wrap=v11` is before): the kind is a request
+   (`HIT_FIXTURES`, `tackle: 'hit'`); the speed rule is lab-only (`WRAP_V12_AUTO`, `&wrap=v12auto`) until game context
+   chooses. A viewer sees the shoulder go through, head behind, no arms; the runner pitches forward 0.15-0.37 s after
+   contact and rolls over his shoulders as he lands; the tackler runs on upright. Who falls: the tackler stays up in all
+   ten runs, the runner still falls; every other wrap is byte-identical. Open: the head-on `L3-F19-front` (speed rule
+   only) still takes the head; runner landing rebound 80 J on `L4-F10-wrap-on` (trend, `LANDING_REBOUND`).
 5. Then the rest of the order below: the low tackle's flip on long-approach fixtures (side offset out before the
    carrier goes down, a secure hold on the long front approach, the posed hip twist), the hand lock, a sideways
    roll with the carrier, brace amount, falls, whiff, debt.

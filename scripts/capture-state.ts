@@ -1,5 +1,5 @@
 // Full-state capture of a registered fixture at a tick boundary (tests/state.ts), for a test to resume from:
-//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11|v12]
+//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11|v12|v12auto]
 // Runs the fixture with the fixture export's defaults (ledgers off, as `npm run fixtures`; `--ledgers` keeps them, for a
 // test that reads them, at about twice the size) to the end of tick <tick>, writes the
 // capture (default tests/data/state/<fixture>@<tick>.json.gz) and checks it: the run resumed from the file reproduces
@@ -21,11 +21,12 @@
 // registered on L3, L4 and HC from its flip to the hold flip's WRAP_V9) and `--wrap=v6` (tests/runs.ts WRAP_V6_PRE_V10, the low strike on it: the lab's `wrap=v6` until the drag-down put it on WRAP_V10; a test resumes such a capture under today's WRAP_V6 as a `wrap` variant, the two running alike until the tackler's drive), the same way (suffix `wrapv8`, `wrapv6`); `--wrap=v9` (WRAP_V9, the fall
 // link, registered on L3, L4 and HC from the hold flip to the behind flip's WRAP_V10), suffix `wrapv9`; `--wrap=v10`
 // (WRAP_V10, the drive from behind on WRAP_V9, registered on L3, L4 and HC from the behind flip to the stay-on flip's
-// WRAP_V11), suffix `wrapv10`; `--wrap=v11` (WRAP_V11, staying on from behind on WRAP_V10, registered since the stay-on
-// flip), suffix `wrapv11`; `--wrap=v12` (WRAP_V12, the hit on WRAP_V11, no fixture uses it), suffix `wrapv12`. See
-// tests/README.md.
+// WRAP_V11), suffix `wrapv10`; `--wrap=v11` (WRAP_V11, staying on from behind on WRAP_V10, registered from the stay-on
+// flip to the hit flip's WRAP_V12), suffix `wrapv11`; `--wrap=v12` (WRAP_V12, the hit on WRAP_V11 when asked for,
+// registered since the hit flip), suffix `wrapv12`; `--wrap=v12auto` (WRAP_V12_AUTO, with the speed rule, no fixture
+// uses it), suffix `wrapv12auto`. See tests/README.md.
 import { statSync } from 'node:fs';
-import { WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
+import { WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import { HIP_STOPS_V1, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 import { SIM_DEFAULTS, Simulation } from '../src/sim/simulation';
 import { FIX, flip8i, preBraceV2, WRAP_V6_PRE_V10 } from '../tests/runs';
@@ -41,8 +42,8 @@ if (jointsArg !== undefined && !(jointsArg in JOINTS)) throw new Error(`--joints
 const braceArg = process.argv.find((a) => a.startsWith('--brace='))?.slice('--brace='.length);
 if (braceArg !== undefined && braceArg !== 'v1') throw new Error(`--brace=${braceArg}: expected v1`);
 const wrapArg = process.argv.find((a) => a.startsWith('--wrap='))?.slice('--wrap='.length);
-const WRAPS = { v6: WRAP_V6_PRE_V10, v7: WRAP_V7, v8: WRAP_V8, v9: WRAP_V9, v10: WRAP_V10, v11: WRAP_V11, v12: WRAP_V12 } as const;
-if (wrapArg !== undefined && !(wrapArg in WRAPS)) throw new Error(`--wrap=${wrapArg}: expected v6, v7, v8, v9, v10, v11 or v12`);
+const WRAPS = { v6: WRAP_V6_PRE_V10, v7: WRAP_V7, v8: WRAP_V8, v9: WRAP_V9, v10: WRAP_V10, v11: WRAP_V11, v12: WRAP_V12, v12auto: WRAP_V12_AUTO } as const;
+if (wrapArg !== undefined && !(wrapArg in WRAPS)) throw new Error(`--wrap=${wrapArg}: expected v6, v7, v8, v9, v10, v11, v12 or v12auto`);
 const wrap = wrapArg ? WRAPS[wrapArg as keyof typeof WRAPS] : undefined;
 const args = process.argv.slice(2).filter((a) => !FLAGS.includes(a) && !a.startsWith('--hips=') && !a.startsWith('--joints=') && !a.startsWith('--brace=') && !a.startsWith('--wrap='));
 const [id, tickArg, outArg] = args;

@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -132,7 +132,7 @@ import {
 } from './l3-pass';
 
 /** A fixture as before the strike flip (WRAP_V3): the bound-legs flip's `preWrapV8`, the ride-down flip's `preWrapV7`, the drive flip's `preWrapV5`, then the strike flip's `preWrapV4`. */
-const preStrikeFlip = (d: FixtureDef): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(d)))))));
+const preStrikeFlip = (d: FixtureDef): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(d))))))));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The pass
@@ -895,7 +895,7 @@ describe('plan 08 pass 3: contact integration', () => {
     const fails: string[] = [];
     const rep = (m: string): void => void fails.push(m);
     for (const id of DEFENDER_13F_SAMPLE.fixtures as string[]) {
-      const def = preBraceV2(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(FIX(id))))))));
+      const def = preBraceV2(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(FIX(id)))))))));
       await runWatched(def, [{ w: DEFENDER_13F_SAMPLE.watch(def, rep), fail: rep }], { transitionAudit: true });
     }
     expect(fails).toEqual([]);
@@ -947,6 +947,19 @@ describe('plan 08 pass 3: contact integration', () => {
     'held arms: real palm holds keep the anchor and arm segments within Gate 2 through entry and remap within Gate 4; real forearm clamps keep the segments and end only for an engine reason',
     [PALM_HOLDS, CLAMPS],
   );
+  it('held arms, the side wrap as a wrap (L3-F4-twoArm under WRAP_V11 with no request: a hit since the hit flip, which clamps nothing): real forearm clamps keep the segments and end only for an engine reason. The twin, the registered hit: no clamp, the watch fails', async () => {
+    const watched = async (d: FixtureDef): Promise<string[]> => {
+      const fails: string[] = [];
+      const c = CHECKS.find((x) => x.name === CLAMPS)!;
+      await runWatched(d, [{ w: c.watch(d, (m) => fails.push(m)), fail: (m) => fails.push(m) }]);
+      return fails;
+    };
+    const d = preWrapV12(FIX('L3-F4-twoArm'));
+    expect(d.wrap!.hit).toBeUndefined();
+    expect(await watched(d)).toEqual([]);
+    const twin = await watched(FIX('L3-F4-twoArm'));
+    expect(twin.join('\n')).toMatch(/expected 0 to be greater than 0/);
+  }, 120000);
   it('held arms, constructed: a hold ended before the conversion or with no reason is reported, and one ended in the conversion\'s own step after it is not', () => {
     // ladder 18e: the fault twin of `holdsEndedEarly` (the palm holds' end rule above), on event lists the test makes. The
     // rule was each release strictly after the conversion's time; since the met-arm flip a hold may end in the

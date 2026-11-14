@@ -9,7 +9,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preHipTwist, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11 } from './runs';
+import { asCaptured, create, FIX, preHipTwist, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -77,7 +77,7 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
     expect(on.impS, said).toBeGreaterThan(4);
     expect(on.lastEx, said).toBeGreaterThan(60);
     expect(off.bodies).toBe(on.bodies);
-    const bSim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(FIX('L4-F9-transferFailed'))))))), {});
+    const bSim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(FIX('L4-F9-transferFailed')))))))), {});
     const before = overheadTwist(bSim);
     bSim.dispose();
     const bSaid = JSON.stringify(before);
@@ -119,7 +119,7 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
     expect(off, said).toEqual(on);
     expect(bound.peak, said).toBeLessThan(30);
     const phase1 = async (d: FixtureDef) => {
-      const sim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(d)))))), {});
+      const sim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(d))))))), {});
       const out = supportedHipTwist(sim, 0.6, 0.95);
       sim.dispose();
       return out;

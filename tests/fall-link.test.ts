@@ -1,6 +1,6 @@
 // Contact motion polish 2.1, the fall link (`WrapProfile.fallLink`, `FallLinkProfile`; src/sim/arms.ts): a forearm clamp
 // the tackler has at his own switch goes on as a tension-only spring-damper from his ragdoll forearm to the patch it held,
-// through the shared allocator, until it breaks. WRAP_V9 (WRAP_V8 with it), registered on L3, L4 and HC from the hold flip to the behind flip (WRAP_V10 carries it, and WRAP_V11 since the stay-on flip). Cases (a) to (c) resume
+// through the shared allocator, until it breaks. WRAP_V9 (WRAP_V8 with it), registered on L3, L4 and HC from the hold flip to the behind flip (WRAP_V10 carries it, WRAP_V11 from the stay-on flip and WRAP_V12 since the hit flip). Cases (a) to (c) resume
 // the drag (L3-F5-drag, the scene whose tackler switches with both clamps on, 0.82 s, before the referee's ending at
 // 0.95 s) captured under WRAP_V8 at 0.45 s; (e) and (g) the rear wrap, whose switch comes after the ending (the hold
 // through the whistle, `throughEnding`, carries his holds to it), captured under WRAP_V8 at 2.10 s; (f) a G4 defender
@@ -9,7 +9,7 @@
 // simulation sets at build (a field the V8 capture's arm system lacks, so the resume sets it as the build does); the twin
 // is the same resume without it, without one of its fields, or with a fault.
 import { describe, expect, it } from 'vitest';
-import { WRAP_V11, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
+import { WRAP_V12, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { EffortLedgerEntry, ForceLedgerEntry } from '../src/sim/arms';
 import { allFixtures } from '../src/sim/fixtures/index';
@@ -409,9 +409,9 @@ describe('polish 2.1, the fall link (WRAP_V9)', () => {
     expect(dead.bornHeldS).toBeGreaterThan(right!.afterS);
   }, 120_000);
 
-  it('(d) the hold flip: every L3, L4 and HC wrap fixture registers the fall link (WRAP_V11 since the stay-on flip, on WRAP_V10 and WRAP_V9); the lab\'s wrap=v8 runs it with WRAP_V8 (before the flip), wrap=on takes it back; WRAP_V6 stays unregistered; G, L1, L2 and RH register no wrap', () => {
+  it('(d) the hold flip: every L3, L4 and HC wrap fixture registers the fall link (WRAP_V12 since the hit flip, on WRAP_V11, WRAP_V10 and WRAP_V9); the lab\'s wrap=v8 runs it with WRAP_V8 (before the flip), wrap=on takes it back; WRAP_V6 stays unregistered; G, L1, L2 and RH register no wrap', () => {
     const on = FIX('L3-F5-drag');
-    expect(on.wrap).toBe(WRAP_V11);
+    expect(on.wrap).toBe(WRAP_V12);
     expect(on.wrap!.fallLink).toBe(WRAP_V9.fallLink);
     const v8: FixtureDef = { ...on, wrap: WRAP_V8 };
     const v9: FixtureDef = { ...on, wrap: WRAP_V9 };
@@ -420,7 +420,7 @@ describe('polish 2.1, the fall link (WRAP_V9)', () => {
     expect(labRun(v8, new URLSearchParams('wrap=v9'))).toEqual({ def: v9, opts: {}, label: 'wrap v9' });
     expect(labRun(v9, new URLSearchParams('wrap=v9'))).toEqual({ def: v9, opts: {}, label: 'wrap v9 (registered)' });
     const all = allFixtures();
-    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V11.id).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V12.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap && !/^(L3|L4|HC)-/.test(d.id)).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap?.fallLink).length).toBeGreaterThan(0);
   });

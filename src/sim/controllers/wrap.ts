@@ -82,9 +82,9 @@ export interface WrapProfile {
 /**
  * Contact motion polish 4, the hit (user, 2026-11-14: wraps and hits are different tackles): a violent shoulder collision,
  * no arms coming out to wrap. The tackle's kind is decided once, as the strike starts, and kept: the tackler's request
- * (`WrapSpec.tackle`) when given, else (a placeholder until game context picks the tackle) a hit when the closing speed on
- * the carrier then (the relative velocity along the line to him) is `minCloseMps` or more, a wrap otherwise. A wrap is
- * the wrap exactly as before. A hit keeps the strike's posture (trunk pitched, hips low, the shoulder leading) with:
+ * (`WrapSpec.tackle`) when given, else, with `minCloseMps` (lab only: a placeholder until game context picks the tackle),
+ * a hit when the closing speed on the carrier then (the relative velocity along the line to him) is `minCloseMps` or
+ * more; else a wrap. A wrap is the wrap exactly as before. A hit keeps the strike's posture (trunk pitched, hips low, the shoulder leading) with:
  *  - the head behind the carrier's own travel across the approach (his velocity itself, above `sideMps`; else the
  *    strike's rule), never across his front; decided as it starts and kept (no arm plan to keep consistent with it);
  *  - the strike's line steer turning his line only: he runs at his own approach speed (never slowed, never raised);
@@ -94,7 +94,8 @@ export interface WrapProfile {
  *    loss envelope, the validated conversion). Requests only.
  */
 export interface WrapHit {
-  minCloseMps: number;
+  /** The speed rule (absent: only the tackler's request makes a hit; no request is a wrap). */
+  minCloseMps?: number;
   sideMps: number;
   followS: number;
   /**
@@ -595,8 +596,8 @@ export const WRAP_V10: WrapProfile = { ...WRAP_V9, id: 'wrap-behind-v10', drive:
  * weight: he stays posed in the strike on the carrier at the carrier's velocity (`brakeMps` 0, no `commitS`), at full
  * effort and riding; a carrier held so goes down (`WrapBindBehind`, clause (c): the drive from behind alive with an arm on
  * him for 0.25 s, its grace 0.05 s), and the ride-down brings the tackler down after him. A hold lost before that binds
- * nothing: the runner runs on. Registered on L3, L4 and HC since the stay-on flip (the lab's `wrap=v10` is the view
- * before). WRAP_V6 stays on WRAP_V10 (from behind it hangs on).
+ * nothing: the runner runs on. Registered on L3, L4 and HC from the stay-on flip (the lab's `wrap=v10` is the view
+ * before) to the hit flip's WRAP_V12. WRAP_V6 stays on WRAP_V10 (from behind it hangs on).
  */
 export const WRAP_V11: WrapProfile = {
   ...WRAP_V10,
@@ -606,18 +607,26 @@ export const WRAP_V11: WrapProfile = {
 };
 
 /**
- * Contact motion polish 4, the hit: WRAP_V11 with `hit` (`WrapHit`). By default a hit at 6 m/s of closing speed or more
- * as the strike starts (every L3, L4 and HC wrap run closes at 1.2, 2.0 or 5.0 m/s, or at 7.0 to 8.1). The head behind
- * the carrier's travel across the approach above 0.5 m/s; the arms tucked (the striking palm 12 cm down the trunk, 28 cm
- * ahead of its shoulder, 5 cm in: the forearm up in front of the shoulder; the other 20 cm down, 32 cm ahead, 20 cm in:
- * across the chest; the elbows close in, down and forward: an elbow straight down at the ribs puts the forearm through
- * the boxy G4 trunk, 16 cm for 0.7 s); 0.3 s through the contact at his approach. No fixture uses it (lab `wrap=v12`).
+ * Contact motion polish 4, the hit: WRAP_V11 with `hit` (`WrapHit`). A hit only when the tackler asks for one
+ * (`WrapSpec.tackle`; no speed rule: a tackle not asked for is a wrap, exactly WRAP_V11's). The head behind the carrier's
+ * travel across the approach above 0.5 m/s; the arms tucked (the striking palm 12 cm down the trunk, 28 cm ahead of its
+ * shoulder, 5 cm in: the forearm up in front of the shoulder; the other 20 cm down, 32 cm ahead, 20 cm in: across the
+ * chest; the elbows close in, down and forward: an elbow straight down at the ribs puts the forearm through the boxy G4
+ * trunk, 16 cm for 0.7 s); 0.3 s through the contact at his approach. Registered on L3, L4 and HC since the hit flip,
+ * five full-sprint crossing fixtures asking for the hit (the lab's `wrap=v11` is the view before).
  */
 export const WRAP_V12: WrapProfile = {
   ...WRAP_V11,
   id: 'wrap-hit-v12',
-  hit: { minCloseMps: 6, sideMps: 0.5, followS: 0.3, arms: { strike: { downM: 0.12, forwardM: 0.28, acrossM: 0.05 }, other: { downM: 0.2, forwardM: 0.32, acrossM: 0.2 }, pole: v3(0.4, -0.6, 0.7) } },
+  hit: { sideMps: 0.5, followS: 0.3, arms: { strike: { downM: 0.12, forwardM: 0.28, acrossM: 0.05 }, other: { downM: 0.2, forwardM: 0.32, acrossM: 0.2 }, pole: v3(0.4, -0.6, 0.7) } },
 };
+
+/**
+ * WRAP_V12 with the speed rule (lab `wrap=v12auto` only, no fixture uses it): a tackle not asked for is a hit at 6 m/s
+ * of closing speed or more as the strike starts (every L3, L4 and HC wrap run closes at 1.2, 2.0 or 5.0 m/s, or at 7.0
+ * to 8.1), a wrap otherwise: any scene as the placeholder rule would have it, until game context picks the tackle.
+ */
+export const WRAP_V12_AUTO: WrapProfile = { ...WRAP_V12, id: 'wrap-hit-auto-v12', hit: { ...WRAP_V12.hit!, minCloseMps: 6 } };
 
 /**
  * Contact motion polish 1.4, the low strike of the deep crouch tackle, on WRAP_V10 (the ride-down, the bound-legs fall, the
@@ -710,8 +719,9 @@ export interface WrapSpec {
   /** Plan 07a stance request held throughout (root height, stagger; suspension support only). Request only. */
   stance?: StanceRequest;
   /**
-   * Contact motion polish 4 (under a wrap profile with `hit`; absent: the profile's closing-speed rule): the tackle asked
-   * for, a wrap or a hit, kept from the strike's start (`WrapHit`). The hook game context will drive.
+   * Contact motion polish 4 (under a wrap profile with `hit`; absent: a wrap, or under the profile's closing-speed rule
+   * when it has one): the tackle asked for, a wrap or a hit, kept from the strike's start (`WrapHit`). The hook game
+   * context will drive.
    */
   tackle?: 'wrap' | 'hit';
 }
@@ -1061,7 +1071,7 @@ export class WrapAttemptController implements Controller {
       if (!sk.on && supported && near2) {
         sk.on = true;
         // (polish 4: the tackle's kind, decided once as the strike starts: his request, else the closing speed on him)
-        if (HT && this.hk === undefined) this.hk = this.spec.tackle ?? (closingNow >= HT.minCloseMps - 1e-9 ? 'hit' : 'wrap');
+        if (HT && this.hk === undefined) this.hk = this.spec.tackle ?? (HT.minCloseMps !== undefined && closingNow >= HT.minCloseMps - 1e-9 ? 'hit' : 'wrap');
         const off = dot(sub(me.position, R), side);
         // (a hit: behind the carrier's own travel across the approach, from his velocity itself)
         const across = dot(vR, side);

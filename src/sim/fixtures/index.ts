@@ -13,7 +13,7 @@ import { handoffContactFixtures } from './handoff-contact';
 import { FALL_REACT_V1, FALL_REACT_V2, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
-import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11 } from '../controllers/wrap';
+import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12 } from '../controllers/wrap';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -201,6 +201,21 @@ function stayOnFlip(d: FixtureDef): FixtureDef {
 }
 
 /**
+ * Contact motion polish 4, the hit flip: every fixture the stay-on flip gave WRAP_V11 runs WRAP_V12 (the hit, a request
+ * only: no speed rule), and the five full-sprint crossing tackles the user called hits (`HIT_FIXTURES`, each by its id,
+ * not by its family) ask their tackler for one (`WrapSpec.tackle`): the shoulder through the man, the head behind his
+ * travel, the arms tucked, no wrap, the tackler running on. Every other tackle asks for nothing and is a wrap exactly as
+ * under V11. The choice is a request until game context makes it. The lab's `wrap=v11` is the view before it;
+ * tests/runs.ts `preWrapV12` gives a definition as before it.
+ */
+export const HIT_FIXTURES: readonly string[] = ['L3-F4-twoArm', 'L4-F10-wrap-on', 'L3-F1-low', 'HC-F3-lowRunner', 'HC-F3-phase0'];
+function hitFlip(d: FixtureDef): FixtureDef {
+  if (d.wrap !== WRAP_V11) return d;
+  if (!HIT_FIXTURES.includes(d.id)) return { ...d, wrap: WRAP_V12 };
+  return { ...d, wrap: WRAP_V12, players: d.players.map((p) => (p.controller.kind === 'wrapAttempt' ? { ...p, controller: { ...p.controller, tackle: 'hit' as const } } : p)) };
+}
+
+/**
  * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
  * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
  * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
@@ -259,6 +274,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip));
   return registry.slice();
 }

@@ -1884,9 +1884,11 @@ export const PALM_HOLDS = check({
   },
 });
 
+// (the side wrap `L3-F4-twoArm` is a hit since the hit flip, no clamp by design: tests/l3-contracts.test.ts runs this
+// watch on it as a wrap, WRAP_V11, outside the pass)
 export const CLAMPS = check({
   name: 'real forearm clamps',
-  fixtures: ['L3-F4-twoArm', 'L3-F6-hold', 'L3-F10-both'],
+  fixtures: ['L3-F6-hold', 'L3-F10-both'],
   watch(d) {
     const h = held(d);
     return {
