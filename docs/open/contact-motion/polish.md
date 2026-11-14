@@ -52,8 +52,17 @@ to keep stepping while wrapped. Direction is ours. In order:
    `L3-F1-phase6` (D), all reached. Tracked: `ARM_HELD_IN_HEAD` on `HC-F2-lowCarrier` (`tests/thigh-defects.test.ts`;
    its fix is the born separation). Not twinned: two carry-forearm pinches (84 and 60 J, looks like `CARRY_PINCH`);
    two runs over 4000 shape queries a tick.
-   Next: the flip of `WRAP_V9`.
-   Evidence: main checkout `.scratch/p11/hold/`, `whistle/`, `thigh/summary.txt`.
+   **On for L3, L4 and HC** (`f3eb1bd`, `c37496c`; lab `&wrap=v8` is before). The first flip try held a carrier's
+   arm, born inside the tackler's torso at a double switch, in him for 0.5 to 0.8 s (`HC-F1-low`, `HC-F1-at1.6`).
+   Rule added (`bornYield`): the link gives way (no pull, its length let out, still alive) to born pairs between
+   the two players that begin at or after the link does; pairs older than the link it pulls through (the drag
+   needs that). Who falls: unchanged everywhere; the tackler's switch is 0.02 to 0.17 s later. What changed: the
+   drag keeps both arms on the carrier to the end; rear wrap, drag mirror one hand; front one arm 0.44 s.
+   Accepted, to show the user: the linked upper arm sinks into the tackler's own chest (`L4-F5-twoClamp-off`
+   11.75 cm past idle for about 1 s, caused by the link; also `L4-F5-twoClamp-on` rev, `HC-F1-at0.9`), at the level
+   of own-arm overlap already in the baseline; the reversed rear wrap rests with both arms straight, one
+   overhead, 1.38 m from the carrier; the drag's forearm ends trapped under the carrier's arm.
+   Evidence: main checkout `.scratch/p11/hold/`, `whistle/`, `thigh/`, `hold-on2/summary.txt`.
 2. **More oomph, and who ends on top.** Measure what the tackler puts into the carrier on the rear wrap and the
    drag (speed and mass behind the shoulder at contact, drive force and how long it acts, the carrier's speed
    change), find why the drag's tackler ends underneath, then raise what is low. No energy from nowhere.
