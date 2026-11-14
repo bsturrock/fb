@@ -488,9 +488,11 @@ export const WRAP_V6: WrapProfile = {
  * the 700 N ceiling at 7 cm of stretch, the damping (150 N s/m) under the forearm's critical damping at the substep
  * (a few kg behind the point), and a stretch past 25 cm or the patch out of reach lets go. Riding the carrier down at
  * the referee's ending, he keeps the holds he has then to his switch (`throughEnding`): the whistle mostly comes first.
- * The link's end on him is on his forearm or hand, the gap to the patch as slack it takes in (`onArm`).
+ * The link's end on him is on his forearm or hand, the gap to the patch as slack it takes in (`onArm`). It gives way to
+ * the born separation (`bornYield`): while a born pair between the two is not parting it pulls nothing and lets out its
+ * slack, so it never holds a limb in the other body, and lives on to hold from the length the separation left.
  */
-export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: { stiffness: 10000, damping: 150, maxSeparationM: 0.25, budgetFraction: 1, remapM: 0.05, throughEnding: true, onArm: true } };
+export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: { stiffness: 10000, damping: 150, maxSeparationM: 0.25, budgetFraction: 1, remapM: 0.05, throughEnding: true, onArm: true, bornYield: true } };
 
 export interface WrapSpec {
   kind: 'wrapAttempt';

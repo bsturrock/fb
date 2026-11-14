@@ -629,6 +629,16 @@ export interface RideHoldProfile {
  * switch, and the gap left between them its rest length, taken in as the gap closes and never let out (it shortens only
  * slack, at no force: it still starts and stays with no stored energy but its stretch's). Its separation is then the gap
  * a viewer sees between the arm and the patch.
+ *
+ * `bornYield` (absent: the link pulls whatever overlaps its two players were switched in): it gives way to the born
+ * separation (ladder 17 and 18, `Ragdoll.born`: a collider pair left out of the solve since a switch, pushed apart) of
+ * the overlaps a switch it spans made between its two players (its owner's, or the target's later one). While such a
+ * pair is held, the link pulls nothing and its rest length is let out to its length each substep, so it never holds a
+ * limb inside the other body against the separation; it lives on (the arm still retains its hold, overload exposure
+ * does not accumulate, and its stretch past `maxSeparationM` is measured from the length so let out, as much of it as
+ * the gap has not taken back in). Once the last clears it holds as before, from the length the separation left. A pair
+ * born before the link (the carrier switched first, the tackler holding him as he was) is the clamp's, whose pull the
+ * link carries on. Its reach and target rules stand.
  */
 export interface FallLinkProfile {
   stiffness: number;
@@ -638,6 +648,7 @@ export interface FallLinkProfile {
   remapM: number;
   throughEnding?: boolean;
   onArm?: boolean;
+  bornYield?: boolean;
 }
 
 export interface ArmProfile {

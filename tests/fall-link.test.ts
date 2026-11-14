@@ -4,12 +4,13 @@
 // the drag (L3-F5-drag, the scene whose tackler switches with both clamps on, 0.82 s, before the referee's ending at
 // 0.95 s) captured under WRAP_V8 at 0.45 s; (e) and (g) the rear wrap, whose switch comes after the ending (the hold
 // through the whistle, `throughEnding`, carries his holds to it), captured under WRAP_V8 at 2.10 s; (f) a G4 defender
-// holding without riding at the ending. WRAP_V9 differs from WRAP_V8 only in the arm system's `fallLink`, which the
+// holding without riding at the ending; (i) the simultaneous low wrap (HC-F1-low, the born yield, `bornYield`) captured
+// under WRAP_V8 at 1.167 s, and (j) the drag again. WRAP_V9 differs from WRAP_V8 only in the arm system's `fallLink`, which the
 // simulation sets at build (a field the V8 capture's arm system lacks, so the resume sets it as the build does); the twin
 // is the same resume without it, without one of its fields, or with a fault.
 import { describe, expect, it } from 'vitest';
 import { WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
-import type { ForceLedgerEntry } from '../src/sim/arms';
+import type { EffortLedgerEntry, ForceLedgerEntry } from '../src/sim/arms';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { labRun } from '../src/lab/lab-params';
 import type { FallLinkProfile } from '../src/sim/profiles';
@@ -19,6 +20,7 @@ import { add, dot, len, scale, sub, toWorld, type Vec3 } from '../src/sim/vec';
 import { asCaptured, FIX } from './helpers';
 import { passiveEnergyMeter } from './passive-energy';
 import { loadState, resumeState } from './state';
+import { heldBornBar } from './visible-bar';
 
 const SIDES = ['left', 'right'] as const;
 /** L3-F5-drag under WRAP_V8 at 0.45 s (tick 27), before the tackler's hold is secure (0.48 s) and his switch (0.82 s). */
@@ -33,9 +35,18 @@ const LIMB_CAP = 'tests/data/state/G4-F7-limbFirst@90.json.gz';
 const FL = WRAP_V9.fallLink!;
 /** WRAP_V9's link without the hold through the whistle (the twin). */
 const { throughEnding: _through, ...FL_NO_THROUGH } = FL;
+/** WRAP_V9's link pulling through born pairs (the twin of (i)), and its first try, slack while any born pair is held (the twin of (j)). */
+const { bornYield: _yield, ...FL_PULL } = FL;
+const FL_DEAD = { ...FL_PULL, bornDead: true };
+/**
+ * HC-F1-low under WRAP_V8 at 1.167 s (tick 70), before the diagnostic conversion of both players at 1.20 s, where the
+ * carrier's left upper arm is switched in 9 cm inside the tackler's torso (a born pair) as the tackler's two clamps
+ * become links.
+ */
+const BORN_CAP = 'tests/data/state/HC-F1-low~wrapv8@70.json.gz';
 
 interface LinkPriv {
-  arms: { fallLink?: FallLinkProfile & { noBreak?: boolean }; keepLedger: boolean; ledger: ForceLedgerEntry[]; arms: Map<string, Record<string, { link?: { targetId: string; part: string; pointLocal: Vec3; ownerPart: string; ownerPointLocal: Vec3; restM?: number } | null }>> };
+  arms: { fallLink?: FallLinkProfile & { noBreak?: boolean; bornDead?: boolean }; keepLedger: boolean; ledger: ForceLedgerEntry[]; effortLedger: EffortLedgerEntry[]; passive?: { budgetFraction: number }; fallingBudgetFraction: number; profile: { hold: { perArmCeilingN: number; ownerBudgetN: number } }; arms: Map<string, Record<string, { link?: { targetId: string; part: string; pointLocal: Vec3; ownerPart: string; ownerPointLocal: Vec3; restM?: number; letOutM?: number } | null }>> };
 }
 
 interface LinkRun {
@@ -43,8 +54,8 @@ interface LinkRun {
   dSwitch: number | null;
   /** Per arm: held at his switch, and how long it stayed retained after it (null: to the run's end). */
   held: Record<string, { at: boolean; forS: number | null }>;
-  /** The link's end events (arm, reason) and its largest stretch while it lived (m). */
-  ends: { arm: string; reason: string }[];
+  /** The link's end events (arm, reason, how long after his switch) and its largest stretch while it lived (m). */
+  ends: { arm: string; reason: string; afterS: number }[];
   maxStretchM: number;
   /** The link entries of the ledger, and per substep each live link's work over the solve (J). */
   entries: ForceLedgerEntry[];
@@ -67,6 +78,13 @@ interface LinkRun {
   clampsAtEnd: number;
   /** Per arm, at the link's first substep: how far its owner-side point lies outside his drawn forearm and hand (m), and its rest length. */
   linkStart: Record<string, { offArmM: number; restM: number | undefined }>;
+  /** The born pairs between the two at his switch (each born before it: true), how long after it the last was held, and the most slack the links let out (m). */
+  bornAtSwitch: boolean[];
+  bornHeldS: number;
+  letOutM: number;
+  /** His arm effort entries after his switch, and a ragdoll owner's per-arm ceiling without a link (N). */
+  effort: EffortLedgerEntry[];
+  ragdollPerArmN: number;
 }
 
 /**
@@ -94,7 +112,7 @@ interface RunOpts {
  * A capture resumed (default: the drag at 0.45 s) with the fall link (`link`, as the build sets it for WRAP_V9) or
  * without it, to `untilS` or the run's end.
  */
-async function linkRun(link: (FallLinkProfile & { noBreak?: boolean }) | null, untilS = 1.5, o: RunOpts = {}): Promise<LinkRun> {
+async function linkRun(link: (FallLinkProfile & { noBreak?: boolean; bornDead?: boolean }) | null, untilS = 1.5, o: RunOpts = {}): Promise<LinkRun> {
   const cap = loadState(o.cap ?? DRAG_CAP);
   const def = o.asWrap8 === false ? asCaptured(cap) : asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V8 }));
   const own = 'D';
@@ -109,7 +127,8 @@ async function linkRun(link: (FallLinkProfile & { noBreak?: boolean }) | null, u
   const meter = passiveEnergyMeter(sim);
   const D = sim.players.find((p) => p.id === own)!;
   const rec = A.arms.get(own)!;
-  const out: LinkRun = { dSwitch: null, held: { left: { at: false, forS: null }, right: { at: false, forS: null } }, ends: [], maxStretchM: 0, entries: [], workJ: [], endT: 0, injecting: {}, auditsOk: true, endingT: null, kept: [], playEnded: [], begunAfter: [], linkFrom: [], clampEntries: [], clampsAtEnd: 0, linkStart: {} };
+  const out: LinkRun = { dSwitch: null, held: { left: { at: false, forS: null }, right: { at: false, forS: null } }, ends: [], maxStretchM: 0, entries: [], workJ: [], endT: 0, injecting: {}, auditsOk: true, endingT: null, kept: [], playEnded: [], begunAfter: [], linkFrom: [], clampEntries: [], clampsAtEnd: 0, linkStart: {}, bornAtSwitch: [], bornHeldS: 0, letOutM: 0, effort: [], ragdollPerArmN: Math.min(A.profile.hold.perArmCeilingN, A.profile.hold.ownerBudgetN * (A.passive?.budgetFraction ?? A.fallingBudgetFraction)) };
+  const bornNow = () => sim.players.flatMap((p) => (p.rag?.born ?? []).filter((bp) => sim.players.some((q) => q !== p && bp.otherKey.startsWith(`${q.id}:`))));
   let ledgerAt = 0;
   // (the ending is recorded in a substep's rule observer, after its solve: the ledger from the next substep is after it)
   let afterEnding = false;
@@ -119,16 +138,22 @@ async function linkRun(link: (FallLinkProfile & { noBreak?: boolean }) | null, u
     if (D.rag && out.dSwitch === null) {
       out.dSwitch = sim.t;
       for (const s of SIDES) out.held[s].at = !!sim.arms!.retained(own, s);
+      out.bornAtSwitch = bornNow().map((bp) => bp.t0 < sim.t);
     }
     if (out.dSwitch === null) {
       A.ledger.length = 0;
+      A.effortLedger.length = 0;
       return;
     }
+    for (const e of A.effortLedger) if (e.owner === own) out.effort.push(e);
+    A.effortLedger.length = 0;
     for (const s of SIDES) if (out.held[s].at && out.held[s].forS === null && !sim.arms!.retained(own, s)) out.held[s].forS = sim.t - out.dSwitch;
     for (const s of SIDES) {
       const L = rec[s].link;
       if (L && !out.linkStart[s]) out.linkStart[s] = { offArmM: offArm(D.rag!, s, L.ownerPointLocal), restM: L.restM };
+      if (L) out.letOutM = Math.max(out.letOutM, L.letOutM ?? 0);
     }
+    if (bornNow().length) out.bornHeldS = sim.t - out.dSwitch;
     // this substep's link entries: the pair's work over the solve, each force over its own material point's motion
     for (; ledgerAt < A.ledger.length; ledgerAt++) {
       const e = A.ledger[ledgerAt];
@@ -151,7 +176,7 @@ async function linkRun(link: (FallLinkProfile & { noBreak?: boolean }) | null, u
   out.clampsAtEnd = sim.counts().clamps;
   for (const e of sim.events) {
     const arm = e.data?.arm as string;
-    if (e.playerId === own && e.type === 'fallLinkEnd') out.ends.push({ arm, reason: e.data!.reason as string });
+    if (e.playerId === own && e.type === 'fallLinkEnd') out.ends.push({ arm, reason: e.data!.reason as string, afterS: e.t - (out.dSwitch ?? e.t) });
     if (e.playerId === own && e.type === 'fallLinkBegin' && e.data!.ok) out.linkFrom.push(e.data!.clamp as string);
     if (e.playerId === own && e.type === 'holdThroughEnding') out.kept.push({ arm, clamp: e.data!.clamp as string | null });
     if (e.playerId === own && (e.type === 'clampEnd' || e.type === 'rideHoldEnd') && e.data!.reason === 'playEnded') out.playEnded.push({ type: e.type, arm, t: e.t });
@@ -217,7 +242,7 @@ describe('polish 2.1, the fall link (WRAP_V9)', () => {
     expect(softTwin.maxStretchM).toBeGreaterThan(FL.maxSeparationM);
   }, 120_000);
 
-  it('(c) conservation: every link force has its equal and opposite, under the per-arm ceiling; the links\' net work never goes positive (they give back no more than they stored); the energy meter and the conversion audits stay clean. The checks\' twins: the owner\'s force dropped, or the pull made a push, fail them', async () => {
+  it('(c) conservation: every link force has its equal and opposite, under the per-arm ceiling; the links\' net work never goes positive (they give back no more than they stored); the energy meter and the conversion audits stay clean; the effort ledger records a linked arm\'s ceiling as the link\'s, and his allocation within it. The checks\' twins: the owner\'s force dropped, or the pull made a push, fail them; the ragdoll\'s own per-arm ceiling (the record before) is exceeded', async () => {
     const on = await linkRun(FL);
     expect(on.entries.length).toBeGreaterThan(100);
     expect(on.entries.some((e) => e.actual > 100)).toBe(true);
@@ -227,9 +252,16 @@ describe('polish 2.1, the fall link (WRAP_V9)', () => {
     expect(maxNetWorkJ(on.workJ)).toBeLessThan(0.01);
     expect(on.injecting).toEqual({ D: 0, R: 0 });
     expect(on.auditsOk).toBe(true);
-    // the checks' twins on the same entries: a force on the target alone, and the pull reversed (its work's sign)
+    // (both arms linked to the end: every effort entry is a linked arm's)
+    expect(on.effort.length).toBeGreaterThan(100);
+    expect(on.effort.every((e) => e.perArmN === Math.min(700, 1000 * FL.budgetFraction))).toBe(true);
+    expect(on.effort.every((e) => e.allocatedN <= e.perArmN + 1e-6)).toBe(true);
+    // the checks' twins on the same entries: a force on the target alone, and the pull reversed (its work's sign); the
+    // allocation against the ceiling a ragdoll arm without a link has
     expect(unpaired(on.entries.map((e) => ({ ...e, forceOnOwner: scale(e.forceOnOwner, 0) }))).length).toBeGreaterThan(100);
     expect(maxNetWorkJ(on.workJ.map((w) => -w))).toBeGreaterThan(1);
+    expect(on.ragdollPerArmN).toBeLessThan(700);
+    expect(on.effort.some((e) => e.allocatedN > on.ragdollPerArmN + 1e-6)).toBe(true);
   }, 60_000);
 
   it('(e) through the whistle: the rear wrap\'s tackler, riding the carrier down at the ending (2.20 s), keeps his holds to his own switch (the takedown, about 0.2 s later) and one becomes a link that lasts to the end of the run (0.3 s); nothing is acquired after the ending. Twin without `throughEnding`: the ending ends both holds and he has none at his switch', async () => {
@@ -317,6 +349,64 @@ describe('polish 2.1, the fall link (WRAP_V9)', () => {
       expect(off.linkStart[s].restM, s).toBeUndefined();
     }
   }, 60_000);
+
+  it('(i) born yield: in the simultaneous low wrap (HC-F1-low, both switched at 1.20 s) the tackler\'s links begin with the carrier\'s left upper arm born 9 cm in his torso; giving way to the separation of that pair, born at their own switch, they let out their slack, no limb stays visibly in the other body (as under WRAP_V8), and they live on until the patch is out of reach, never on stretch. Twins: pulling through it the links hold the arm in his torso (over 5 cm for over 0.1 s); slack without letting out (the first try), they end on stretch', async () => {
+    const cap = loadState(BORN_CAP);
+    const def = asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V8 }));
+    // (the arm system's link profile set on the resume, as `linkRun` does: null is WRAP_V8's arms, no link)
+    const look = async (link: (FallLinkProfile & { bornDead?: boolean }) | null) => {
+      const bar = heldBornBar();
+      const sim = await resumeState(cap, { def, opts: { onSubstep: bar.substep } });
+      const A = (sim as unknown as LinkPriv).arms;
+      A.fallLink = link ? { ...link } : undefined;
+      let letOutM = 0;
+      while (!sim.done) {
+        sim.stepTick();
+        for (const s of SIDES) letOutM = Math.max(letOutM, A.arms.get('D')![s].link?.letOutM ?? 0);
+      }
+      const links = sim.events.filter((e) => e.type === 'fallLinkBegin' && e.playerId === 'D' && e.data?.ok).map((e) => e.data!.arm as string).sort();
+      const ends = sim.events.filter((e) => e.type === 'fallLinkEnd' && e.playerId === 'D').map((e) => e.data!.reason as string);
+      const out = { links, ends, letOutM, breaches: bar.of('R')!.breaches(), deepest: bar.of('R')!.deepest().d };
+      sim.dispose();
+      return out;
+    };
+    const on = await look(FL);
+    const pull = await look(FL_PULL);
+    const dead = await look(FL_DEAD);
+    const v8 = await look(null);
+    const said = JSON.stringify({ on, pull, dead, v8 });
+    expect(on.links, said).toEqual(['left', 'right']);
+    expect(pull.links, said).toEqual(['left', 'right']);
+    expect(v8.links, said).toEqual([]);
+    expect(on.deepest, said).toBeGreaterThan(0.05);
+    expect(on.breaches, said).toEqual([]);
+    expect(v8.breaches, said).toEqual([]);
+    expect(pull.breaches.length, said).toBeGreaterThan(0);
+    expect(pull.breaches.join(' '), said).toMatch(/R leftUpperArm:upperArm in D:core:torso/);
+    // alive through the separation: only the reach rule ends them, with the slack let out; the first try's dead slack ends them on stretch
+    expect(on.letOutM, said).toBeGreaterThan(0.1);
+    expect(on.ends.includes('separation'), said).toBe(false);
+    expect(dead.ends.length, said).toBeGreaterThan(0);
+    expect(dead.ends.every((r) => r === 'separation'), said).toBe(true);
+    expect(dead.letOutM, said).toBe(0);
+  }, 180_000);
+
+  it('(j) born before: in the drag the carrier\'s forearm is born in the tackler\'s torso at the carrier\'s switch (0.69 s), before his own, and still held after it; the links carry on the clamps\' pull through it (nothing let out) and hold to the end of the run. Twin, the first try\'s slack while any born pair is held: his right link ends on stretch within 0.1 s of his switch, as without the link', async () => {
+    const on = await linkRun(FL);
+    expect(on.bornAtSwitch.length).toBeGreaterThan(0);
+    expect(on.bornAtSwitch.every((before) => before)).toBe(true);
+    expect(on.bornHeldS).toBeGreaterThan(0.05);
+    expect(on.letOutM).toBe(0);
+    expect(on.ends).toEqual([]);
+    for (const s of SIDES) expect(on.held[s].forS, s).toBeNull();
+    const dead = await linkRun(FL_DEAD);
+    expect(dead.dSwitch).toBeCloseTo(on.dSwitch!, 9);
+    const right = dead.ends.find((e) => e.arm === 'right');
+    expect(right?.reason).toBe('separation');
+    expect(right!.afterS).toBeLessThan(0.1);
+    expect(dead.held.right.forS!).toBeLessThan(0.1);
+    expect(dead.bornHeldS).toBeGreaterThan(right!.afterS);
+  }, 120_000);
 
   it('(d) WRAP_V9 is no fixture\'s; the lab\'s wrap=v9 selects it on a wrapping defender (wrap=v8 stays WRAP_V8)', () => {
     expect(allFixtures().some((d) => d.wrap?.fallLink || d.wrap?.id === WRAP_V9.id)).toBe(false);

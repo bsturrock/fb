@@ -12,7 +12,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
 import type { ArmProfile, ArmSetup, BodyProfile, FallLinkProfile, JointRangeProfile, RagdollProfile, RetentionMode, RideHoldProfile, SelfClearanceProfile } from './profiles';
-import { landmarkWorld, poseOfRb, type Ragdoll } from './ragdoll';
+import { landmarkWorld, poseOfRb, type BornPair, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
 import { armAnatomicalTwistRad, armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
@@ -129,6 +129,7 @@ export interface EffortLedgerEntry {
   sharedScale: number;
   /** Allocated grasp plus allocated effort equivalent (N). */
   allocatedN: number;
+  /** The arm's ceiling: a fall link's (`linkArm`) on the arm holding one, else the per-arm ceiling. */
   perArmN: number;
   ownerBudgetN: number;
 }
@@ -272,6 +273,8 @@ interface FallLink {
   peakN: number;
   /** `FallLinkProfile.onArm`: the rest length, the gap between his arm and the patch not yet closed (absent: zero). */
   restM?: number;
+  /** `FallLinkProfile.bornYield`: how much of the rest length the born separation let out, not yet taken back in (m; absent: none). */
+  letOutM?: number;
 }
 
 interface RidePatch {
@@ -328,8 +331,12 @@ export class ArmSystem {
   declare pressCarried?: boolean;
   /** Contact motion polish 1.2, the ride hold (`WrapRide.hold`; `noBreak`: the fault twin without its break rules). */
   declare rideHold?: RideHoldProfile & { noBreak?: boolean };
-  /** Contact motion polish 2.1, the fall link (`WrapProfile.fallLink`; `noBreak`: the fault twin without its break rules). */
-  declare fallLink?: FallLinkProfile & { noBreak?: boolean };
+  /**
+   * Contact motion polish 2.1, the fall link (`WrapProfile.fallLink`; `noBreak`: the fault twin without its break rules;
+   * `bornDead`: the twin of `bornYield`, its first try, the link pulling nothing while either player holds any born pair
+   * with the other, whenever born, its rest length not let out).
+   */
+  declare fallLink?: FallLinkProfile & { noBreak?: boolean; bornDead?: boolean };
 
   constructor(
     readonly host: ArmHost,
@@ -655,15 +662,28 @@ export class ArmSystem {
               const pO = toWorld(this.prePose(rbO), L.ownerPointLocal);
               const e = sub(pT, pO);
               const d = len(e);
+              // (`bornYield`: a born pair between the two from its switch or a later one held: no pull, the rest length
+              // let out to the length, before the break rules, which measure the stretch from it; `bornDead`, the twin:
+              // no pull while any born pair between them is held, nothing let out)
+              const yielding = !!K.bornYield && this.bornSince(pl, tgt, L);
+              const dead = !!K.bornDead && this.bornBetween(pl, tgt).length > 0;
+              if (yielding && d > (L.restM ?? 0)) {
+                L.letOutM = (L.letOutM ?? 0) + d - (L.restM ?? 0);
+                L.restM = d;
+              }
               const why = this.linkBreak(pl, a, pT, d);
               if (why) this.endLink(pl, a, why);
               else {
                 let raw = 0;
                 let n = v3();
                 // (`onArm`: the rest length takes in the slack as the gap closes, never lets it out; slack, no force)
-                if (L.restM !== undefined && d < L.restM) L.restM = d;
+                // (`bornYield`: what the separation let out is taken in first)
+                if (L.restM !== undefined && d < L.restM) {
+                  if (L.letOutM) L.letOutM = Math.max(0, L.letOutM - (L.restM - d));
+                  L.restM = d;
+                }
                 const rest = L.restM ?? 0;
-                if (d > 1e-6) {
+                if (d > 1e-6 && !yielding && !dead) {
                   n = scale(e, 1 / d);
                   const sep = dot(sub(vc(rbT.velocityAtPoint(pT)), vc(rbO.velocityAtPoint(pO))), n);
                   raw = Math.max(0, K.stiffness * (d - rest) + K.damping * sep);
@@ -1027,7 +1047,7 @@ export class ArmSystem {
           const effortN = equiv[side] * armFactor[side] * effortShared;
           sumActual += effortN;
           if (this.keepLedger)
-            this.effortLedger.push({ tick: host.tick, step: host.steps, owner: pl.id, arm: side, shoulderNm: e.shoulderNm, elbowNm: e.elbowNm, equivalentN: equiv[side], graspN: grasp[side], armFactor: armFactor[side], sharedScale: effortShared, allocatedN: grasp[side] + effortN, perArmN: perArm, ownerBudgetN: ownerBudget });
+            this.effortLedger.push({ tick: host.tick, step: host.steps, owner: pl.id, arm: side, shoulderNm: e.shoulderNm, elbowNm: e.elbowNm, equivalentN: equiv[side], graspN: grasp[side], armFactor: armFactor[side], sharedScale: effortShared, allocatedN: grasp[side] + effortN, perArmN: linkScale !== null && demands.some((d) => d.kind === 'link' && d.a.side === side) ? linkArm : perArm, ownerBudgetN: ownerBudget });
         }
       }
       demands.forEach((d, i) => {
@@ -1510,7 +1530,7 @@ export class ArmSystem {
       if (L && this.fallLink) {
         const tgt = this.player(L.targetId);
         if (!tgt) this.endLink(pl, a, 'lostTarget');
-        else if (!this.fallLink.noBreak && len(sub(toWorld(poseOfRb(this.partBody(tgt, L.part)), L.pointLocal), toWorld(poseOfRb(pl.ragdoll!.bodies[L.ownerPart]), L.ownerPointLocal))) > this.fallLink.maxSeparationM) this.endLink(pl, a, 'separation');
+        else if (!this.fallLink.noBreak && len(sub(toWorld(poseOfRb(this.partBody(tgt, L.part)), L.pointLocal), toWorld(poseOfRb(pl.ragdoll!.bodies[L.ownerPart]), L.ownerPointLocal))) > this.fallLink.maxSeparationM + (L.letOutM ?? 0)) this.endLink(pl, a, 'separation');
       }
       this.physicalSolve(pl, a);
       const touch = this.physicalArmContact(pl, side);
@@ -1840,14 +1860,30 @@ export class ArmSystem {
     return d <= 0 ? { p: pW, d: 0 } : { p: addScaled(c, off, rad / len(off)), d };
   }
 
-  /** The link's break rules at the substep's start (null: it holds): stretched past `maxSeparationM`; the patch out of reach of the ragdoll's shoulder. */
+  /**
+   * The link's break rules at the substep's start (null: it holds): stretched past `maxSeparationM` (beyond what the born
+   * separation let out, `bornYield`); the patch out of reach of the ragdoll's shoulder.
+   */
   private linkBreak(pl: ArmHostPlayer, a: ArmRt, pT: Vec3, d: number): string | null {
     const K = this.fallLink!;
     if (K.noBreak) return null;
-    if (d > K.maxSeparationM) return 'separation';
+    if (d > K.maxSeparationM + (a.link?.letOutM ?? 0)) return 'separation';
     const P = this.profile;
     if (len(sub(pT, landmarkWorld(pl.ragdoll!, `${a.side}Shoulder`))) > P.maxReachM + P.hold.reachTolM + P.forearmRadiusM) return 'unreachable';
     return null;
+  }
+
+  /** Polish 2.1: the born pairs held between two players, on either's ragdoll. */
+  private bornBetween(pl: ArmHostPlayer, other: ArmHostPlayer): BornPair[] {
+    return [...(pl.ragdoll?.born ?? []).filter((bp) => bp.otherKey.startsWith(`${other.id}:`)), ...(other.ragdoll?.born ?? []).filter((bp) => bp.otherKey.startsWith(`${pl.id}:`))];
+  }
+
+  /**
+   * Polish 2.1 (`FallLinkProfile.bornYield`): whether a born pair between the link's two players is held that was born at
+   * or after the link's beginning (its owner's switch, or the target's later one).
+   */
+  private bornSince(pl: ArmHostPlayer, tgt: ArmHostPlayer, L: FallLink): boolean {
+    return this.bornBetween(pl, tgt).some((bp) => bp.t0 >= L.since);
   }
 
   /** A target converting after the owner: the link's point (`cap`) on the nearest eligible surface of his new body within `remapM`, else it ends. */
