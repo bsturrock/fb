@@ -1,12 +1,12 @@
 // Contact motion polish 1.4, the bound-legs fall (`WrapProfile.bind`, `WrapBind`, src/sim/controllers/wrap.ts; the rule,
 // `Simulation.boundLegs`, where the loss envelope queues a loss): a supported carrier a holder has a secure hold on goes
 // down once held round his hips or legs (a), or once his legs cannot step while he is pushed or dragged (b), each for
-// `confirmS`. WRAP_V8 (WRAP_V7 with it; registered on L3, L4 and HC from the bound-legs flip to the hold flip, which puts WRAP_V9 on it) and WRAP_V6 (the low
+// `confirmS`. WRAP_V8 (WRAP_V7 with it; registered on L3, L4 and HC from the bound-legs flip to the hold flip, which puts WRAP_V9 on it, and WRAP_V10 since the behind flip) and WRAP_V6 (the low
 // strike on V8, which no fixture uses). Each case resumes a
 // state capture shortly before the hold, and has its fault twin: the profile without `bind`, or the rule's own test
 // broken (`SimDebug.wrap`), fails it for the reason it checks.
 import { describe, expect, it } from 'vitest';
-import { WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, type WrapDebug, type WrapProfile } from '../src/sim/controllers/wrap';
+import { WRAP_V10, WRAP_V6, WRAP_V7, WRAP_V8, type WrapDebug, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { labRun } from '../src/lab/lab-params';
@@ -176,9 +176,9 @@ describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6)', () => {
     expect(on.tip).toBeGreaterThan(twin.tip + 0.02);
   }, 120_000);
 
-  it('(d) the bound-legs flip: every L3, L4 and HC wrap fixture registers the bound-legs fall (WRAP_V9 since the hold flip, on WRAP_V8), wrap=v7 runs it with WRAP_V7 (the ride-down, before the flip) and wrap=v6 with WRAP_V6 (the low strike on V8, which no fixture registers); wrap=on takes either back to WRAP_V9; G, L1, L2 and RH register no wrap', () => {
+  it('(d) the bound-legs flip: every L3, L4 and HC wrap fixture registers the bound-legs fall (WRAP_V10 since the behind flip, on WRAP_V9 and WRAP_V8), wrap=v7 runs it with WRAP_V7 (the ride-down, before the flip) and wrap=v6 with WRAP_V6 (the low strike on V8, which no fixture registers); wrap=on takes either back to WRAP_V10; G, L1, L2 and RH register no wrap', () => {
     const on = FIX('L3-F19-rear');
-    expect(on.wrap).toBe(WRAP_V9);
+    expect(on.wrap).toBe(WRAP_V10);
     expect(on.wrap!.bind).toBe(WRAP_V8.bind);
     const v7: FixtureDef = { ...on, wrap: WRAP_V7 };
     const v8: FixtureDef = { ...on, wrap: WRAP_V8 };
@@ -191,8 +191,8 @@ describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6)', () => {
     expect(WRAP_V6.bind).toBe(WRAP_V8.bind);
     expect(WRAP_V6.ride).toBe(WRAP_V7.ride);
     const all = allFixtures();
-    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V9.id).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V10.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap && !/^(L3|L4|HC)-/.test(d.id)).map((d) => d.id)).toEqual([]);
-    expect(all.filter((d) => d.wrap?.id === WRAP_V9.id).length).toBeGreaterThan(0);
+    expect(all.filter((d) => d.wrap?.id === WRAP_V10.id).length).toBeGreaterThan(0);
   });
 });

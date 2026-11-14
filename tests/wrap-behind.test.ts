@@ -1,5 +1,5 @@
 // Contact motion polish 2.2, the drive from behind (WRAP_V10: WRAP_V9 with `drive.behind`, src/sim/controllers/wrap.ts
-// `WrapBehind`; no fixture uses it). Each case resumes a state capture taken under the registered WRAP_V9 shortly before
+// `WrapBehind`; registered on L3, L4 and HC since the behind flip). Each case resumes a state capture taken under WRAP_V9 (then registered) shortly before
 // the tackler's secure hold (the rear wrap at 0.70 s, its hold secure at 0.74; the front wrap at 0.55 s, 0.62; the drag
 // mirror at 0.50 s, 0.58) under WRAP_V10 or a variant of it, and reads every decision of the tackler's controller: what
 // it observed and what it asked for. Each has its fault twin through the controller's fault object (`WrapDebug.behind*`,

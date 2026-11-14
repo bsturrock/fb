@@ -520,7 +520,7 @@ export const WRAP_V6: WrapProfile = {
  * gap to the patch as slack it takes in (`onArm`). It gives way to the born separation of the overlaps its own switch (or
  * the carrier's later one) made between the two (`bornYield`): while one is held it pulls nothing and lets out its slack,
  * so it never holds a limb in the other body, and lives on to hold from the length the separation left. Registered on
- * L3, L4 and HC since the hold flip (the lab's `wrap=v8` is the view before).
+ * L3, L4 and HC from the hold flip (the lab's `wrap=v8` is the view before) to the behind flip's WRAP_V10.
  */
 export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: { stiffness: 10000, damping: 150, maxSeparationM: 0.25, budgetFraction: 1, remapM: 0.05, throughEnding: true, onArm: true, bornYield: true } };
 
@@ -530,7 +530,7 @@ export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: 
  * backward) instead of 3 m/s more along the line, and commits his weight to the hold as the drive begins (`WrapBehind`,
  * `commitS` 0): a supported tackler's clamps press on the carrier and cannot pull him back, so sitting back on his feet
  * loses them within 0.1 to 0.15 s (rear wrap) and a later commit has no hold to carry; the fall link is the hold that
- * pulls. No fixture uses it (lab `wrap=v10`).
+ * pulls. Registered on L3, L4 and HC since the behind flip (the lab's `wrap=v9` is the view before).
  */
 export const WRAP_V10: WrapProfile = { ...WRAP_V9, id: 'wrap-behind-v10', drive: { ...WRAP_V9.drive!, behind: { minMps: 1, maxDeg: 60, brakeMps: 2, commitS: 0 } } };
 

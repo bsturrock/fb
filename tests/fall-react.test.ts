@@ -10,7 +10,7 @@ import { ARM_G2, FALL_HOLD_V1, FALL_L4, FALL_REACT_V1, FALL_REACT_V2, withoutHip
 import { armSystemProfile, checkLimbContract, Simulation } from '../src/sim/simulation';
 import { hingeAngles, limbDirWorld } from '../src/sim/ragdoll';
 import { dot, qInvRot } from '../src/sim/vec';
-import { FIX, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9 } from './helpers';
+import { FIX, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10 } from './helpers';
 
 const SIDES: ArmSide[] = ['left', 'right'];
 /**
@@ -18,7 +18,7 @@ const SIDES: ArmSide[] = ['left', 'right'];
  * (WRAP_V4) the front wrap's carrier goes down from the hit and the tackler later loses his own support, so neither the
  * takedown nor the tackler's held arms at it are in that run. Every other fixture as registered.
  */
-const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(FIX(id))))));
+const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(FIX(id)))))));
 const MEMORY = FALL_REACT_V1.arms.holdMemoryS;
 const deg = (r: number): number => (r * 180) / Math.PI;
 

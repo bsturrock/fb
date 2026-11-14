@@ -85,6 +85,12 @@ to keep stepping while wrapped. Direction is ours. In order:
    +0.03 / +0.02, down after 0.88 / 0.75 s and 3.6 / 3.0 m, backward (his own balance), the tackler on the fall link
    1.0 to 1.2 m behind. The drag never satisfies the test. Open for the flip: the carrier goes down backward, not forward;
    the drag mirror's line starts 68 deg off his travel and swings onto it, so it still pushes (+0.42 m/s).
+   **On** (the behind flip: every L3, L4 and HC wrap fixture runs `WRAP_V10`; lab `&wrap=v9` is the view before,
+   `tests/runs.ts` `preWrapV10`). Only the rear wrap changed, both orders: the tackler leaves his feet at 0.74 s (was
+   2.4), the runner is down at 1.62 / 1.48 s (was 1.87 / 1.91), the same players fall; the other 52 wrap fixtures run
+   identically (their traces differ only in the exported profile). Trend only, no tracked defect: the tackler's palm
+   in his own thigh 11-14 cm (V9 12.5), the runner's ragdoll shoulder rotation 70.9 deg for 0.12 s rev (V9 56.9 fwd).
+   Open: the runner falls backward; the drag mirror still pushes; the tackler leaves his feet the moment the wrap closes.
 3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
    lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
    parked posed dive is the general form if a supported tackler cannot do it.
