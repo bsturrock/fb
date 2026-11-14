@@ -55,7 +55,7 @@
 //                      ride-down (polish 1.2: with the hold he stays on his feet through the takedown, trunk following the
 //                      carrier down, and leaves them near the ground) on WRAP_V5; v6: WRAP_V6, the low strike of the deep crouch
 //                      tackle (polish 1.4, no fixture uses it: trunk pitched 75 deg at his lowest stance, the shoulder
-//                      into the carrier's hip, the arms round him under his pelvis) on WRAP_V8; v5: WRAP_V5 (the view
+//                      into the carrier's hip, the arms round him under his pelvis; polish 2.3: from behind he hangs on low and the carrier's legs are bound) on WRAP_V10; v5: WRAP_V5 (the view
 //                      before the ride-down flip), the drive (polish 1.2: with a hold he
 //                      stays on his feet driving through the carrier and goes down with him) on WRAP_V4; v4: WRAP_V4 (the
 //                      view before the drive flip: the hold lowers him and takes him down on a timer), the strike (polish

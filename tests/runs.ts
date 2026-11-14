@@ -7,7 +7,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { withoutHoldStill } from '../src/sim/footwork';
 import { RAPIER } from '../src/sim/physics';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
-import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10 } from '../src/sim/controllers/wrap';
+import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, type WrapProfile } from '../src/sim/controllers/wrap';
 import {
   FALL_REACT_V1, FALL_REACT_V2, HIP_STOPS_L4_V1, JOINT_RANGE_V2, JOINT_RANGE_V3, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
   withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, withoutBalancedClear, type HipStopProfile, type RagdollProfile,
@@ -129,6 +129,12 @@ export const preWrapV9 = (d: FixtureDef): FixtureDef => (d.wrap?.id === WRAP_V9.
  * `pre*` helpers.
  */
 export const preWrapV10 = (d: FixtureDef): FixtureDef => (d.wrap?.id === WRAP_V10.id ? { ...d, wrap: WRAP_V9 } : d);
+/**
+ * WRAP_V6 as it was from the bound-legs fall (`fc616d3`) to the drag-down (polish 2.3): the same low strike and low arms on
+ * WRAP_V8 (no fall link, no drive from behind, no hanging holder), its id as then. No fixture registered it; the state
+ * captures taken under the lab's `wrap=v6` then (scripts/capture-state.ts `--wrap=v6`, suffix `wrapv6`) ran under it.
+ */
+export const WRAP_V6_PRE_V10: WrapProfile = { ...WRAP_V8, id: 'wrap-low-bind-v6', strike: WRAP_V6.strike!, low: WRAP_V6.low! };
 /**
  * Ladder 11b (the thigh-rotation flip): `d` as before it, its joint-range profile JOINT_RANGE_V2 where it has V3 (the
  * supported thigh's rotation not bounded: a knee placed from a pole may turn sideways and back): what every state capture

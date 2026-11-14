@@ -1,8 +1,8 @@
 // Contact motion polish 1.4, the bound-legs fall (`WrapProfile.bind`, `WrapBind`, src/sim/controllers/wrap.ts; the rule,
 // `Simulation.boundLegs`, where the loss envelope queues a loss): a supported carrier a holder has a secure hold on goes
 // down once held round his hips or legs (a), or once his legs cannot step while he is pushed or dragged (b), each for
-// `confirmS`. WRAP_V8 (WRAP_V7 with it; registered on L3, L4 and HC from the bound-legs flip to the hold flip, which puts WRAP_V9 on it, and WRAP_V10 since the behind flip) and WRAP_V6 (the low
-// strike on V8, which no fixture uses). Each case resumes a
+// `confirmS`. WRAP_V8 (WRAP_V7 with it; registered on L3, L4 and HC from the bound-legs flip to the hold flip, which puts WRAP_V9 on it, and WRAP_V10 since the behind flip) and the low
+// strike on V8 (tests/runs.ts WRAP_V6_PRE_V10: WRAP_V6 until the drag-down; tests/wrap-drag.test.ts has today's). Each case resumes a
 // state capture shortly before the hold, and has its fault twin: the profile without `bind`, or the rule's own test
 // broken (`SimDebug.wrap`), fails it for the reason it checks.
 import { describe, expect, it } from 'vitest';
@@ -12,7 +12,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { labRun } from '../src/lab/lab-params';
 import type { Simulation } from '../src/sim/simulation';
 import { dot, horiz, norm, qInvRot, sub, vc } from '../src/sim/vec';
-import { asCaptured, create, FIX } from './helpers';
+import { asCaptured, create, FIX, WRAP_V6_PRE_V10 } from './helpers';
 import { loadState, resumeState } from './state';
 
 const SIDES = ['left', 'right'] as const;
@@ -88,7 +88,7 @@ async function bindRun(capPath: string, captured: WrapProfile, wrap: WrapProfile
   return out;
 }
 
-/** L3-F19-rear under WRAP_V6 at 0.50 s (tick 30), before the low strike's arms close round the carrier's hips (0.59 s). */
+/** L3-F19-rear under WRAP_V6_PRE_V10 (the lab's wrap=v6 then) at 0.50 s (tick 30), before the low strike's arms close round the carrier's hips (0.59 s). */
 const LOW_CAP = 'tests/data/state/L3-F19-rear~wrapv6@30.json.gz';
 /** L3-F5-drag under WRAP_V8 at 0.45 s (tick 27), before the tackler's hold is secure (0.48 s). */
 const DRAG_CAP = 'tests/data/state/L3-F5-drag~wrapv8@27.json.gz';
@@ -97,9 +97,9 @@ const REAR_CAP = 'tests/data/state/L3-F19-rear~wrapv8@42.json.gz';
 /** L3-F3-collision under WRAP_V8 at 0.50 s (tick 30): the carrier braced against a man in front, no hold on him. */
 const BRACE_CAP = 'tests/data/state/L3-F3-collision~wrapv8@30.json.gz';
 
-describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6)', () => {
-  it('(a) a secure hold of both arms under his pelvis converts the carrier once held for the confirm time (constructed: the low rear wrap, captured before the arms close): a loss of support, cause boundLegs, clause (a), within a substep and the grace of the confirm time after the hold, before any other loss. The twin: WRAP_V6 without bind leaves him supported well past it', async () => {
-    const on = await bindRun(LOW_CAP, WRAP_V6, WRAP_V6, { untilS: 1.5 });
+describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6_PRE_V10)', () => {
+  it('(a) a secure hold of both arms under his pelvis converts the carrier once held for the confirm time (constructed: the low rear wrap, captured before the arms close): a loss of support, cause boundLegs, clause (a), within a substep and the grace of the confirm time after the hold, before any other loss. The twin: the low strike without bind leaves him supported well past it', async () => {
+    const on = await bindRun(LOW_CAP, WRAP_V6_PRE_V10, WRAP_V6_PRE_V10, { untilS: 1.5 });
     expect(on.lowAt).not.toBeNull();
     expect(on.bound).not.toBeNull();
     expect(on.bound!.clause).toBe('a');
@@ -107,7 +107,7 @@ describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6)', () => {
     const after = on.bound!.t - on.lowAt!;
     expect(after).toBeGreaterThanOrEqual(BD.confirmS - 1e-6);
     expect(after).toBeLessThanOrEqual(BD.confirmS + WRAP_V8.commit!.graceS + 0.01);
-    const twin = await bindRun(LOW_CAP, WRAP_V6, unbound(WRAP_V6), { checkAt: on.bound!.t + 0.3, untilS: on.bound!.t + 0.35 });
+    const twin = await bindRun(LOW_CAP, WRAP_V6_PRE_V10, unbound(WRAP_V6_PRE_V10), { checkAt: on.bound!.t + 0.3, untilS: on.bound!.t + 0.35 });
     expect(twin.bound).toBeNull();
     expect(twin.upAt).toBe(true);
   }, 120_000);
@@ -152,7 +152,7 @@ describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6)', () => {
   it('(e) while a clause\'s clock runs the carrier\'s posture request leans toward his travel at the bind\'s lean (the low rear wrap): at his last supported substep the request is 12 deg along his horizontal velocity and his balance target has tipped further toward it. The twin: with no lean request (bindNoLean) the request is his controller\'s and the target tips less', async () => {
     const run = async (faults?: WrapDebug): Promise<{ lean: number; along: number; tip: number; bound: boolean }> => {
       let probe: (() => void) | null = null;
-      const sim = await create({ ...FIX('L3-F19-rear'), wrap: WRAP_V6 }, { ...(faults ? { debug: { wrap: faults } } : {}), onSubstep: () => probe?.() });
+      const sim = await create({ ...FIX('L3-F19-rear'), wrap: WRAP_V6_PRE_V10 }, { ...(faults ? { debug: { wrap: faults } } : {}), onSubstep: () => probe?.() });
       const R = sim.players.find((p) => p.id === 'R')!;
       let last = { lean: 0, along: 0, tip: 0 };
       probe = () => {
@@ -176,7 +176,7 @@ describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6)', () => {
     expect(on.tip).toBeGreaterThan(twin.tip + 0.02);
   }, 120_000);
 
-  it('(d) the bound-legs flip: every L3, L4 and HC wrap fixture registers the bound-legs fall (WRAP_V10 since the behind flip, on WRAP_V9 and WRAP_V8), wrap=v7 runs it with WRAP_V7 (the ride-down, before the flip) and wrap=v6 with WRAP_V6 (the low strike on V8, which no fixture registers); wrap=on takes either back to WRAP_V10; G, L1, L2 and RH register no wrap', () => {
+  it('(d) the bound-legs flip: every L3, L4 and HC wrap fixture registers the bound-legs fall (WRAP_V10 since the behind flip, on WRAP_V9 and WRAP_V8), wrap=v7 runs it with WRAP_V7 (the ride-down, before the flip) and wrap=v6 with WRAP_V6 (the low strike, on V10 since the drag-down, which no fixture registers); wrap=on takes either back to WRAP_V10; G, L1, L2 and RH register no wrap', () => {
     const on = FIX('L3-F19-rear');
     expect(on.wrap).toBe(WRAP_V10);
     expect(on.wrap!.bind).toBe(WRAP_V8.bind);
@@ -188,7 +188,8 @@ describe('polish 1.4, the bound-legs fall (WRAP_V8, WRAP_V6)', () => {
     expect(labRun(v7, new URLSearchParams('wrap=v8'))).toEqual({ def: v8, opts: {}, label: 'wrap v8' });
     expect(labRun(v8, new URLSearchParams('wrap=v8'))).toEqual({ def: v8, opts: {}, label: 'wrap v8 (registered)' });
     expect(labRun(on, new URLSearchParams('wrap=v6')).def.wrap).toBe(WRAP_V6);
-    expect(WRAP_V6.bind).toBe(WRAP_V8.bind);
+    expect(WRAP_V6_PRE_V10.bind).toBe(WRAP_V8.bind);
+    expect({ ...WRAP_V6.bind, linked: undefined }).toEqual({ ...WRAP_V8.bind, linked: undefined });
     expect(WRAP_V6.ride).toBe(WRAP_V7.ride);
     const all = allFixtures();
     expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V10.id).map((d) => d.id)).toEqual([]);

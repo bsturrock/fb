@@ -1914,6 +1914,24 @@ export class ArmSystem {
     return this.arms.get(id)?.[side].link?.targetId ?? null;
   }
 
+  /**
+   * Polish 2.3, the drag-down (`WrapBindLinked`): the patch (world, as the bodies are now) of each live fall link of `id`'s
+   * on `target` that the born separation does not hold yielding (`FallLinkProfile.bornYield`: it pulls nothing then).
+   */
+  linkHolds(id: PlayerId, target: PlayerId): { side: ArmSide; pointWorld: Vec3 }[] {
+    const pl = this.player(id);
+    const tgt = this.player(target);
+    const rec = this.arms.get(id);
+    if (!pl || !tgt || !rec || !this.fallLink) return [];
+    const out: { side: ArmSide; pointWorld: Vec3 }[] = [];
+    for (const side of SIDES) {
+      const L = rec[side].link;
+      if (!L || L.targetId !== target || (this.fallLink.bornYield && this.bornSince(pl, tgt, L))) continue;
+      out.push({ side, pointWorld: toWorld(poseOfRb(this.partBody(tgt, L.part)), L.pointLocal) });
+    }
+    return out;
+  }
+
   // ---------------------------------------------------------------- observation
   obs(id: PlayerId): Partial<Record<ArmSide, ArmObs>> | undefined {
     const rec = this.arms.get(id);

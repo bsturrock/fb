@@ -94,6 +94,14 @@ to keep stepping while wrapped. Direction is ours. In order:
 3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
    lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
    parked posed dive is the general form if a supported tackler cannot do it.
+   Built flag off (`WRAP_V6` = the low strike on V10, lab `&wrap=v6`; before it `tests/runs.ts` `WRAP_V6_PRE_V10`;
+   `tests/wrap-drag.test.ts`): a holder off his feet binds by clause (a) while 2 live fall links hold the carrier below
+   his pelvis centre for 0.05 s (`WrapBind.linked`; 0.075 s or more and the registered rear goes down sideways or kneels).
+   Low rear, registered fwd / rev / 2 m longer: V6 on V8 bound at +0.15 s, sideways; respread on V10 without the rule the
+   tackler hangs on two links but the carrier steps on (down after 1.55 / 1.62 s, the long one never); now he is bound
+   0.05 s after the tackler leaves his feet, +0.03 m/s, no plant, core under 0.5 m after 0.32-0.37 s and 1.6-1.8 m,
+   forward, the tackler 0.7-0.8 m behind on live links (two, two, one). Front, side, drag runs identical. Open for the
+   flip: from 2 m back reversed he commits with one clamp (one link: runs on); the tackler ends at arm's length.
 4. **The side wrap reads as a wrap.** The arms close round the carrier and stay on him through the fall instead
    of a hit and a release; needs 1, and the narrow footwork step (item 2 of the order below) so the tackler is
    not cut loose high in the fast falls.

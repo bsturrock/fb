@@ -165,10 +165,11 @@ export interface PlayerRuntime {
   rideLooseT?: number;
   /**
    * Contact motion polish 1.4, the bound-legs fall (`WrapBind`): each clause's clock on a supported carrier (since when
-   * its condition has held, and when it last held), and the holder of the last secure hold. Absent without the profile,
-   * and for every player until the first evaluation of him under it.
+   * its condition has held, and when it last held), and the holder of the last secure hold; `l`, the hanging holder's
+   * clause (a) (polish 2.3, `WrapBind.linked`; absent without it). Absent without the profile, and for every player until
+   * the first evaluation of him under it.
    */
-  bind?: { a: { since: number | null; lastT: number }; b: { since: number | null; lastT: number }; holder: PlayerId | null };
+  bind?: { a: { since: number | null; lastT: number }; b: { since: number | null; lastT: number }; l?: { since: number | null; lastT: number }; holder: PlayerId | null };
   /** Plan 06a: suspension support state (probe, height target, force, work); null under the legacy support. */
   sus: SuspensionRuntime | null;
   /** Bulk vertical velocity before the last solve (RH-F7 extremum conversions: [prevVy, lastVy] spans the last solve). */
@@ -1032,7 +1033,7 @@ export class Simulation {
       if (this.def.brace && pl.setup.role === 'runner') this.advanceBrace(pl);
       // contact motion polish 1.4, the bound-legs fall: while a clause's clock runs he leans toward his travel (the
       // posture cap bounds it; never after the referee's ending, which takes posture lean away)
-      if (pl.bind && this.def.wrap?.bind && !this.rules?.ending && pl.controlMode === 'supported' && !this.opts.debug?.wrap?.bindNoLean && (pl.bind.a.since !== null || pl.bind.b.since !== null)) {
+      if (pl.bind && this.def.wrap?.bind && !this.rules?.ending && pl.controlMode === 'supported' && !this.opts.debug?.wrap?.bindNoLean && (pl.bind.a.since !== null || pl.bind.b.since !== null || (pl.bind.l?.since ?? null) !== null)) {
         const b = this.coreBody(pl);
         const hv = horiz(vc(b.linvel()));
         const dir = len(hv) >= this.def.wrap.bind.pushMps ? norm(hv) : norm(horiz(forwardOf(b.rotation())), v3(0, 0, 1));
@@ -1398,9 +1399,10 @@ export class Simulation {
    * Contact motion polish 1.4, the bound-legs fall (`WrapBind`): runs the clauses' clocks of a supported carrier and
    * returns the clause that has bound him (held for `confirmS`), with his holder and the clock's age; null otherwise. The
    * holder is a supported player whose focus he is, with a secure hold on him (the drive's test, from the arms' and the
-   * contacts' observation of this solve).
+   * contacts' observation of this solve); under `WrapBind.linked` (polish 2.3) also, for clause (a), a player off his feet
+   * whose focus he is with his live fall links low on him (`linked`: how many).
    */
-  private boundLegs(pl: PlayerRuntime, thetaRad: number): { clause: 'a' | 'b'; holder: PlayerId; heldS: number } | null {
+  private boundLegs(pl: PlayerRuntime, thetaRad: number): { clause: 'a' | 'b'; holder: PlayerId; heldS: number; linked?: number } | null {
     const W = this.def.wrap!;
     const BD = W.bind!;
     const dbg = this.opts.debug?.wrap;
@@ -1430,7 +1432,26 @@ export class Simulation {
       }
       break;
     }
-    st.holder = holder ? holder.id : st.holder;
+    // contact motion polish 2.3, the drag-down (`WrapBindLinked`): a holder who has left his feet holding on is clause (a)'s
+    // holder while `minLinks` of his live fall links hold him at or below his pelvis (the point test on each link's patch)
+    let linked = 0;
+    let linker: PlayerRuntime | undefined;
+    const LK = BD.linked;
+    if (LK && this.arms && pl.body.kind !== 'legacyCapsule') {
+      const cb = this.coreBody(pl);
+      const root = vc(cb.translation());
+      const q = { ...cb.rotation() };
+      for (const h of this.players) {
+        if (h === pl || h.controlMode === 'supported' || this.def.focus?.[h.id] !== pl.id) continue;
+        const holds = this.arms.linkHolds(h.id, pl.id);
+        if (holds.length < LK.minLinks) continue;
+        if (!dbg?.bindLinkAnyHeight && !holds.every((l) => qInvRot(q, sub(l.pointWorld, root)).y <= pl.body.compound.pelvis.center.y + 1e-9)) continue;
+        linker = h;
+        linked = holds.length;
+        break;
+      }
+    }
+    st.holder = holder ? holder.id : linker ? linker.id : st.holder;
     // (b) his legs cannot step: a foot stranded (held off its target by the leg guard, or past its planned time), no plant
     // since the clock began, and still pushed or dragged
     let blocked = false;
@@ -1441,16 +1462,22 @@ export class Simulation {
       blocked = stranded && pushed;
       if (st.b.since !== null && sides.some((s) => F.feet[s].mode === 'planted' && F.feet[s].plantedAtS > st.b.since! + 1e-9)) st.b.since = null;
     }
-    const run = (c: { since: number | null; lastT: number }, on: boolean): number | null => {
+    const run = (c: { since: number | null; lastT: number }, on: boolean, confirmS: number): number | null => {
       if (on) {
         c.lastT = this.t;
         c.since ??= this.t;
       } else if (c.since !== null && this.t - c.lastT > grace + 1e-9) c.since = null;
-      return c.since !== null && this.t - c.lastT <= grace + 1e-9 && this.t - c.since >= BD.confirmS - 1e-9 ? this.t - c.since : null;
+      return c.since !== null && this.t - c.lastT <= grace + 1e-9 && this.t - c.since >= confirmS - 1e-9 ? this.t - c.since : null;
     };
-    const a = run(st.a, !!holder && low);
-    const b = run(st.b, blocked);
-    if (a === null && b === null) return null;
+    const a = run(st.a, !!holder && low, BD.confirmS);
+    const b = run(st.b, blocked, BD.confirmS);
+    // (the hanging holder's clause (a) has a clock of its own, and binds only while his links hold now: never from a link
+    // that has just ended or yields, within the grace)
+    const lc = LK ? (st.l ??= { since: null, lastT: -Infinity }) : null;
+    const l = lc ? run(lc, linked > 0, LK!.confirmS) : null;
+    const lNow = linked > 0 ? l : null;
+    if (a === null && b === null && lNow === null) return null;
+    if (a === null && lNow !== null) return { clause: 'a', holder: linker!.id, heldS: round(lNow, 5), linked };
     return { clause: a !== null ? 'a' : 'b', holder: st.holder!, heldS: round(a ?? b!, 5) };
   }
 

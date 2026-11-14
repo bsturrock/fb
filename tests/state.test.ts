@@ -6,10 +6,10 @@ import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
 import { readdirSync } from 'node:fs';
 import type { FixtureDef } from '../src/sim/fixture';
-import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, runSim } from './helpers';
+import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, runSim, WRAP_V6_PRE_V10 } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
 import { ARM_G2, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
-import { WRAP_V6, WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
+import { WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
 
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace });
 const copy = (c: StateCapture): StateCapture => JSON.parse(JSON.stringify(c));
@@ -150,7 +150,7 @@ describe('asCaptured: a capture\'s definition out of the flip chain', () => {
     if (/~v3/.test(file)) return { as: (d) => ({ ...d, legGuard: LEG_GUARD_V3 }) };
     if (/~wrapv7/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V7 }) };
     if (/~wrapv8/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V8 }) };
-    if (/~wrapv6/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V6 }) };
+    if (/~wrapv6/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V6_PRE_V10 }) };
     return {};
   };
 

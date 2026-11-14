@@ -98,6 +98,21 @@ export interface WrapBind {
   pushLeanDeg: number;
   pushMps: number;
   leanDeg: number;
+  /** Contact motion polish 2.3, the drag-down (absent: only a supported holder binds): `WrapBindLinked`. */
+  linked?: WrapBindLinked;
+}
+
+/**
+ * Contact motion polish 2.3, the drag-down: a holder who has left his feet holding on (the fall link, `WrapProfile.fallLink`)
+ * is the holder of clause (a) while `minLinks` or more of his live fall links hold the carrier at or below his pelvis (each
+ * link's patch under the centre of his pelvis box, in his frame: clause (a)'s point test); held so for `confirmS` (a clock
+ * of its own, which binds only while the links hold at that substep, not within the grace after) the carrier is bound,
+ * clause (a) with the links counted. Never from a link above the pelvis, a link the born separation holds yielding
+ * (`FallLinkProfile.bornYield`: it pulls nothing) or one that has ended.
+ */
+export interface WrapBindLinked {
+  confirmS: number;
+  minLinks: number;
 }
 
 /**
@@ -365,6 +380,8 @@ export interface WrapDebug {
   bindAnySwing?: boolean;
   /** Polish 1.4, the bound-legs fall (simulation): no forward lean request while a clause's clock runs. */
   bindNoLean?: boolean;
+  /** Polish 2.3, the drag-down (simulation): the links' point test off (a hanging holder's link above his pelvis counts). */
+  bindLinkAnyHeight?: boolean;
   /** Polish 2.1, the fall link (arms): no break rule (overload, separation, reach); only its target gone ends it. */
   fallLinkNoBreak?: boolean;
   /** Polish 2.2, the drive from behind: the anchor's request off (from behind he pushes along the line, as before). */
@@ -487,30 +504,6 @@ export const WRAP_V7: WrapProfile = {
 export const WRAP_V8: WrapProfile = { ...WRAP_V7, id: 'wrap-bind-v8', bind: { confirmS: 0.2, pushLeanDeg: 5, pushMps: 0.5, leanDeg: 12 } };
 
 /**
- * Contact motion polish 1.4, the low strike of the deep crouch tackle, on WRAP_V8 (the ride-down and the bound-legs fall):
- * the trunk pitched 75 deg on the hinge at his lowest stance (the hinge's drop, 0.2 m, takes the root to the stance
- * floor), on 1.0 s ahead of contact (or inside 1.4 m: the hinge's unchanged rate bounds need about 0.85 s to fold it), so
- * the shoulder meets the carrier's hip; his line steers his head 0.35 m to the carrier's side (the pelvis box's half width
- * and the head's radius: beside the hip, never across his front, at whatever pitch the hinge has reached); the arms round
- * him 5 cm below his root, under his pelvis box, on the support capsule. The hinge's bound is the ride's 85 deg (the strike
- * asks 75; riding, the trunk follows the carrier on to 85). Values and reasons: docs/handoff/contact-motion-m3.md.
- */
-export const WRAP_V6: WrapProfile = {
-  ...WRAP_V8,
-  id: 'wrap-low-bind-v6',
-  strike: {
-    ...WRAP_V8.strike!,
-    leadS: 1.0,
-    gapM: 1.4,
-    pitchDeg: 75,
-    dropM: 0.2,
-    offsetM: 0.35,
-    hinge: { ...WRAP_V8.strike!.hinge, maxDeg: 85, maxDropM: 0.2 },
-  },
-  low: { bandYLocal: -0.05, walk: { leadDeg: 30, endDeg: 170, extraM: 0.02 } },
-};
-
-/**
  * Contact motion polish 2.1, the fall link: WRAP_V8 whose tackler keeps each forearm clamp he has at his own switch as a
  * breakable link to the carrier (`FallLinkProfile`) through his fall and the landing. The owner budget at full strength
  * (700 N per arm, 1000 N in all, as a supported clamp has); 10 kN/m puts the 700 N ceiling at 7 cm of stretch, the
@@ -533,6 +526,37 @@ export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: 
  * pulls. Registered on L3, L4 and HC since the behind flip (the lab's `wrap=v9` is the view before).
  */
 export const WRAP_V10: WrapProfile = { ...WRAP_V9, id: 'wrap-behind-v10', drive: { ...WRAP_V9.drive!, behind: { minMps: 1, maxDeg: 60, brakeMps: 2, commitS: 0 } } };
+
+/**
+ * Contact motion polish 1.4, the low strike of the deep crouch tackle, on WRAP_V10 (the ride-down, the bound-legs fall, the
+ * fall link and the drive from behind): the trunk pitched 75 deg on the hinge at his lowest stance (the hinge's drop, 0.2
+ * m, takes the root to the stance floor), on 1.0 s ahead of contact (or inside 1.4 m: the hinge's unchanged rate bounds
+ * need about 0.85 s to fold it), so the shoulder meets the carrier's hip; his line steers his head 0.35 m to the carrier's
+ * side (the pelvis box's half width and the head's radius: beside the hip, never across his front, at whatever pitch the
+ * hinge has reached); the arms round him 5 cm below his root, under his pelvis box, on the support capsule. The hinge's
+ * bound is the ride's 85 deg (the strike asks 75; riding, the trunk follows the carrier on to 85). Values and reasons:
+ * docs/handoff/contact-motion-m3.md. Polish 2.3, the drag-down: from behind he leaves his feet holding on as the hold is
+ * secure (V10's commit), and his two live fall links round the carrier's hips or legs bind him once held 0.05 s
+ * (`WrapBindLinked`; the longer his weight hangs on a carrier still supported, the more the carrier's balance stands him up
+ * against it: held 0.075 s or more the registered rear run goes down sideways or to his knees, under it forward): the
+ * carrier goes down leaning toward his travel, the tackler hanging on with his legs dragging.
+ * (Until polish 2.3 the same strike and arms on WRAP_V8: tests/runs.ts `WRAP_V6_PRE_V10`.)
+ */
+export const WRAP_V6: WrapProfile = {
+  ...WRAP_V10,
+  id: 'wrap-low-drag-v6',
+  strike: {
+    ...WRAP_V10.strike!,
+    leadS: 1.0,
+    gapM: 1.4,
+    pitchDeg: 75,
+    dropM: 0.2,
+    offsetM: 0.35,
+    hinge: { ...WRAP_V10.strike!.hinge, maxDeg: 85, maxDropM: 0.2 },
+  },
+  low: { bandYLocal: -0.05, walk: { leadDeg: 30, endDeg: 170, extraM: 0.02 } },
+  bind: { ...WRAP_V10.bind!, linked: { confirmS: 0.05, minLinks: 2 } },
+};
 
 export interface WrapSpec {
   kind: 'wrapAttempt';
