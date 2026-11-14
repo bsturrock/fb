@@ -38,7 +38,7 @@ import { FOOTWORK_L2, FOOTWORK_L3, HOLD_STILL_V1, withHoldStill } from '../src/s
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
-import { FALL_L4, FALL_REACT_V2, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1, withClipArmSwing, withMetArmStay } from '../src/sim/profiles';
+import { FALL_L4, FALL_REACT_V2, JOINT_RANGE_V3, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1, withClipArmSwing, withMetArmStay } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
 import { asCaptured, breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 import { loadState, resumeState } from './state';
@@ -231,8 +231,9 @@ const OPT_IN: Row[] = [
   [
     'plan 12: joint range is on for exactly the L3, L4 and HC fixtures, and the export records it',
     async () => {
-      // contact motion M1: joint-range-v2 (plan 12's ranges, with the upper-arm twist kept in range)
-      const J = JOINT_RANGE_V2;
+      // contact motion M1: joint-range-v2 (plan 12's ranges, with the upper-arm twist kept in range); since ladder 11b's
+      // flip joint-range-v3 (V2 with the supported thigh's rotation kept in range)
+      const J = JOINT_RANGE_V3;
       for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? J : undefined);
       for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
         const sim = await Simulation.create(d);

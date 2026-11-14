@@ -1,4 +1,5 @@
-// Ladder 11b: the supported thigh's axial rotation (`JointRangeProfile.hipTwist`, JOINT_RANGE_V3, used by no fixture yet).
+// Ladder 11b: the supported thigh's axial rotation (`JointRangeProfile.hipTwist`, JOINT_RANGE_V3, registered on every L3,
+// L4 and HC fixture by its flip).
 // The supported leg places its knee from a pole, so the thigh's rotation was whatever the pole and the ankle target gave.
 // When the target comes close beside or above the hip the knee turns sideways and then back: HC-F2-offset A's right foot
 // is held up on B while its hip drops, the rotation runs from -48 deg at 0.467 s to the knee facing backwards (180 deg)
@@ -24,11 +25,11 @@ const rotDeg = (hip: Vec3, knee: Vec3, ankle: Vec3, sx: number, q: Quat = I): nu
 const mirror = (p: Vec3): Vec3 => v3(-p.x, p.y, p.z);
 
 describe('ladder 11b: the supported thigh rotation', () => {
-  it('the profile: joint-range-v2 with the hip envelope\'s twist range less 5 deg, used by no fixture; the measure is the visible meter\'s', () => {
+  it('the profile: joint-range-v2 with the hip envelope\'s twist range less 5 deg, on exactly the fixtures that registered V2 (L3, L4, HC); the measure is the visible meter\'s', () => {
     expect({ ...JOINT_RANGE_V3, id: JOINT_RANGE_V2.id, hipTwist: undefined }).toEqual({ ...JOINT_RANGE_V2, hipTwist: undefined });
     expect(HT).toEqual({ envelope: ENVELOPE_L4.hip, marginDeg: 5, maxRateRadPs: 12 });
     expect(E.twistDeg).toEqual([-50, 50]);
-    for (const d of allFixtures()) expect(d.jointRange?.hipTwist, d.id).toBeUndefined();
+    for (const d of allFixtures()) expect(d.jointRange?.hipTwist, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) ? HT : undefined);
     // armTwistRad on a leg chain (thigh frame as the pose builds it) is tests/visible.ts's hip rotation, in turned cores
     let seed = 11;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;

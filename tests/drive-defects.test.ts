@@ -9,7 +9,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preWrapV5, preWrapV7, preWrapV8 } from './runs';
+import { asCaptured, create, FIX, preHipTwist, preWrapV5, preWrapV7, preWrapV8 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -91,13 +91,17 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
   // swing foot takes a high clearance variant (9) over him, its target close above the hip, and the knee, placed from a
   // pole, turns sideways and back: the supported right hip twist runs 111 deg past range from 1.65 to 1.93 s, his shin
   // crossing the carrier's. The ladder 11b mechanism (tests/hip-twist.test.ts: a foot target close beside or above the
-  // hip turns the knee back; JOINT_RANGE_V3 bounds the thigh's rotation, used by no fixture yet). Captured at 1.500 s;
-  // twin, WRAP_V4 from there: the same; JOINT_RANGE_V3 from there: inside the range. Before the flip L3-F1-phase1
-  // reaches the same (D's right swing foot in clearance variant 8, 125 deg past at 0.85 s). Reached, not made.
-  it('CLEARANCE_KNEE_TURNS_BACK (L3-F5-dragMirror reversed, from 1.500 s): a supported swing foot lifted close above the hip to clear a fallen carrier turns the knee back, the hip twist over 60 deg past range, with the drive and without it from the same state; within range under the thigh-rotation bound; before the flip L3-F1-phase1 holds the same', async () => {
+  // hip turns the knee back). Captured at 1.500 s (under JOINT_RANGE_V2); twin, WRAP_V4 from there: the same. Before the
+  // drive flip L3-F1-phase1 reaches the same (D's right swing foot in clearance variant 8, 125 deg past at 0.85 s).
+  // Reached, not made. Fixed by the 11b thigh-rotation flip (JOINT_RANGE_V3 registered, the thigh's rotation bounded):
+  // from the same state inside the range, and L3-F1-phase1 as before the drive flip too. Now the fix's test: the fault
+  // twin is the capture's own profile, V2, which turns the knee back as above.
+  it('CLEARANCE_KNEE_TURNS_BACK gone (L3-F5-dragMirror reversed, from 1.500 s): under the registered thigh-rotation bound the clearance step keeps the hip twist within range; the fault twin (JOINT_RANGE_V2) turns the knee back over 60 deg past range, with the drive and without it from the same state, and before the drive flip L3-F1-phase1 the same', async () => {
     const cap = loadState('tests/data/state/L3-F5-dragMirror~rev@90.json.gz');
     const def = asCaptured(cap);
     expect(def.wrap?.drive).toBeDefined();
+    expect(def.jointRange?.id).toBe('joint-range-v2');
+    expect(FIX(cap.fixture).jointRange).toBe(JOINT_RANGE_V3);
     const look = async (d: FixtureDef, variant?: string[]) => {
       const sim = await resumeState(cap, variant ? { def: d, variant } : { def: d });
       const out = supportedHipTwist(sim, 1.5, 2.2);
@@ -114,11 +118,17 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
     expect(on.up, said).toBe(true);
     expect(off, said).toEqual(on);
     expect(bound.peak, said).toBeLessThan(30);
-    const bSim = await create(preWrapV5(preWrapV7(preWrapV8(FIX('L3-F1-phase1')))), {});
-    const before = supportedHipTwist(bSim, 0.6, 0.95);
-    bSim.dispose();
-    const bSaid = JSON.stringify(before);
+    const phase1 = async (d: FixtureDef) => {
+      const sim = await create(preWrapV5(preWrapV7(preWrapV8(d))), {});
+      const out = supportedHipTwist(sim, 0.6, 0.95);
+      sim.dispose();
+      return out;
+    };
+    const before = await phase1(preHipTwist(FIX('L3-F1-phase1')));
+    const registered = await phase1(FIX('L3-F1-phase1'));
+    const bSaid = JSON.stringify({ before, registered });
     expect(before.peak, bSaid).toBeGreaterThan(60);
     expect(before.variant, bSaid).toBeGreaterThanOrEqual(8);
+    expect(registered.peak, bSaid).toBeLessThan(30);
   }, 120000);
 });

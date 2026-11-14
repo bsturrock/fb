@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -932,7 +932,8 @@ describe('plan 08 pass 3: contact integration', () => {
     expect(plantRootBreaches({ ...inside, rootUp: { m: ROOT_M + 0.001, at: 'r' } }, false)).toEqual([]);
   });
   it('the still feet, the fault twin: before the flip L3-F6-hold\'s defender steps home in the hold (its left foot at 2.146 s)', async () => {
-    const d = preHoldStill(FIX('L3-F6-hold'));
+    // (ladder 11b: a sample of the run before the thigh-rotation flip, under which the defender's home step moves)
+    const d = preHoldStill(preHipTwist(FIX('L3-F6-hold')));
     const c = CHECKS.find((x) => x.name === HOLD_STILL)!;
     const fails: string[] = [];
     await runWatched(d, [{ w: c.watch(d, (m) => fails.push(m)), fail: (m) => fails.push(m) }]);

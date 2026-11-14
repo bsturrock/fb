@@ -23,11 +23,11 @@ import { armSelfShapes, buildProxyPose, CONT_LEG_MPS, HARD_OK, hingeChain, LEG_S
 import { initPhysics, RAPIER, trunkShapes } from '../src/sim/physics';
 import { armTwistRad, behindDeg, fitElbowTwist, swingExcess, swingExtentDeg, twistWindow, TWIST_FIT_TOL_RAD } from '../src/sim/joint-cone';
 import { FOOTWORK_L3 } from '../src/sim/footwork';
-import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX, withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutConversionRetry } from '../src/sim/profiles';
+import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_CLEARANCE_V1, sideSignX, withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutConversionRetry } from '../src/sim/profiles';
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preHipTwist, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -721,8 +721,10 @@ describe('plan 13f leg guard: a conversion beside a closing body', () => {
         // the fault twins' thigh in a shoe converts, held out of the solve; ladder 18e: and before the met-arm flip, under
         // which the run differs from its first met arm and the guard this case is for rejects D: the closing shoe is a
         // sample of the run before it. Registered (LEG_GUARD_V3), D converts as before the flip)
-        // (contact motion M4: and before the fall flip, whose response needs the visible flip's hip stops)
-        const def = pinV1(preFlip(preBornOverlap(preMetArmStay(preFallReact(FIX(id))))));
+        // (contact motion M4: and before the fall flip, whose response needs the visible flip's hip stops; ladder 11b: and
+        // before the thigh-rotation flip, under which the fault twin without the profile converts: the closing shoe is a
+        // sample of the run before it)
+        const def = pinV1(preFlip(preBornOverlap(preMetArmStay(preFallReact(preHipTwist(FIX(id)))))));
         const on = await handoffOf(def, o);
         expect(on.outcome, id).toBe('accepted');
         expect(on.newM, id).toBeLessThan(0.012);
@@ -1042,7 +1044,9 @@ describe('contact motion M1: upper-arm twist', () => {
   const ext = (core: Quat, upper: Quat, sx: number): number => (externalTwistRad(E, swingTwistOf(qMul(qConj(core), upper)).twistRad, sx) * 180) / Math.PI;
 
   it('the profile: on for exactly the L3, L4 and HC fixtures, plan 12 ranges kept, the twist measure the envelope\'s on both sides', () => {
-    for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? J2 : undefined);
+    // since the 11b thigh-rotation flip the registered profile is JOINT_RANGE_V3: V2 with `hipTwist`, its arm the same
+    for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? JOINT_RANGE_V3 : undefined);
+    expect({ ...JOINT_RANGE_V3, id: J2.id, hipTwist: undefined }).toEqual({ ...J2, hipTwist: undefined });
     expect({ ...J2, id: JOINT_RANGE_V1.id, shoulderTwist: undefined }).toEqual({ ...JOINT_RANGE_V1, shoulderTwist: undefined });
     expect(E.twistDeg).toEqual([-100, 100]);
     // anatomical reference poses (core frame, the arm's own side +sx): forearm forward on a hanging arm is neutral,

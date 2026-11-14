@@ -1,13 +1,13 @@
 // Contact motion polish 1.2 (the ride-down, WRAP_V7), tracked defects (rule 5) its flip reached: mechanisms the ride's
 // moved trajectories run into, each on a full-state capture a little before it (tests/data/state; how to capture:
 // tests/README.md). Each test pins the defect present in its captured state and fails once the defect is gone from it
-// (it then becomes the fix's test, with its fault twin). The twin shows the cause: the same state with the ride off
+// (it then becomes the fix's test, with its fault twin: (a) and (b) since the 11b thigh-rotation flip). The twin shows the cause: the same state with the ride off
 // (WRAP_V5), and the bound or condition the mechanism needs changed.
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, preWrapV7, preWrapV8 } from './runs';
+import { asCaptured, FIX, preWrapV7, preWrapV8 } from './runs';
 import { loadState, resumeState, type StateCapture } from './state';
 import { jointAngles } from './visible';
 
@@ -44,6 +44,8 @@ function ragdollShoulderTwist(sim: Simulation) {
 async function hipTwin(cap: StateCapture, untilS: number) {
   const def = asCaptured(cap);
   expect(def.wrap?.ride).toBeDefined();
+  expect(def.jointRange?.id).toBe('joint-range-v2');
+  expect(FIX(cap.fixture).jointRange).toBe(JOINT_RANGE_V3);
   const look = async (d: FixtureDef, variant?: string[]) => {
     const sim = await resumeState(cap, variant ? { def: d, variant } : { def: d });
     const out = supportedHipTwist(sim, untilS);
@@ -53,7 +55,8 @@ async function hipTwin(cap: StateCapture, untilS: number) {
   return {
     on: await look(def),
     off: await look(preWrapV7(preWrapV8(def)), ['wrap']),
-    bound: await look({ ...def, jointRange: JOINT_RANGE_V3 }, ['jointRange', 'ragdoll']),
+    // the registered profile since the 11b flip (the capture ran under V2, the fault twin)
+    bound: await look({ ...def, jointRange: FIX(cap.fixture).jointRange! }, ['jointRange', 'ragdoll']),
   };
 }
 
@@ -64,9 +67,10 @@ describe('contact motion polish 1.2, the ride-down: tracked defects (rule 5)', (
   // from 0.72 to 0.88 s, then his conversion. The ladder 11b mechanism, tracked since the drive flip as
   // CLEARANCE_KNEE_TURNS_BACK (tests/drive-defects.test.ts (b)): before the drive flip this same fixture reached it, 125
   // deg past at 0.85 s. Captured at 0.667 s; twin, WRAP_V5 from there: he converts at once (0.671 s) and never takes the
-  // step; JOINT_RANGE_V3 (the thigh's rotation bounded, used by no fixture yet) from there: inside the range. Reached by
-  // the ride keeping him on his feet, not made or worsened by it.
-  it('CLEARANCE_KNEE_TURNS_BACK (L3-F1-phase1, from 0.667 s): riding past the felled carrier, a swing foot lifted in a clearance variant turns the knee back, the posed hip twist over 60 deg past range; the ride off converts him before the step; within range under the thigh-rotation bound', async () => {
+  // step. Reached by the ride keeping him on his feet, not made or worsened by it. Fixed by the 11b thigh-rotation flip
+  // (JOINT_RANGE_V3 registered): from the same state inside the range. Now the fix's test; its fault twin is the capture's
+  // own profile, JOINT_RANGE_V2, which turns the knee back as above.
+  it('CLEARANCE_KNEE_TURNS_BACK gone (L3-F1-phase1, from 0.667 s): riding past the felled carrier under the registered thigh-rotation bound, the clearance step keeps the posed hip twist within range; the fault twin (JOINT_RANGE_V2) turns the knee back over 60 deg past range; the ride off converts him before the step', async () => {
     const r = await hipTwin(loadState('tests/data/state/L3-F1-phase1@40.json.gz'), 0.95);
     const said = JSON.stringify(r);
     expect(r.on.peak, said).toBeGreaterThan(60);
@@ -80,8 +84,9 @@ describe('contact motion polish 1.2, the ride-down: tracked defects (rule 5)', (
   // variant 9 over the carrier, the posed right hip twist 71 deg past range for 0.05 s (1.18 to 1.22 s), just before his
   // conversion at 1.225 s (his ragdoll keeps 44 deg past to 1.45 s). Captured at 1.133 s; twin, WRAP_V5 from there: the
   // same mechanism and worse (91 deg past, 0.067 s; he stays up, as under V5 from the start, where it comes at 1.65 to
-  // 1.93 s, drive-defects (b)); JOINT_RANGE_V3 from there: inside the range. Reached, not made.
-  it('CLEARANCE_KNEE_TURNS_BACK (L3-F5-dragMirror reversed, from 1.133 s): the riding tackler\'s clearance step over the downed carrier turns his knee back, over 60 deg past range; the ride off from the same state does the same or worse; within range under the thigh-rotation bound', async () => {
+  // 1.93 s, drive-defects (b)). Reached, not made. Fixed by the 11b thigh-rotation flip (JOINT_RANGE_V3 registered): from
+  // the same state inside the range; the fault twin is the capture's own profile, JOINT_RANGE_V2.
+  it('CLEARANCE_KNEE_TURNS_BACK gone (L3-F5-dragMirror reversed, from 1.133 s): under the registered thigh-rotation bound the riding tackler\'s clearance step over the downed carrier keeps his hip twist within range; the fault twin (JOINT_RANGE_V2) turns his knee back over 60 deg past range, and the ride off from the same state the same or worse', async () => {
     const r = await hipTwin(loadState('tests/data/state/L3-F5-dragMirror~rev@68.json.gz'), 1.3);
     const said = JSON.stringify(r);
     expect(r.on.peak, said).toBeGreaterThan(60);

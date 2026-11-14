@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { FALL_REACT_V1, FALL_REACT_V2, hipStopsFor, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
+import { FALL_REACT_V1, FALL_REACT_V2, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
 import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8 } from '../controllers/wrap';
@@ -188,6 +188,16 @@ function palmLoadFlip(d: FixtureDef): FixtureDef {
   return d.fallResponse === FALL_REACT_V1 ? { ...d, fallResponse: FALL_REACT_V2 } : d;
 }
 
+/**
+ * Ladder 11b (parked at 11b and 12a, taken up for the hold through the whistle), the thigh-rotation flip: every L3, L4
+ * and HC fixture (each registers JOINT_RANGE_V2) runs JOINT_RANGE_V3, the supported thigh's rotation kept in the hip's
+ * twist range and continuous (`hipTwist`): a swing foot lifted in a clearance variant no longer turns the knee sideways
+ * and back. G, L1, L2 and RH have no joint-range profile. tests/runs.ts `preHipTwist` gives a definition as before it.
+ */
+function hipTwistFlip(d: FixtureDef): FixtureDef {
+  return VISIBLE_FLIP.test(d.id) && d.jointRange === JOINT_RANGE_V2 ? { ...d, jointRange: JOINT_RANGE_V3 } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -216,6 +226,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip));
   return registry.slice();
 }
