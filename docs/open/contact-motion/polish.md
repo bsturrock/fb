@@ -148,6 +148,14 @@ to keep stepping while wrapped. Direction is ours. In order:
    closing speed) and a hit gets its own form: the shoulder leads with the head to the side away from the
    runner's front, the arms tucked, no clamp, drive hold, ride or link; he runs through the contact at his own
    speed and falls only by his own balance. `WRAP_V12`, flag off first; its flip makes these five fixtures hits.
+   **Built flag off** (`WRAP_V12` = V11 + `hit`, request `WrapSpec.tackle`, lab `&wrap=v12`, `tests/wrap-hit.test.ts`;
+   evidence main `.scratch/p16/hit/summary.txt`). Closing speed at strike start, all 106 wrap runs: 1.2, 2.0, 5.0 | 7.0,
+   7.9, 8.1 m/s; the default `minCloseMps` 6 sits in the gap. 70 runs become hits, the other 36 are identical to V11.
+   On the five: the head takes none of the strike (V11 152-171 N s of 257-348), the upper trunk all; closing at contact
+   +0.05-0.13 m/s (steering behind, never slowed); runner down +0.15-0.37 s after contact (V11 +0.10-0.11), 1.8-2.4 m on
+   along his run; the tackler stays up at 4.5-5.0 m/s 0.3 s after contact (V11 3.3-3.7, then a takedown). Open for the
+   flip: 35 who-falls changes (tackler stays up); `L3-F19-front` head-on is a hit with the head still taking half;
+   runner landing rebounds up to 114 J (`LANDING_REBOUND`); G4 body tucked forearm 6 cm for 0.07 s at strike start.
 5. Then the rest of the order below: the low tackle's flip on long-approach fixtures (side offset out before the
    carrier goes down, a secure hold on the long front approach, the posed hip twist), the hand lock, a sideways
    roll with the carrier, brace amount, falls, whiff, debt.

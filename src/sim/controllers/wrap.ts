@@ -75,6 +75,34 @@ export interface WrapProfile {
    * solved contact keeps them): each clamp he has at his switch becomes a breakable link to the carrier (`FallLinkProfile`).
    */
   fallLink?: FallLinkProfile;
+  /** Contact motion polish 4, the hit (with `strike`; absent: every tackle is a wrap, as before): `WrapHit`. */
+  hit?: WrapHit;
+}
+
+/**
+ * Contact motion polish 4, the hit (user, 2026-11-14: wraps and hits are different tackles): a violent shoulder collision,
+ * no arms coming out to wrap. The tackle's kind is decided once, as the strike starts, and kept: the tackler's request
+ * (`WrapSpec.tackle`) when given, else (a placeholder until game context picks the tackle) a hit when the closing speed on
+ * the carrier then (the relative velocity along the line to him) is `minCloseMps` or more, a wrap otherwise. A wrap is
+ * the wrap exactly as before. A hit keeps the strike's posture (trunk pitched, hips low, the shoulder leading) with:
+ *  - the head behind the carrier's own travel across the approach (his velocity itself, above `sideMps`; else the
+ *    strike's rule), never across his front; decided as it starts and kept (no arm plan to keep consistent with it);
+ *  - the strike's line steer turning his line only: he runs at his own approach speed (never slowed, never raised);
+ *  - both arms tucked, never closing (`arms`): no clamp, grip or hold, so no drive, ride, bound legs or fall link;
+ *  - through the contact: the approach's request for `followS` after the bodies first meet, then the finish with no
+ *    hold (he straightens up, or pursues a carrier still up). He leaves his feet only by his own balance (the ordinary
+ *    loss envelope, the validated conversion). Requests only.
+ */
+export interface WrapHit {
+  minCloseMps: number;
+  sideMps: number;
+  followS: number;
+  /**
+   * The tucked arms, in his trunk's frame from each shoulder: the palm `downM` down the trunk, `forwardM` ahead of the
+   * shoulder and `acrossM` toward the other shoulder; the striking arm (the side away from the head) `strike`, the other
+   * `other`; each elbow toward `pole` (owner-local, x on the arm's own side).
+   */
+  arms: { strike: { downM: number; forwardM: number; acrossM: number }; other: { downM: number; forwardM: number; acrossM: number }; pole: Vec3 };
 }
 
 /**
@@ -418,6 +446,12 @@ export interface WrapDebug {
   behindAnyLine?: boolean;
   /** Polish 2.2, the drive from behind: exit (r) off (he never commits his weight from behind). */
   behindNoCommit?: boolean;
+  /** Polish 4, the hit: the hit's side rule off (the strike's rule decides the head's side, its default included). */
+  hitStrikeSide?: boolean;
+  /** Polish 4, the hit: the wrap's arms on a hit (they open wide and close as a wrap's). */
+  hitWrapArms?: boolean;
+  /** Polish 4, the hit: the steer as a wrap's (added to his line and capped, not only turning it). */
+  hitAddSteer?: boolean;
   /**
    * The balance reads the pitched trunk, as with no hinge (simulation, support-runtime): the support pivot and the loss
    * envelope in the body's frame, so the trunk's pitch tips him as whole-body lean would.
@@ -572,6 +606,20 @@ export const WRAP_V11: WrapProfile = {
 };
 
 /**
+ * Contact motion polish 4, the hit: WRAP_V11 with `hit` (`WrapHit`). By default a hit at 6 m/s of closing speed or more
+ * as the strike starts (every L3, L4 and HC wrap run closes at 1.2, 2.0 or 5.0 m/s, or at 7.0 to 8.1). The head behind
+ * the carrier's travel across the approach above 0.5 m/s; the arms tucked (the striking palm 12 cm down the trunk, 28 cm
+ * ahead of its shoulder, 5 cm in: the forearm up in front of the shoulder; the other 20 cm down, 32 cm ahead, 20 cm in:
+ * across the chest; the elbows close in, down and forward: an elbow straight down at the ribs puts the forearm through
+ * the boxy G4 trunk, 16 cm for 0.7 s); 0.3 s through the contact at his approach. No fixture uses it (lab `wrap=v12`).
+ */
+export const WRAP_V12: WrapProfile = {
+  ...WRAP_V11,
+  id: 'wrap-hit-v12',
+  hit: { minCloseMps: 6, sideMps: 0.5, followS: 0.3, arms: { strike: { downM: 0.12, forwardM: 0.28, acrossM: 0.05 }, other: { downM: 0.2, forwardM: 0.32, acrossM: 0.2 }, pole: v3(0.4, -0.6, 0.7) } },
+};
+
+/**
  * Contact motion polish 1.4, the low strike of the deep crouch tackle, on WRAP_V10 (the ride-down, the bound-legs fall, the
  * fall link and the drive from behind): the trunk pitched 75 deg on the hinge at his lowest stance (the hinge's drop, 0.2
  * m, takes the root to the stance floor), on 1.0 s ahead of contact (or inside 1.4 m: the hinge's unchanged rate bounds
@@ -661,6 +709,11 @@ export interface WrapSpec {
   approachLeanDeg?: number;
   /** Plan 07a stance request held throughout (root height, stagger; suspension support only). Request only. */
   stance?: StanceRequest;
+  /**
+   * Contact motion polish 4 (under a wrap profile with `hit`; absent: the profile's closing-speed rule): the tackle asked
+   * for, a wrap or a hit, kept from the strike's start (`WrapHit`). The hook game context will drive.
+   */
+  tackle?: 'wrap' | 'hit';
 }
 
 const DEF = {
@@ -704,7 +757,7 @@ export class WrapAttemptController implements Controller {
   readonly kind = 'wrapAttempt';
   readonly observationDelayS = 0;
   readonly decisionIntervalS = 0;
-  readonly p: Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance'>>;
+  readonly p: Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance' | 'tackle'>>;
   private connectedAt: number | null = null;
   private lastContactT = -Infinity;
   private progress: { t: number; along: number }[] = [];
@@ -722,6 +775,9 @@ export class WrapAttemptController implements Controller {
   declare private readonly fault?: WrapDebug;
   /** Contact motion polish 1.2: the drive's start (s; set at the first finish decision under a profile with one). */
   declare private dv?: { at: number | null; holdT: number; leans: { t: number; deg: number }[]; y0?: number; down?: number; behind?: boolean };
+  /** Contact motion polish 4: the tackle's kind (set as the strike starts under a profile with `hit`), and a hit's first body contact (s). */
+  declare private hk?: 'wrap' | 'hit';
+  declare private hitAt?: number;
 
   constructor(
     readonly spec: WrapSpec,
@@ -732,7 +788,7 @@ export class WrapAttemptController implements Controller {
   ) {
     if (profile) this.wp = profile;
     if (fault) this.fault = fault;
-    this.p = { ...DEF, ...stripUndef(spec) } as Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance'>>;
+    this.p = { ...DEF, ...stripUndef(spec) } as Required<Omit<WrapSpec, 'kind' | 'plan' | 'finish' | 'stance' | 'tackle'>>;
     const mk = (s: ArmSide): ArmCtl => ({ phase: spec.plan[s] === 'none' ? 'idle' : spec.plan[s] === 'wrap' ? 'ready' : 'palmReach', since: 0, bestAz: -180, lastProgressT: 0, lastClampT: -1 });
     this.arm = { left: mk('left'), right: mk('right') };
     const y = (setup.initial.yawDeg * Math.PI) / 180;
@@ -795,6 +851,12 @@ export class WrapAttemptController implements Controller {
       this.lastContactT = ctx.t;
       if (this.connectedAt === null && retaining.length > 0) this.connectedAt = ctx.t;
     }
+    // polish 4, the hit: through the contact on his approach for `followS` from the bodies' first meeting, then the finish
+    // (with no hold)
+    const HT = this.wp?.hit;
+    const hit = !!HT && this.hk === 'hit';
+    if (hit && bodyContact) this.hitAt ??= ctx.t;
+    if (hit && this.connectedAt === null && this.hitAt !== undefined && ctx.t - this.hitAt >= HT!.followS - 1e-9) this.connectedAt = ctx.t;
     const removed = P.removeAfterConnect && this.connectedAt !== null;
     const F = this.spec.finish;
     if (removed) {
@@ -998,10 +1060,15 @@ export class WrapAttemptController implements Controller {
       const behind = (this.fault?.headAcross ? 1 : -1) * Math.sign(vl);
       if (!sk.on && supported && near2) {
         sk.on = true;
+        // (polish 4: the tackle's kind, decided once as the strike starts: his request, else the closing speed on him)
+        if (HT && this.hk === undefined) this.hk = this.spec.tackle ?? (closingNow >= HT.minCloseMps - 1e-9 ? 'hit' : 'wrap');
         const off = dot(sub(me.position, R), side);
-        sk.head = Math.abs(vl) > SK.sideRuleMps ? behind : Math.abs(off) > 0.05 ? Math.sign(off) : 1;
+        // (a hit: behind the carrier's own travel across the approach, from his velocity itself)
+        const across = dot(vR, side);
+        const hitSide = !!HT && this.hk === 'hit' && !this.fault?.hitStrikeSide && Math.abs(across) > HT.sideMps;
+        sk.head = hitSide ? -Math.sign(across) : Math.abs(vl) > SK.sideRuleMps ? behind : Math.abs(off) > 0.05 ? Math.sign(off) : 1;
         sk.hd = scale(side, sk.head);
-      } else if (sk.on && this.connectedAt === null && !engaged && Math.abs(vl) > SK.sideRuleMps && Math.sign(dot(sk.hd, side)) !== behind) {
+      } else if (sk.on && this.connectedAt === null && !engaged && !(HT && this.hk === 'hit') && Math.abs(vl) > SK.sideRuleMps && Math.sign(dot(sk.hd, side)) !== behind) {
         sk.head = behind;
         sk.hd = scale(side, sk.head);
       } else if (sk.on && !this.fault?.strikeHeld && (!supported || (tb.controlMode !== 'supported' && retaining.length === 0) || (!engaged && ((ttcNow > 2 * SK.leadS && gap >= SK.gapM) || bearing > SK.offBearingDeg)))) sk.on = false;
@@ -1045,8 +1112,11 @@ export class WrapAttemptController implements Controller {
           // carrier's
           const pt = this.wp?.low ? add(me.position, qRot(me.rotation, ctx.bodies[ctx.self].compound.head.center)) : me.position;
           const e = dot(sub(addScaled(R, hd, SK.offsetM), pt), hd);
+          const v0 = len(vel);
           vel = addScaled(vel, hd, w * clamp(SK.offsetGainPerS * e, -SK.offsetMps, SK.offsetMps));
           if (len(vel) > maxV) vel = scale(vel, maxV / len(vel));
+          // (polish 4, a hit: the steer only turns his line; he runs on at his own approach speed)
+          if (HT && this.hk === 'hit' && !this.fault?.hitAddSteer && len(vel) > 1e-9) vel = scale(vel, v0 / len(vel));
         }
       }
     }
@@ -1093,11 +1163,14 @@ export class WrapAttemptController implements Controller {
       const p = addScaled(addScaled(chest, fwd, forwardM), side, sgn * lateral);
       return v3(p.x, band, p.z);
     };
+    // polish 4, a hit: both arms tucked in his trunk's frame (whatever the wrap plan) while the strike's weight is up (on,
+    // or unwinding: a hanging arm by a pitched trunk meets the thigh's stride), never closing; else both at rest
+    const tuck = !!HT && this.hk === 'hit' && !this.fault?.hitWrapArms;
     for (const s of SIDES) {
       const plan = this.spec.plan[s];
       const st = this.arm[s];
       const ob = myArms[s];
-      if (plan === 'none' || !ob) continue;
+      if ((plan === 'none' && !tuck) || !ob) continue;
       // `side` is the defender's local +X (cross(near, UP) with the defender facing the runner): the arm's sign on it
       const sgn = sideSignX(this.setup.body, s);
       const az = azOf(ob.palmContactWorld, sgn);
@@ -1116,6 +1189,24 @@ export class WrapAttemptController implements Controller {
       if (t >= P.armsOffAfterS || removed) {
         arms[s] = { action: 'release', targetWorld: ob.palmContactWorld };
         debugArms[s] = { phase: 'off', az };
+        continue;
+      }
+      if (tuck && !(sk && sk.w > 0)) {
+        arms[s] = { action: 'release', targetWorld: ob.palmContactWorld };
+        debugArms[s] = { phase: 'rest', az: Math.round(az) };
+        continue;
+      }
+      if (tuck) {
+        // (the striking arm, away from the head: its forearm up in front of its shoulder; the other across his chest)
+        const sx = Math.sign(sgn) || 1;
+        const A = sx === -(sk?.head ?? 1) ? HT!.arms.strike : HT!.arms.other;
+        const o = myArms[s === 'left' ? 'right' : 'left'];
+        const inward = scale(qRot(me.rotation, v3(1, 0, 0)), -sx);
+        const across = o ? norm(sub(o.shoulderWorld, ob.shoulderWorld), inward) : inward;
+        const tgt = addScaled(addScaled(addScaled(ob.shoulderWorld, qRot(me.rotation, v3(0, 1, 0)), -A.downM), qRot(me.rotation, v3(0, 0, 1)), A.forwardM), across, A.acrossM);
+        const pl = HT!.arms.pole;
+        arms[s] = { action: 'reach', targetWorld: tgt, poleLocal: v3(sx * pl.x, pl.y, pl.z) };
+        debugArms[s] = { phase: 'tuck', az: Math.round(az), target: tgt };
         continue;
       }
       let action: ArmIntent['action'] = 'reach';
@@ -1204,7 +1295,7 @@ export class WrapAttemptController implements Controller {
       ...(leave ? { leaveSupport: 'takedown' as const } : {}),
       ...(riding ? { ride: true as const } : {}),
       ...(this.wp?.bind?.behind && !leave && this.dv?.at != null && this.dv.behind ? { behind: true as const } : {}),
-      debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true, ...(sk ? { strike: { on: sk.on, w: sk.w, head: sk.head } } : {}), ...(driveDebug ? { drive: driveDebug } : {}) },
+      debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true, ...(sk ? { strike: { on: sk.on, w: sk.w, head: sk.head, ...(this.hk ? { tackle: this.hk } : {}) } } : {}), ...(driveDebug ? { drive: driveDebug } : {}) },
     };
   }
 
@@ -1227,6 +1318,6 @@ export function lowestY(body: BodyProfile, p: Vec3, q: { x: number; y: number; z
 
 function stripUndef<T extends object>(o: T): Partial<T> {
   const r: Partial<T> = {};
-  for (const k of Object.keys(o) as (keyof T)[]) if (o[k] !== undefined && k !== 'kind' && k !== 'plan' && k !== 'finish' && k !== 'stance') r[k] = o[k];
+  for (const k of Object.keys(o) as (keyof T)[]) if (o[k] !== undefined && k !== 'kind' && k !== 'plan' && k !== 'finish' && k !== 'stance' && k !== 'tackle') r[k] = o[k];
   return r;
 }
