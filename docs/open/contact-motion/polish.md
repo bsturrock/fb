@@ -134,6 +134,20 @@ to keep stepping while wrapped. Direction is ours. In order:
 4. **The side wrap reads as a wrap.** The arms close round the carrier and stay on him through the fall instead
    of a hit and a release; needs 1, and the narrow footwork step (item 2 of the order below) so the tackler is
    not cut loose high in the fast falls.
+   **Measured, and replaced by the hit (user, 2026-11-14).** Evidence: main checkout `.scratch/p15/side/summary.txt`.
+   The five fast-fall fixtures (`L3-F4-twoArm`, `L4-F10-wrap-on`, `L3-F1-low`, `HC-F3-lowRunner`, `HC-F3-phase0`)
+   are one tackle: the tackler arrives at about 7 m/s closing across the runner; the hit fells the runner 0.10 s
+   after contact, the first forearm clamp forms at 0.15 to 0.17 s, there is never a hold before he goes; the
+   tackler loses his one clamp, turns ragdoll upright holding nothing and ends beside him. His head goes across
+   the runner's front (`wrap.ts` side rule: on a collision course the motion across the approach is under
+   `sideRuleMps` and the fallback offset is 0 by construction, so the default side is taken). A cap on his
+   closing speed (a "gather") gives the wrap picture and was rejected by the user: never slow a tackler to make
+   a fixture read as a wrap. His ruling: **wraps and hits are different tackles.** A hit is a violent shoulder
+   collision: no arms coming out to wrap, more a collision than a wrap and fall; the tackler does not have to go
+   down but can. So the tackle's kind is decided as the strike starts (a request from above when given, else by
+   closing speed) and a hit gets its own form: the shoulder leads with the head to the side away from the
+   runner's front, the arms tucked, no clamp, drive hold, ride or link; he runs through the contact at his own
+   speed and falls only by his own balance. `WRAP_V12`, flag off first; its flip makes these five fixtures hits.
 5. Then the rest of the order below: the low tackle's flip on long-approach fixtures (side offset out before the
    carrier goes down, a secure hold on the long front approach, the posed hip twist), the hand lock, a sideways
    roll with the carrier, brace amount, falls, whiff, debt.
