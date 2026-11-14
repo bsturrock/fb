@@ -866,6 +866,7 @@ export class Simulation {
           armIntent: pl.intent.arms,
           falling: pl.controlMode === 'falling',
           ...((pl.intent.ride || sim.opts.debug?.wrap?.rideHoldUnridden) && pl.controlMode === 'supported' ? { riding: true } : {}),
+          ...(pl.intent.leaveSupport === 'takedown' && pl.controlMode === 'supported' ? { leaving: true } : {}),
           ragdoll: pl.rag,
           armEffort: pl.fall?.armDemand,
         }));

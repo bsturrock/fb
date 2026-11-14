@@ -148,6 +148,8 @@ export interface ArmHostPlayer {
   armEffort?: Partial<Record<ArmSide, ArmEffortDemand>>;
   /** Contact motion polish 1.2: a supported owner riding the carrier down (`PlayerIntent.ride`; the ride hold's). */
   riding?: boolean;
+  /** Polish 2.1, the hold through the whistle: a supported owner whose request asks his takedown (converted next substep). */
+  leaving?: boolean;
 }
 
 export interface ArmHost {
@@ -244,6 +246,11 @@ interface ArmRt {
   rideLast?: { c: NonNullable<ArmRt['clamp']>; t: number } | null;
   /** Contact motion polish 2.1, the fall link (`ArmSystem.fallLink`): the forearm clamp carried as a link (absent or null: none). */
   link?: FallLink | null;
+  /**
+   * Polish 2.1, the hold through the whistle (`FallLinkProfile.throughEnding`): the referee's ending kept this arm's clamp
+   * and ride patch (its owner riding the carrier down then), until his own switch or the ride's end (absent: not kept).
+   */
+  kept?: boolean;
 }
 
 /**
@@ -263,6 +270,8 @@ interface FallLink {
   since: number;
   overloadExposureS: number;
   peakN: number;
+  /** `FallLinkProfile.onArm`: the rest length, the gap between his arm and the patch not yet closed (absent: zero). */
+  restM?: number;
 }
 
 interface RidePatch {
@@ -651,10 +660,13 @@ export class ArmSystem {
               else {
                 let raw = 0;
                 let n = v3();
+                // (`onArm`: the rest length takes in the slack as the gap closes, never lets it out; slack, no force)
+                if (L.restM !== undefined && d < L.restM) L.restM = d;
+                const rest = L.restM ?? 0;
                 if (d > 1e-6) {
                   n = scale(e, 1 / d);
                   const sep = dot(sub(vc(rbT.velocityAtPoint(pT)), vc(rbO.velocityAtPoint(pO))), n);
-                  raw = Math.max(0, K.stiffness * d + K.damping * sep);
+                  raw = Math.max(0, K.stiffness * (d - rest) + K.damping * sep);
                 }
                 demands.push({ a, kind: 'link', vec: scale(n, -raw), raw, normalReq: 0, ftWanted: v3(), ftCone: v3(), frictionSat: false, link: L, n, p: pT, s: pO, target: L.targetId, id: L.id, rbT, rbO });
               }
@@ -692,17 +704,26 @@ export class ArmSystem {
         }
         const a = rec[side];
         if (!a.enabled) continue;
+        // polish 2.1, the hold through the whistle: an arm the referee's ending kept (`endPlay`) holds on while its owner
+        // rides on (or leaves his support for the takedown, or falls into it); stopping without his switch, it lets go
+        if (a.kept && !this.keeps(pl, a)) this.unkeep(pl, a, 'playEnded');
+        if (a.kept && !a.clamp && !a.ride) a.kept = false;
+        const kept = !!a.kept;
         // A falling owner's arms are passive: requests are ignored (diagnostics only), the last action is frozen and
         // existing relationships are kept only while the normal checks allow; nothing new is acquired.
+        // (polish 2.1: so are a kept arm's, its elbow pole as last asked; the ride patch carries its wanted palm)
+        const frozen = falling || kept;
         const requested = pl.armIntent?.[side] ?? { action: 'rest' as const, targetWorld: v3() };
-        const intent: ArmIntent = falling ? { action: a.action === 'pull' ? 'close' : a.action, targetWorld: v3() } : requested;
-        if (intent.poleLocal) a.poleHint = { ...intent.poleLocal };
-        else if (a.poleHint) delete a.poleHint;
+        const intent: ArmIntent = frozen ? { action: a.action === 'pull' ? 'close' : a.action, targetWorld: v3() } : requested;
+        if (!kept) {
+          if (intent.poleLocal) a.poleHint = { ...intent.poleLocal };
+          else if (a.poleHint) delete a.poleHint;
+        }
         const prevAction = a.action;
         a.action = intent.action;
-        const closing = falling ? !!a.clamp : intent.action === 'close' || intent.action === 'pull';
+        const closing = kept || (falling ? !!a.clamp : intent.action === 'close' || intent.action === 'pull');
         if (!closing) a.needOpen = false;
-        if (!falling) a.requestedWorld = intent.action === 'rest' || intent.action === 'release' ? null : { ...intent.targetWorld };
+        if (!frozen) a.requestedWorld = intent.action === 'rest' || intent.action === 'release' ? null : { ...intent.targetWorld };
         // ---------------- held palm: validate before any force
         if (a.gripId) {
           const g = this.grips.get(a.gripId)!;
@@ -754,13 +775,14 @@ export class ArmSystem {
         // follows at the arm's top speed)
         let rp = a.ride ?? null;
         if (rp && !closing) rp = this.endRide(pl, a, 'voluntary');
-        if (rp && this.rideOff(pl, rp)) rp = this.endRide(pl, a, 'rideEnded');
+        if (rp && this.rideOff(pl, rp, a)) rp = this.endRide(pl, a, 'rideEnded');
         if (rp) a.wantedLocal = toLocal(ownerPose, toWorld(this.prePose(this.partBody(this.player(rp.targetId)!, rp.part)), rp.wantLocal));
         const clamped = !!a.clamp;
         const speed = clamped ? P.clamp.stationRateMps : P.maxEndpointSpeedMps;
         const targetLocal = a.requestedWorld ? toLocal(ownerPose, a.requestedWorld) : this.restLocal(side);
-        // falling owner: the closing/reach reference stays frozen in the owner frame (no active tracking)
-        if (!falling) a.wantedLocal = this.clampShell(pl, side, moveToward(a.wantedLocal, targetLocal, speed * dt));
+        // falling owner: the closing/reach reference stays frozen in the owner frame (no active tracking); a kept arm's too
+        // (with its ride patch, on the part it holds)
+        if (!frozen) a.wantedLocal = this.clampShell(pl, side, moveToward(a.wantedLocal, targetLocal, speed * dt));
         this.reach(pl, a, ownerPose, obstacles, (rp ? P.maxEndpointSpeedMps : speed) * dt);
         // phase
         if (!a.armed) a.phase = 'recover';
@@ -833,7 +855,10 @@ export class ArmSystem {
         let fh = sol.forearmHit;
         // a falling owner keeps only an existing clamp on the same patch (no fresh clamp)
         const sameClamp = !!a.clamp && !!fh && a.clamp.obstacleKey === `${fh.obstacle.playerId}:${fh.obstacle.part}:${fh.obstacle.region}`;
-        const live = !this.ended && a.mode === 'forearmClamp' && closing && effort > 0 && !!fh && fh.distance <= tol && ELIGIBLE.includes(fh.obstacle.region) && (!falling || sameClamp);
+        let live = (!this.ended || kept) && a.mode === 'forearmClamp' && closing && effort > 0 && !!fh && fh.distance <= tol && ELIGIBLE.includes(fh.obstacle.region) && (!frozen || sameClamp);
+        // (polish 2.1: a kept arm holds the patch it had at the ending; a contact farther along is no hold of it, and the
+        // ride patch stands in for it)
+        if (live && kept && len(sub(a.clamp!.pointTargetLocal, toLocal(this.prePose(fh!.obstacle.rb), fh!.pointTarget))) > P.clamp.patchJumpM) live = false;
         // polish 1.2, the ride hold: its contact memory (the arm touching the carrier anywhere, his own arm between them
         // included), its break rules, and the patch in place of a forearm contact that is not an eligible surface of his
         if (rp && effort <= 0) rp = this.endRide(pl, a, 'noEffort');
@@ -881,10 +906,12 @@ export class ArmSystem {
           const pTLocal = toLocal(tp, pT);
           let xT = v3();
           const fresh = !a.clamp || a.clamp.obstacleKey !== key || len(sub(a.clamp.pointTargetLocal, pTLocal)) > P.clamp.patchJumpM;
-          if (falling && fresh) {
-            // patch jump while falling would be a new acquisition: end the clamp instead
-            host.emit('clampEnd', pl.id, { arm: side, clamp: a.clamp!.id, reason: 'contactLost', gap: round(fh.distance, 4) });
+          if (frozen && fresh) {
+            // patch jump while falling would be a new acquisition: end the clamp instead (polish 2.1: and a kept arm's
+            // ride patch with it)
+            if (a.clamp) host.emit('clampEnd', pl.id, { arm: side, clamp: a.clamp.id, reason: 'contactLost', gap: round(fh.distance, 4) });
             a.clamp = null;
+            if (kept) this.endRide(pl, a, 'contactLost');
             continue;
           }
           if (!fresh && a.clamp) xT = a.clamp.tangentElasticDisplacementM;
@@ -1178,6 +1205,13 @@ export class ArmSystem {
   /**
    * Referee ending (Gate 4 rule observer): every grip and forearm clamp ends ('playEnded') so no active arm shortening
    * or closing force continues, and nothing new is acquired. Physical bodies keep colliding and settling.
+   *
+   * The one exception (contact motion polish 2.1, the hold through the whistle, `FallLinkProfile.throughEnding`; no
+   * fixture has it): a supported owner riding the carrier down at the ending is mid-takedown, still on him, and his
+   * clamps and ride patches are kept (`ArmRt.kept`) under their own rules but this one, his requests frozen as a falling
+   * owner's are, until his own switch carries them on as links (`linkBegin`) or he stops riding without it ('playEnded'
+   * then, `keeps`). Their closing force goes through the same allocator, ceilings and ledger as before the ending. Nothing
+   * new is acquired after it, by him or anyone.
    */
   endPlay(): void {
     if (this.ended) return;
@@ -1186,16 +1220,40 @@ export class ArmSystem {
       const rec = this.arms.get(pl.id);
       if (!rec) continue;
       const ownerPose: Pose = { p: vc(pl.rb.translation()), q: { ...pl.rb.rotation() } };
+      const keep = !!this.fallLink?.throughEnding && !!pl.riding && !pl.falling && !pl.ragdoll;
       for (const side of SIDES) {
         const a = rec[side];
         a.contactHoldUntil = null;
-        if (a.ride) this.endRide(pl, a, 'playEnded');
+        if (keep && (a.clamp || a.ride)) {
+          a.kept = true;
+          this.host.emit('holdThroughEnding', pl.id, { arm: side, clamp: a.clamp?.id ?? null, ride: !!a.ride, target: a.clamp?.targetId ?? a.ride?.targetId ?? null });
+        }
+        if (a.ride && !a.kept) this.endRide(pl, a, 'playEnded');
         if (a.gripId) this.release(pl, a, 'playEnded', ownerPose);
-        if (a.clamp) {
+        if (a.clamp && !a.kept) {
           this.host.emit('clampEnd', pl.id, { arm: side, clamp: a.clamp.id, reason: 'playEnded', gap: null });
           a.clamp = null;
         }
       }
+    }
+  }
+
+  /**
+   * Polish 2.1, the hold through the whistle: whether an arm the ending kept still holds on (his own switch not yet come):
+   * its owner riding, or leaving his support for the takedown that converts him next substep, or falling into it.
+   */
+  private keeps(pl: ArmHostPlayer, a: ArmRt): boolean {
+    return !!a.kept && this.ended && !pl.ragdoll && (!!pl.riding || !!pl.leaving || !!pl.falling);
+  }
+
+  /** Polish 2.1: a kept arm's hold ends with the play's end after all (he stopped riding without converting) or his switch. */
+  private unkeep(pl: ArmHostPlayer, a: ArmRt, reason: 'playEnded' | null): void {
+    a.kept = false;
+    if (!reason) return;
+    if (a.ride) this.endRide(pl, a, reason);
+    if (a.clamp) {
+      this.host.emit('clampEnd', pl.id, { arm: a.side, clamp: a.clamp.id, reason, gap: null });
+      a.clamp = null;
     }
   }
 
@@ -1604,7 +1662,8 @@ export class ArmSystem {
           // only a continuing contact on the same part/region keeps its elastic history
           host.emit('clampRemap', pl.id, { arm: side, clamp: a.clamp.id, key: a.clamp.obstacleKey, target: a.clamp.targetId });
           // polish 1.2, the ride hold: a riding owner's clamp goes on as a patch on the carrier's new body
-          if (this.rideHold && pl.riding && !pl.falling && !this.ended && !a.ride) this.rideRemap(pl, a);
+          // (polish 2.1: an arm the ending kept too: the hold he has, on the carrier's new body)
+          if (this.rideHold && pl.riding && !pl.falling && (!this.ended || this.keeps(pl, a)) && !a.ride) this.rideRemap(pl, a);
         }
       }
       if (switched.includes(pl.id)) {
@@ -1613,6 +1672,8 @@ export class ArmSystem {
           a.phase = 'physical';
           a.requestedWorld = null;
           a.armed = false;
+          // (polish 2.1: an arm the ending kept has carried its hold on, above)
+          if (a.kept) this.unkeep(pl, a, null);
           this.physicalSolve(pl, a);
         }
       }
@@ -1620,9 +1681,13 @@ export class ArmSystem {
   }
 
   // ---------------------------------------------------------------- polish 1.2: the ride hold
-  /** The ride hold's end: the ride over (a supported riding owner, a ragdoll target, play on) or the patch gone. */
-  private rideOff(pl: ArmHostPlayer, rp: RidePatch): boolean {
-    return !this.rideHold || !pl.riding || !!pl.falling || this.ended || !this.player(rp.targetId)?.ragdoll;
+  /**
+   * The ride hold's end: the ride over (a supported riding owner, a ragdoll target, play on) or the patch gone. (Polish
+   * 2.1: an arm the ending kept, play on or not, and riding or leaving his support for the takedown that converts him.)
+   */
+  private rideOff(pl: ArmHostPlayer, rp: RidePatch, a: ArmRt): boolean {
+    const kept = !!a.kept && this.keeps(pl, a);
+    return !this.rideHold || !(pl.riding || kept) || !!pl.falling || (this.ended && !kept) || !this.player(rp.targetId)?.ragdoll;
   }
 
   /**
@@ -1632,7 +1697,7 @@ export class ArmSystem {
    * (`pre`, the arm's pose of this substep) or after the solve. Overload is the allocator's.
    */
   private rideBreak(pl: ArmHostPlayer, a: ArmRt, rp: RidePatch, ownerPose: Pose, sol: ArmPoseSolve, pre: boolean): string | null {
-    if (this.rideOff(pl, rp)) return 'rideEnded';
+    if (this.rideOff(pl, rp, a)) return 'rideEnded';
     if (this.rideHold!.noBreak) return null;
     if (this.host.t > rp.until + 1e-9) return 'contactLost';
     const P = this.profile;
@@ -1740,6 +1805,8 @@ export class ArmSystem {
       return;
     }
     const tp = poseOfRb(rb);
+    // (`onArm`: his end on the drawn forearm and hand, the gap left to the patch its rest length)
+    const on = K.onArm ? this.armSurface(r, a.side, cap.anchor) : null;
     a.link = {
       id: `${c.id}:link`,
       targetId: tgt.id,
@@ -1747,13 +1814,30 @@ export class ArmSystem {
       pointLocal: toLocal(tp, cap.anchor),
       normalLocal: qInvRot(tp.q, cap.normal),
       ownerPart,
-      ownerPointLocal: toLocal(poseOfRb(r.bodies[ownerPart]), cap.anchor),
+      ownerPointLocal: toLocal(poseOfRb(r.bodies[ownerPart]), on?.p ?? cap.anchor),
       u: c.forearmParameter,
       since: this.host.t,
       overloadExposureS: 0,
       peakN: 0,
+      ...(on ? { restM: on.d } : {}),
     };
-    this.host.emit('fallLinkBegin', pl.id, { arm: a.side, clamp: c.id, link: a.link.id, target: tgt.id, ok: true, part, ownerPart, u: round(c.forearmParameter, 3), gapM: round(gap, 5) });
+    this.host.emit('fallLinkBegin', pl.id, { arm: a.side, clamp: c.id, link: a.link.id, target: tgt.id, ok: true, part, ownerPart, u: round(c.forearmParameter, 3), gapM: round(gap, 5), ...(on ? { offArmM: round(on.d, 5) } : {}) });
+  }
+
+  /**
+   * Polish 2.1 (`FallLinkProfile.onArm`): the point of the ragdoll's forearm and hand as drawn (the forearm capsule, elbow
+   * to wrist, and the palm ball at the hand) nearest `pW`, and how far outside them `pW` lies (0 and `pW`: on or in them).
+   */
+  private armSurface(r: Ragdoll, side: ArmSide, pW: Vec3): { p: Vec3; d: number } {
+    const R = r.profile.radii;
+    const e = landmarkWorld(r, `${side}Elbow`);
+    const ew = sub(landmarkWorld(r, `${side}Wrist`), e);
+    const onAxis = addScaled(e, ew, clamp(dot(sub(pW, e), ew) / Math.max(1e-12, dot(ew, ew)), 0, 1));
+    const hand = landmarkWorld(r, `${side}Hand`);
+    const [c, rad] = len(sub(pW, hand)) - R.palm < len(sub(pW, onAxis)) - R.forearm ? [hand, R.palm] : [onAxis, R.forearm];
+    const off = sub(pW, c);
+    const d = len(off) - rad;
+    return d <= 0 ? { p: pW, d: 0 } : { p: addScaled(c, off, rad / len(off)), d };
   }
 
   /** The link's break rules at the substep's start (null: it holds): stretched past `maxSeparationM`; the patch out of reach of the ragdoll's shoulder. */

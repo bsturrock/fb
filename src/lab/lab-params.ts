@@ -46,7 +46,8 @@
 //                      is;
 //   wrap=on|v9|v8|v7|v6|v5|v4|v3|v2|v1|off  the wrapping defender (contact motion M3). v9: WRAP_V9, the fall link (polish
 //                      2.1, no fixture uses it: the tackler's clamps carried through his own switch as breakable links to
-//                      the carrier) on WRAP_V8. on (or v8): WRAP_V8, the bound-legs fall
+//                      the carrier, and through the referee's ending to it while he rides the carrier down) on WRAP_V8.
+//                      on (or v8): WRAP_V8, the bound-legs fall
 //                      (polish 1.4: a carrier held round his hips or legs, or whose legs cannot step, goes down then,
 //                      leaning toward his travel) on WRAP_V7; v7: WRAP_V7 (the view before the bound-legs flip), the
 //                      ride-down (polish 1.2: with the hold he stays on his feet through the takedown, trunk following the

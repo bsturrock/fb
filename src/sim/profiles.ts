@@ -618,6 +618,17 @@ export interface RideHoldProfile {
  * of the arm's reach (the ride hold's rule from the ragdoll's shoulder), or its target gone; never at the referee's
  * ending. A target converting later carries it to the nearest eligible surface of his ragdoll at the point (within
  * `remapM`, else it ends).
+ *
+ * `throughEnding` (absent: every hold ends at the referee's ending, as without the link): a supported owner riding the
+ * carrier down at the ending keeps the clamps and ride patches he has then, under their own rules but the play's end,
+ * until his own switch (where they become links); nothing new is acquired. Every other owner's holds end at the ending,
+ * and his end then if he stops riding without converting.
+ *
+ * `onArm` (absent: the owner's point is the patch's, fixed in his forearm's frame, wherever that lies): the link's owner
+ * end is the point of his ragdoll's forearm and hand (the forearm capsule and the palm ball) nearest the patch at his
+ * switch, and the gap left between them its rest length, taken in as the gap closes and never let out (it shortens only
+ * slack, at no force: it still starts and stays with no stored energy but its stretch's). Its separation is then the gap
+ * a viewer sees between the arm and the patch.
  */
 export interface FallLinkProfile {
   stiffness: number;
@@ -625,6 +636,8 @@ export interface FallLinkProfile {
   maxSeparationM: number;
   budgetFraction: number;
   remapM: number;
+  throughEnding?: boolean;
+  onArm?: boolean;
 }
 
 export interface ArmProfile {
