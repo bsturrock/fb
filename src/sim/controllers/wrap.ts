@@ -100,6 +100,24 @@ export interface WrapBind {
   leanDeg: number;
   /** Contact motion polish 2.3, the drag-down (absent: only a supported holder binds): `WrapBindLinked`. */
   linked?: WrapBindLinked;
+  /** Contact motion polish 2.4, staying on from behind (absent: a hold from behind binds by (a) and (b) only): `WrapBindBehind`. */
+  behind?: WrapBindBehind;
+}
+
+/**
+ * Contact motion polish 2.4, staying on from behind: (c) a runner held from behind cannot run, so he goes down. The holder
+ * is a supported player whose focus he is and whose drive on him is from behind (`WrapBehind`; he says so while the drive
+ * is on, `PlayerIntent.behind`: the drive begins only on a secure hold held for `commit.secureS` and ends with his hold
+ * lost for longer than `commit.graceS`), with an arm's clamp or grip on him after the solve (not the secure test: from
+ * behind a supported clamp re-forms nearly every substep and the bodies meet on and off, so both arms read on together
+ * almost never after the first tenth of a second; that is for a pinned hold). Held so for `confirmS` the carrier is
+ * bound, on a clock of its own whose grace is `graceS` (gone longer, it starts over), and only at a substep where the
+ * test holds: a drive from behind that ends, or no arm on him for longer than the grace, binds nothing. While the clock
+ * runs he leans toward his travel, as for (a) and (b); the fall is the physics'.
+ */
+export interface WrapBindBehind {
+  confirmS: number;
+  graceS: number;
 }
 
 /**
@@ -382,6 +400,8 @@ export interface WrapDebug {
   bindNoLean?: boolean;
   /** Polish 2.3, the drag-down (simulation): the links' point test off (a hanging holder's link above his pelvis counts). */
   bindLinkAnyHeight?: boolean;
+  /** Polish 2.4, staying on from behind (simulation): clause (c)'s side test off (a riding holder, `PlayerIntent.ride`, counts from any side). */
+  bindBehindAnySide?: boolean;
   /** Polish 2.1, the fall link (arms): no break rule (overload, separation, reach); only its target gone ends it. */
   fallLinkNoBreak?: boolean;
   /** Polish 2.2, the drive from behind: the anchor's request off (from behind he pushes along the line, as before). */
@@ -526,6 +546,20 @@ export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: 
  * pulls. Registered on L3, L4 and HC since the behind flip (the lab's `wrap=v9` is the view before).
  */
 export const WRAP_V10: WrapProfile = { ...WRAP_V9, id: 'wrap-behind-v10', drive: { ...WRAP_V9.drive!, behind: { minMps: 1, maxDeg: 60, brakeMps: 2, commitS: 0 } } };
+
+/**
+ * Contact motion polish 2.4, staying on from behind: WRAP_V10 whose tackler from behind neither brakes nor commits his
+ * weight: he stays posed in the strike on the carrier at the carrier's velocity (`brakeMps` 0, no `commitS`), at full
+ * effort and riding; a carrier held so goes down (`WrapBindBehind`, clause (c): the drive from behind alive with an arm on
+ * him for 0.25 s, its grace 0.05 s), and the ride-down brings the tackler down after him. A hold lost before that binds
+ * nothing: the runner runs on. No fixture uses it (lab `wrap=v11`).
+ */
+export const WRAP_V11: WrapProfile = {
+  ...WRAP_V10,
+  id: 'wrap-stay-on-v11',
+  drive: { ...WRAP_V10.drive!, behind: { minMps: 1, maxDeg: 60, brakeMps: 0 } },
+  bind: { ...WRAP_V10.bind!, behind: { confirmS: 0.25, graceS: 0.05 } },
+};
 
 /**
  * Contact motion polish 1.4, the low strike of the deep crouch tackle, on WRAP_V10 (the ride-down, the bound-legs fall, the
@@ -1145,6 +1179,7 @@ export class WrapAttemptController implements Controller {
       posture,
       ...(leave ? { leaveSupport: 'takedown' as const } : {}),
       ...(riding ? { ride: true as const } : {}),
+      ...(this.wp?.bind?.behind && !leave && this.dv?.at != null && this.dv.behind ? { behind: true as const } : {}),
       debug: { phase: `${this.finishMode} L:${this.arm.left.phase} R:${this.arm.right.phase}`, finish: this.finishMode, arms: debugArms, gap, near, side, readyHands: true, ...(sk ? { strike: { on: sk.on, w: sk.w, head: sk.head } } : {}), ...(driveDebug ? { drive: driveDebug } : {}) },
     };
   }

@@ -101,6 +101,19 @@ to keep stepping while wrapped. Direction is ours. In order:
    a loss is lean or bound legs only), so a third bound-legs clause: a runner carrying a secure holder's weight
    from behind for a short time goes down, leaning forward; the ride-down then brings the tackler down on him.
    The hold lost before that is a failed tackle. The low hold keeps the hang (item 3): there it is the drag-down.
+   Two tries parked (main checkout `.scratch/p14/parked/`, its README): the sag with a measured load (`back.patch`): a
+   supported clamp from behind re-forms every substep, so its friction carries 5 to 30 N, and the sag puts his shoulders
+   under the runner and lifts him; (c) on the strict secure test (`back2.patch`): both arms read on after the solve in 11
+   of about 480 substeps, the clock 0.15 s at most. Both need a pinned hold on a supported carrier first.
+   Built flag off (`WRAP_V11` = V10 with no brake and no commit from behind plus `bind.behind`, lab `&wrap=v11`, no fixture
+   uses it; `tests/wrap-stay-on.test.ts`): from behind he stays posed in the strike at the runner's velocity, riding. Clause
+   (c) binds a runner whose tackler's drive from behind is alive (`PlayerIntent.behind`; the drive begins only on a secure
+   hold) with an arm's clamp or grip on him after the solve for 0.25 s, grace 0.05 (that reading lasts 0.34 to 0.36 s on the
+   rear wrap); the drive ended or no arm on him binds nothing, and he runs on. Rear wrap, from the secure hold, fwd / rev:
+   +0.02 m/s (V9 +0.28), bound after 0.26 s and 1.2 m, falls forward (V10 backward); the tackler rides down to the come-down,
+   chest 0.55 m, shoulders 0.84 / 0.83 at his switch 0.66 s after the hold (V9 0.75 / 0.70). The other 104 wrap runs: as V10.
+   Open for the flip: the tackler lands 0.8 to 1.1 m to the runner's side, no link alive; the drag mirror still pushes (its
+   behind test fails as its drive begins); from behind the finish mode alternates reposition and contact every substep.
 3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
    lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
    parked posed dive is the general form if a supported tackler cannot do it.

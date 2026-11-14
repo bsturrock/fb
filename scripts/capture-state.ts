@@ -1,5 +1,5 @@
 // Full-state capture of a registered fixture at a tick boundary (tests/state.ts), for a test to resume from:
-//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10]
+//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11]
 // Runs the fixture with the fixture export's defaults (ledgers off, as `npm run fixtures`; `--ledgers` keeps them, for a
 // test that reads them, at about twice the size) to the end of tick <tick>, writes the
 // capture (default tests/data/state/<fixture>@<tick>.json.gz) and checks it: the run resumed from the file reproduces
@@ -20,9 +20,10 @@
 // it with `{ def: asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V7 })) }`; `--wrap=v8` (WRAP_V8, the bound-legs fall,
 // registered on L3, L4 and HC from its flip to the hold flip's WRAP_V9) and `--wrap=v6` (tests/runs.ts WRAP_V6_PRE_V10, the low strike on it: the lab's `wrap=v6` until the drag-down put it on WRAP_V10; a test resumes such a capture under today's WRAP_V6 as a `wrap` variant, the two running alike until the tackler's drive), the same way (suffix `wrapv8`, `wrapv6`); `--wrap=v9` (WRAP_V9, the fall
 // link, registered on L3, L4 and HC from the hold flip to the behind flip's WRAP_V10), suffix `wrapv9`; `--wrap=v10`
-// (WRAP_V10, the drive from behind on WRAP_V9, registered since the behind flip), suffix `wrapv10`. See tests/README.md.
+// (WRAP_V10, the drive from behind on WRAP_V9, registered since the behind flip), suffix `wrapv10`; `--wrap=v11` (WRAP_V11,
+// staying on from behind on WRAP_V10, no fixture uses it), suffix `wrapv11`. See tests/README.md.
 import { statSync } from 'node:fs';
-import { WRAP_V10, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
+import { WRAP_V10, WRAP_V11, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import { HIP_STOPS_V1, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 import { SIM_DEFAULTS, Simulation } from '../src/sim/simulation';
 import { FIX, flip8i, preBraceV2, WRAP_V6_PRE_V10 } from '../tests/runs';
@@ -38,13 +39,13 @@ if (jointsArg !== undefined && !(jointsArg in JOINTS)) throw new Error(`--joints
 const braceArg = process.argv.find((a) => a.startsWith('--brace='))?.slice('--brace='.length);
 if (braceArg !== undefined && braceArg !== 'v1') throw new Error(`--brace=${braceArg}: expected v1`);
 const wrapArg = process.argv.find((a) => a.startsWith('--wrap='))?.slice('--wrap='.length);
-const WRAPS = { v6: WRAP_V6_PRE_V10, v7: WRAP_V7, v8: WRAP_V8, v9: WRAP_V9, v10: WRAP_V10 } as const;
-if (wrapArg !== undefined && !(wrapArg in WRAPS)) throw new Error(`--wrap=${wrapArg}: expected v6, v7, v8, v9 or v10`);
+const WRAPS = { v6: WRAP_V6_PRE_V10, v7: WRAP_V7, v8: WRAP_V8, v9: WRAP_V9, v10: WRAP_V10, v11: WRAP_V11 } as const;
+if (wrapArg !== undefined && !(wrapArg in WRAPS)) throw new Error(`--wrap=${wrapArg}: expected v6, v7, v8, v9, v10 or v11`);
 const wrap = wrapArg ? WRAPS[wrapArg as keyof typeof WRAPS] : undefined;
 const args = process.argv.slice(2).filter((a) => !FLAGS.includes(a) && !a.startsWith('--hips=') && !a.startsWith('--joints=') && !a.startsWith('--brace=') && !a.startsWith('--wrap='));
 const [id, tickArg, outArg] = args;
 const tick = Number(tickArg);
-if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10]');
+if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11]');
 SIM_DEFAULTS.ledgers = process.argv.includes('--ledgers');
 const v3 = process.argv.includes('--v3');
 const audit = process.argv.includes('--audit');

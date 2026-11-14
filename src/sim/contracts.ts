@@ -119,6 +119,11 @@ export interface PlayerIntent {
    * simulation sees the hold and the contact, a lean past the loss envelope against the carrier is no loss of support.
    */
   ride?: true;
+  /**
+   * Contact motion polish 2.4, staying on from behind (a wrap profile with `bind.behind`): his drive on the carrier he holds
+   * is from behind (`WrapBehind`, decided as the drive begins). The bound-legs fall's clause (c) (`WrapBindBehind`) reads it.
+   */
+  behind?: true;
   /** Controller-reported diagnostics (phase names, aim points). Never read by mechanics. */
   debug?: Record<string, unknown>;
 }
