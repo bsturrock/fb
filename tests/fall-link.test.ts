@@ -1,6 +1,6 @@
 // Contact motion polish 2.1, the fall link (`WrapProfile.fallLink`, `FallLinkProfile`; src/sim/arms.ts): a forearm clamp
 // the tackler has at his own switch goes on as a tension-only spring-damper from his ragdoll forearm to the patch it held,
-// through the shared allocator, until it breaks. WRAP_V9 (WRAP_V8 with it) is used by no fixture. Cases (a) to (c) resume
+// through the shared allocator, until it breaks. WRAP_V9 (WRAP_V8 with it), registered on L3, L4 and HC since the hold flip. Cases (a) to (c) resume
 // the drag (L3-F5-drag, the scene whose tackler switches with both clamps on, 0.82 s, before the referee's ending at
 // 0.95 s) captured under WRAP_V8 at 0.45 s; (e) and (g) the rear wrap, whose switch comes after the ending (the hold
 // through the whistle, `throughEnding`, carries his holds to it), captured under WRAP_V8 at 2.10 s; (f) a G4 defender
@@ -10,6 +10,7 @@
 // is the same resume without it, without one of its fields, or with a fault.
 import { describe, expect, it } from 'vitest';
 import { WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
+import type { FixtureDef } from '../src/sim/fixture';
 import type { EffortLedgerEntry, ForceLedgerEntry } from '../src/sim/arms';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { labRun } from '../src/lab/lab-params';
@@ -408,10 +409,17 @@ describe('polish 2.1, the fall link (WRAP_V9)', () => {
     expect(dead.bornHeldS).toBeGreaterThan(right!.afterS);
   }, 120_000);
 
-  it('(d) WRAP_V9 is no fixture\'s; the lab\'s wrap=v9 selects it on a wrapping defender (wrap=v8 stays WRAP_V8)', () => {
-    expect(allFixtures().some((d) => d.wrap?.fallLink || d.wrap?.id === WRAP_V9.id)).toBe(false);
+  it('(d) the hold flip: every L3, L4 and HC wrap fixture registers WRAP_V9 (the fall link on WRAP_V8); the lab\'s wrap=v8 runs it with WRAP_V8 (before the flip), wrap=on takes it back; WRAP_V6 stays unregistered; G, L1, L2 and RH register no wrap', () => {
     const on = FIX('L3-F5-drag');
-    expect(labRun(on, new URLSearchParams('wrap=v9'))).toEqual({ def: { ...on, wrap: WRAP_V9 }, opts: {}, label: 'wrap v9' });
-    expect(labRun(on, new URLSearchParams('wrap=v8')).def.wrap).toBe(WRAP_V8);
+    expect(on.wrap).toBe(WRAP_V9);
+    const v8: FixtureDef = { ...on, wrap: WRAP_V8 };
+    expect(labRun(on, new URLSearchParams('wrap=v8'))).toEqual({ def: v8, opts: {}, label: 'wrap v8' });
+    expect(labRun(v8, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
+    expect(labRun(v8, new URLSearchParams('wrap=v9'))).toEqual({ def: on, opts: {}, label: 'wrap v9' });
+    expect(labRun(on, new URLSearchParams('wrap=v9'))).toEqual({ def: on, opts: {}, label: 'wrap v9 (registered)' });
+    const all = allFixtures();
+    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V9.id).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap && !/^(L3|L4|HC)-/.test(d.id)).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap?.fallLink).length).toBeGreaterThan(0);
   });
 });

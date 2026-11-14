@@ -483,14 +483,15 @@ export const WRAP_V6: WrapProfile = {
 
 /**
  * Contact motion polish 2.1, the fall link: WRAP_V8 whose tackler keeps each forearm clamp he has at his own switch as a
- * breakable link to the carrier (`FallLinkProfile`) through his fall and the landing. No fixture uses it (the lab's
- * `wrap=v9`). The owner budget at full strength (700 N per arm, 1000 N in all, as a supported clamp has); 10 kN/m puts
- * the 700 N ceiling at 7 cm of stretch, the damping (150 N s/m) under the forearm's critical damping at the substep
- * (a few kg behind the point), and a stretch past 25 cm or the patch out of reach lets go. Riding the carrier down at
- * the referee's ending, he keeps the holds he has then to his switch (`throughEnding`): the whistle mostly comes first.
- * The link's end on him is on his forearm or hand, the gap to the patch as slack it takes in (`onArm`). It gives way to
- * the born separation (`bornYield`): while a born pair between the two is not parting it pulls nothing and lets out its
- * slack, so it never holds a limb in the other body, and lives on to hold from the length the separation left.
+ * breakable link to the carrier (`FallLinkProfile`) through his fall and the landing. The owner budget at full strength
+ * (700 N per arm, 1000 N in all, as a supported clamp has); 10 kN/m puts the 700 N ceiling at 7 cm of stretch, the
+ * damping (150 N s/m) under the forearm's critical damping at the substep (a few kg behind the point), and a stretch past
+ * 25 cm or the patch out of reach lets go. Riding the carrier down at the referee's ending, he keeps the holds he has then
+ * to his switch (`throughEnding`): the whistle mostly comes first. The link's end on him is on his forearm or hand, the
+ * gap to the patch as slack it takes in (`onArm`). It gives way to the born separation of the overlaps its own switch (or
+ * the carrier's later one) made between the two (`bornYield`): while one is held it pulls nothing and lets out its slack,
+ * so it never holds a limb in the other body, and lives on to hold from the length the separation left. Registered on
+ * L3, L4 and HC since the hold flip (the lab's `wrap=v8` is the view before).
  */
 export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: { stiffness: 10000, damping: 150, maxSeparationM: 0.25, budgetFraction: 1, remapM: 0.05, throughEnding: true, onArm: true, bornYield: true } };
 
