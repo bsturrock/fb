@@ -5,7 +5,8 @@
 // constructed runs from the start (the fault switches are simulation options); (iv) resumes the rear wrap's capture taken
 // under WRAP_V9 shortly before the hold (tests/wrap-behind.test.ts) to read the controller's every request. Each has its
 // fault twin: the profile without the field or with one of its numbers changed, or the rule's or the anchor's test broken
-// (`WrapDebug`).
+// (`WrapDebug`). (v) resumes the rear wrap's capture under WRAP_V11 just after the runner is bound, to watch the
+// tackler's arms as the runner falls away; its twin is the profile without `WrapBehind.letGoM`.
 import { describe, expect, it } from 'vitest';
 import { WRAP_V10, WRAP_V11, WRAP_V6, type WrapBindBehind, type WrapDebug, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { ControllerContext } from '../src/sim/controllers/base';
@@ -13,9 +14,12 @@ import type { PlayerIntent } from '../src/sim/contracts';
 import { dot, horiz, len, norm, sub, vc, type Vec3 } from '../src/sim/vec';
 import { asCaptured, create, FIX, pace } from './helpers';
 import { loadState, resumeState } from './state';
+import { jointQuats, SNAP_RADPS } from './visible';
 
 const BB = WRAP_V11.bind!.behind!;
 const REAR = 'tests/data/state/L3-F19-rear@42.json.gz';
+/** The rear wrap under WRAP_V11 at 1.05 s, the runner bound (clause c) at 1.00 (scripts/capture-state.ts --wrap=v11). */
+const REAR_V11 = 'tests/data/state/L3-F19-rear~wrapv11@63.json.gz';
 
 /** A variant of `w` whose `bind.behind` is `behind` (undefined: none), its own id. */
 function withBehind(w: WrapProfile, behind: WrapBindBehind | undefined, tag: string): WrapProfile {
@@ -172,8 +176,49 @@ describe('contact motion polish 2.4, staying on from behind (WRAP_V11, WrapBind.
     expect(Math.max(...twin.map((d) => d.over))).toBeGreaterThan(1);
   }, 120_000);
 
+  it('(v) a lost arm lets go instead of whipping overhead: resumed from the rear wrap under WRAP_V11 at 1.05 s (the runner bound at 1.00 and falling away ahead of the still-posed tackler), the tackler draws no joint snap while supported and every arm pose he draws to his switch is valid; both arms let go (release) before 1.2 s. The fault twin, the let-go off (`letGoM` absent): his left forearm clamp follows the runner overhead, its pose goes invalid, the push-out whips the shoulder in a drawn frame and the invalid pose is held', async () => {
+    const run = async (wrap: WrapProfile): Promise<{ snaps: string[]; invalidS: number; releaseT: Partial<Record<'left' | 'right', number>> }> => {
+      const cap = loadState(REAR_V11);
+      const sim = await resumeState(cap, { def: asCaptured(cap, (d) => ({ ...d, wrap }), ['wrap']), variant: ['wrap'] });
+      const D = sim.players.find((p) => p.id === 'D')!;
+      const out = { snaps: [] as string[], invalidS: 0, releaseT: {} as Partial<Record<'left' | 'right', number>> };
+      let prev: Record<string, { x: number; y: number; z: number; w: number }> | null = null;
+      let t = sim.t;
+      while (!sim.done && !D.rag && D.controlMode === 'supported') {
+        sim.stepTick();
+        const dt = sim.t - t;
+        t = sim.t;
+        if (D.rag || D.controlMode !== 'supported' || !D.pose) break;
+        const Q = jointQuats(D.pose);
+        if (prev)
+          for (const [jn, q] of Object.entries(Q)) {
+            const p = prev[jn]!;
+            const w = (2 * Math.acos(Math.min(1, Math.abs(p.x * q.x + p.y * q.y + p.z * q.z + p.w * q.w)))) / dt;
+            if (w > SNAP_RADPS) out.snaps.push(`${sim.t.toFixed(3)} ${jn} ${((w * dt * 180) / Math.PI).toFixed(0)} deg`);
+          }
+        prev = Q;
+        const ob = sim.arms?.obs(D.id);
+        for (const s of ['left', 'right'] as const) {
+          if (ob?.[s] && !ob[s]!.poseValid) out.invalidS += dt;
+          if (ob?.[s]?.action === 'release') out.releaseT[s] ??= sim.t;
+        }
+        await pace();
+      }
+      sim.dispose();
+      return out;
+    };
+    const on = await run(WRAP_V11);
+    expect(on.snaps).toEqual([]);
+    expect(on.invalidS).toBe(0);
+    for (const s of ['left', 'right'] as const) expect(on.releaseT[s], s).toBeLessThan(1.2);
+    const { letGoM: _l, ...noLetGo } = WRAP_V11.drive!.behind!;
+    const twin = await run({ ...WRAP_V11, id: `${WRAP_V11.id}-holdon`, drive: { ...WRAP_V11.drive!, behind: noLetGo } });
+    expect(twin.snaps.some((s) => s.includes('leftShoulder')), JSON.stringify(twin.snaps)).toBe(true);
+    expect(twin.invalidS).toBeGreaterThan(0.1);
+  }, 120_000);
+
   it('the profile: WRAP_V11 is WRAP_V10 with no brake and no weight commit from behind and the field; WRAP_V10 and WRAP_V6 have no field', () => {
-    expect(WRAP_V11.drive!.behind).toEqual({ minMps: 1, maxDeg: 60, brakeMps: 0 });
+    expect(WRAP_V11.drive!.behind).toEqual({ minMps: 1, maxDeg: 60, brakeMps: 0, letGoM: 0.35 });
     expect(WRAP_V11.bind!.behind).toEqual({ confirmS: 0.25, graceS: 0.05 });
     expect(WRAP_V10.bind!.behind).toBeUndefined();
     expect(WRAP_V6.bind!.behind).toBeUndefined();

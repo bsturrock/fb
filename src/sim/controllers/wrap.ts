@@ -309,6 +309,14 @@ export interface WrapBehind {
   brakeMps: number;
   /** Exit (r): the drive's time (s) from behind after which he commits his weight (absent: never; he anchors on his feet). */
   commitS?: number;
+  /**
+   * Polish 2.4, staying on from behind (absent: his arms keep closing on the carrier whatever his fall): once the carrier
+   * he holds from behind is off his support, an arm whose closing point lies more than `letGoM` past his shoulders along
+   * his trunk (the carrier falling away ahead of him, out of a forearm's reach without the arm going overhead), or whose
+   * pose has gone invalid, lets go (`release`) and keeps letting go for the drive: the arm returns to its rest at its
+   * normal rate limits instead of following the carrier over his head. Requests only.
+   */
+  letGoM?: number;
 }
 
 /**
@@ -557,7 +565,7 @@ export const WRAP_V10: WrapProfile = { ...WRAP_V9, id: 'wrap-behind-v10', drive:
 export const WRAP_V11: WrapProfile = {
   ...WRAP_V10,
   id: 'wrap-stay-on-v11',
-  drive: { ...WRAP_V10.drive!, behind: { minMps: 1, maxDeg: 60, brakeMps: 0 } },
+  drive: { ...WRAP_V10.drive!, behind: { minMps: 1, maxDeg: 60, brakeMps: 0, letGoM: 0.35 } },
   bind: { ...WRAP_V10.bind!, behind: { confirmS: 0.25, graceS: 0.05 } },
 };
 
@@ -684,6 +692,8 @@ interface ArmCtl {
   bestAz: number;
   lastProgressT: number;
   lastClampT: number;
+  /** Polish 2.4 (`WrapBehind.letGoM`): the arm has let go of a carrier falling away from behind (for the drive). */
+  letGo?: true;
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -1169,6 +1179,18 @@ export class WrapAttemptController implements Controller {
           default:
             target = ob.palmContactWorld;
         }
+      }
+      // (polish 2.4, staying on from behind: an arm the carrier has fallen away from lets go; his trunk's axis from his
+      // root to the middle of his shoulders)
+      const LG = this.wp?.drive?.behind?.letGoM;
+      if (LG !== undefined && this.dv?.behind && tb && tb.controlMode !== 'supported' && myArms.left && myArms.right) {
+        const axis = norm(sub(scale(add(myArms.left.shoulderWorld, myArms.right.shoulderWorld), 0.5), me.position), UP);
+        if (!ob.poseValid || dot(sub(target, ob.shoulderWorld), axis) > LG) st.letGo = true;
+      }
+      if (st.letGo && this.dv?.behind) {
+        arms[s] = { action: 'release', targetWorld: ob.palmContactWorld };
+        debugArms[s] = { phase: 'letGo', az: Math.round(az) };
+        continue;
       }
       arms[s] = pole ? { action, targetWorld: target, poleLocal: pole } : { action, targetWorld: target };
       debugArms[s] = { phase: st.phase, az: Math.round(az), target };
