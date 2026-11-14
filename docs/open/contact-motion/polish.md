@@ -76,6 +76,15 @@ to keep stepping while wrapped. Direction is ours. In order:
    his feet holding on, legs dragging, the fall link of item 1 carrying it). The outcome is the physics': the
    carrier goes down (bound legs, his balance) or the hold breaks under its ceilings and he runs on. The push
    stays for the front and the side. This is item 3's drag-down at torso height.
+   Built flag off (`WRAP_V10` = V9 plus `drive.behind`, lab `&wrap=v10`, no fixture uses it; `tests/wrap-behind.test.ts`):
+   from behind (decided as the drive begins: carrier up, 1 m/s or more, line within 60 deg of his travel) every
+   request of the drive is his velocity less 2 m/s along it, and the tackler commits his weight at once (exit r,
+   `commitS` 0). Why at once: a supported tackler's clamps press and cannot pull, so sitting back loses them in 0.1 to
+   0.15 s; the anchor alone leaves the carrier up and carried 15 m, a commit at 0.15 s or later has no hold left to
+   carry. Rear wrap, from the secure hold: V9 +0.28 m/s over his speed, down after 1.13 / 1.18 s and 5.4 / 5.6 m; V10
+   +0.03 / +0.02, down after 0.88 / 0.75 s and 3.6 / 3.0 m, backward (his own balance), the tackler on the fall link
+   1.0 to 1.2 m behind. The drag never satisfies the test. Open for the flip: the carrier goes down backward, not forward;
+   the drag mirror's line starts 68 deg off his travel and swings onto it, so it still pushes (+0.42 m/s).
 3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
    lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
    parked posed dive is the general form if a supported tackler cannot do it.

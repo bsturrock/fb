@@ -1,5 +1,5 @@
 // Full-state capture of a registered fixture at a tick boundary (tests/state.ts), for a test to resume from:
-//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8]
+//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v10]
 // Runs the fixture with the fixture export's defaults (ledgers off, as `npm run fixtures`; `--ledgers` keeps them, for a
 // test that reads them, at about twice the size) to the end of tick <tick>, writes the
 // capture (default tests/data/state/<fixture>@<tick>.json.gz) and checks it: the run resumed from the file reproduces
@@ -18,10 +18,10 @@
 // CARRIER_BRACE_V1), suffix `bracev1`; a test resumes it with `{ def: asCaptured(cap) }`. `--wrap=v7`: the fixture's
 // defender under WRAP_V7 (polish 1.2, the ride-down; registered on L3, L4 and HC since its flip), suffix `wrapv7`; a test resumes
 // it with `{ def: asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V7 })) }`; `--wrap=v8` (WRAP_V8, the bound-legs fall,
-// registered on L3, L4 and HC from its flip to the hold flip's WRAP_V9) and `--wrap=v6` (WRAP_V6, the low strike on it), the same way (suffix `wrapv8`, `wrapv6`). See
-// tests/README.md.
+// registered on L3, L4 and HC from its flip to the hold flip's WRAP_V9) and `--wrap=v6` (WRAP_V6, the low strike on it), the same way (suffix `wrapv8`, `wrapv6`); `--wrap=v10` (WRAP_V10, the
+// drive from behind on WRAP_V9, no fixture uses it), suffix `wrapv10`. See tests/README.md.
 import { statSync } from 'node:fs';
-import { WRAP_V6, WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
+import { WRAP_V10, WRAP_V6, WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
 import { HIP_STOPS_V1, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 import { SIM_DEFAULTS, Simulation } from '../src/sim/simulation';
 import { FIX, flip8i, preBraceV2 } from '../tests/runs';
@@ -37,13 +37,13 @@ if (jointsArg !== undefined && !(jointsArg in JOINTS)) throw new Error(`--joints
 const braceArg = process.argv.find((a) => a.startsWith('--brace='))?.slice('--brace='.length);
 if (braceArg !== undefined && braceArg !== 'v1') throw new Error(`--brace=${braceArg}: expected v1`);
 const wrapArg = process.argv.find((a) => a.startsWith('--wrap='))?.slice('--wrap='.length);
-const WRAPS = { v6: WRAP_V6, v7: WRAP_V7, v8: WRAP_V8 } as const;
-if (wrapArg !== undefined && !(wrapArg in WRAPS)) throw new Error(`--wrap=${wrapArg}: expected v6, v7 or v8`);
+const WRAPS = { v6: WRAP_V6, v7: WRAP_V7, v8: WRAP_V8, v10: WRAP_V10 } as const;
+if (wrapArg !== undefined && !(wrapArg in WRAPS)) throw new Error(`--wrap=${wrapArg}: expected v6, v7, v8 or v10`);
 const wrap = wrapArg ? WRAPS[wrapArg as keyof typeof WRAPS] : undefined;
 const args = process.argv.slice(2).filter((a) => !FLAGS.includes(a) && !a.startsWith('--hips=') && !a.startsWith('--joints=') && !a.startsWith('--brace=') && !a.startsWith('--wrap='));
 const [id, tickArg, outArg] = args;
 const tick = Number(tickArg);
-if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8]');
+if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v10]');
 SIM_DEFAULTS.ledgers = process.argv.includes('--ledgers');
 const v3 = process.argv.includes('--v3');
 const audit = process.argv.includes('--audit');

@@ -20,7 +20,7 @@ built from what it returns: `{ ...asCaptured(cap), legGuard }`. A new flip adds 
 ## Capture
 
 ```sh
-npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8]
+npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v10]
 ```
 
 Runs the fixture with the fixture export's defaults (ledgers off; `--ledgers` for a test that reads them, about twice
@@ -39,7 +39,7 @@ ladder 8i visible flip (`flip8i` in `tests/runs.ts`: the hip stops, PGS 4, knee 
 (`preBraceV2`: the carrier's brace `CARRIER_BRACE_V1`), suffix `bracev1`; `BEFORE_FLIPS` holds that flip, so
 `asCaptured(cap)` finds it. `--wrap=v7` runs the fixture's defender under `WRAP_V7` (polish 1.2, the ride-down), suffix
 `wrapv7`: `asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V7 }))`. `--wrap=v8` runs it under `WRAP_V8` (polish 1.4, the
-bound-legs fall), suffix `wrapv8`, and `--wrap=v6` under `WRAP_V6` (the low strike on V8), suffix `wrapv6`: the same way, `asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V8 }))`. A profile constant the build holds outside the definition (ARM_G2 for a fixture with no
+bound-legs fall), suffix `wrapv8`, and `--wrap=v6` under `WRAP_V6` (the low strike on V8), suffix `wrapv6`: the same way, `asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V8 }))`. `--wrap=v10` runs it under `WRAP_V10` (polish 2.2, the drive from behind on V9, no fixture uses it), suffix `wrapv10`: `asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V10 }))`. A profile constant the build holds outside the definition (ARM_G2 for a fixture with no
 `armProfile`, frozen by the fixture registry) is written by its export name in src/sim/profiles with its id, and the
 resume refuses the capture when that constant's id changed. Captures are between ticks (a tick is the fixture's
 `solver.substeps` physics substeps). They are 170-230 KB; a later tick is larger (the trace and events so far are part

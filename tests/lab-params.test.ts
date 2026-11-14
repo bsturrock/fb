@@ -4,7 +4,7 @@ import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1, LATE_LANDING_ID } from '../src/sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
-import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
+import { WRAP_V1, WRAP_V10, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2,
@@ -585,6 +585,18 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(v6, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
     const g = FIX('L3-F3-collision');
     expect(labRun(g, new URLSearchParams('wrap=v6'))).toEqual({ def: g, opts: {}, label: 'wrap n/a (no wrapping defender)' });
+  });
+
+  it('wrap=v10 runs the wrapping defender with WRAP_V10 (the drive from behind, on WRAP_V9), which no fixture registers; wrap=on takes it back to WRAP_V9; a fixture without a wrapping defender changes nothing', () => {
+    const on = FIX('L3-F19-rear');
+    expect(on.wrap).toBe(WRAP_V9);
+    expect(allFixtures().some((d) => d.wrap?.id === WRAP_V10.id)).toBe(false);
+    const v10: FixtureDef = { ...on, wrap: WRAP_V10 };
+    expect(labRun(on, new URLSearchParams('wrap=v10'))).toEqual({ def: v10, opts: {}, label: 'wrap v10' });
+    expect(labRun(v10, new URLSearchParams('wrap=V10'))).toEqual({ def: v10, opts: {}, label: 'wrap v10 (registered)' });
+    expect(labRun(v10, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
+    const g = FIX('L3-F3-collision');
+    expect(labRun(g, new URLSearchParams('wrap=v10'))).toEqual({ def: g, opts: {}, label: 'wrap n/a (no wrapping defender)' });
   });
 
   // contact motion polish 1.2, the ride-down flip: every fixture the drive flip gave WRAP_V5 registers WRAP_V7 (the
