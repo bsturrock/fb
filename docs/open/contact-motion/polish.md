@@ -38,8 +38,22 @@ to keep stepping while wrapped. Direction is ours. In order:
    at the whistle; `tests/fall-link.test.ts`). It forms in 2 of 10 evidence runs only (drag: both arms held to the
    end, he rests 0.76 m from the carrier instead of 0.89; front: one arm 0.47 s, then overload): elsewhere the
    whistle comes 0.08 to 0.19 s before his switch and ends his clamps and ride hold, so he has nothing to carry.
-   Next, still flag off: the riding tackler's hold lives through the whistle to his own switch. Then the flip.
-   Evidence: main checkout `.scratch/p11/hold/summary.txt`.
+   Through the whistle, still flag off (`02a45de`; `fallLink.throughEnding`, `onArm`): a riding tackler's clamps
+   and ride patches outlive the referee's ending until his own switch (nothing new is acquired after it), and the
+   link's end sits on his arm's surface, the gap taken in as slack. The link now forms in 6 of 10 runs: rear wrap
+   and drag mirror keep one hand on through the fall; the fast falls (side wrap, low runner, `L3-F1-low`,
+   `L4-F10`) still lose the carrier out of reach 0.05 s before his switch. He does not end on top: rear wrap 0.99 m
+   from the carrier (0.67 before), a hold at arm's length; that is for item 2 and the drag-down. Open for the
+   flip: the drag's hand may hover 11 to 15 cm off the carrier under the slack.
+   Thigh rotation bound on for L3, L4 and HC (`9c6319e`, `JOINT_RANGE_V3`): V9's longer ride reached the knee
+   turned back (`CLEARANCE_KNEE_TURNS_BACK`) a third time; the old park reason (a thigh in a shoe) no longer
+   occurs, and pose comes first. Posed impossible-joint time HC 4.08 to 0.05 s, L3 1.25 to 0.77 s. Who falls: a
+   player who stood now goes down in `HC-F2-lowCarrier` (B), `HC-F3-phase50` rev, `HC-F3-phase75`, `L3-F1-phase4`,
+   `L3-F1-phase6` (D), all reached. Tracked: `ARM_HELD_IN_HEAD` on `HC-F2-lowCarrier` (`tests/thigh-defects.test.ts`;
+   its fix is the born separation). Not twinned: two carry-forearm pinches (84 and 60 J, looks like `CARRY_PINCH`);
+   two runs over 4000 shape queries a tick.
+   Next: the flip of `WRAP_V9`.
+   Evidence: main checkout `.scratch/p11/hold/`, `whistle/`, `thigh/summary.txt`.
 2. **More oomph, and who ends on top.** Measure what the tackler puts into the carrier on the rear wrap and the
    drag (speed and mass behind the shoulder at contact, drive force and how long it acts, the carrier's speed
    change), find why the drag's tackler ends underneath, then raise what is low. No energy from nowhere.
