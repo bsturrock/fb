@@ -20,8 +20,9 @@
 // it with `{ def: asCaptured(cap, (d) => ({ ...d, wrap: WRAP_V7 })) }`; `--wrap=v8` (WRAP_V8, the bound-legs fall,
 // registered on L3, L4 and HC from its flip to the hold flip's WRAP_V9) and `--wrap=v6` (tests/runs.ts WRAP_V6_PRE_V10, the low strike on it: the lab's `wrap=v6` until the drag-down put it on WRAP_V10; a test resumes such a capture under today's WRAP_V6 as a `wrap` variant, the two running alike until the tackler's drive), the same way (suffix `wrapv8`, `wrapv6`); `--wrap=v9` (WRAP_V9, the fall
 // link, registered on L3, L4 and HC from the hold flip to the behind flip's WRAP_V10), suffix `wrapv9`; `--wrap=v10`
-// (WRAP_V10, the drive from behind on WRAP_V9, registered since the behind flip), suffix `wrapv10`; `--wrap=v11` (WRAP_V11,
-// staying on from behind on WRAP_V10, no fixture uses it), suffix `wrapv11`. See tests/README.md.
+// (WRAP_V10, the drive from behind on WRAP_V9, registered on L3, L4 and HC from the behind flip to the stay-on flip's
+// WRAP_V11), suffix `wrapv10`; `--wrap=v11` (WRAP_V11, staying on from behind on WRAP_V10, registered since the stay-on
+// flip), suffix `wrapv11`. See tests/README.md.
 import { statSync } from 'node:fs';
 import { WRAP_V10, WRAP_V11, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import { HIP_STOPS_V1, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';

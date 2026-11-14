@@ -114,6 +114,12 @@ to keep stepping while wrapped. Direction is ours. In order:
    chest 0.55 m, shoulders 0.84 / 0.83 at his switch 0.66 s after the hold (V9 0.75 / 0.70). The other 104 wrap runs: as V10.
    Open for the flip: the tackler lands 0.8 to 1.1 m to the runner's side, no link alive; the drag mirror still pushes (its
    behind test fails as its drive begins); from behind the finish mode alternates reposition and contact every substep.
+   **On for L3, L4 and HC** (`WRAP_V11`, lab `&wrap=v10` is before; only `L3-F19-rear` changes): from behind the tackler
+   stays on the runner's back, the runner goes down forward first (V10: pulled over backward), and the tackler lets go
+   with an arm the runner falls away from (`letGoM` 0.35 m past his shoulders, not overhead) and goes down after him.
+   **Closed for now by the user** (2026-11-14: a tackle from behind will be rare in the game). Debt: the tackler ends 0.8
+   to 1.1 m to the side with no hold alive; the drag mirror still pushes; real weight on the runner needs a pinned hold on
+   a supported carrier (patches in `.scratch/p14/parked/`); the low rear drag-down (`WRAP_V6`) stays flag off.
 3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
    lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
    parked posed dive is the general form if a supported tackler cannot do it.

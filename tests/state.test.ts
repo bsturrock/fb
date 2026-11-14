@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
 import { readdirSync } from 'node:fs';
 import type { FixtureDef } from '../src/sim/fixture';
-import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, runSim, WRAP_V6_PRE_V10 } from './helpers';
+import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, runSim, WRAP_V6_PRE_V10 } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
 import { ARM_G2, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
 import { WRAP_V11, WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
@@ -76,7 +76,7 @@ describe('full-state capture and resume', () => {
     // shapes cached on the colliders), R's removed with its proxy at its conversion; D's in the solve beside R's ragdoll
     // (a natural sample, with the carrier's brace as before the M2 follow-up's lean flip: under V2 D is a ragdoll by then;
     // and the wrap as before the drive flip, under which D goes down with his carrier before it)
-    const def = { ...preBraceV2(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(FIX('L3-F4-oneArm'))))))), legGuard: LEG_GUARD_V3 };
+    const def = { ...preBraceV2(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(FIX('L3-F4-oneArm')))))))), legGuard: LEG_GUARD_V3 };
     const sim = await create(def);
     await runSim(sim, 70);
     expect(sim.players.find((p) => p.id === 'D')!.legs?.enabled, 'D\'s legs physical at the capture').toBe(true);
@@ -176,24 +176,25 @@ describe('asCaptured: a capture\'s definition out of the flip chain', () => {
     expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(FIX('L3-F16-contactStop'))))))))));
     // (`preBornOverlap` takes the born overlap off whichever it is: before the born separation, the same definition)
     expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(preBornOverlap(preBornSeparation(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(FIX('L3-F16-contactStop')))))))))));
-    expect(BEFORE_FLIPS[0]).toBe(preWrapV10);
-    expect(BEFORE_FLIPS[1]).toBe(preWrapV9);
-    expect(BEFORE_FLIPS[2]).toBe(preHipTwist);
-    expect(BEFORE_FLIPS[3]).toBe(preWrapV8);
-    expect(BEFORE_FLIPS[4]).toBe(preWrapV7);
-    expect(BEFORE_FLIPS[5]).toBe(preWrapV5);
-    expect(BEFORE_FLIPS[6]).toBe(preWrapV4);
-    expect(BEFORE_FLIPS[7]).toBe(prePalmLoad);
-    expect(BEFORE_FLIPS[8]).toBe(preFallReact);
-    expect(BEFORE_FLIPS[9]).toBe(preWrapV3);
-    expect(BEFORE_FLIPS[10]).toBe(preWrapV2);
-    expect(BEFORE_FLIPS[11]).toBe(preWrap);
-    expect(BEFORE_FLIPS[12]).toBe(preBraceV2);
-    expect(BEFORE_FLIPS[13]).toBe(preBalancedClear);
-    expect(BEFORE_FLIPS[14]).toBe(preBrace);
-    expect(BEFORE_FLIPS[15]).toBe(preMetArmStay);
-    expect(BEFORE_FLIPS[16]).toBe(preBornSeparation);
-    expect(BEFORE_FLIPS[17]).toBe(preBornOverlap);
+    expect(BEFORE_FLIPS[0]).toBe(preWrapV11);
+    expect(BEFORE_FLIPS[1]).toBe(preWrapV10);
+    expect(BEFORE_FLIPS[2]).toBe(preWrapV9);
+    expect(BEFORE_FLIPS[3]).toBe(preHipTwist);
+    expect(BEFORE_FLIPS[4]).toBe(preWrapV8);
+    expect(BEFORE_FLIPS[5]).toBe(preWrapV7);
+    expect(BEFORE_FLIPS[6]).toBe(preWrapV5);
+    expect(BEFORE_FLIPS[7]).toBe(preWrapV4);
+    expect(BEFORE_FLIPS[8]).toBe(prePalmLoad);
+    expect(BEFORE_FLIPS[9]).toBe(preFallReact);
+    expect(BEFORE_FLIPS[10]).toBe(preWrapV3);
+    expect(BEFORE_FLIPS[11]).toBe(preWrapV2);
+    expect(BEFORE_FLIPS[12]).toBe(preWrap);
+    expect(BEFORE_FLIPS[13]).toBe(preBraceV2);
+    expect(BEFORE_FLIPS[14]).toBe(preBalancedClear);
+    expect(BEFORE_FLIPS[15]).toBe(preBrace);
+    expect(BEFORE_FLIPS[16]).toBe(preMetArmStay);
+    expect(BEFORE_FLIPS[17]).toBe(preBornSeparation);
+    expect(BEFORE_FLIPS[18]).toBe(preBornOverlap);
   });
 
   it('fault twins: a capture no definition of the chain ran (a flip not added to it) is refused, naming the differing paths; a variant path the chain changes is refused', () => {

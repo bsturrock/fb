@@ -551,7 +551,8 @@ export const WRAP_V9: WrapProfile = { ...WRAP_V8, id: 'wrap-link-v9', fallLink: 
  * backward) instead of 3 m/s more along the line, and commits his weight to the hold as the drive begins (`WrapBehind`,
  * `commitS` 0): a supported tackler's clamps press on the carrier and cannot pull him back, so sitting back on his feet
  * loses them within 0.1 to 0.15 s (rear wrap) and a later commit has no hold to carry; the fall link is the hold that
- * pulls. Registered on L3, L4 and HC since the behind flip (the lab's `wrap=v9` is the view before).
+ * pulls. Registered on L3, L4 and HC from the behind flip (the lab's `wrap=v9` is the view before) to the stay-on flip's
+ * WRAP_V11.
  */
 export const WRAP_V10: WrapProfile = { ...WRAP_V9, id: 'wrap-behind-v10', drive: { ...WRAP_V9.drive!, behind: { minMps: 1, maxDeg: 60, brakeMps: 2, commitS: 0 } } };
 
@@ -560,7 +561,8 @@ export const WRAP_V10: WrapProfile = { ...WRAP_V9, id: 'wrap-behind-v10', drive:
  * weight: he stays posed in the strike on the carrier at the carrier's velocity (`brakeMps` 0, no `commitS`), at full
  * effort and riding; a carrier held so goes down (`WrapBindBehind`, clause (c): the drive from behind alive with an arm on
  * him for 0.25 s, its grace 0.05 s), and the ride-down brings the tackler down after him. A hold lost before that binds
- * nothing: the runner runs on. No fixture uses it (lab `wrap=v11`).
+ * nothing: the runner runs on. Registered on L3, L4 and HC since the stay-on flip (the lab's `wrap=v10` is the view
+ * before). WRAP_V6 stays on WRAP_V10 (from behind it hangs on).
  */
 export const WRAP_V11: WrapProfile = {
   ...WRAP_V10,

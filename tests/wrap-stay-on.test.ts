@@ -1,7 +1,7 @@
 // Contact motion polish 2.4, staying on from behind (WRAP_V11: WRAP_V10 with no brake and no weight commit from behind,
 // and `WrapBind.behind`, src/sim/controllers/wrap.ts `WrapBindBehind`; the rule in `Simulation.boundLegs`, clause (c)):
 // from behind the tackler stays posed on the runner at the runner's velocity, and a runner whose tackler's drive from
-// behind is alive with an arm's clamp or grip on him for `confirmS` goes down. No fixture uses it. Cases (i)-(iii) are
+// behind is alive with an arm's clamp or grip on him for `confirmS` goes down. Registered on L3, L4 and HC since the stay-on flip. Cases (i)-(iii) are
 // constructed runs from the start (the fault switches are simulation options); (iv) resumes the rear wrap's capture taken
 // under WRAP_V9 shortly before the hold (tests/wrap-behind.test.ts) to read the controller's every request. Each has its
 // fault twin: the profile without the field or with one of its numbers changed, or the rule's or the anchor's test broken
