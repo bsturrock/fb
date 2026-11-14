@@ -91,6 +91,16 @@ to keep stepping while wrapped. Direction is ours. In order:
    identically (their traces differ only in the exported profile). Trend only, no tracked defect: the tackler's palm
    in his own thigh 11-14 cm (V9 12.5), the runner's ragdoll shoulder rotation 70.9 deg for 0.12 s rev (V9 56.9 fwd).
    Open: the runner falls backward; the drag mirror still pushes; the tackler leaves his feet the moment the wrap closes.
+   **User, 2026-11-14, on the V10 rear wrap: "doesn't look good".** The tackler goes limp the moment the wrap
+   closes, slides down the runner's back to the ground and hangs from one straight arm at full reach; the runner
+   stands, then is pulled over backward. The instant weight commit is wrong at torso height (a ragdoll has no
+   legs under him and no squeeze; the link is a straight line). Replacement, "ride his back" (`WRAP_V11`, flag
+   off first): from behind he stays posed and tight on the runner's back at the runner's speed (no brake, no
+   extra, no commit), `ride` on, and sags his weight onto him (stance and hinge drop; the clamps' friction and
+   his chest carry it). A supported runner's legs never give under load (the suspension holds 3.5 body weights;
+   a loss is lean or bound legs only), so a third bound-legs clause: a runner carrying a secure holder's weight
+   from behind for a short time goes down, leaning forward; the ride-down then brings the tackler down on him.
+   The hold lost before that is a failed tackle. The low hold keeps the hang (item 3): there it is the drag-down.
 3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
    lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
    parked posed dive is the general form if a supported tackler cannot do it.
