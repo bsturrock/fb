@@ -66,6 +66,16 @@ to keep stepping while wrapped. Direction is ours. In order:
 2. **More oomph, and who ends on top.** Measure what the tackler puts into the carrier on the rear wrap and the
    drag (speed and mass behind the shoulder at contact, drive force and how long it acts, the carrier's speed
    change), find why the drag's tackler ends underneath, then raise what is low. No energy from nowhere.
+   **User, 2026-11-14, after the look at the hold (all else "good to continue"):** the tackle from behind pushes
+   the runner and speeds him up too much; it should lead to a tackle quicker, or to a failed tackle. Cause: the
+   drive asks for the carrier's velocity plus `extraMps` along the line through him, which from behind is his own
+   direction of travel (rear wrap: carried 6.9 m, down after about 1.9 s). So from behind "oomph" is not a push:
+   the tackler is an anchor. Rule being built (`drive.behind`, `WRAP_V10`, flag off first): while the line through
+   the carrier lies along his travel the tackler never asks for more than the carrier's speed along it; he sits
+   back against the hold, and after a short time on a carrier still up he commits his weight to the hold (leaves
+   his feet holding on, legs dragging, the fall link of item 1 carrying it). The outcome is the physics': the
+   carrier goes down (bound legs, his balance) or the hold breaks under its ceilings and he runs on. The push
+   stays for the front and the side. This is item 3's drag-down at torso height.
 3. **The low rear tackle as a drag-down.** With a secure low hold from behind the tackler commits his weight and
    lets his legs drag while holding on; the carrier's legs are bound and he goes down forward. Needs 1. The
    parked posed dive is the general form if a supported tackler cannot do it.
