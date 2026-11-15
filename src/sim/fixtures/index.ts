@@ -13,7 +13,7 @@ import { handoffContactFixtures } from './handoff-contact';
 import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
-import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12 } from '../controllers/wrap';
+import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V13 } from '../controllers/wrap';
 
 /**
  * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
@@ -228,6 +228,16 @@ function forwardFallFlip(d: FixtureDef): FixtureDef {
 }
 
 /**
+ * Contact motion polish 4 (p18), the aim flip: every fixture the hit flip gave WRAP_V12 runs WRAP_V13, the hit's aim: on
+ * a crossing runner the striking shoulder meets the front of his near shoulder or chest instead of the back of it. Still
+ * no speed rule: only the five `HIT_FIXTURES` ask for a hit, and every other tackle is a wrap exactly as under V12. The
+ * lab's `wrap=v12` is the view before it; tests/runs.ts `preWrapV13` gives a definition as before it.
+ */
+function aimFlip(d: FixtureDef): FixtureDef {
+  return d.wrap === WRAP_V12 ? { ...d, wrap: WRAP_V13 } : d;
+}
+
+/**
  * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
  * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
  * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
@@ -286,6 +296,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip));
   return registry.slice();
 }

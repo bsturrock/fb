@@ -45,10 +45,10 @@
 //                      football rules: `balclear=off` is the view before. A fixture without football rules is run as it
 //                      is;
 //   wrap=on|v13|v13auto|v12auto|v12|v11|v10|v9|v8|v7|v6|v5|v4|v3|v2|v1|off  the wrapping defender (contact motion M3).
-//                      v13: WRAP_V13, the hit's aim (polish 4, no fixture uses it: a hit on a crossing carrier meets his
-//                      front side, the striking shoulder's line led 0.15 m ahead of his core along his travel) on WRAP_V12;
-//                      v13auto: WRAP_V13_AUTO, the same with the speed rule (lab only); on (or v12):
-//                      WRAP_V12, the hit (polish 4: a tackle asked for as a hit, five full-sprint crossing fixtures, is a
+//                      on (or v13): WRAP_V13, the hit's aim (polish 4: a hit on a crossing carrier meets his front side,
+//                      the striking shoulder's line led 0.15 m ahead of his core along his travel) on WRAP_V12;
+//                      v13auto: WRAP_V13_AUTO, the same with the speed rule (lab only); v12: WRAP_V12 (the view before
+//                      the aim flip), the hit (polish 4: a tackle asked for as a hit, five full-sprint crossing fixtures, is a
 //                      shoulder hit, the head behind the carrier's travel, the arms tucked, no wrap; any other a wrap as
 //                      under V11) on WRAP_V11; v12auto: WRAP_V12_AUTO (no fixture uses it: also a tackle not asked for
 //                      that closes at 6 m/s or more as the strike starts, the placeholder speed rule); v11: WRAP_V11 (the
@@ -323,7 +323,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     if (!WRAP.includes(v)) parts.push(`wrap=${wrap} ignored`);
     else if (!out.players.some((p) => p.controller.kind === 'wrapAttempt')) parts.push('wrap n/a (no wrapping defender)');
     else {
-      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : v === 'v2' ? WRAP_V2 : v === 'v3' ? WRAP_V3 : v === 'v4' ? WRAP_V4 : v === 'v5' ? WRAP_V5 : v === 'v6' ? WRAP_V6 : v === 'v7' ? WRAP_V7 : v === 'v8' ? WRAP_V8 : v === 'v9' ? WRAP_V9 : v === 'v10' ? WRAP_V10 : v === 'v11' ? WRAP_V11 : v === 'v12auto' ? WRAP_V12_AUTO : v === 'v13' ? WRAP_V13 : v === 'v13auto' ? WRAP_V13_AUTO : WRAP_V12;
+      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : v === 'v2' ? WRAP_V2 : v === 'v3' ? WRAP_V3 : v === 'v4' ? WRAP_V4 : v === 'v5' ? WRAP_V5 : v === 'v6' ? WRAP_V6 : v === 'v7' ? WRAP_V7 : v === 'v8' ? WRAP_V8 : v === 'v9' ? WRAP_V9 : v === 'v10' ? WRAP_V10 : v === 'v11' ? WRAP_V11 : v === 'v12auto' ? WRAP_V12_AUTO : v === 'v12' ? WRAP_V12 : v === 'v13auto' ? WRAP_V13_AUTO : WRAP_V13;
       const w = want && out.wrap?.id === want.id ? out.wrap : want;
       parts.push(`wrap ${v}${w === out.wrap ? ' (registered)' : ''}`);
       if (w !== out.wrap) {

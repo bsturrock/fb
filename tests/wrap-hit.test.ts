@@ -3,13 +3,14 @@
 // with the speed rule, WRAP_V12_AUTO, lab `wrap=v12auto`: a placeholder until game context asks) a hit at `minCloseMps` of
 // closing speed or more, else a wrap exactly as before; a hit strikes with the shoulder, the head behind the runner's
 // travel, the arms tucked and never closing, through the contact at his own approach speed. Registered on L3, L4 and HC
-// since the hit flip, the five full-sprint crossing fixtures asking for the hit (`HIT_FIXTURES`). Constructed runs from
+// from the hit flip, the five full-sprint crossing fixtures asking for the hit (`HIT_FIXTURES`), to the aim flip's
+// WRAP_V13 (tests/wrap-hit-aim.test.ts); the cases here run WRAP_V12 by name. Constructed runs from
 // the start (the fast side wrap closes at 8.1 m/s as the strike starts, the drag at 5.0, the front hold at 1.2; tests run
 // them to a little after contact); `FAST_ASKING_NOTHING` is the fast side wrap with its registered request taken off, for
 // the speed rule. Each case has its fault twin: the wrap's arms, the strike's side rule or the wrap's steer on a hit
 // (`WrapDebug`), the threshold changed, the request absent, the speed rule on.
 import { describe, expect, it } from 'vitest';
-import { WRAP_V11, WRAP_V12, WRAP_V12_AUTO, type WrapDebug, type WrapProfile, type WrapSpec } from '../src/sim/controllers/wrap';
+import { WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, type WrapDebug, type WrapProfile, type WrapSpec } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dot, horiz, len, qRot, sub, vc, type Vec3 } from '../src/sim/vec';
 import { create, FIX } from './helpers';
@@ -80,12 +81,13 @@ async function hitRun(def: FixtureDef, wrap: WrapProfile, o: { faults?: WrapDebu
 const FAST_ASKING_NOTHING = (): FixtureDef => withSpec(FIX(FAST), undefined);
 
 describe('contact motion polish 4: the hit (WRAP_V12)', () => {
-  it('the hit flip: every L3, L4 and HC wrap fixture registers WRAP_V12, which has no speed rule; the tacklers of the five full-sprint crossing fixtures ask for the hit and no other tackler asks for anything; no fixture registers WRAP_V12_AUTO (the speed rule, lab only)', async () => {
+  it('the hit flip: every L3, L4 and HC wrap fixture registers the hit with no speed rule (WRAP_V12, WRAP_V13 since the aim flip); the tacklers of the five full-sprint crossing fixtures ask for the hit and no other tackler asks for anything; no fixture registers WRAP_V12_AUTO (the speed rule, lab only)', async () => {
     const { allFixtures } = await import('../src/sim/fixtures/index');
     const all = allFixtures();
     expect(WRAP_V12.hit!.minCloseMps).toBeUndefined();
     expect(WRAP_V12_AUTO.hit).toEqual({ ...WRAP_V12.hit, minCloseMps: 6 });
-    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V12.id).map((d) => d.id)).toEqual([]);
+    expect(WRAP_V13.hit!.minCloseMps).toBeUndefined();
+    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V13.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap?.id === WRAP_V12_AUTO.id).map((d) => d.id)).toEqual([]);
     const asks = (d: FixtureDef): (string | undefined)[] => d.players.filter((p) => p.controller.kind === 'wrapAttempt').map((p) => (p.controller as WrapSpec).tackle);
     expect(all.filter((d) => asks(d).some((t) => t !== undefined)).map((d) => d.id).sort()).toEqual([...HIT_FIXTURES].sort());

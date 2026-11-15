@@ -168,6 +168,12 @@ to keep stepping while wrapped. Direction is ours. In order:
    head behind (ahead it leads into the chest, 54-62%). First contact 50-59 deg off the runner's facing (V12 73-99), head 0
    (18% `HC-F3-phase0`), runner +0.2 s 2.7-3.0 m/s along (V12 3.5-3.8), down +0.13-0.17 s at lean 26-30 before any new step
    (V12 +0.15-0.37, a 1.9-2.3 m step at lean 18-25). Open: the tackler falls in 8/10; `HC-F3-phase0` forearm 10 cm in R 0.13 s.
+   **Aim on for the five** (`WRAP_V13` registered where V12 was, still no speed rule; lab `&wrap=v12` is before, `preWrapV13`).
+   The shoulder goes into the runner's chest / front of his near shoulder; he goes down 0.13-0.17 s later, no new stride, flat on
+   side or front. Who falls: the tackler now goes down in 8 of 10 (not `HC-F3-phase0`) at 0.99-1.00 s, his feet on the downed
+   runner's shins and shoes: a ragdoll fall (lean 26-29), forearm first, flat on his front (`L4-F10-wrap-on` side); other wraps
+   identical. `HC-F3-phase0` forearm (not tracked): the runner's thigh swings into it, then his run carries the tucked arm through.
+   Open: the head-on hit (lab speed rule) takes the head; `HC-F3-phase0` head brush 3 cm; the tackler's head 26-36% of his landing.
 5. Then the rest of the order below: the low tackle's flip on long-approach fixtures (side offset out before the
    carrier goes down, a secure hold on the long front approach, the posed hip twist), the hand lock, a sideways
    roll with the carrier, brace amount, falls, whiff, debt.

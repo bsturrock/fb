@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preHipTwist, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preHipTwist, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
@@ -143,9 +143,9 @@ const D = Math.PI / 180;
 // which a run without the profile has not, so the twin's wrap is the one before the hold, as the twin is before plan 12)
 // (contact motion M4, the fall flip: likewise FALL_REACT_V1, which drives the shoulders inside that envelope too; and the
 // strike, drive and ride-down flips, whose wraps are the hold's)
-const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preFallReact(d)))))))))), id: `${d.id}-noRange`, jointRange: undefined });
+const twin = (d: FixtureDef): FixtureDef => ({ ...preWrapV3(preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preFallReact(d))))))))))), id: `${d.id}-noRange`, jointRange: undefined });
 /** `d` as before the strike flip (`preWrapV4` after `preWrapV5` after `preWrapV7` after `preWrapV8`), under its own id (the runs are cached by id). */
-const preStrike = (d: FixtureDef): FixtureDef => ({ ...preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(d)))))))), id: `${d.id}~wrapV3` });
+const preStrike = (d: FixtureDef): FixtureDef => ({ ...preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(d))))))))), id: `${d.id}~wrapV3` });
 /** Ladder rung 7d: `d` pinned to LEG_GUARD_V1, the guard a natural sample was taken under (its own id while it registers V1, the runs being cached by id). */
 const pinV1 = (d: FixtureDef): FixtureDef => (!d.legGuard || d.legGuard.id === LEG_GUARD_V1.id ? d : { ...d, id: `${d.id}~v1`, legGuard: LEG_GUARD_V1 });
 const SIDES = ['left', 'right'] as const;
@@ -1181,16 +1181,22 @@ describe('contact motion M1: upper-arm twist', () => {
   it('supported arms stay inside the twist range and turn at most the rate per tick; the plan 12 twins roll past both', async () => {
     const tick = ((TW.maxRateRadPs / 60) * 180) / Math.PI;
     await rows(['L3-F4-twoArm', 'L3-F3-side', 'L3-F8-recontact', 'L4-F9-contact'], (id) => id, async (id) => {
-      const on = await twistRun(FIX(id));
-      expect(on.pose.over, `${id} ${on.pose.at}`).toBeLessThanOrEqual(-2 + 0.5);
-      // the cone applied again after the turn adds a little
-      expect(on.pose.jump, `${id} ${on.pose.jat}`).toBeLessThanOrEqual(tick + 1);
+      // (polish 4, the aim flip: L3-F4-twoArm's twin is the hit as before the aim, WRAP_V12, whose tackler meets the
+      // runner's left arm behind his shoulder; under the aim he meets the front of it and the twin's met arm no longer
+      // rolls past. Its rows run both: the registered run and the V12 scene the twin is of)
+      const scenes = id === 'L3-F4-twoArm' ? [FIX(id), { ...preWrapV13(FIX(id)), id: `${id}~wrapV12` }] : [FIX(id)];
+      for (const d of scenes) {
+        const on = await twistRun(d);
+        expect(on.pose.over, `${d.id} ${on.pose.at}`).toBeLessThanOrEqual(-2 + 0.5);
+        // the cone applied again after the turn adds a little
+        expect(on.pose.jump, `${d.id} ${on.pose.jat}`).toBeLessThanOrEqual(tick + 1);
+      }
       // ladder 18: the twin is the arm before the met-arm flip (`preMetArmStay`), which the met contact sends to a raised or
       // forward alternative the pole rolls past the range; under the flip a met arm keeps its natural pose, which the
       // range holds without the fit (L3-F4-twoArm's and L4-F9-contact's twins no longer roll past). Contact motion M2: and
       // before the carrier's brace flip (under it L3-F4-twoArm's twin met arm no longer rolls past: the braced carrier
       // meets the defender's arm elsewhere)
-      const off = await twistRun(v1(preMetArmStay(preBrace(FIX(id)))));
+      const off = await twistRun(v1(preMetArmStay(preBrace(scenes[scenes.length - 1]))));
       expect(Math.max(off.pose.over, off.pose.jump - tick - 1), `${id} twin ${off.pose.at} ${off.pose.jat}`).toBeGreaterThan(5);
     });
   }, 240000);

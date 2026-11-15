@@ -1,5 +1,5 @@
 // Contact motion polish 4, the hit's aim (WRAP_V13: WRAP_V12 with `hit.aim`, src/sim/controllers/wrap.ts `WrapHitAim`;
-// no fixture uses it, lab `wrap=v13`): a hit on a carrier crossing the approach turns the tackler's line, at his own
+// registered on L3, L4 and HC since the aim flip, lab `wrap=v12` the view before): a hit on a carrier crossing the approach turns the tackler's line, at his own
 // speed, so that his striking shoulder meets the carrier's core led `aheadM` along the carrier's travel; the heading held
 // once the contact is `holdS` away. Constructed runs from the start on the fast side wrap (`L3-F4-twoArm`, which asks for
 // the hit), to a little after contact. The first contact is read in the runner's frame: the azimuth off his facing of the
@@ -100,10 +100,12 @@ const withAim = (aim: Partial<NonNullable<NonNullable<WrapProfile['hit']>['aim']
 const asking = (def: FixtureDef, tackle: WrapSpec['tackle']): FixtureDef => ({ ...def, players: def.players.map((p) => (p.controller.kind === 'wrapAttempt' ? { ...p, controller: { ...p.controller, tackle } } : p)) });
 
 describe('contact motion polish 4: the hit\'s aim (WRAP_V13)', () => {
-  it('no fixture registers WRAP_V13 or WRAP_V13_AUTO; each is its V12 profile with the aim', async () => {
+  it('the aim flip: every L3, L4 and HC wrap fixture registers WRAP_V13, none WRAP_V13_AUTO (the speed rule, lab only) or WRAP_V12; each is its V12 profile with the aim', async () => {
     const { allFixtures } = await import('../src/sim/fixtures/index');
-    const ids = new Set([WRAP_V13.id, WRAP_V13_AUTO.id]);
-    expect(allFixtures().filter((d) => d.wrap && ids.has(d.wrap.id)).map((d) => d.id)).toEqual([]);
+    const all = allFixtures();
+    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V13.id).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap?.id === WRAP_V13.id).length).toBeGreaterThan(0);
+    expect(all.filter((d) => d.wrap?.id === WRAP_V13_AUTO.id || d.wrap?.id === WRAP_V12.id).map((d) => d.id)).toEqual([]);
     expect(WRAP_V12.hit!.aim).toBeUndefined();
     expect({ ...WRAP_V13, id: WRAP_V12.id, hit: { ...WRAP_V13.hit!, aim: undefined } }).toEqual({ ...WRAP_V12, hit: { ...WRAP_V12.hit!, aim: undefined } });
     expect(WRAP_V13_AUTO.hit).toEqual({ ...WRAP_V13.hit, minCloseMps: 6 });

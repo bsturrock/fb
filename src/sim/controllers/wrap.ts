@@ -637,8 +637,9 @@ export const WRAP_V11: WrapProfile = {
  * travel across the approach above 0.5 m/s; the arms tucked (the striking palm 12 cm down the trunk, 28 cm ahead of its
  * shoulder, 5 cm in: the forearm up in front of the shoulder; the other 20 cm down, 32 cm ahead, 20 cm in: across the
  * chest; the elbows close in, down and forward: an elbow straight down at the ribs puts the forearm through the boxy G4
- * trunk, 16 cm for 0.7 s); 0.3 s through the contact at his approach. Registered on L3, L4 and HC since the hit flip,
- * five full-sprint crossing fixtures asking for the hit (the lab's `wrap=v11` is the view before).
+ * trunk, 16 cm for 0.7 s); 0.3 s through the contact at his approach. Registered on L3, L4 and HC from the hit flip,
+ * five full-sprint crossing fixtures asking for the hit (the lab's `wrap=v11` is the view before), to the aim flip's
+ * WRAP_V13 (the lab's `wrap=v12`).
  */
 export const WRAP_V12: WrapProfile = {
   ...WRAP_V11,
@@ -659,7 +660,8 @@ export const WRAP_V12_AUTO: WrapProfile = { ...WRAP_V12, id: 'wrap-hit-auto-v12'
  * radius; 0.25 m and more brings the head in on the side wrap), the heading held from 0.1 s before contact, the head
  * behind his travel as V12's. On the five full-sprint crossing fixtures the first contact is 50 to 59 deg off the
  * runner's facing, the tackler's upper trunk on his chest or the front of his near shoulder (V12: 73 to 99 deg, the
- * back of it). No fixture uses it (lab `wrap=v13`).
+ * back of it). Registered on L3, L4 and HC since the aim flip, on every fixture WRAP_V12 was (the lab's `wrap=v12` is
+ * the view before); a tackle not asked for as a hit is a wrap, exactly V12's and V11's.
  */
 export const WRAP_V13: WrapProfile = { ...WRAP_V12, id: 'wrap-hit-aim-v13', hit: { ...WRAP_V12.hit!, aim: { aheadM: 0.15, holdS: 0.1 } } };
 

@@ -527,7 +527,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion M3: wrap=on|v3|v2|v1|off sets the fixture's wrap profile (tests/wrap-open.test.ts,
   // tests/wrap-takedown.test.ts, tests/wrap-hold.test.ts and tests/wrap-strike.test.ts have the twins that it changes the run)
-  it('wrap=on runs the wrapping defender with WRAP_V12 (the hit when asked for, on WRAP_V11), wrap=v13 with WRAP_V13 (the hit\'s aim on WRAP_V12), wrap=v13auto with WRAP_V13_AUTO (with the speed rule), wrap=v12auto with WRAP_V12_AUTO (with the speed rule), wrap=v11 with WRAP_V11 (staying on from behind on WRAP_V10), wrap=v10 with WRAP_V10 (the drive from behind on WRAP_V9), wrap=v9 with WRAP_V9 (the fall link on WRAP_V8), wrap=v8 with WRAP_V8 (the bound-legs fall on WRAP_V7), wrap=v7 with WRAP_V7 (the ride-down on WRAP_V5), wrap=v5 with WRAP_V5 (the drive on WRAP_V4), wrap=v4 with WRAP_V4 (the strike on WRAP_V3), wrap=v3 with WRAP_V3 (the cradle, the close on touch, the committed finish and the hold carried through it), wrap=v2 with WRAP_V2 (the finish, his arms let go at it), wrap=v1 with WRAP_V1 (the cradle only); wrap=off without any; a fixture without a wrapping defender and unknown values change nothing', () => {
+  it('wrap=on (or v13) runs the wrapping defender with WRAP_V13 (the hit\'s aim on WRAP_V12), wrap=v13auto with WRAP_V13_AUTO (with the speed rule), wrap=v12 with WRAP_V12 (the hit when asked for, on WRAP_V11: the view before the aim flip), wrap=v12auto with WRAP_V12_AUTO (with the speed rule), wrap=v11 with WRAP_V11 (staying on from behind on WRAP_V10), wrap=v10 with WRAP_V10 (the drive from behind on WRAP_V9), wrap=v9 with WRAP_V9 (the fall link on WRAP_V8), wrap=v8 with WRAP_V8 (the bound-legs fall on WRAP_V7), wrap=v7 with WRAP_V7 (the ride-down on WRAP_V5), wrap=v5 with WRAP_V5 (the drive on WRAP_V4), wrap=v4 with WRAP_V4 (the strike on WRAP_V3), wrap=v3 with WRAP_V3 (the cradle, the close on touch, the committed finish and the hold carried through it), wrap=v2 with WRAP_V2 (the finish, his arms let go at it), wrap=v1 with WRAP_V1 (the cradle only); wrap=off without any; a fixture without a wrapping defender and unknown values change nothing', () => {
     const { wrap, ...off } = FIX('L3-F4-twoArm');
     void wrap;
     const v1: FixtureDef = { ...off, wrap: WRAP_V1 };
@@ -540,23 +540,24 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const v9: FixtureDef = { ...off, wrap: WRAP_V9 };
     const v10: FixtureDef = { ...off, wrap: WRAP_V10 };
     const v11: FixtureDef = { ...off, wrap: WRAP_V11 };
+    const v12: FixtureDef = { ...off, wrap: WRAP_V12 };
     const auto: FixtureDef = { ...off, wrap: WRAP_V12_AUTO };
-    const on: FixtureDef = { ...off, wrap: WRAP_V12 };
-    expect(FIX('L3-F4-twoArm').wrap).toBe(WRAP_V12);
+    const on: FixtureDef = { ...off, wrap: WRAP_V13 };
+    const auto13: FixtureDef = { ...off, wrap: WRAP_V13_AUTO };
+    expect(FIX('L3-F4-twoArm').wrap).toBe(WRAP_V13);
+    expect(labRun(on, new URLSearchParams('wrap=v12'))).toEqual({ def: v12, opts: {}, label: 'wrap v12' });
+    expect(labRun(v12, new URLSearchParams('wrap=V12'))).toEqual({ def: v12, opts: {}, label: 'wrap v12 (registered)' });
+    expect(labRun(v12, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
+    expect(labRun(v12, new URLSearchParams('wrap=v13'))).toEqual({ def: on, opts: {}, label: 'wrap v13' });
+    expect(labRun(on, new URLSearchParams('wrap=v13'))).toEqual({ def: on, opts: {}, label: 'wrap v13 (registered)' });
+    expect(labRun(on, new URLSearchParams('wrap=v13auto'))).toEqual({ def: auto13, opts: {}, label: 'wrap v13auto' });
+    expect(labRun(auto13, new URLSearchParams('wrap=V13AUTO'))).toEqual({ def: auto13, opts: {}, label: 'wrap v13auto (registered)' });
+    expect(labRun(auto13, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
+    expect(labRun(on, new URLSearchParams('wrap=v12auto'))).toEqual({ def: auto, opts: {}, label: 'wrap v12auto' });
+    expect(labRun(auto, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
     expect(labRun(on, new URLSearchParams('wrap=v11'))).toEqual({ def: v11, opts: {}, label: 'wrap v11' });
     expect(labRun(v11, new URLSearchParams('wrap=V11'))).toEqual({ def: v11, opts: {}, label: 'wrap v11 (registered)' });
     expect(labRun(v11, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
-    expect(labRun(v11, new URLSearchParams('wrap=v12'))).toEqual({ def: on, opts: {}, label: 'wrap v12' });
-    expect(labRun(on, new URLSearchParams('wrap=v12'))).toEqual({ def: on, opts: {}, label: 'wrap v12 (registered)' });
-    expect(labRun(on, new URLSearchParams('wrap=v12auto'))).toEqual({ def: auto, opts: {}, label: 'wrap v12auto' });
-    expect(labRun(auto, new URLSearchParams('wrap=V12AUTO'))).toEqual({ def: auto, opts: {}, label: 'wrap v12auto (registered)' });
-    expect(labRun(auto, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
-    const v13: FixtureDef = { ...off, wrap: WRAP_V13 };
-    const auto13: FixtureDef = { ...off, wrap: WRAP_V13_AUTO };
-    expect(labRun(on, new URLSearchParams('wrap=v13'))).toEqual({ def: v13, opts: {}, label: 'wrap v13' });
-    expect(labRun(v13, new URLSearchParams('wrap=V13'))).toEqual({ def: v13, opts: {}, label: 'wrap v13 (registered)' });
-    expect(labRun(v13, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
-    expect(labRun(on, new URLSearchParams('wrap=v13auto'))).toEqual({ def: auto13, opts: {}, label: 'wrap v13auto' });
     expect(labRun(on, new URLSearchParams('wrap=v10'))).toEqual({ def: v10, opts: {}, label: 'wrap v10' });
     expect(labRun(v10, new URLSearchParams('wrap=V10'))).toEqual({ def: v10, opts: {}, label: 'wrap v10 (registered)' });
     expect(labRun(v10, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
@@ -598,9 +599,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion polish 1.4: wrap=v6 runs the low strike (no fixture registers it; tests/wrap-low.test.ts has the twins
   // that it changes the run)
-  it('wrap=v6 runs the wrapping defender with WRAP_V6 (the low strike, on WRAP_V10 since the drag-down), which no fixture registers; wrap=on takes it back to WRAP_V12; a fixture without a wrapping defender changes nothing', () => {
+  it('wrap=v6 runs the wrapping defender with WRAP_V6 (the low strike, on WRAP_V10 since the drag-down), which no fixture registers; wrap=on takes it back to WRAP_V13; a fixture without a wrapping defender changes nothing', () => {
     const on = FIX('L3-F19-front');
-    expect(on.wrap).toBe(WRAP_V12);
+    expect(on.wrap).toBe(WRAP_V13);
     const v6: FixtureDef = { ...on, wrap: WRAP_V6 };
     expect(labRun(on, new URLSearchParams('wrap=v6'))).toEqual({ def: v6, opts: {}, label: 'wrap v6' });
     expect(labRun(v6, new URLSearchParams('wrap=V6'))).toEqual({ def: v6, opts: {}, label: 'wrap v6 (registered)' });
@@ -611,9 +612,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion polish 2.2, the behind flip: every fixture the hold flip gave WRAP_V9 registers WRAP_V10 (the drive
   // from behind); wrap=v9 is the view before it (tests/wrap-behind.test.ts has the twins that it changes the run)
-  it('the behind flip: every L3, L4 and HC wrap fixture registers the drive from behind (WRAP_V12 since the hit flip, on WRAP_V11 and WRAP_V10), wrap=v9 runs it with WRAP_V9 (the fall link, before the flip); wrap=on takes it back to WRAP_V12; G, L1, L2 and RH register no wrap; a fixture without a wrapping defender changes nothing', () => {
+  it('the behind flip: every L3, L4 and HC wrap fixture registers the drive from behind (WRAP_V13 since the aim flip, on WRAP_V12, WRAP_V11 and WRAP_V10), wrap=v9 runs it with WRAP_V9 (the fall link, before the flip); wrap=on takes it back to WRAP_V13; G, L1, L2 and RH register no wrap; a fixture without a wrapping defender changes nothing', () => {
     const on = FIX('L3-F19-rear');
-    expect(on.wrap).toBe(WRAP_V12);
+    expect(on.wrap).toBe(WRAP_V13);
     expect(on.wrap!.fallLink).toBe(WRAP_V9.fallLink);
     const v9: FixtureDef = { ...on, wrap: WRAP_V9 };
     const v10: FixtureDef = { ...on, wrap: WRAP_V10 };
@@ -622,7 +623,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(v9, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
     expect(labRun(v9, new URLSearchParams('wrap=v10'))).toEqual({ def: v10, opts: {}, label: 'wrap v10' });
     const all = allFixtures();
-    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V12.id).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V13.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap && !/^(L3|L4|HC)-/.test(d.id)).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap?.drive?.behind).length).toBeGreaterThan(0);
     const g = FIX('L3-F3-collision');
@@ -631,9 +632,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion polish 2.4, the stay-on flip: every fixture the behind flip gave WRAP_V10 registers WRAP_V11 (staying
   // on from behind); wrap=v10 is the view before it (tests/wrap-stay-on.test.ts has the twins that it changes the run)
-  it('the stay-on flip: every L3, L4 and HC wrap fixture registers staying on from behind (WRAP_V12 since the hit flip, on WRAP_V11 and WRAP_V10), wrap=v10 runs it with WRAP_V10 (the drive from behind, before the flip); wrap=on takes it back to WRAP_V12; WRAP_V10 and WRAP_V6 stay unregistered; G, L1, L2 and RH register no wrap; a fixture without a wrapping defender changes nothing', () => {
+  it('the stay-on flip: every L3, L4 and HC wrap fixture registers staying on from behind (WRAP_V13 since the aim flip, on WRAP_V12, WRAP_V11 and WRAP_V10), wrap=v10 runs it with WRAP_V10 (the drive from behind, before the flip); wrap=on takes it back to WRAP_V13; WRAP_V10 and WRAP_V6 stay unregistered; G, L1, L2 and RH register no wrap; a fixture without a wrapping defender changes nothing', () => {
     const on = FIX('L3-F19-rear');
-    expect(on.wrap).toBe(WRAP_V12);
+    expect(on.wrap).toBe(WRAP_V13);
     expect(on.wrap!.bind!.behind).toBe(WRAP_V11.bind!.behind);
     const v10: FixtureDef = { ...on, wrap: WRAP_V10 };
     const v11: FixtureDef = { ...on, wrap: WRAP_V11 };
@@ -642,7 +643,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(v10, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
     expect(labRun(v10, new URLSearchParams('wrap=v11'))).toEqual({ def: v11, opts: {}, label: 'wrap v11' });
     const all = allFixtures();
-    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V12.id).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap && d.wrap.id !== WRAP_V13.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap?.id === WRAP_V10.id || d.wrap?.id === WRAP_V6.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap && !/^(L3|L4|HC)-/.test(d.id)).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap?.bind?.behind).length).toBeGreaterThan(0);
@@ -652,9 +653,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion polish 1.2, the ride-down flip: every fixture the drive flip gave WRAP_V5 registers WRAP_V7 (the
   // ride-down); wrap=v5 is the view before it (tests/wrap-ride.test.ts has the twins that it changes the run)
-  it('the ride-down flip: an L3, L4 or HC wrap fixture registers the ride-down (WRAP_V12 since the hit flip, on WRAP_V11, WRAP_V10, WRAP_V9, WRAP_V8 and WRAP_V7), wrap=v5 runs it with WRAP_V5 (the drive, before the flip); WRAP_V6 stays unregistered; G, L1, L2 and RH register no wrap; a fixture without a wrapping defender changes nothing', () => {
+  it('the ride-down flip: an L3, L4 or HC wrap fixture registers the ride-down (WRAP_V13 since the aim flip, on WRAP_V12, WRAP_V11, WRAP_V10, WRAP_V9, WRAP_V8 and WRAP_V7), wrap=v5 runs it with WRAP_V5 (the drive, before the flip); WRAP_V6 stays unregistered; G, L1, L2 and RH register no wrap; a fixture without a wrapping defender changes nothing', () => {
     const on = FIX('L3-F19-front');
-    expect(on.wrap).toBe(WRAP_V12);
+    expect(on.wrap).toBe(WRAP_V13);
     expect(on.wrap!.ride).toBe(WRAP_V7.ride);
     const v5: FixtureDef = { ...on, wrap: WRAP_V5 };
     expect(labRun(on, new URLSearchParams('wrap=v5'))).toEqual({ def: v5, opts: {}, label: 'wrap v5' });
@@ -668,7 +669,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(all.filter((d) => d.wrap?.id === WRAP_V11.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap?.id === WRAP_V6.id).map((d) => d.id)).toEqual([]);
     expect(all.filter((d) => d.wrap && !/^(L3|L4|HC)-/.test(d.id)).map((d) => d.id)).toEqual([]);
-    expect(all.filter((d) => d.wrap?.id === WRAP_V12.id).length).toBeGreaterThan(0);
+    expect(all.filter((d) => d.wrap?.id === WRAP_V12.id).map((d) => d.id)).toEqual([]);
+    expect(all.filter((d) => d.wrap?.id === WRAP_V13.id).length).toBeGreaterThan(0);
     const g = FIX('L3-F3-collision');
     expect(labRun(g, new URLSearchParams('wrap=v5'))).toEqual({ def: g, opts: {}, label: 'wrap n/a (no wrapping defender)' });
   });
