@@ -926,9 +926,18 @@ export const withoutBornSeparation = (r: RagdollProfile): RagdollProfile =>
 export interface ShoulderTwistLimitProfile {
   id: string;
   measure: 'anatomical';
+  /**
+   * Ladder 13a-iii: the twist limit (both stops, raised or not) stepped over the substep (`steppedLimitPush`) on the
+   * arm's own inertia, damped at this ratio of critical, in place of plan 09's spring-damper. Plan 09's 400 N m/rad with
+   * 2 N m s is about 0.3 of critical for a bent arm: lifted past its stop, the arm stored the impact and gave it back,
+   * and an elbow straightening at the same time spun it through its range in one frame (`SHOULDER_TWIST_REBOUND`).
+   */
+  stepped?: { dampingRatio: number };
 }
 
 export const SHOULDER_TWIST_ANAT_V1: ShoulderTwistLimitProfile = { id: 'shoulder-twist-anat-v1', measure: 'anatomical' };
+/** Ladder 13a-iii: V1 with its stops stepped and critically damped: a firm stop that absorbs a twist instead of returning it. */
+export const SHOULDER_TWIST_ANAT_V2: ShoulderTwistLimitProfile = { id: 'shoulder-twist-anat-v2', measure: 'anatomical', stepped: { dampingRatio: 1 } };
 
 /** Ladder rung 13a: the ragdoll profile with the anatomical shoulder twist limit, under an id that names it. */
 export const withShoulderTwistLimit = (r: RagdollProfile, p: ShoulderTwistLimitProfile = SHOULDER_TWIST_ANAT_V1): RagdollProfile => ({ ...r, id: `${r.id}+${p.id}`, shoulderTwistLimit: p });

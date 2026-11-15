@@ -922,8 +922,9 @@ export function anatomicalTwistTerms(E: JointEnvelope, q: Quat, sideSign: number
  * of min(k x, cap): torque = -(spring + damping) * gradient of the excess, the spring a function of that excess only,
  * so a closed path at rest returns exactly what it took. The damping acts along the same gradient and the total never
  * pulls (it is clamped to [0, cap]), so it can only remove energy from U plus the bodies' kinetic energy.
+ * `twistPush`, when given, is the push of each twist term instead (a stepped limit, `steppedLimitPush`).
  */
-export function envelopeMoments(E: JointEnvelope, q: Quat, sideSign: number, slack: Pick<EnvelopeRuntime, 'swingSlack' | 'twistSlackLo' | 'twistSlackHi'>, wParent: Vec3, anat?: ShoulderTwistLimitProfile): { torque: Vec3; swing: LimitTerm; hi: LimitTerm; lo: LimitTerm } {
+export function envelopeMoments(E: JointEnvelope, q: Quat, sideSign: number, slack: Pick<EnvelopeRuntime, 'swingSlack' | 'twistSlackLo' | 'twistSlackHi'>, wParent: Vec3, anat?: ShoulderTwistLimitProfile, twistPush?: (t: LimitTerm) => number): { torque: Vec3; swing: LimitTerm; hi: LimitTerm; lo: LimitTerm } {
   const st = swingTwistOf(q);
   const swing = swingTerm(E, st.dir, sideSign, slack.swingSlack);
   // ladder 13a: a raised limb under the anatomical limit (`anat`); at or below horizontal the two are the same terms
@@ -935,9 +936,55 @@ export function envelopeMoments(E: JointEnvelope, q: Quat, sideSign: number, sla
     torque = addScaled(torque, t.grad, -m);
   };
   push(swing, E.swing.stiffnessNmPerRad, E.swing.dampingNmsPerRad);
-  push(hi, E.twist.stiffnessNmPerRad, E.twist.dampingNmsPerRad);
-  push(lo, E.twist.stiffnessNmPerRad, E.twist.dampingNmsPerRad);
+  if (twistPush) {
+    for (const t of [hi, lo]) {
+      const m = twistPush(t);
+      if (m > 0) torque = addScaled(torque, t.grad, -m);
+    }
+  } else {
+    push(hi, E.twist.stiffnessNmPerRad, E.twist.dampingNmsPerRad);
+    push(lo, E.twist.stiffnessNmPerRad, E.twist.dampingNmsPerRad);
+  }
   return { torque, swing, hi, lo };
+}
+
+/**
+ * Ladder 13a-iii: the push (N m, >= 0) of a one-sided limit stepped over one substep, as 8g's hip approach zone is. A
+ * firm stop that absorbs what reaches it and gives nothing back: x is the excess (rad, negative inside the range), u
+ * its rate (rad/s), n the inverse inertia along the limit (1 / (kg m^2)), k the stiffness, zeta the damping ratio.
+ * - The spring reads the excess at the end of the substep, x + u dt: it starts within the substep the joint will cross
+ *   the stop and has let go within the substep it will leave it, so a pass in and out returns no more than it took.
+ * - The damping is zeta of critical for that inertia, 2 zeta sqrt(k / n), but never more than stops u in one substep.
+ * - The push never carries the joint back past the stop within the substep: m n dt^2 <= x + u dt.
+ * - Clamped to [0, cap].
+ */
+export function steppedLimitPush(x: number, u: number, n: number, k: number, zeta: number, cap: number, dt: number): number {
+  if (x + u * dt <= 0) return 0;
+  const c = zeta * 2 * Math.sqrt(k / n);
+  const m = k * (x + u * dt) + Math.min(c, 1 / (dt * n)) * u;
+  const stop = Math.max(0, u + x / dt) / (n * dt);
+  return Math.min(cap, stop, Math.max(0, m));
+}
+
+/**
+ * Ladder 13a-iii: the inverse inertia of a shoulder's twist along a world turn direction g: the arm (upper arm and
+ * forearm as one body about the shoulder) plus the core's own. Exact for the twist, about which the elbow cannot turn.
+ */
+function armInverseInertia(rag: Ragdoll, j: RagdollJoint): (gW: Vec3) => number {
+  const core = rag.bodies[j.parent];
+  const ua = rag.bodies[j.child];
+  const fa = rag.bodies[`${j.side}Forearm` as SegmentId];
+  const I1 = core.effectiveWorldInvInertia();
+  const i1: Mat3 = [I1.m11, I1.m12, I1.m13, I1.m12, I1.m22, I1.m23, I1.m13, I1.m23, I1.m33];
+  const S = add(vc(ua.translation()), qRot(ua.rotation(), j.anchorChildLocal));
+  let Ia: Mat3 = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const b of [ua, fa]) {
+    const I = b.effectiveAngularInertia();
+    const c: Mat3 = [I.m11, I.m12, I.m13, I.m12, I.m22, I.m23, I.m13, I.m23, I.m33];
+    Ia = m3Add(Ia, m3Add(c, m3ParallelAxis(b.mass(), sub(vc(b.worldCom()), S))));
+  }
+  const ia = m3Inverse(Ia);
+  return (g: Vec3): number => dot(g, m3Vec(i1, g)) + (ia ? dot(g, m3Vec(ia, g)) : 0);
 }
 
 /** Start the envelope at the handoff: whatever the accepted pose already exceeds becomes that joint's start slack. */
@@ -1004,7 +1051,19 @@ export function applyEnvelope(rag: Ragdoll, dt: number): void {
     e.swingSlack = Math.max(0, Math.min(e.swingSlack, Math.max(0, over)) - decay);
     e.twistSlackHi = Math.max(0, Math.min(e.twistSlackHi, Math.max(0, tw - hi)) - decay);
     e.twistSlackLo = Math.max(0, Math.min(e.twistSlackLo, Math.max(0, lo - tw)) - decay);
-    const M = envelopeMoments(E, q, s, e, qRot(qConj(qp), w), anat);
+    const wP = qRot(qConj(qp), w);
+    // ladder 13a-iii: a shoulder whose twist limit is stepped, on the arm's own inertia along each limit
+    const S = anat?.stepped;
+    let inv: ((g: Vec3) => number) | null = null;
+    const twistPush = S
+      ? (t: LimitTerm): number => {
+          const u = dot(wP, t.grad);
+          if (t.excess + u * dt <= 0) return 0;
+          inv ??= armInverseInertia(rag, j);
+          return steppedLimitPush(t.excess, u, Math.max(inv(qRot(qp, t.grad)), 1e-9), E.twist.stiffnessNmPerRad, S.dampingRatio, E.maxTorqueNm, dt);
+        }
+      : undefined;
+    const M = envelopeMoments(E, q, s, e, wP, anat, twistPush);
     const torque = qRot(qp, M.torque);
     const overDeg = (Math.max(0, M.swing.excess, M.hi.excess, M.lo.excess) * 180) / Math.PI;
     const nominalDeg = (Math.max(0, over, Math.max(tw - hi, lo - tw) * reach) * 180) / Math.PI;
