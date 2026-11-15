@@ -21,6 +21,8 @@ measured unreachable before any code (his hands stay 0.37 m or more apart around
 hands"); the drive (1.2) now takes the rear-wrap carrier down. Polish
 ([list](polish.md), 2026-11-13): 1.1, the strike (lean in, shoulder leads, arms wide), is on for L3, L4 and HC; 1.2,
 the drive (he keeps driving through the carrier and goes down with him), is on too; 1.3 (re-measure the hand gap, locked hands) is next after it.
+Status (2026-11-15): the tackle and fall polish is done and parked by the user ([handoff](../../handoff/contact-motion-polish.md),
+with the parked list); next is the footwork under contact ([polish](polish.md), plan `docs/open/15_Contact_Footwork.md`).
 
 ## Direction (user-approved 2026-11-12; supersedes conflicting text below and in the milestone files)
 

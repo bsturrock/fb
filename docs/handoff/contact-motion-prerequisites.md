@@ -333,7 +333,7 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
   solves gain 8.2 J (HC-F3-phase75 rev D) and 3.1 J (L4-F9-low rev R). Same-state twins in `assess-13a/caps/`. Fix
   (13a-iii): step the term as 8g's approach zone is stepped (`parked/arm-twist-flip/README.md`). Under the flip the
   ragdoll shoulder rotation past the impossible margin reads 0.2 player-s, both orders (32.4 before); its tracked
-  defects are in `docs/open/contact-motion/polish.md` (item 4).
+  defects are in the [polish handoff](contact-motion-polish.md).
 - **The solved-impulse reading misses coincident manifold points:** L3-F1-phase6 reversed, solve 266. Points 2-4
   share one position and one solver contact. Rapier wrote 15.53 N s to point 4, but the match gives it to point 2, so
   the pair reads 0. The energy meter uses max(solved, raw). Still to check: which records read 0 for a real contact.
