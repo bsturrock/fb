@@ -1,6 +1,6 @@
 # 15. Contact footwork: one stepping model
 
-Status: proposed 2026-11-17. Not started. One owner decision open (see "Older families").
+Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Step 1 in progress.
 
 ## What a viewer should see (owner, 2026-11-15)
 
@@ -61,12 +61,9 @@ them; tests that state viewer rules (no skate, foot continuity, one foot down) s
 
 ## Older families
 
-L2 and RH use the old planner (`FOOTWORK_L2`) and are byte-identical by rule. Either:
-
-- **A (recommended):** move L2 and RH onto the new model in one step and accept that their summaries change once.
-  The old planner is deleted. One system.
-- **B:** keep them frozen. The old planner is moved whole into `footwork-legacy.ts`, used only by L2 and RH, never
-  edited. Two systems, clearly separated.
+L2 and RH use the old planner (`FOOTWORK_L2`) and are byte-identical by rule. Owner decision (2026-11-17): they move
+onto the new model in one step and their summaries change once; the old planner is then deleted. One system. Until
+that step (5) they stay byte-identical.
 
 ## Steps
 
