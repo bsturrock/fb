@@ -7,7 +7,7 @@ import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, FALL_L4, FALL_L4_V2, FORWARD_FALL_V1, withForwardFall,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
 import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, preWrap, runSim } from './helpers';
@@ -705,5 +705,24 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const noStopsV1 = labRun(on, new URLSearchParams('hips=off&fall=v1'));
     expect(noStopsV1.label).toBe('hip stops off · fall v1 · fall off (no hip stops)');
     expect('fallResponse' in noStopsV1.def).toBe(false);
+  });
+
+  // polish 4 (p17): fwd=on puts the forward-fall body plan on the fixture's own fall response (tests/fall-forward.test.ts
+  // has the twins that it changes the run)
+  it('fwd=on runs FALL_REACT_V3 for FALL_REACT_V2, FALL_L4_V2 for FALL_L4 and the plan on any other response; a fixture without a fall response and unknown values change nothing', () => {
+    const l3 = FIX('L3-F4-twoArm');
+    expect(l3.fallResponse).toBe(FALL_REACT_V2);
+    expect(labRun(l3, new URLSearchParams('fwd=on'))).toEqual({ def: { ...l3, fallResponse: FALL_REACT_V3 }, opts: {}, label: 'fwd on' });
+    const v3: FixtureDef = { ...l3, fallResponse: FALL_REACT_V3 };
+    expect(labRun(v3, new URLSearchParams('fwd=ON'))).toEqual({ def: v3, opts: {}, label: 'fwd on (registered)' });
+    const l4 = FIX('L4-F10-wrap-on');
+    const l4fwd = labRun(l4, new URLSearchParams('fwd=on')).def.fallResponse!;
+    expect(l4fwd.forward).toBe(FORWARD_FALL_V1);
+    expect(l4.fallResponse === FALL_L4 ? l4fwd : FALL_L4_V2).toBe(FALL_L4_V2);
+    expect(labRun(l3, new URLSearchParams('fall=v1&fwd=on')).def.fallResponse).toEqual(withForwardFall(FALL_REACT_V1));
+    const { fallResponse, ...bare } = l3;
+    void fallResponse;
+    expect(labRun(bare, new URLSearchParams('fwd=on'))).toEqual({ def: bare, opts: {}, label: 'fwd n/a (no fall response)' });
+    expect(labRun(l3, new URLSearchParams('fwd=off'))).toEqual({ def: l3, opts: {}, label: 'fwd=off ignored' });
   });
 });

@@ -1490,6 +1490,32 @@ export interface FallResponseProfile {
     selfTrunkBody?: true;
   };
   enable: { knee: boolean; hip: boolean; arms: boolean };
+  /**
+   * Polish 4 (p17): the body plan of a forward fall (absent: every fall tucks as plan 09 and M4). Decided once, at the
+   * switch: the fall is forward when the trunk's lean, carried `horizonS` ahead on its angular velocity, is at least
+   * `minLeanDeg` toward the chest's front half, and that lean's direction plus the core's horizontal velocity over
+   * `speedRefMPerS` is within `coneDeg` of the chest's front. A backward or sideways fall runs as without it.
+   */
+  forward?: ForwardFallPlan;
+}
+
+/**
+ * Polish 4 (p17): a man falling forward lays out and gives on his arm. The hips drive toward `hip.flexDeg` of flexion (in
+ * line with the trunk) from the accepted angle, both ways, after `hip.delayS` over `hip.rampS`, under `hip.ceilingNm`;
+ * once the trunk is on the ground the hip damping is `hip.groundKdScale` times the gains' (the legs held down behind
+ * the arrested trunk). The knees drive toward `knee.bendDeg`, extensor and flexor, over the hip's ramp. The free arm's
+ * brace keeps `brace.minElbowDeg` of elbow bend while it seeks, its shoulder and elbow work under `brace.shoulderNm` and
+ * `brace.elbowNm`, and once landed it only damps, at `brace.dampScale` times the gains' damping (eccentric: it gives),
+ * letting go as `brace.load` does after `brace.releaseS` with neither palm nor forearm on the floor.
+ */
+export interface ForwardFallPlan {
+  horizonS: number;
+  minLeanDeg: number;
+  coneDeg: number;
+  speedRefMPerS: number;
+  hip: { flexDeg: number; delayS: number; rampS: number; ceilingNm: number; groundKdScale: number };
+  knee: { bendDeg: number };
+  brace: { minElbowDeg: number; shoulderNm: number; elbowNm: number; dampScale: number; releaseS: number };
 }
 
 /** Ladder 9f: `p` with `impactGuard.selfTrunkBody` (an own-trunk hit faster than the body speed holds the body). */
@@ -1604,6 +1630,27 @@ export const FALL_REACT_V2: FallResponseProfile = {
   id: 'fall-react-v2',
   brace: { ...FALL_REACT_V1.brace, load: { dampScale: 1, releaseS: 0.05 } },
 };
+
+/** Polish 4 (p17): the forward-fall body plan (ForwardFallPlan). Numbers and why: docs/open/contact-motion/polish.md item 4. */
+export const FORWARD_FALL_V1: ForwardFallPlan = {
+  horizonS: 0.1,
+  minLeanDeg: 10,
+  coneDeg: 60,
+  speedRefMPerS: 2,
+  hip: { flexDeg: 15, delayS: 0.04, rampS: 0.3, ceilingNm: 60, groundKdScale: 2 },
+  knee: { bendDeg: 15 },
+  brace: { minElbowDeg: 30, shoulderNm: 60, elbowNm: 40, dampScale: 2, releaseS: 0.05 },
+};
+
+/** Polish 4 (p17): `p` with the forward-fall body plan (`forward`), the id marked. */
+export function withForwardFall(p: FallResponseProfile, plan: ForwardFallPlan = FORWARD_FALL_V1): FallResponseProfile {
+  return { ...p, id: `${p.id}+fwd`, forward: plan };
+}
+
+/** Polish 4 (p17): FALL_REACT_V2 (L3, HC) with the forward-fall body plan; no fixture uses it. */
+export const FALL_REACT_V3: FallResponseProfile = { ...FALL_REACT_V2, id: 'fall-react-v3', forward: FORWARD_FALL_V1 };
+/** Polish 4 (p17): FALL_L4 with the forward-fall body plan; no fixture uses it. */
+export const FALL_L4_V2: FallResponseProfile = { ...FALL_L4, id: 'fall-response-l4-v7', forward: FORWARD_FALL_V1 };
 
 export const RAGDOLL_G4: RagdollProfile = {
   id: 'ragdoll-g4-v1',

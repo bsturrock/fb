@@ -306,6 +306,14 @@ to keep stepping while wrapped. Direction is ours. In order:
 4. **Falls.** The reaching arm palm down with give, some body control ("falls like a bag of wooden blocks"); the
    tackler's legs bounce backwards on contact (`HC-F3-lowRunner`); elbow give on landing (`LANDING_ELBOW_SNAP`);
    the bounce off a trapped arm (`LANDING_REBOUND`). The palm touches but does not plant.
+   Forward falls (p17, flag off): the hit runner lands folded (the reaction's tuck, hips 95-105 deg), so friction at hands,
+   head and chest turns him over his head (ends hips 0.42-0.64 m, head 7-38 deg down; main `.scratch/p17/landing/`).
+   Built `FORWARD_FALL_V1` (`FALL_REACT_V3`, `FALL_L4_V2`, lab `fwd=on`): on a fall decided forward at the switch the hips
+   drive toward 15 deg flexion over 0.3 s both ways at 60 N m (a man's hip extension is well over 100; at 18 the legs'
+   momentum wins; the 150 W / 100 J caps unchanged), damping x2 once the trunk is down, knees toward 15 deg; the free arm
+   braces with 30 deg of elbow and, landed, only damps (x2) under 60/40 N m shoulder/elbow (a man's shoulder 60-90).
+   Hit runs: 6 of 10 end flat (were 0); `L3-F4-twoArm`, `L4-F10-wrap-on` still vault over the arm, head down 27-48 deg.
+   Open for the flip: 5 runs over the power cap, shoulder twist past range, rebounds (main `.scratch/p17/flat/summary.txt`).
 5. **Whiff.** On a miss the swinging arms rotate the tackler (`L3-F19-miss`); a real tackler may reach and fall.
 
 Accepted by the user, not to be worked: crossed legs in a fall, the carrier's arms folding into his trunk on

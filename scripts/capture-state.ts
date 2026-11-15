@@ -1,5 +1,5 @@
 // Full-state capture of a registered fixture at a tick boundary (tests/state.ts), for a test to resume from:
-//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11|v12|v12auto]
+//   npx vite-node scripts/capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11|v12|v12auto] [--fwd]
 // Runs the fixture with the fixture export's defaults (ledgers off, as `npm run fixtures`; `--ledgers` keeps them, for a
 // test that reads them, at about twice the size) to the end of tick <tick>, writes the
 // capture (default tests/data/state/<fixture>@<tick>.json.gz) and checks it: the run resumed from the file reproduces
@@ -24,15 +24,17 @@
 // WRAP_V11), suffix `wrapv10`; `--wrap=v11` (WRAP_V11, staying on from behind on WRAP_V10, registered from the stay-on
 // flip to the hit flip's WRAP_V12), suffix `wrapv11`; `--wrap=v12` (WRAP_V12, the hit on WRAP_V11 when asked for,
 // registered since the hit flip), suffix `wrapv12`; `--wrap=v12auto` (WRAP_V12_AUTO, with the speed rule, no fixture
-// uses it), suffix `wrapv12auto`. See tests/README.md.
+// uses it), suffix `wrapv12auto`. `--fwd`: the fixture's fall response with the forward-fall body plan (polish 4, p17:
+// FALL_REACT_V3 on L3 and HC, FALL_L4_V2 on L4, no fixture uses it), suffix `fwd`; a test resumes it with
+// `{ def: { ...FIX(id), fallResponse: FALL_REACT_V3 } }` (or the fixture's own response, the plan off). See tests/README.md.
 import { statSync } from 'node:fs';
 import { WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
-import { HIP_STOPS_V1, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
+import { FALL_L4, FALL_L4_V2, FALL_REACT_V2, FALL_REACT_V3, HIP_STOPS_V1, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withForwardFall, withHipStops, type FallResponseProfile } from '../src/sim/profiles';
 import { SIM_DEFAULTS, Simulation } from '../src/sim/simulation';
 import { FIX, flip8i, preBraceV2, WRAP_V6_PRE_V10 } from '../tests/runs';
 import { captureState, loadState, resumeState, saveState } from '../tests/state';
 
-const FLAGS = ['--ledgers', '--v3', '--rev', '--audit', '--flip8i'];
+const FLAGS = ['--ledgers', '--v3', '--rev', '--audit', '--flip8i', '--fwd'];
 const HIPS = { v1: HIP_STOPS_V1, v2: HIP_STOPS_V2 } as const;
 const JOINTS = { v4: JOINT_RANGE_V4 } as const;
 const hipsArg = process.argv.find((a) => a.startsWith('--hips='))?.slice('--hips='.length);
@@ -48,23 +50,26 @@ const wrap = wrapArg ? WRAPS[wrapArg as keyof typeof WRAPS] : undefined;
 const args = process.argv.slice(2).filter((a) => !FLAGS.includes(a) && !a.startsWith('--hips=') && !a.startsWith('--joints=') && !a.startsWith('--brace=') && !a.startsWith('--wrap='));
 const [id, tickArg, outArg] = args;
 const tick = Number(tickArg);
-if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11|v12]');
+if (!id || !Number.isInteger(tick) || tick < 1) throw new Error('usage: capture-state.ts <fixture> <tick> [out] [--ledgers] [--v3] [--rev] [--audit] [--hips=v1|v2] [--flip8i] [--joints=v4] [--brace=v1] [--wrap=v6|v7|v8|v9|v10|v11|v12] [--fwd]');
 SIM_DEFAULTS.ledgers = process.argv.includes('--ledgers');
 const v3 = process.argv.includes('--v3');
 const audit = process.argv.includes('--audit');
 const rev = process.argv.includes('--rev');
 const flip = process.argv.includes('--flip8i');
+const fwd = process.argv.includes('--fwd');
+const forwardOf = (F: FallResponseProfile): FallResponseProfile => (F === FALL_REACT_V2 ? FALL_REACT_V3 : F === FALL_L4 ? FALL_L4_V2 : withForwardFall(F));
 const opts = { ...(audit ? { transitionAudit: true } : {}), ...(rev ? { reverseOrder: true } : {}) };
 const joints = jointsArg ? JOINTS[jointsArg as keyof typeof JOINTS] : undefined;
 if (joints && !FIX(id).jointRange) throw new Error(`${id} has no joint range profile for --joints`);
 const fix = braceArg ? preBraceV2(FIX(id)) : FIX(id);
 if (braceArg && fix.brace?.id === FIX(id).brace?.id) throw new Error(`${id} has no CARRIER_BRACE_V2 for --brace=v1`);
-const base = { ...(v3 ? { ...fix, legGuard: LEG_GUARD_V3 } : fix), ...(joints ? { jointRange: joints } : {}), ...(wrap ? { wrap } : {}) };
+if (fwd && !fix.fallResponse) throw new Error(`${id} has no fall response for --fwd`);
+const base = { ...(v3 ? { ...fix, legGuard: LEG_GUARD_V3 } : fix), ...(joints ? { jointRange: joints } : {}), ...(wrap ? { wrap } : {}), ...(fwd ? { fallResponse: forwardOf(fix.fallResponse!) } : {}) };
 const hips = hipsArg ? HIPS[hipsArg as keyof typeof HIPS] : undefined;
 if ((hips || flip) && !base.ragdoll) throw new Error(`${id} has no ragdoll profile for --hips or --flip8i`);
 if (hips && flip) throw new Error('--hips and --flip8i: one ragdoll variant at a time');
 const def = hips ? { ...base, ragdoll: withHipStops(base.ragdoll!, hips) } : flip ? flip8i(base) : base;
-const suffix = [wrapArg && `wrap${wrapArg}`, braceArg && 'bracev1', v3 && 'v3', joints && `jr${jointsArg}`, hips && `hips${hipsArg}`, flip && 'flip8i', rev && 'rev', audit && 'audit'].filter(Boolean).join('-');
+const suffix = [fwd && 'fwd', wrapArg && `wrap${wrapArg}`, braceArg && 'bracev1', v3 && 'v3', joints && `jr${jointsArg}`, hips && `hips${hipsArg}`, flip && 'flip8i', rev && 'rev', audit && 'audit'].filter(Boolean).join('-');
 const out = outArg ?? `tests/data/state/${id}${suffix ? `~${suffix}` : ''}@${tick}.json.gz`;
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace, ...(audit ? { audit: s.transitionDeltas } : {}) });
 
@@ -79,5 +84,5 @@ const back = await resumeState(loadState(out), { def });
 back.runToEnd();
 const same = exportOf(back) === whole;
 back.dispose();
-console.log(`${out}: ${id}${v3 ? ' (V3)' : ''}${joints ? ` (${joints.id})` : ''}${hips ? ` (${hips.id})` : ''}${flip ? ' (8i flip)' : ''}${braceArg ? ' (brace V1)' : ''}${wrapArg ? ` (WRAP_${wrapArg.toUpperCase()})` : ''}${rev ? ' (reversed)' : ''}${audit ? ' (audit)' : ''} tick ${tick} (t ${(tick * def.solver.outerTickS).toFixed(3)} s), ${(statSync(out).size / 1024).toFixed(0)} KB; resumed run ${same ? 'identical' : 'DIFFERS'} to the end`);
+console.log(`${out}: ${id}${v3 ? ' (V3)' : ''}${joints ? ` (${joints.id})` : ''}${hips ? ` (${hips.id})` : ''}${flip ? ' (8i flip)' : ''}${braceArg ? ' (brace V1)' : ''}${wrapArg ? ` (WRAP_${wrapArg.toUpperCase()})` : ''}${fwd ? ` (${base.fallResponse!.id})` : ''}${rev ? ' (reversed)' : ''}${audit ? ' (audit)' : ''} tick ${tick} (t ${(tick * def.solver.outerTickS).toFixed(3)} s), ${(statSync(out).size / 1024).toFixed(0)} KB; resumed run ${same ? 'identical' : 'DIFFERS'} to the end`);
 if (!same) process.exit(1);

@@ -80,6 +80,11 @@
 //                      the palm-load flip); off: limp (a takedown's hold only under WRAP_V3, the M3 view). An L4 fixture (its own response, or its motor-off twin) or
 //                      one without a ragdoll is run as it is. A view without the hip stops (hips=off) is limp: the
 //                      response bounds the hips by them.
+//   fwd=on             polish 4 (p17), the forward-fall body plan (FORWARD_FALL_V1, no fixture uses it) on the fixture's
+//                      own fall response, after `fall=`: FALL_REACT_V2 becomes FALL_REACT_V3 (L3, HC), FALL_L4 FALL_L4_V2,
+//                      any other `withForwardFall`. A man falling forward lays out (hips toward in line with the trunk,
+//                      knees a slight bend) and his free arm lands bent and gives; backward and sideways falls as without.
+//                      A fixture without a fall response is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -94,7 +99,7 @@ import {
 import { HOLD_STILL_V1, withHoldStill, withLateLanding, withoutHoldStill, withoutLateLanding } from '../sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO } from '../sim/controllers/wrap';
-import { FALL_REACT_V1, FALL_REACT_V2 } from '../sim/profiles';
+import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, withForwardFall } from '../sim/profiles';
 import type { SimOptions } from '../sim/simulation';
 
 const LEGS = { v1: LEG_GUARD_V1, v2: LEG_GUARD_V2, v3: LEG_GUARD_V3 } as const;
@@ -336,9 +341,21 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
       }
     }
   }
+  // polish 4 (p17): the forward-fall body plan on the fall response the view runs
+  const fwd = params.get('fwd');
+  if (fwd !== null && fwd !== '') {
+    if (fwd.toLowerCase() !== 'on') parts.push(`fwd=${fwd} ignored`);
+    else if (!out.fallResponse) parts.push('fwd n/a (no fall response)');
+    else {
+      const F = out.fallResponse;
+      const want = F === FALL_REACT_V2 ? FALL_REACT_V3 : F === FALL_L4 ? FALL_L4_V2 : F.forward ? F : withForwardFall(F);
+      parts.push(`fwd on${want === F ? ' (registered)' : ''}`);
+      out = { ...out, fallResponse: want };
+    }
+  }
   // contact motion M4: the reaction bounds an L3 or HC hip by its hard stops alone (the ragdoll has no hip envelope), so a
   // view without them (hips=off, the view before the visible flip) is limp, as every fall was then
-  if ((out.fallResponse === FALL_REACT_V1 || out.fallResponse === FALL_REACT_V2) && out.ragdoll && !out.ragdoll.hipStops && !out.ragdoll.envelope?.hip) {
+  if ((out.fallResponse === FALL_REACT_V1 || out.fallResponse === FALL_REACT_V2 || out.fallResponse === FALL_REACT_V3) && out.ragdoll && !out.ragdoll.hipStops && !out.ragdoll.envelope?.hip) {
     parts.push('fall off (no hip stops)');
     const { fallResponse, ...rest } = out;
     void fallResponse;

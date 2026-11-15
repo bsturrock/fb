@@ -8,7 +8,7 @@ import { readdirSync } from 'node:fs';
 import type { FixtureDef } from '../src/sim/fixture';
 import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, runSim, WRAP_V6_PRE_V10 } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
-import { ARM_G2, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withHipStops } from '../src/sim/profiles';
+import { ARM_G2, FALL_L4, FALL_L4_V2, FALL_REACT_V2, FALL_REACT_V3, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withForwardFall, withHipStops } from '../src/sim/profiles';
 import { WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
 
 const exportOf = (s: Simulation): string => JSON.stringify({ fixture: s.exportFixture(), summary: s.summary(), events: s.events, trace: s.trace });
@@ -154,6 +154,7 @@ describe('asCaptured: a capture\'s definition out of the flip chain', () => {
     if (/~wrapv11/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V11 }) };
     if (/~wrapv12auto/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V12_AUTO }) };
     if (/~wrapv12/.test(file)) return { as: (d) => ({ ...d, wrap: WRAP_V12 }) };
+    if (/~fwd/.test(file)) return { as: (d) => (d.fallResponse ? { ...d, fallResponse: d.fallResponse === FALL_REACT_V2 ? FALL_REACT_V3 : d.fallResponse === FALL_L4 ? FALL_L4_V2 : withForwardFall(d.fallResponse) } : d) };
     return {};
   };
 

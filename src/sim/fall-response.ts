@@ -121,6 +121,8 @@ export interface FallEpisode {
   exhausted: boolean;
   done: boolean;
   stats: FallStats;
+  /** Polish 4 (`forward`): decided at the switch, a forward fall runs the forward body plan (absent: no plan). */
+  forward?: boolean;
 }
 
 export interface FallHost {
@@ -231,6 +233,7 @@ export class FallResponse {
       coreDown: false,
       exhausted: false,
       done: false,
+      ...(this.P.forward ? { forward: this.fallsForward(rag) } : {}),
       stats: { positiveWorkJ: 0, negativeWorkJ: 0, peakPositiveW: 0, peakPredictedW: 0, peakNm: { shoulder: 0, elbow: 0, hip: 0, knee: 0 }, taskChanges: 0, overPowerSubsteps: 0, overWork: false, impactPowerSubsteps: 0, peakImpactW: 0, heldSubsteps: 0, heldBodySubsteps: 0, activeSubsteps: 0, lastEffortS: 0 },
     };
     for (const side of SIDES) {
@@ -250,8 +253,30 @@ export class FallResponse {
       role,
       tasks: { left: ep.arms.left.task, right: ep.arms.right.task },
       kneeDeg: { left: round(hinge.leftKnee, 2), right: round(hinge.rightKnee, 2) },
+      ...(ep.forward !== undefined ? { forward: ep.forward } : {}),
     });
     return ep;
+  }
+
+  /**
+   * Polish 4 (`forward`): the trunk's lean (its up axis off vertical), carried the plan's horizon ahead on the core's
+   * angular velocity, is at least the plan's lean and toward the chest's front half, and the way he goes over (that
+   * lean's horizontal direction plus the core's horizontal velocity over the plan's reference speed) is within the
+   * plan's cone of the chest's front. A runner struck from the side tips well off his front but goes over the way he runs.
+   */
+  private fallsForward(rag: Ragdoll): boolean {
+    const F = this.P.forward!;
+    const q = rag.bodies.core.rotation();
+    const up = qRot(q, v3(0, 1, 0));
+    const ahead = addScaled(up, cross(vc(rag.bodies.core.angvel()), up), F.horizonS);
+    const lean = horiz(ahead);
+    const front = horiz(qRot(q, v3(0, 0, 1)));
+    if (len(lean) < Math.sin(rad(F.minLeanDeg)) * len(ahead) || len(front) < 1e-6) return false;
+    const leanDir = norm(lean, v3());
+    const frontDir = norm(front, v3());
+    if (dot(leanDir, frontDir) <= 0) return false;
+    const over = addScaled(leanDir, horiz(vc(rag.bodies.core.linvel())), 1 / F.speedRefMPerS);
+    return dot(norm(over, leanDir), frontDir) >= Math.cos(rad(F.coneDeg));
   }
 
   /** The effort window at `tS` after the switch: the onset (the profile's, or `onset`), then the profile's fade. */
@@ -312,7 +337,7 @@ export class FallResponse {
       }
       // contact motion M4 (`brace.load`): a landed brace bears load while its palm or forearm is on the floor, and lets go
       // once neither has been for the release time
-      const load = this.P.brace.load;
+      const load = this.loadOf(ep);
       if (load && a.task === 'brace' && a.brace === 'contact') {
         if (onFloor[side]) a.loadedAtS = this.host.t;
         else if (this.host.t - a.loadedAtS! > load.releaseS + 1e-9) {
@@ -370,8 +395,9 @@ export class FallResponse {
     const eHold = onset ? this.effortAt(tS, onset) : e;
     if (e <= 0 && eHold <= 0) return;
     if (e > 0) {
-      if (this.P.enable.knee) for (const side of SIDES) this.kneeCmd(ep, side, tS, e);
-      if (this.P.enable.hip) for (const side of SIDES) this.hipCmd(ep, side, tS, e);
+      const fwd = ep.forward && this.P.forward;
+      if (this.P.enable.knee) for (const side of SIDES) fwd ? this.kneeLayoutCmd(ep, side, tS, e) : this.kneeCmd(ep, side, tS, e);
+      if (this.P.enable.hip) for (const side of SIDES) fwd ? this.hipLayoutCmd(ep, side, tS, e) : this.hipCmd(ep, side, tS, e);
     }
     if (this.P.enable.arms)
       for (const side of SIDES) {
@@ -491,6 +517,55 @@ export class FallResponse {
     ep.cmds.push({ joint: j, torque: clampLen(t, capNm), requestedNm: len(t), capNm, wPre: w, inertia: this.inertia(ep, `${side}Thigh`, ep.rag.profile.lengths.thigh) });
   }
 
+  /** The landed brace's load bearing: a forward fall's is the plan's (damping only, at its scale), any other the profile's. */
+  private loadOf(ep: FallEpisode): { dampScale: number; releaseS: number } | undefined {
+    const F = ep.forward ? this.P.forward : undefined;
+    return F ? { dampScale: F.brace.dampScale, releaseS: F.brace.releaseS } : this.P.brace.load;
+  }
+
+  /**
+   * Polish 4 (`forward`): one knee of a forward fall, toward the plan's slight bend over the hip's ramp, both ways (an
+   * extensor and a flexor), under the knee ceiling, never past the knee's stop.
+   */
+  private kneeLayoutCmd(ep: FallEpisode, side: ArmSide, tS: number, e: number): void {
+    const P = this.P;
+    const F = P.forward!;
+    const j = this.joint(ep, `${side}Knee`);
+    const th0 = ep.knee0[side];
+    const target = clampToKneeStop(th0 + (rad(F.knee.bendDeg) - th0) * smooth((tS - F.hip.delayS) / F.hip.rampS), ep.rag.kneeStops?.find((k) => k.jointId === j.id));
+    const theta = rad(hingeAngles(ep.rag)[j.id]);
+    const rate = dot(relativeOmega(ep.rag, j), hingeAxisWorld(ep.rag, j));
+    const G = P.gains.knee;
+    this.hingeCmd(ep, j, G.kp * (target - theta) - G.kd * rate, P.ceilingsNm.knee * e, this.inertia(ep, `${side}Shin`, ep.rag.profile.lengths.shin));
+  }
+
+  /**
+   * Polish 4 (`forward`): one hip of a forward fall, toward the plan's flexion (in line with the trunk) from the accepted
+   * flexion, keeping the accepted spread, both ways, under the plan's hip ceiling; once the trunk is down, at the plan's
+   * ground damping. The same envelope and hard-stop bounds as `hipCmd`.
+   */
+  private hipLayoutCmd(ep: FallEpisode, side: ArmSide, tS: number, e: number): void {
+    const P = this.P;
+    const F = P.forward!;
+    const j = this.joint(ep, `${side}Hip`);
+    const d0 = ep.hipDir0[side];
+    const sag = Math.hypot(d0.y, d0.z);
+    const flex0 = Math.atan2(d0.z, -d0.y);
+    const flex = flex0 + (rad(F.hip.flexDeg) - flex0) * smooth((tS - F.hip.delayS) / F.hip.rampS);
+    const raw = v3(d0.x, -sag * Math.cos(flex), sag * Math.sin(flex));
+    const env = ep.rag.profile.envelope?.hip;
+    let tgtCore = env ? clampDirToEnvelope(env, raw, j.sideSign ?? 1, 0) : raw;
+    const stop = ep.rag.hipStops?.find((h) => h.jointId === j.id);
+    const HS = ep.rag.profile.hipStops;
+    if (stop && HS) tgtCore = clampDirToHipStops(tgtCore, stop.frame1, zoneStartBox(stop.nominal, HS.approach), rad(HS.driveMarginDeg));
+    const cur = limbDirWorld(ep.rag, `${side}Thigh`);
+    const G = P.gains.hip;
+    const w = relativeOmega(ep.rag, j);
+    const t = dirTorque(cur, qRot(this.coreQ(ep), tgtCore), w, G.kp, G.kd * (ep.coreDown ? F.hip.groundKdScale : 1));
+    const capNm = F.hip.ceilingNm * e;
+    ep.cmds.push({ joint: j, torque: clampLen(t, capNm), requestedNm: len(t), capNm, wPre: w, inertia: this.inertia(ep, `${side}Thigh`, ep.rag.profile.lengths.thigh) });
+  }
+
   private armCmds(ep: FallEpisode, a: ArmState, e: number, arms: ArmSystem | null): void {
     if (a.task === 'passive') return;
     const P = this.P;
@@ -511,7 +586,9 @@ export class FallResponse {
     const w = relativeOmega(ep.rag, shoulder);
     const GS = P.gains.shoulder;
     // contact motion M4 (`brace.load`): a loaded brace chases no pose, its joints only damp their motion
-    const load = a.task === 'brace' && a.brace === 'contact' ? P.brace.load : undefined;
+    const load = a.task === 'brace' && a.brace === 'contact' ? this.loadOf(ep) : undefined;
+    // polish 4 (`forward`): a forward fall's brace works under the plan's ceilings
+    const fb = a.task === 'brace' && ep.forward ? P.forward?.brace : undefined;
     let ts = load ? dirTorque(cur, cur, w, 0, GS.kd * load.dampScale, false) : dirTorque(cur, qRot(this.coreQ(ep), dirCore), w, GS.kp * gain, GS.kd * gain);
     // contact motion M3: a forearm hold carried from a clamp presses its forearm, at the clamp's parameter, into the
     // patch it held, as the clamp's closing force did: the force's joint torques (r x F at the shoulder and the elbow)
@@ -524,7 +601,7 @@ export class FallResponse {
       ts = add(ts, cross(sub(p, landmarkWorld(ep.rag, `${a.side}Shoulder`)), F));
       pressElbow = dot(cross(sub(p, eW), F), hingeAxisWorld(ep.rag, elbow));
     }
-    const capS = P.ceilingsNm.shoulder * e;
+    const capS = (fb?.shoulderNm ?? P.ceilingsNm.shoulder) * e;
     const L = ep.rag.profile.lengths;
     ep.cmds.push({ joint: shoulder, torque: clampLen(ts, capS), requestedNm: len(ts), capNm: capS, wPre: w, inertia: this.inertia(ep, `${a.side}UpperArm`, L.upperArm), arm: a.side, task: a.task });
     const axis = hingeAxisWorld(ep.rag, elbow);
@@ -532,7 +609,7 @@ export class FallResponse {
     const GE = P.gains.elbow;
     const theta = rad(hingeAngles(ep.rag)[elbow.id]);
     const tauE = load ? -GE.kd * load.dampScale * rate : (GE.kp * (elbowRad - theta) - GE.kd * rate) * gain + pressElbow;
-    this.hingeCmd(ep, elbow, tauE, P.ceilingsNm.elbow * e, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
+    this.hingeCmd(ep, elbow, tauE, (fb?.elbowNm ?? P.ceilingsNm.elbow) * e, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
   }
 
   /**
@@ -571,7 +648,8 @@ export class FallResponse {
     const d = Math.min(len(sub(target, sW)), reach);
     const flexRad = Math.acos(clamp((d * d - L.upperArm * L.upperArm - lower * lower) / (2 * L.upperArm * lower), -1, 1));
     const lim = rag.joints.find((j) => j.id === `${a.side}Elbow`)!.limitsRad!;
-    const elbowIK = clamp(flexRad, Math.max(lim[0], rad(B.minElbowDeg)), lim[1]);
+    const minElbowDeg = ep.forward ? this.P.forward?.brace.minElbowDeg ?? B.minElbowDeg : B.minElbowDeg;
+    const elbowIK = clamp(flexRad, Math.max(lim[0], rad(minElbowDeg)), lim[1]);
     a.targetDirCore = rotateToward(a.targetDirCore, dirIK, B.maxDirRateRadPerS * dt);
     const dE = elbowIK - a.targetElbowRad;
     a.targetElbowRad += clamp(dE, -B.maxElbowRateRadPerS * dt, B.maxElbowRateRadPerS * dt);
