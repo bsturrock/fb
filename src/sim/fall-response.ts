@@ -650,7 +650,9 @@ export class FallResponse {
     const theta = rad(hingeAngles(ep.rag)[elbow.id]);
     const tauE = load ? -GE.kd * load.dampScale * rate : (GE.kp * (elbowRad - theta) - GE.kd * rate) * gain + pressElbow;
     const capE = (fb?.elbowNm ?? P.ceilingsNm.elbow) * e;
-    this.hingeCmd(ep, elbow, tauE, folding ? this.concentric(capE, Math.sign(tauE) * rate) : capE, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
+    // polish 4 (`concentricRadPerS`): a forward fall's brace elbow too (not its shoulder: the reach is a fast swing of
+    // the upper arm, and at the plan's rate it would lose its ceiling before the hand is down)
+    this.hingeCmd(ep, elbow, tauE, folding || fb ? this.concentric(capE, Math.sign(tauE) * rate) : capE, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
   }
 
   /**

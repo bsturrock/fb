@@ -1513,10 +1513,12 @@ export interface FallResponseProfile {
  * the upper arm `carry.flexDeg` forward of the trunk's down axis and `carry.outDeg` out, the elbow at `carry.elbowDeg`,
  * the forearm up in front of the chest, so forearm and chest meet the ground together; it turns there at the brace's
  * rates, and once its forearm or palm is on the floor it only damps, as the landed brace does.
- * `concentricRadPerS` (absent: the ceilings whole): the plan's own drives (hips, knees, the folding carry arm) give their
- * ceiling up as the joint already turns the way they push, linearly to none at this rate, and keep it whole against the
- * joint's motion (a muscle's force falls with its shortening speed and holds lengthening), so a drive that already
- * moves its limb fast does not spend the whole power cap on it, with nothing left for what contact adds in the solve.
+ * `concentricRadPerS` (absent: the ceilings whole): the plan's own drives (hips, knees, the folding carry arm, the
+ * brace's elbow) give their ceiling up as the joint already turns the way they push, linearly to none at this rate, and
+ * keep it whole against the joint's motion (a muscle's force falls with its shortening speed and holds lengthening), so
+ * a drive that already moves its limb fast does not spend the whole power cap on it, with nothing left for what contact
+ * adds in the solve. Not the brace's shoulder: the reach is a fast swing of the upper arm, and at this rate it loses its
+ * ceiling before the hand is down (the hit runner then turns over his arm again, L3-F4-twoArm).
  */
 export interface ForwardFallPlan {
   horizonS: number;

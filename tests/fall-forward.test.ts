@@ -162,3 +162,30 @@ describe('polish 4 forward fall: the lay-out respects the power cap (L4-F9-defen
     expect(fault.overPowerSubsteps).toBeGreaterThan(0);
   });
 });
+
+// L3-F9-noProbe-prep (p17 flip, the same in both orders; captured before D's switch at 1.05 s, so the reach runs under
+// the code at hand): with the brace elbow exempt from the rate-aware ceiling, at 1.358 s his free arm's brace shoulder,
+// under the plan's 60 N m and already turning the way it drives at 8.6 rad/s, is planned at 135 W and an impact in the
+// solve carries it to 160 W against the audit's 157.5. With the brace's elbow giving its ceiling up with its speed, as
+// the lay-out's hips and knees do, the reach is gentler, the shoulder no longer meets the impact turning hard, and the
+// run stays under the cap (the shoulder keeps its ceiling: under the rule it loses the reach, profiles.ts
+// ForwardFallPlan). Fault twin: the brace elbow exempted in fall-response.ts armCmds (one over substep, checked when this
+// landed); the plan without `concentricRadPerS` moves the trajectory and is no twin here.
+describe('polish 4 forward fall: the brace respects the power cap (L3-F9-noProbe-prep, from 1.033 s)', () => {
+  const CAP = 'tests/data/state/L3-F9-noProbe-prep~fwd@62.json.gz';
+  it('with the brace elbow under the rate-aware ceiling no substep passes the power cap', async () => {
+    const cap = loadState(CAP);
+    const def = asCaptured(cap, (d) => ({ ...d, fallResponse: FALL_REACT_V3 }));
+    const look = async (F: FallResponseProfile) => {
+      const sim = await resumeState(cap, { def: { ...def, fallResponse: F } });
+      sim.runToEnd();
+      expect(sim.players.find((p) => p.id === 'D')!.fall?.forward).toBe(true);
+      const stats = { ...sim.players.find((p) => p.id === 'D')!.fall!.stats };
+      sim.dispose();
+      return stats;
+    };
+    const plan = await look(FALL_REACT_V3);
+    expect(plan.overPowerSubsteps).toBe(0);
+    expect(plan.overWork).toBe(false);
+  });
+});
