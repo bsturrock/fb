@@ -346,6 +346,8 @@ export class FallResponse {
         }
         continue;
       }
+      // polish 4 (`forward`, `carry`): a carry arm folded at speed gives once its forearm or palm is on the floor
+      if (a.task === 'protect' && onFloor[side] && a.loadedAtS === null && this.carryFold(ep) > 0) a.loadedAtS = this.host.t;
       if (a.task !== 'brace' || a.brace !== 'seek') continue;
       const part = onFloor[side];
       if (part) {
@@ -517,6 +519,12 @@ export class FallResponse {
     ep.cmds.push({ joint: j, torque: clampLen(t, capNm), requestedNm: len(t), capNm, wPre: w, inertia: this.inertia(ep, `${side}Thigh`, ep.rag.profile.lengths.thigh) });
   }
 
+  /** Polish 4 (`forward`, `carry`): how far (0..1) a forward fall's carry arm folds in, by the core's horizontal speed. */
+  private carryFold(ep: FallEpisode): number {
+    const C = ep.forward ? this.P.forward?.carry : undefined;
+    return C ? smooth((len(horiz(vc(ep.rag.bodies.core.linvel()))) - C.fromMPerS) / (C.toMPerS - C.fromMPerS)) : 0;
+  }
+
   /** The landed brace's load bearing: a forward fall's is the plan's (damping only, at its scale), any other the profile's. */
   private loadOf(ep: FallEpisode): { dampScale: number; releaseS: number } | undefined {
     const F = ep.forward ? this.P.forward : undefined;
@@ -536,7 +544,17 @@ export class FallResponse {
     const theta = rad(hingeAngles(ep.rag)[j.id]);
     const rate = dot(relativeOmega(ep.rag, j), hingeAxisWorld(ep.rag, j));
     const G = P.gains.knee;
-    this.hingeCmd(ep, j, G.kp * (target - theta) - G.kd * rate, P.ceilingsNm.knee * e, this.inertia(ep, `${side}Shin`, ep.rag.profile.lengths.shin));
+    const tau = G.kp * (target - theta) - G.kd * rate;
+    this.hingeCmd(ep, j, tau, this.concentric(P.ceilingsNm.knee * e, Math.sign(tau) * rate), this.inertia(ep, `${side}Shin`, ep.rag.profile.lengths.shin));
+  }
+
+  /**
+   * Polish 4 (`forward`, `concentricRadPerS`): a drive of the plan gives its ceiling up as the joint already turns the way
+   * it pushes (`alongRadPerS`, positive), none left at the plan's rate; whole when the joint turns against it.
+   */
+  private concentric(capNm: number, alongRadPerS: number): number {
+    const R = this.P.forward?.concentricRadPerS;
+    return R && alongRadPerS > 0 ? capNm * Math.max(0, 1 - alongRadPerS / R) : capNm;
   }
 
   /**
@@ -562,7 +580,7 @@ export class FallResponse {
     const G = P.gains.hip;
     const w = relativeOmega(ep.rag, j);
     const t = dirTorque(cur, qRot(this.coreQ(ep), tgtCore), w, G.kp, G.kd * (ep.coreDown ? F.hip.groundKdScale : 1));
-    const capNm = F.hip.ceilingNm * e;
+    const capNm = this.concentric(F.hip.ceilingNm * e, len(t) > 1e-9 ? dot(w, t) / len(t) : 0);
     ep.cmds.push({ joint: j, torque: clampLen(t, capNm), requestedNm: len(t), capNm, wPre: w, inertia: this.inertia(ep, `${side}Thigh`, ep.rag.profile.lengths.thigh) });
   }
 
@@ -574,8 +592,28 @@ export class FallResponse {
     let dirCore = a.refDirCore;
     let elbowRad = a.refElbowRad;
     let gain = 1;
+    // polish 4 (`forward`, `carry`): the folding carry arm drives under the plan's rate-aware ceilings
+    const folding = a.task === 'protect' && this.carryFold(ep) > 0;
     if (a.task === 'hold') gain = P.arms.holdScale;
-    else if (a.task === 'brace') {
+    else if (a.task === 'protect') {
+      // polish 4 (`forward`, `carry`): going down forward at speed, the ball arm folds in to the chest instead of holding
+      // the ball out where it was at the switch (held out, its forearm lands first and he vaults over it)
+      const C = P.forward?.carry;
+      const b = this.carryFold(ep);
+      if (C && b > 0) {
+        const sideSign = shoulder.sideSign ?? 1;
+        const fl = rad(C.flexDeg);
+        const out = rad(C.outDeg);
+        const fold = clampDirToEnvelope(this.envelope(ep, 'shoulder'), v3(sideSign * Math.sin(out), -Math.cos(fl) * Math.cos(out), Math.sin(fl) * Math.cos(out)), sideSign, rad(P.brace.envelopeMarginDeg));
+        const lim = elbow.limitsRad!;
+        const want = rotateToward(a.refDirCore, fold, b * Math.acos(clamp(dot(a.refDirCore, fold), -1, 1)));
+        a.targetDirCore = rotateToward(a.targetDirCore, want, P.brace.maxDirRateRadPerS * this.host.dt);
+        const eWant = a.refElbowRad + (clamp(rad(C.elbowDeg), lim[0], lim[1]) - a.refElbowRad) * b;
+        a.targetElbowRad += clamp(eWant - a.targetElbowRad, -P.brace.maxElbowRateRadPerS * this.host.dt, P.brace.maxElbowRateRadPerS * this.host.dt);
+        dirCore = a.targetDirCore;
+        elbowRad = a.targetElbowRad;
+      }
+    } else if (a.task === 'brace') {
       if (a.brace === 'seek') {
         this.braceTarget(ep, a, shoulder);
         dirCore = a.targetDirCore;
@@ -585,8 +623,9 @@ export class FallResponse {
     const cur = limbDirWorld(ep.rag, `${a.side}UpperArm`);
     const w = relativeOmega(ep.rag, shoulder);
     const GS = P.gains.shoulder;
-    // contact motion M4 (`brace.load`): a loaded brace chases no pose, its joints only damp their motion
-    const load = a.task === 'brace' && a.brace === 'contact' ? this.loadOf(ep) : undefined;
+    // contact motion M4 (`brace.load`): a loaded brace chases no pose, its joints only damp their motion; polish 4
+    // (`carry`): nor does a folded carry arm once landed
+    const load = a.task === 'brace' && a.brace === 'contact' ? this.loadOf(ep) : a.task === 'protect' && a.loadedAtS !== null ? this.loadOf(ep) : undefined;
     // polish 4 (`forward`): a forward fall's brace works under the plan's ceilings
     const fb = a.task === 'brace' && ep.forward ? P.forward?.brace : undefined;
     let ts = load ? dirTorque(cur, cur, w, 0, GS.kd * load.dampScale, false) : dirTorque(cur, qRot(this.coreQ(ep), dirCore), w, GS.kp * gain, GS.kd * gain);
@@ -601,7 +640,8 @@ export class FallResponse {
       ts = add(ts, cross(sub(p, landmarkWorld(ep.rag, `${a.side}Shoulder`)), F));
       pressElbow = dot(cross(sub(p, eW), F), hingeAxisWorld(ep.rag, elbow));
     }
-    const capS = (fb?.shoulderNm ?? P.ceilingsNm.shoulder) * e;
+    const capS0 = (fb?.shoulderNm ?? P.ceilingsNm.shoulder) * e;
+    const capS = folding ? this.concentric(capS0, len(ts) > 1e-9 ? dot(w, ts) / len(ts) : 0) : capS0;
     const L = ep.rag.profile.lengths;
     ep.cmds.push({ joint: shoulder, torque: clampLen(ts, capS), requestedNm: len(ts), capNm: capS, wPre: w, inertia: this.inertia(ep, `${a.side}UpperArm`, L.upperArm), arm: a.side, task: a.task });
     const axis = hingeAxisWorld(ep.rag, elbow);
@@ -609,7 +649,8 @@ export class FallResponse {
     const GE = P.gains.elbow;
     const theta = rad(hingeAngles(ep.rag)[elbow.id]);
     const tauE = load ? -GE.kd * load.dampScale * rate : (GE.kp * (elbowRad - theta) - GE.kd * rate) * gain + pressElbow;
-    this.hingeCmd(ep, elbow, tauE, (fb?.elbowNm ?? P.ceilingsNm.elbow) * e, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
+    const capE = (fb?.elbowNm ?? P.ceilingsNm.elbow) * e;
+    this.hingeCmd(ep, elbow, tauE, folding ? this.concentric(capE, Math.sign(tauE) * rate) : capE, this.inertia(ep, `${a.side}Forearm`, L.forearm), a.side, a.task);
   }
 
   /**

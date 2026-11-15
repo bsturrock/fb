@@ -1507,6 +1507,16 @@ export interface FallResponseProfile {
  * brace keeps `brace.minElbowDeg` of elbow bend while it seeks, its shoulder and elbow work under `brace.shoulderNm` and
  * `brace.elbowNm`, and once landed it only damps, at `brace.dampScale` times the gains' damping (eccentric: it gives),
  * letting go as `brace.load` does after `brace.releaseS` with neither palm nor forearm on the floor.
+ * `carry` (absent: the ball arm holds where it was at the switch): going down at speed a man does not post the ball arm out
+ * in front of him, he tucks the ball and takes it on forearm and chest. The core's horizontal speed blends the carry
+ * arm's target from its pose at the switch (at `carry.fromMPerS` or slower) to the fold (at `carry.toMPerS` or faster):
+ * the upper arm `carry.flexDeg` forward of the trunk's down axis and `carry.outDeg` out, the elbow at `carry.elbowDeg`,
+ * the forearm up in front of the chest, so forearm and chest meet the ground together; it turns there at the brace's
+ * rates, and once its forearm or palm is on the floor it only damps, as the landed brace does.
+ * `concentricRadPerS` (absent: the ceilings whole): the plan's own drives (hips, knees, the folding carry arm) give their
+ * ceiling up as the joint already turns the way they push, linearly to none at this rate, and keep it whole against the
+ * joint's motion (a muscle's force falls with its shortening speed and holds lengthening), so a drive that already
+ * moves its limb fast does not spend the whole power cap on it, with nothing left for what contact adds in the solve.
  */
 export interface ForwardFallPlan {
   horizonS: number;
@@ -1515,7 +1525,15 @@ export interface ForwardFallPlan {
   speedRefMPerS: number;
   hip: { flexDeg: number; delayS: number; rampS: number; ceilingNm: number; groundKdScale: number };
   knee: { bendDeg: number };
-  brace: { minElbowDeg: number; shoulderNm: number; elbowNm: number; dampScale: number; releaseS: number };
+  brace: {
+    minElbowDeg: number;
+    shoulderNm: number;
+    elbowNm: number;
+    dampScale: number;
+    releaseS: number;
+  };
+  carry?: { fromMPerS: number; toMPerS: number; flexDeg: number; outDeg: number; elbowDeg: number };
+  concentricRadPerS?: number;
 }
 
 /** Ladder 9f: `p` with `impactGuard.selfTrunkBody` (an own-trunk hit faster than the body speed holds the body). */
@@ -1640,6 +1658,8 @@ export const FORWARD_FALL_V1: ForwardFallPlan = {
   hip: { flexDeg: 15, delayS: 0.04, rampS: 0.3, ceilingNm: 60, groundKdScale: 2 },
   knee: { bendDeg: 15 },
   brace: { minElbowDeg: 30, shoulderNm: 60, elbowNm: 40, dampScale: 2, releaseS: 0.05 },
+  carry: { fromMPerS: 2, toMPerS: 3, flexDeg: 40, outDeg: 10, elbowDeg: 130 },
+  concentricRadPerS: 4,
 };
 
 /** Polish 4 (p17): `p` with the forward-fall body plan (`forward`), the id marked. */

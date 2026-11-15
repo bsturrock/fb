@@ -312,8 +312,20 @@ to keep stepping while wrapped. Direction is ours. In order:
    drive toward 15 deg flexion over 0.3 s both ways at 60 N m (a man's hip extension is well over 100; at 18 the legs'
    momentum wins; the 150 W / 100 J caps unchanged), damping x2 once the trunk is down, knees toward 15 deg; the free arm
    braces with 30 deg of elbow and, landed, only damps (x2) under 60/40 N m shoulder/elbow (a man's shoulder 60-90).
-   Hit runs: 6 of 10 end flat (were 0); `L3-F4-twoArm`, `L4-F10-wrap-on` still vault over the arm, head down 27-48 deg.
-   Open for the flip: 5 runs over the power cap, shoulder twist past range, rebounds (main `.scratch/p17/flat/summary.txt`).
+   The vault over the arm (`L3-F4-twoArm`, `L4-F10-wrap-on`) was the ball arm, held out where the switch found it (palm
+   0.38 m ahead of the chest): `carry` folds it in to the chest (upper arm 40 deg forward, elbow 130) from 2-3 m/s of
+   travel, giving once landed. Every hit runner travels about 4.0 m/s, so speed does not tell the vaulting runs from
+   the good ones; the free arm keeps the brace at every speed (folding it too turned `L3-F1-low` over). The plan's
+   drives give their ceiling up with the joint's speed along them (`concentricRadPerS` 4), so a fast joint does not take
+   the whole power budget before contact adds to it. Hit runs: 10 of 10 end flat (hips 0.26-0.35 m, head within 7 deg,
+   potential energy up 3-44 J after landing; at the previous step 6, 220 J on F4). Sweep of every L3/L4/HC forward
+   fall: other players better 64, unchanged 96, worse 12 (tacklers ending higher or head-up, e.g. `L4-F5-oneClamp-on`
+   rev); no new snap; the largest rebound 17 J (was 128). Who falls, to show the user: in `L4-F10-knee-on` (both
+   orders) the tackler no longer goes down (his fall at 0.69 s, after the carrier's laid-out one, does not happen).
+   Open for the flip: 5 runs newly over the power cap, peak 162 W: the forward brace's shoulder at 60 N m with no rate
+   rule (`L3-F9-noProbe-prep` both orders, `L3-F19-rear` rev: the same rule should cover it), the hold shoulder tipped
+   over by the plan's hips (`L3-F5-dragMirror` rev: 154 W without the plan), a carry elbow of a runner the plan does not
+   drive (`L3-F1-phase7`); shoulder twist past range up in 18 runs (main `.scratch/p17/fast/summary.txt`).
 5. **Whiff.** On a miss the swinging arms rotate the tackler (`L3-F19-miss`); a real tackler may reach and fall.
 
 Accepted by the user, not to be worked: crossed legs in a fall, the carrier's arms folding into his trunk on
