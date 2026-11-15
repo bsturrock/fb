@@ -4,7 +4,7 @@ import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1, LATE_LANDING_ID } from '../src/sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
-import { WRAP_V1, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
+import { WRAP_V1, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, WRAP_V13_AUTO, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import {
   BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, FALL_L4, FALL_L4_V2, FORWARD_FALL_V1, withForwardFall,
@@ -527,7 +527,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
 
   // contact motion M3: wrap=on|v3|v2|v1|off sets the fixture's wrap profile (tests/wrap-open.test.ts,
   // tests/wrap-takedown.test.ts, tests/wrap-hold.test.ts and tests/wrap-strike.test.ts have the twins that it changes the run)
-  it('wrap=on runs the wrapping defender with WRAP_V12 (the hit when asked for, on WRAP_V11), wrap=v12auto with WRAP_V12_AUTO (with the speed rule), wrap=v11 with WRAP_V11 (staying on from behind on WRAP_V10), wrap=v10 with WRAP_V10 (the drive from behind on WRAP_V9), wrap=v9 with WRAP_V9 (the fall link on WRAP_V8), wrap=v8 with WRAP_V8 (the bound-legs fall on WRAP_V7), wrap=v7 with WRAP_V7 (the ride-down on WRAP_V5), wrap=v5 with WRAP_V5 (the drive on WRAP_V4), wrap=v4 with WRAP_V4 (the strike on WRAP_V3), wrap=v3 with WRAP_V3 (the cradle, the close on touch, the committed finish and the hold carried through it), wrap=v2 with WRAP_V2 (the finish, his arms let go at it), wrap=v1 with WRAP_V1 (the cradle only); wrap=off without any; a fixture without a wrapping defender and unknown values change nothing', () => {
+  it('wrap=on runs the wrapping defender with WRAP_V12 (the hit when asked for, on WRAP_V11), wrap=v13 with WRAP_V13 (the hit\'s aim on WRAP_V12), wrap=v13auto with WRAP_V13_AUTO (with the speed rule), wrap=v12auto with WRAP_V12_AUTO (with the speed rule), wrap=v11 with WRAP_V11 (staying on from behind on WRAP_V10), wrap=v10 with WRAP_V10 (the drive from behind on WRAP_V9), wrap=v9 with WRAP_V9 (the fall link on WRAP_V8), wrap=v8 with WRAP_V8 (the bound-legs fall on WRAP_V7), wrap=v7 with WRAP_V7 (the ride-down on WRAP_V5), wrap=v5 with WRAP_V5 (the drive on WRAP_V4), wrap=v4 with WRAP_V4 (the strike on WRAP_V3), wrap=v3 with WRAP_V3 (the cradle, the close on touch, the committed finish and the hold carried through it), wrap=v2 with WRAP_V2 (the finish, his arms let go at it), wrap=v1 with WRAP_V1 (the cradle only); wrap=off without any; a fixture without a wrapping defender and unknown values change nothing', () => {
     const { wrap, ...off } = FIX('L3-F4-twoArm');
     void wrap;
     const v1: FixtureDef = { ...off, wrap: WRAP_V1 };
@@ -551,6 +551,12 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(on, new URLSearchParams('wrap=v12auto'))).toEqual({ def: auto, opts: {}, label: 'wrap v12auto' });
     expect(labRun(auto, new URLSearchParams('wrap=V12AUTO'))).toEqual({ def: auto, opts: {}, label: 'wrap v12auto (registered)' });
     expect(labRun(auto, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
+    const v13: FixtureDef = { ...off, wrap: WRAP_V13 };
+    const auto13: FixtureDef = { ...off, wrap: WRAP_V13_AUTO };
+    expect(labRun(on, new URLSearchParams('wrap=v13'))).toEqual({ def: v13, opts: {}, label: 'wrap v13' });
+    expect(labRun(v13, new URLSearchParams('wrap=V13'))).toEqual({ def: v13, opts: {}, label: 'wrap v13 (registered)' });
+    expect(labRun(v13, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });
+    expect(labRun(on, new URLSearchParams('wrap=v13auto'))).toEqual({ def: auto13, opts: {}, label: 'wrap v13auto' });
     expect(labRun(on, new URLSearchParams('wrap=v10'))).toEqual({ def: v10, opts: {}, label: 'wrap v10' });
     expect(labRun(v10, new URLSearchParams('wrap=V10'))).toEqual({ def: v10, opts: {}, label: 'wrap v10 (registered)' });
     expect(labRun(v10, new URLSearchParams('wrap=on'))).toEqual({ def: on, opts: {}, label: 'wrap on' });

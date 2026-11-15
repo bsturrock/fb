@@ -162,6 +162,12 @@ to keep stepping while wrapped. Direction is ours. In order:
    contact and rolls over his shoulders as he lands; the tackler runs on upright. Who falls: the tackler stays up in all
    ten runs, the runner still falls; every other wrap is byte-identical. Open: the head-on `L3-F19-front` (speed rule
    only) still takes the head; runner landing rebound 80 J on `L4-F10-wrap-on` (trend, `LANDING_REBOUND`).
+   **User, 2026-11-15:** he half misses: hit the runner front/side, not back/side (and the runner stays up, stepping far off
+   balance: next). **Aim flag off** (`WRAP_V13`, `&wrap=v13`, `tests/wrap-hit-aim.test.ts`, main `.scratch/p18/aim/`): his line
+   turns at his speed so the striking shoulder meets a crossing runner's core led 0.15 m along his travel, held 0.09 s out;
+   head behind (ahead it leads into the chest, 54-62%). First contact 50-59 deg off the runner's facing (V12 73-99), head 0
+   (18% `HC-F3-phase0`), runner +0.2 s 2.7-3.0 m/s along (V12 3.5-3.8), down +0.13-0.17 s at lean 26-30 before any new step
+   (V12 +0.15-0.37, a 1.9-2.3 m step at lean 18-25). Open: the tackler falls in 8/10; `HC-F3-phase0` forearm 10 cm in R 0.13 s.
 5. Then the rest of the order below: the low tackle's flip on long-approach fixtures (side offset out before the
    carrier goes down, a secure hold on the long front approach, the posed hip twist), the hand lock, a sideways
    roll with the carrier, brace amount, falls, whiff, debt.

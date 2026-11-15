@@ -104,6 +104,27 @@ export interface WrapHit {
    * `other`; each elbow toward `pole` (owner-local, x on the arm's own side).
    */
   arms: { strike: { downM: number; forwardM: number; acrossM: number }; other: { downM: number; forwardM: number; acrossM: number }; pole: Vec3 };
+  /** Polish 4, the hit's aim (absent: the head behind the carrier's travel and the strike's steer, as before): `WrapHitAim`. */
+  aim?: WrapHitAim;
+}
+
+/**
+ * Contact motion polish 4, the hit's aim (user, 2026-11-15: the tackler should hit the runner front/side, not back/side):
+ * the striking shoulder meets the carrier's front side, between his sternum and his near shoulder.
+ *  - Only on a carrier crossing the approach (his velocity across it above `WrapHit.sideMps`), decided as the strike
+ *    starts with the head's side, which stays the hit's: behind his travel. Ahead of it the pitched head, the tackler's
+ *    foremost part, leads into his chest (54 to 62 percent of the strike's impulse on the side wrap); behind it, the
+ *    shoulder on his front side, it mostly clears his near shoulder. Without crossing motion (head-on) the strike's
+ *    steer, as before (the aim there puts the shoulder on his centre line and the head on his chest: 56 percent).
+ *  - Before the bodies meet his line (the strike's steer in its place) turns so that the striking shoulder (the one
+ *    away from the head), at his speed in a straight line, meets the carrier's core moved `aheadM` along the carrier's
+ *    travel, at the carrier's present velocity: the meeting solved every decision, the turn within the steer's cap
+ *    (`WrapStrike.offsetMps` across his line, by the strike's weight). His speed is the approach's: the heading only.
+ *    Once the contact is `holdS` away the heading is held (no swerve into the contact).
+ */
+export interface WrapHitAim {
+  aheadM: number;
+  holdS: number;
 }
 
 /**
@@ -453,6 +474,10 @@ export interface WrapDebug {
   hitWrapArms?: boolean;
   /** Polish 4, the hit: the steer as a wrap's (added to his line and capped, not only turning it). */
   hitAddSteer?: boolean;
+  /** Polish 4, the hit's aim: its turn off (the strike's steer, as before the aim). */
+  hitNoAim?: boolean;
+  /** Polish 4, the hit's aim: its turn added to his line without keeping his speed (he speeds up as he turns). */
+  hitAimAdd?: boolean;
   /**
    * The balance reads the pitched trunk, as with no hinge (simulation, support-runtime): the support pivot and the loss
    * envelope in the body's frame, so the trunk's pitch tips him as whole-body lean would.
@@ -629,6 +654,19 @@ export const WRAP_V12: WrapProfile = {
 export const WRAP_V12_AUTO: WrapProfile = { ...WRAP_V12, id: 'wrap-hit-auto-v12', hit: { ...WRAP_V12.hit!, minCloseMps: 6 } };
 
 /**
+ * Contact motion polish 4, the hit's aim: WRAP_V12 whose hit on a crossing carrier meets his front side (`WrapHitAim`):
+ * the striking shoulder's line onto his core moved 0.15 m along his travel (half his torso's depth and the shoulder's
+ * radius; 0.25 m and more brings the head in on the side wrap), the heading held from 0.1 s before contact, the head
+ * behind his travel as V12's. On the five full-sprint crossing fixtures the first contact is 50 to 59 deg off the
+ * runner's facing, the tackler's upper trunk on his chest or the front of his near shoulder (V12: 73 to 99 deg, the
+ * back of it). No fixture uses it (lab `wrap=v13`).
+ */
+export const WRAP_V13: WrapProfile = { ...WRAP_V12, id: 'wrap-hit-aim-v13', hit: { ...WRAP_V12.hit!, aim: { aheadM: 0.15, holdS: 0.1 } } };
+
+/** WRAP_V13 with the speed rule of WRAP_V12_AUTO (lab `wrap=v13auto` only, no fixture uses it). */
+export const WRAP_V13_AUTO: WrapProfile = { ...WRAP_V13, id: 'wrap-hit-aim-auto-v13', hit: { ...WRAP_V13.hit!, minCloseMps: 6 } };
+
+/**
  * Contact motion polish 1.4, the low strike of the deep crouch tackle, on WRAP_V10 (the ride-down, the bound-legs fall, the
  * fall link and the drive from behind): the trunk pitched 75 deg on the hinge at his lowest stance (the hinge's drop, 0.2
  * m, takes the root to the stance floor), on 1.0 s ahead of contact (or inside 1.4 m: the hinge's unchanged rate bounds
@@ -788,6 +826,9 @@ export class WrapAttemptController implements Controller {
   /** Contact motion polish 4: the tackle's kind (set as the strike starts under a profile with `hit`), and a hit's first body contact (s). */
   declare private hk?: 'wrap' | 'hit';
   declare private hitAt?: number;
+  /** Contact motion polish 4, the hit's aim: on for this hit (decided as the strike starts), the heading asked last (world velocity; set only under a profile with it). */
+  declare private aimOn?: boolean;
+  declare private aimV?: Vec3;
 
   constructor(
     readonly spec: WrapSpec,
@@ -1077,6 +1118,8 @@ export class WrapAttemptController implements Controller {
         const across = dot(vR, side);
         const hitSide = !!HT && this.hk === 'hit' && !this.fault?.hitStrikeSide && Math.abs(across) > HT.sideMps;
         sk.head = hitSide ? -Math.sign(across) : Math.abs(vl) > SK.sideRuleMps ? behind : Math.abs(off) > 0.05 ? Math.sign(off) : 1;
+        // (the hit's aim, for a carrier crossing the approach: decided with the head's side)
+        if (HT?.aim && this.hk === 'hit') this.aimOn = hitSide;
         sk.hd = scale(side, sk.head);
       } else if (sk.on && this.connectedAt === null && !engaged && !(HT && this.hk === 'hit') && Math.abs(vl) > SK.sideRuleMps && Math.sign(dot(sk.hd, side)) !== behind) {
         sk.head = behind;
@@ -1117,7 +1160,27 @@ export class WrapAttemptController implements Controller {
           const across = horiz(sub(this.lastFacing, scale(myFwd, dot(this.lastFacing, myFwd))));
           if (len(across) > 1e-6) this.lastFacing = norm(add(scale(myFwd, Math.cos(lim)), scale(norm(across), Math.sin(lim))), myFwd);
         }
-        if (this.connectedAt === null && !standing) {
+        const AIM = HT && this.hk === 'hit' && this.aimOn && !this.fault?.hitNoAim ? HT.aim : undefined;
+        if (this.connectedAt === null && !standing && AIM) {
+          // (polish 4, the hit's aim, in the steer's place: the striking shoulder's straight line at his speed onto the
+          // carrier's core moved `aheadM` along his travel, the turn capped as the steer's and by the weight; held once
+          // the contact is `holdS` away)
+          const v0 = len(vel);
+          if (v0 > 1e-9 && (this.aimV === undefined || ttcNow > AIM.holdS)) {
+            const head = sk.head;
+            const sa = SIDES.find((s) => (Math.sign(sideSignX(this.setup.body, s)) || 1) === -head);
+            const S = horiz(sa && armsObs[sa] ? armsObs[sa]!.shoulderWorld : me.position);
+            const sp = len(vR);
+            const d = sub(add(horiz(R), sp > 1e-9 ? scale(vR, AIM.aheadM / sp) : v3()), S);
+            const tm = meetS(d, vR, v0);
+            const want = tm !== null ? scale(add(d, scale(vR, tm)), 1 / tm) : scale(norm(d, norm(vel)), v0);
+            const u = norm(vel);
+            const acr = sub(want, scale(u, dot(want, u)));
+            const nv = addScaled(vel, len(acr) > SK.offsetMps ? scale(acr, SK.offsetMps / len(acr)) : acr, w);
+            this.aimV = this.fault?.hitAimAdd ? nv : scale(nv, v0 / len(nv));
+          }
+          if (this.aimV) vel = this.fault?.hitAimAdd ? this.aimV : scale(this.aimV, v0 / Math.max(1e-9, len(this.aimV)));
+        } else if (this.connectedAt === null && !standing) {
           // steer the line so his centre (polish 1.4, the low strike: his head) passes `offsetM` to the head's side of the
           // carrier's
           const pt = this.wp?.low ? add(me.position, qRot(me.rotation, ctx.bodies[ctx.self].compound.head.center)) : me.position;
@@ -1324,6 +1387,22 @@ export function lowestY(body: BodyProfile, p: Vec3, q: { x: number; y: number; z
   let lo = Infinity;
   for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) lo = Math.min(lo, p.y + qRot(q, v3(t.center.x + sx * t.halfExtents.x, t.center.y + sy * t.halfExtents.y, t.center.z + sz * t.halfExtents.z)).y);
   return lo;
+}
+
+/**
+ * Polish 4, the hit's aim: the first time (s) at which a straight run at `v0` from the origin meets a point at `d` moving
+ * at `v` (|d + v t| = v0 t); null when it never does.
+ */
+function meetS(d: Vec3, v: Vec3, v0: number): number | null {
+  const a = dot(v, v) - v0 * v0;
+  const b = 2 * dot(d, v);
+  const c = dot(d, d);
+  if (Math.abs(a) < 1e-9) return b < -1e-9 ? -c / b : null;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return null;
+  const q = Math.sqrt(disc);
+  const ts = [(-b - q) / (2 * a), (-b + q) / (2 * a)].filter((t) => t > 1e-6);
+  return ts.length > 0 ? Math.min(...ts) : null;
 }
 
 function stripUndef<T extends object>(o: T): Partial<T> {

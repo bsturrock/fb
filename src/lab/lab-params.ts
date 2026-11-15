@@ -44,7 +44,10 @@
 //                      rule profile's `balancedClear`), or on supported control alone. Registered on the L3, L4 and HC
 //                      football rules: `balclear=off` is the view before. A fixture without football rules is run as it
 //                      is;
-//   wrap=on|v12auto|v12|v11|v10|v9|v8|v7|v6|v5|v4|v3|v2|v1|off  the wrapping defender (contact motion M3). on (or v12):
+//   wrap=on|v13|v13auto|v12auto|v12|v11|v10|v9|v8|v7|v6|v5|v4|v3|v2|v1|off  the wrapping defender (contact motion M3).
+//                      v13: WRAP_V13, the hit's aim (polish 4, no fixture uses it: a hit on a crossing carrier meets his
+//                      front side, the striking shoulder's line led 0.15 m ahead of his core along his travel) on WRAP_V12;
+//                      v13auto: WRAP_V13_AUTO, the same with the speed rule (lab only); on (or v12):
 //                      WRAP_V12, the hit (polish 4: a tackle asked for as a hit, five full-sprint crossing fixtures, is a
 //                      shoulder hit, the head behind the carrier's travel, the arms tucked, no wrap; any other a wrap as
 //                      under V11) on WRAP_V11; v12auto: WRAP_V12_AUTO (no fixture uses it: also a tackle not asked for
@@ -101,7 +104,7 @@ import {
 } from '../sim/profiles';
 import { HOLD_STILL_V1, withHoldStill, withLateLanding, withoutHoldStill, withoutLateLanding } from '../sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
-import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO } from '../sim/controllers/wrap';
+import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, WRAP_V13_AUTO } from '../sim/controllers/wrap';
 import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, withForwardFall } from '../sim/profiles';
 import type { SimOptions } from '../sim/simulation';
 
@@ -120,7 +123,7 @@ const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
-const WRAP = ['on', 'v12auto', 'v12', 'v11', 'v10', 'v9', 'v8', 'v7', 'v6', 'v5', 'v4', 'v3', 'v2', 'v1', 'off'];
+const WRAP = ['on', 'v13', 'v13auto', 'v12auto', 'v12', 'v11', 'v10', 'v9', 'v8', 'v7', 'v6', 'v5', 'v4', 'v3', 'v2', 'v1', 'off'];
 const FALL = ['on', 'v2', 'v1', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
@@ -320,7 +323,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     if (!WRAP.includes(v)) parts.push(`wrap=${wrap} ignored`);
     else if (!out.players.some((p) => p.controller.kind === 'wrapAttempt')) parts.push('wrap n/a (no wrapping defender)');
     else {
-      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : v === 'v2' ? WRAP_V2 : v === 'v3' ? WRAP_V3 : v === 'v4' ? WRAP_V4 : v === 'v5' ? WRAP_V5 : v === 'v6' ? WRAP_V6 : v === 'v7' ? WRAP_V7 : v === 'v8' ? WRAP_V8 : v === 'v9' ? WRAP_V9 : v === 'v10' ? WRAP_V10 : v === 'v11' ? WRAP_V11 : v === 'v12auto' ? WRAP_V12_AUTO : WRAP_V12;
+      const want = v === 'off' ? undefined : v === 'v1' ? WRAP_V1 : v === 'v2' ? WRAP_V2 : v === 'v3' ? WRAP_V3 : v === 'v4' ? WRAP_V4 : v === 'v5' ? WRAP_V5 : v === 'v6' ? WRAP_V6 : v === 'v7' ? WRAP_V7 : v === 'v8' ? WRAP_V8 : v === 'v9' ? WRAP_V9 : v === 'v10' ? WRAP_V10 : v === 'v11' ? WRAP_V11 : v === 'v12auto' ? WRAP_V12_AUTO : v === 'v13' ? WRAP_V13 : v === 'v13auto' ? WRAP_V13_AUTO : WRAP_V12;
       const w = want && out.wrap?.id === want.id ? out.wrap : want;
       parts.push(`wrap ${v}${w === out.wrap ? ' (registered)' : ''}`);
       if (w !== out.wrap) {
