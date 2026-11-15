@@ -667,14 +667,15 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(g, new URLSearchParams('wrap=v5'))).toEqual({ def: g, opts: {}, label: 'wrap n/a (no wrapping defender)' });
   });
 
-  // contact motion M4: fall=on|v1|off registers FALL_REACT_V2 (since the palm-load flip) or FALL_REACT_V1 on an L3 or HC
-  // fixture, or removes it (tests/fall-react.test.ts has the twins that it changes the run)
-  it('fall=on runs an L3 or HC fixture with FALL_REACT_V2 (every falling player reacts, a landed palm bears load), fall=v1 with FALL_REACT_V1 (before the palm-load flip), fall=off without either (limp); without the hip stops (hips=off) it is off; an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
+  // contact motion M4: fall=on|v2|v1|off registers FALL_REACT_V3 (since the forward-fall flip), FALL_REACT_V2 or
+  // FALL_REACT_V1 on an L3 or HC fixture, or removes it (tests/fall-react.test.ts has the twins that it changes the run)
+  it('fall=on runs an L3 or HC fixture with FALL_REACT_V3 (every falling player reacts, a landed palm bears load, a forward fall lays out), fall=v2 with FALL_REACT_V2 (before the forward-fall flip), fall=v1 with FALL_REACT_V1 (before the palm-load flip), fall=off without either (limp); without the hip stops (hips=off) it is off; an L4 fixture, a fixture without a ragdoll and unknown values change nothing', () => {
     const { fallResponse, ...off } = FIX('L3-F19-front');
     void fallResponse;
-    const on: FixtureDef = { ...off, fallResponse: FALL_REACT_V2 };
+    const on: FixtureDef = { ...off, fallResponse: FALL_REACT_V3 };
     const v1: FixtureDef = { ...off, fallResponse: FALL_REACT_V1 };
-    expect(FIX('L3-F19-front').fallResponse).toBe(FALL_REACT_V2);
+    const v2: FixtureDef = { ...off, fallResponse: FALL_REACT_V2 };
+    expect(FIX('L3-F19-front').fallResponse).toBe(FALL_REACT_V3);
     expect(labRun(off, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on' });
     expect(labRun(on, new URLSearchParams('fall=on'))).toEqual({ def: on, opts: {}, label: 'fall on (registered)' });
     const back = labRun(on, new URLSearchParams('fall=OFF'));
@@ -684,8 +685,10 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(on, new URLSearchParams('fall=v1'))).toEqual({ def: v1, opts: {}, label: 'fall v1' });
     expect(labRun(off, new URLSearchParams('fall=V1'))).toEqual({ def: v1, opts: {}, label: 'fall v1' });
     expect(labRun(v1, new URLSearchParams('fall=v1'))).toEqual({ def: v1, opts: {}, label: 'fall v1 (registered)' });
+    expect(labRun(on, new URLSearchParams('fall=V2'))).toEqual({ def: v2, opts: {}, label: 'fall v2' });
+    expect(labRun(v2, new URLSearchParams('fall=v2'))).toEqual({ def: v2, opts: {}, label: 'fall v2 (registered)' });
     const hc = FIX('HC-F3-lowRunner');
-    expect(hc.fallResponse).toBe(FALL_REACT_V2);
+    expect(hc.fallResponse).toBe(FALL_REACT_V3);
     expect(labRun(hc, new URLSearchParams('fall=v1')).def.fallResponse).toBe(FALL_REACT_V1);
     for (const id of ['L4-F2-back-on', 'L4-F2-back-off']) {
       const l4 = FIX(id);
@@ -696,7 +699,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((d) => d.id.startsWith('G'))!;
     expect(labRun(g, new URLSearchParams('fall=on'))).toEqual({ def: g, opts: {}, label: 'fall n/a (not an L3 or HC fixture)' });
     expect(labRun(off, new URLSearchParams('fall=maybe'))).toEqual({ def: off, opts: {}, label: 'fall=maybe ignored' });
-    expect(labRun(off, new URLSearchParams('fall=v2'))).toEqual({ def: off, opts: {}, label: 'fall=v2 ignored' });
+    expect(labRun(off, new URLSearchParams('fall=v3'))).toEqual({ def: off, opts: {}, label: 'fall=v3 ignored' });
     // the response bounds an L3 or HC hip by its hard stops: a view without them is limp, named last
     const noStops = labRun(on, new URLSearchParams('hips=off&fall=on'));
     expect(noStops.label).toBe('hip stops off · fall on (registered) · fall off (no hip stops)');
@@ -707,22 +710,28 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect('fallResponse' in noStopsV1.def).toBe(false);
   });
 
-  // polish 4 (p17): fwd=on puts the forward-fall body plan on the fixture's own fall response (tests/fall-forward.test.ts
-  // has the twins that it changes the run)
-  it('fwd=on runs FALL_REACT_V3 for FALL_REACT_V2, FALL_L4_V2 for FALL_L4 and the plan on any other response; a fixture without a fall response and unknown values change nothing', () => {
+  // polish 4 (p17): fwd=on|off puts the forward-fall body plan on the fixture's own fall response or takes it off (the view
+  // before the forward-fall flip; tests/fall-forward.test.ts has the twins that it changes the run)
+  it('fwd=off runs FALL_REACT_V2 for the registered FALL_REACT_V3 and FALL_L4 for FALL_L4_V2, fwd=on the plan on any response; a fixture without a fall response and unknown values change nothing', () => {
     const l3 = FIX('L3-F4-twoArm');
-    expect(l3.fallResponse).toBe(FALL_REACT_V2);
-    expect(labRun(l3, new URLSearchParams('fwd=on'))).toEqual({ def: { ...l3, fallResponse: FALL_REACT_V3 }, opts: {}, label: 'fwd on' });
-    const v3: FixtureDef = { ...l3, fallResponse: FALL_REACT_V3 };
-    expect(labRun(v3, new URLSearchParams('fwd=ON'))).toEqual({ def: v3, opts: {}, label: 'fwd on (registered)' });
+    expect(l3.fallResponse).toBe(FALL_REACT_V3);
+    const v2: FixtureDef = { ...l3, fallResponse: FALL_REACT_V2 };
+    expect(labRun(l3, new URLSearchParams('fwd=off'))).toEqual({ def: v2, opts: {}, label: 'fwd off' });
+    expect(labRun(l3, new URLSearchParams('fwd=ON'))).toEqual({ def: l3, opts: {}, label: 'fwd on (registered)' });
+    expect(labRun(v2, new URLSearchParams('fwd=on'))).toEqual({ def: l3, opts: {}, label: 'fwd on' });
+    expect(labRun(v2, new URLSearchParams('fwd=off'))).toEqual({ def: v2, opts: {}, label: 'fwd off (registered)' });
     const l4 = FIX('L4-F10-wrap-on');
-    const l4fwd = labRun(l4, new URLSearchParams('fwd=on')).def.fallResponse!;
-    expect(l4fwd.forward).toBe(FORWARD_FALL_V1);
-    expect(l4.fallResponse === FALL_L4 ? l4fwd : FALL_L4_V2).toBe(FALL_L4_V2);
+    expect(l4.fallResponse).toBe(FALL_L4_V2);
+    expect(labRun(l4, new URLSearchParams('fwd=off')).def.fallResponse).toBe(FALL_L4);
+    expect(labRun({ ...l4, fallResponse: FALL_L4 }, new URLSearchParams('fwd=on')).def.fallResponse).toBe(FALL_L4_V2);
     expect(labRun(l3, new URLSearchParams('fall=v1&fwd=on')).def.fallResponse).toEqual(withForwardFall(FALL_REACT_V1));
+    const other = labRun({ ...l3, fallResponse: withForwardFall(FALL_REACT_V1) }, new URLSearchParams('fwd=off')).def.fallResponse!;
+    expect(other.forward).toBeUndefined();
+    expect(other.brace).toEqual(FALL_REACT_V1.brace);
+    expect(FORWARD_FALL_V1).toBe(FALL_REACT_V3.forward);
     const { fallResponse, ...bare } = l3;
     void fallResponse;
-    expect(labRun(bare, new URLSearchParams('fwd=on'))).toEqual({ def: bare, opts: {}, label: 'fwd n/a (no fall response)' });
-    expect(labRun(l3, new URLSearchParams('fwd=off'))).toEqual({ def: l3, opts: {}, label: 'fwd=off ignored' });
+    expect(labRun(bare, new URLSearchParams('fwd=off'))).toEqual({ def: bare, opts: {}, label: 'fwd n/a (no fall response)' });
+    expect(labRun(l3, new URLSearchParams('fwd=maybe'))).toEqual({ def: l3, opts: {}, label: 'fwd=maybe ignored' });
   });
 });

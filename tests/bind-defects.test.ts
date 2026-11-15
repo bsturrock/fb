@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12 } from './runs';
+import { asCaptured, create, FIX, preForwardFall, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -33,6 +33,10 @@ describe('contact motion polish 1.4, the bound-legs fall: tracked defects (rule 
   // from the start it peaks at 30 deg past and never beyond. Captured at 1.800 s, the clock still running; twin, the
   // bind off (WRAP_V7) from there: the same twist, 76 deg past, 0.35 s. Reached by the moved trajectory, not made or
   // worsened by the bind. The fault twin: V7 from the start, which never reaches it, fails the pin.
+  // (polish 4, the forward-fall flip: the fault twin is V7 from the start as it ran, the carrier's fall before the plan,
+  // `preForwardFall`. With the plan V7 from the start reaches the twist too, 80 deg past at 2.67 s, 0.52 s: the plan's
+  // moved trajectory reaching it. From the capture the plan does not worsen it: 64 deg past, 0.23 s, against 80 and 0.33
+  // without; the bind off with the plan 48 deg, 0.23 s. The registered run, plan on, peaks 14 deg past, under 30.)
   it('RAISED_ARM_TWIST (L3-F19-rear, from 1.800 s): the fallen carrier\'s raised ragdoll left arm twists over 60 deg past range, with the bind and without it from the same state; V7 from the start stays under 30', async () => {
     const cap = loadState('tests/data/state/L3-F19-rear@108.json.gz');
     const def = asCaptured(cap);
@@ -46,7 +50,7 @@ describe('contact motion polish 1.4, the bound-legs fall: tracked defects (rule 
     const on = await look(def);
     const off = await look(preWrapV8(def), ['wrap']);
     const pinned = (r: { peak: number; impS: number }): boolean => r.peak > 60 && r.impS > 0.1;
-    const v7Sim = await create(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(FIX('L3-F19-rear')))))));
+    const v7Sim = await create(preForwardFall(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(FIX('L3-F19-rear'))))))));
     const v7 = ragdollShoulderTwist(v7Sim);
     v7Sim.dispose();
     const said = JSON.stringify({ on, off, v7 });

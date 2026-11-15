@@ -20,7 +20,7 @@ import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, LEG_GUARD_V1, LEG_GUARD_V3, SOLVE
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, landmarkWorld, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { breathe, create, evs, FIX, nonEmpty, pace, preFlip, preV3, rows, run, runSim, stepWhile, traceDiff } from './helpers';
+import { breathe, create, evs, FIX, nonEmpty, pace, preFlip, preForwardFall, preV3, rows, run, runSim, stepWhile, traceDiff } from './helpers';
 import { loadedLimbMonitor } from './loaded-limb';
 import { JOINT_PAST_DEG, JOINT_PAST_S } from './visible-bar';
 
@@ -56,11 +56,16 @@ function watch<T>(covers: (id: string) => boolean, make: () => Observer & { data
   };
 }
 
-/** The shared run of `id` (tracked, to its end, yielding as it goes) with every observer that covers it. */
+/**
+ * The shared run of `id` (tracked, to its end, yielding as it goes) with every observer that covers it. `<id>~preFwd`
+ * is the fixture as before the forward-fall flip (`preForwardFall`: FALL_L4 where it has FALL_L4_V2), for the tests that
+ * pin FALL_L4's forward landing.
+ */
 async function observed(id: string): Promise<Simulation> {
   const os = observers.flatMap((f) => f(id) ?? []);
   const sub = os.filter((o) => o.substep);
-  const s = await create(FIX(id), sub.length ? { onSubstep: (x: Simulation) => sub.forEach((o) => o.substep!(x)) } : {});
+  const [base, tag] = id.split('~');
+  const s = await create(tag === 'preFwd' ? preForwardFall(FIX(base)) : FIX(id), sub.length ? { onSubstep: (x: Simulation) => sub.forEach((o) => o.substep!(x)) } : {});
   return runSim(s, Infinity, (x) => os.forEach((o) => o.tick?.(x)));
 }
 
@@ -555,13 +560,24 @@ describe('L4 audits on every fixture', () => {
         async () => {
           for (const d of withResponse()) {
             const s = await sim(d.id);
-            const P = d.fallResponse!;
+            const P = FIX(d.id).fallResponse!;
+            // polish 4 (the forward-fall flip): the ceiling the response declares for the joint. A forward fall's hips and
+            // bracing arm work under the plan's own (FORWARD_FALL_V1: hips 60, brace shoulder 60, elbow 40 N m, where
+            // FALL_L4 has 18, 15 and 10); every other joint and task under the profile's
+            const forward = new Set(evs(s, 'fallResponse').filter((e) => e.data.forward).map((e) => e.playerId));
+            const ceiling = (owner: string, kind: 'shoulder' | 'elbow' | 'hip' | 'knee', task: string | undefined): number => {
+              const F = forward.has(owner) ? P.forward : undefined;
+              if (F && kind === 'hip') return F.hip.ceilingNm;
+              if (F && task === 'brace' && kind === 'shoulder') return F.brace.shoulderNm;
+              if (F && task === 'brace' && kind === 'elbow') return F.brace.elbowNm;
+              return P.ceilingsNm[kind];
+            };
             for (const e of s.fall!.ledger) {
               const pl = s.players.find((p) => p.id === e.owner)!;
               expect(pl.handoff?.accepted, d.id).toBe(true);
               expect(e.t, d.id).toBeGreaterThanOrEqual(pl.handoff!.t);
               expect(e.appliedNm, `${d.id} ${e.joint}`).toBeLessThanOrEqual(e.capNm * (1 + 1e-6));
-              expect(e.capNm).toBeLessThanOrEqual(P.ceilingsNm[pl.rag!.joints.find((j) => j.id === e.joint)!.kind as 'knee'] + 1e-9);
+              expect(e.capNm, `${d.id} ${e.owner} ${e.joint} ${e.task}`).toBeLessThanOrEqual(ceiling(e.owner, pl.rag!.joints.find((j) => j.id === e.joint)!.kind as 'knee', e.task) + 1e-9);
               // plan 10c (C7): no pair-sum check: the ledger's sum was of the commanded pair (always 0). Equal and opposite
               // application is established physically by the L4-F8 zero-gravity momentum test.
               expect(e.budgetScale).toBeLessThanOrEqual(1 + 1e-9);
@@ -791,7 +807,10 @@ describe('L4-F3 carrier with a free arm', () => {
           },
         ],
       ),
-      ...['L4-F3-forward-on', 'L4-F3-run-on', 'L4-F3-model-forward-on', 'L4-F3-model-oblique-on'].map(
+      // (polish 4, the forward-fall flip: L4-F3-forward-on as before it, FALL_L4. With the plan its bent brace arrives
+      // late, a miss at 0.388 s where FALL_L4's palm landed at 0.375 s: an open finding, docs/open/contact-motion/polish.md
+      // item 4. The other three as registered, the plan on in the two model falls)
+      ...['L4-F3-forward-on~preFwd', 'L4-F3-run-on', 'L4-F3-model-forward-on', 'L4-F3-model-oblique-on'].map(
         (id): Check => [
           `${id}: reaches the floor through a real collider`,
           async () => {
@@ -812,9 +831,10 @@ describe('L4-F3 carrier with a free arm', () => {
   });
 
   // the landed arm, every tick of the forward fall: the joint count at conversion, and from the first brace contact the
-  // palm's distance from where it landed and the elbow's bend from its angle then
+  // palm's distance from where it landed and the elbow's bend from its angle then (polish 4: L4-F3-forward-on as before
+  // the forward-fall flip, whose palm lands; the plan's landed arm on L4-F3-model-forward-on)
   const landed = watch(
-    (id) => id === 'L4-F3-forward-on',
+    (id) => id === 'L4-F3-forward-on~preFwd' || id === 'L4-F3-model-forward-on',
     () => {
       const data = { joints: -1, elbow0: null as number | null, fromContact: 0, bend: 0, samples: 0 };
       return {
@@ -840,12 +860,14 @@ describe('L4-F3 carrier with a free arm', () => {
   it('the arm yields once it lands: no sticky anchor, no extra joint, the hand can still move', async () => {
     // plan 10c (C8): measured against the contact, not in the world (the forearm moves with the falling body anyway):
     // the palm leaves the point where it landed, and the elbow bends under the load
-    const s = await sim('L4-F3-forward-on');
-    const { joints, fromContact, bend, samples } = await landed('L4-F3-forward-on');
-    expect(samples).toBeGreaterThan(10);
-    expect(s.physics.world.impulseJoints.len()).toBe(joints);
-    expect(fromContact).toBeGreaterThan(0.01);
-    expect(bend).toBeGreaterThan(5);
+    for (const id of ['L4-F3-forward-on~preFwd', 'L4-F3-model-forward-on']) {
+      const s = await sim(id);
+      const { joints, fromContact, bend, samples } = await landed(id);
+      expect(samples, id).toBeGreaterThan(10);
+      expect(s.physics.world.impulseJoints.len(), id).toBe(joints);
+      expect(fromContact, id).toBeGreaterThan(0.01);
+      expect(bend, id).toBeGreaterThan(5);
+    }
   });
 
   it('the motor-off twin has no response evidence', async () => {
@@ -1468,9 +1490,11 @@ describe('L4-F10 official endings', () => {
       [
         'natural endings fall in the eligible subset, knee and elbow included',
         async () => {
-          expect(ending(await sim('L4-F10-knee-on')).evidence.region).toBe('knee');
+          // (polish 4, the forward-fall flip: the knee ending is L4-F10-knee-on's under FALL_L4, `preForwardFall`. With the
+          // plan its carrier lays out and his forearm ends it at 0.288 s, before the knee at 0.296: eligible, checked below)
+          expect(ending(await sim('L4-F10-knee-on~preFwd')).evidence.region).toBe('knee');
           expect(ending(await sim('L4-F10-elbow-off')).evidence.region).toBe('elbow');
-          for (const id of ['L4-F10-knee-off', 'L4-F10-elbow-on', 'L4-F10-wrap-on', 'L4-F10-wrap-off']) {
+          for (const id of ['L4-F10-knee-on', 'L4-F10-knee-off', 'L4-F10-elbow-on', 'L4-F10-wrap-on', 'L4-F10-wrap-off']) {
             const e = ending(await sim(id));
             expect(e.kind).toBe('groundDown');
             expect(['hand', 'wrist', 'foot', 'ankle', 'footSupport']).not.toContain(e.evidence.region);
@@ -1480,7 +1504,9 @@ describe('L4-F10 official endings', () => {
       [
         'a palm brace ends nothing: the core contact does',
         async () => {
-          const s = await sim('L4-F10-palm-on');
+          // (polish 4, the forward-fall flip: under FALL_L4, `preForwardFall`. With the plan the bent brace arrives late
+          // and misses, no palm lands, and the core still ends it, at 0.388 s: the open finding of L4-F3-forward-on)
+          const s = await sim('L4-F10-palm-on~preFwd');
           const palm = evs(s, 'braceContact').find((e) => e.data.part === 'palm')!;
           const e = ending(s);
           expect(e.kind).toBe('runnerCoreDown');
@@ -1549,7 +1575,8 @@ describe('L4-F11 settling, exhausted work, repeated disturbance', () => {
   // the review regression: absorbing commands stayed on after exhaustion, and contact turned them positive (0.91 J with
   // no work allowed, 1.55 J with 1 J)
   it('a zero or small work cap holds through contact: no torque with none, never past the cap', async () => {
-    const base = FIX('L4-F3-forward-on');
+    // (polish 4, the forward-fall flip: FALL_L4's fall, `preForwardFall`; the plan's below)
+    const base = preForwardFall(FIX('L4-F3-forward-on'));
     // (plan 12: the uncapped fall does 18.6 J, the twin 20.0 J, so 20 J no longer binds; 15 J does)
     for (const cap of [0, 0.5, 1, 2, 5, 15]) {
       const def: FixtureDef = { ...base, id: `${base.id}-cap${cap}`, fallResponse: { ...base.fallResponse!, power: { ...base.fallResponse!.power, maxPositiveWorkJ: cap } } };
@@ -1564,6 +1591,31 @@ describe('L4-F11 settling, exhausted work, repeated disturbance', () => {
       expect(evs(s, 'braceContact').length + evs(s, 'braceMiss').length, `${cap} J`).toBeGreaterThan(0);
       s.dispose();
     }
+  });
+
+  // polish 4 (the forward-fall flip): the same caps on the plan's fall (FALL_L4_V2). It does much less work (6.4 J
+  // uncapped, against FALL_L4's 16.3), so a cap binds, and the response is exhausted, exactly where it is under the
+  // uncapped fall's work; the rest as above
+  it('a zero or small work cap holds through contact under the forward-fall plan: exhausted where it binds, never past it', async () => {
+    const base = FIX('L4-F3-forward-on');
+    expect(base.fallResponse!.forward).toBeDefined();
+    const free = report(await sim('L4-F3-forward-on'), 'R').positiveWorkJ;
+    let bound = 0;
+    for (const cap of [0, 0.5, 1, 2, 5, 15]) {
+      const def: FixtureDef = { ...base, id: `${base.id}-cap${cap}`, fallResponse: { ...base.fallResponse!, power: { ...base.fallResponse!.power, maxPositiveWorkJ: cap } } };
+      const s = await run(def);
+      const r = report(s, 'R');
+      const mine = s.fall!.ledger.filter((x) => x.owner === 'R');
+      expect(r.positiveWorkJ, `${cap} J`).toBeLessThanOrEqual(cap);
+      expect(r.overPowerSubsteps, `${cap} J`).toBe(0);
+      expect(r.exhausted, `${cap} J (uncapped ${free} J)`).toBe(cap < free);
+      if (cap < free) bound++;
+      if (cap < 1) expect(mine, `${cap} J`).toEqual([]);
+      else expect(r.positiveWorkJ, `${cap} J`).toBeGreaterThan(Math.min(cap, free) / 3);
+      expect(evs(s, 'braceContact').length + evs(s, 'braceMiss').length, `${cap} J`).toBeGreaterThan(0);
+      s.dispose();
+    }
+    expect(bound).toBeGreaterThanOrEqual(4);
   });
 });
 

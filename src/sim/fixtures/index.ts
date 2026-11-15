@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { FALL_REACT_V1, FALL_REACT_V2, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
+import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
 import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12 } from '../controllers/wrap';
@@ -216,6 +216,18 @@ function hitFlip(d: FixtureDef): FixtureDef {
 }
 
 /**
+ * Contact motion polish 4 (p17), the forward-fall flip: every fixture with FALL_REACT_V2 (L3, HC) runs FALL_REACT_V3 and
+ * every fixture with FALL_L4 (L4) FALL_L4_V2, the forward-fall body plan (FORWARD_FALL_V1) on the same response: a man
+ * falling forward lays his legs out, lands bent on his free arm and gives, and at speed folds the ball arm in to his
+ * chest. A backward or sideways fall runs as before. L4's other responses (the knee-only, zero-cap and low-work twins)
+ * stay as they are. The lab's `fwd=off` is the view before it; tests/runs.ts `preForwardFall` gives a definition as
+ * before it.
+ */
+function forwardFallFlip(d: FixtureDef): FixtureDef {
+  return d.fallResponse === FALL_REACT_V2 ? { ...d, fallResponse: FALL_REACT_V3 } : d.fallResponse === FALL_L4 ? { ...d, fallResponse: FALL_L4_V2 } : d;
+}
+
+/**
  * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
  * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
  * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
@@ -274,6 +286,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip));
   return registry.slice();
 }

@@ -10,7 +10,7 @@ import { BALANCE_G3, upperBodyCompound } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, deg, dot, horiz, m3Add, m3Inverse, m3ParallelAxis, m3Vec, norm, qFromAxisAngle, qMul, scale, sub, UP, upOf, v3, vc, worldInertia, type Mat3, type Vec3 } from '../src/sim/vec';
-import { asCaptured, FIX } from './helpers';
+import { asCaptured, FIX, preForwardFall } from './helpers';
 import { loadState, resumeState } from './state';
 
 const RD = WRAP_V7.ride!;
@@ -161,9 +161,9 @@ interface DownRun {
   conv: { t: number; why: string; exit: string | null; sh: number } | null;
 }
 
-async function downRun(id: string, wrap: WrapProfile, fault?: WrapDebug): Promise<DownRun> {
+async function downRun(id: string, wrap: WrapProfile, fault?: WrapDebug, as: (d: FixtureDef) => FixtureDef = (d) => d): Promise<DownRun> {
   let probe: (() => void) | null = null;
-  const sim = await Simulation.create({ ...FIX(id), wrap }, { onSubstep: () => probe?.(), ...(fault ? { debug: { wrap: fault } } : {}) });
+  const sim = await Simulation.create({ ...as(FIX(id)), wrap }, { onSubstep: () => probe?.(), ...(fault ? { debug: { wrap: fault } } : {}) });
   const D = sim.players.find((p) => p.id === 'D')!;
   const R = sim.players.find((p) => p.id === 'R')!;
   const out: DownRun = { downAt: null, endAt: null, rConvAt: null, shortFold: 0, rootRise: 0, pitch60At: null, conv: null };
@@ -218,14 +218,22 @@ describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down)', () => {
     }
   }, 120_000);
 
+  // (polish 4, the forward-fall flip: measured on the carrier's fall as it was, `preForwardFall`. With the plan the
+  // carrier lays out flat and the rider follows him down: the come-down still pitches 60 deg within 0.25 s (checked
+  // below), and the twin on the strike's hinge bounds now gets there too, 0.30 s after the conversion (2.17 s), drawn
+  // down by the laid-out carrier rather than by its own bounds.)
   it('(b) on the ride\'s own bounds the trunk reaches 60 deg of pitch within 0.25 s of the carrier\'s conversion (L3-F19-rear, measured 0.23 s); twin on the strike\'s hinge bounds it never does', async () => {
-    const ok = await downRun('L3-F19-rear', V7_PRE_ARRIVE);
+    const ok = await downRun('L3-F19-rear', V7_PRE_ARRIVE, undefined, preForwardFall);
     expect(ok.pitch60At).not.toBeNull();
     expect(ok.pitch60At! - ok.rConvAt!).toBeLessThanOrEqual(0.25);
     const S = WRAP_V7.strike!.hinge;
-    const twin = await downRun('L3-F19-rear', { ...V7_PRE_ARRIVE, ride: { ...RD, down: { ...DN, hinge: { rateDegPerS: S.rateDegPerS, accelDegPerS2: S.accelDegPerS2, dropRateMps: S.dropRateMps } } } });
+    const twin = await downRun('L3-F19-rear', { ...V7_PRE_ARRIVE, ride: { ...RD, down: { ...DN, hinge: { rateDegPerS: S.rateDegPerS, accelDegPerS2: S.accelDegPerS2, dropRateMps: S.dropRateMps } } } }, undefined, preForwardFall);
     expect(twin.pitch60At).toBeNull();
-  }, 60_000);
+    // the forward-fall plan on (as registered): the come-down's own bounds still get there within 0.25 s
+    const fwd = await downRun('L3-F19-rear', V7_PRE_ARRIVE);
+    expect(fwd.pitch60At).not.toBeNull();
+    expect(fwd.pitch60At! - fwd.rConvAt!).toBeLessThanOrEqual(0.25);
+  }, 90_000);
 
   it('(c) the time bound converts a rider who cannot get low (exits h, s, f and the no-support guard off): by (t), maxS after the come-down began; twin: with no bound he stays posed to the trial\'s end', async () => {
     const off: WrapDebug = { noRideGuard: true, noRideLoose: true };

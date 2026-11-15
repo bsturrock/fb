@@ -57,7 +57,7 @@ const audit = process.argv.includes('--audit');
 const rev = process.argv.includes('--rev');
 const flip = process.argv.includes('--flip8i');
 const fwd = process.argv.includes('--fwd');
-const forwardOf = (F: FallResponseProfile): FallResponseProfile => (F === FALL_REACT_V2 ? FALL_REACT_V3 : F === FALL_L4 ? FALL_L4_V2 : withForwardFall(F));
+const forwardOf = (F: FallResponseProfile): FallResponseProfile => (F === FALL_REACT_V2 ? FALL_REACT_V3 : F === FALL_L4 ? FALL_L4_V2 : F.forward ? F : withForwardFall(F));
 const opts = { ...(audit ? { transitionAudit: true } : {}), ...(rev ? { reverseOrder: true } : {}) };
 const joints = jointsArg ? JOINTS[jointsArg as keyof typeof JOINTS] : undefined;
 if (joints && !FIX(id).jointRange) throw new Error(`${id} has no joint range profile for --joints`);

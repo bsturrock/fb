@@ -73,18 +73,21 @@
 //                      (arms carried ahead of the chest, opened wider than the carrier ahead of contact, closed on the
 //                      first valid touch); off: the Gate 2 progression. A fixture without a wrapping defender (a
 //                      `wrapAttempt` controller) is run as it is;
-//   fall=on|v1|off     the falling player's reaction on an L3 or HC fixture (contact motion M4). on: FALL_REACT_V2 at every
-//                      accepted conversion (the knees and hips flex, the free arm braces and, landed, bears load: the
+//   fall=on|v2|v1|off  the falling player's reaction on an L3 or HC fixture (contact motion M4). on: FALL_REACT_V3, v2
+//                      with the forward-fall body plan (`fwd=` below); v2: FALL_REACT_V2 (the view before the forward-fall
+//                      flip) at every accepted conversion (the knees and hips flex, the free arm braces and, landed, bears load: the
 //                      arm yields under the body and lets go when unloaded; the carry arm keeps the ball, a holding arm
 //                      keeps its hold); v1: FALL_REACT_V1, the landed brace held on springs at its contact pose (before
 //                      the palm-load flip); off: limp (a takedown's hold only under WRAP_V3, the M3 view). An L4 fixture (its own response, or its motor-off twin) or
 //                      one without a ragdoll is run as it is. A view without the hip stops (hips=off) is limp: the
 //                      response bounds the hips by them.
-//   fwd=on             polish 4 (p17), the forward-fall body plan (FORWARD_FALL_V1, no fixture uses it) on the fixture's
-//                      own fall response, after `fall=`: FALL_REACT_V2 becomes FALL_REACT_V3 (L3, HC), FALL_L4 FALL_L4_V2,
-//                      any other `withForwardFall`. A man falling forward lays out (hips toward in line with the trunk,
-//                      knees a slight bend) and his free arm lands bent and gives; backward and sideways falls as without.
-//                      A fixture without a fall response is run as it is.
+//   fwd=on|off         polish 4 (p17), the forward-fall body plan (FORWARD_FALL_V1, registered on L3, L4 and HC since the
+//                      forward-fall flip) on the fixture's own fall response, after `fall=`. on: FALL_REACT_V2 becomes
+//                      FALL_REACT_V3 (L3, HC), FALL_L4 FALL_L4_V2, any other `withForwardFall`; off (the view before the
+//                      flip): FALL_REACT_V3 becomes FALL_REACT_V2, FALL_L4_V2 FALL_L4, any other loses its plan. A man
+//                      falling forward lays out (hips toward in line with the trunk, knees a slight bend), his free arm
+//                      lands bent and gives, and at speed his ball arm folds in to his chest; backward and sideways falls
+//                      as without. A fixture without a fall response is run as it is.
 // The ragdoll parameters compose in that order (hips, pgs, knees, retry, selfleg, armtwist, born, then bornsep), so `hips=on&pgs=4&knees=140` is the
 // assessments' variant to the id (`+hip-stops-v2+pgs4+knee140`). A fixture without a ragdoll profile, or already so, is
 // run as it is.
@@ -118,7 +121,7 @@ const ARMSTAY = ['on', 'off'];
 const BRACE = ['on', 'v1', 'off'];
 const BALCLEAR = ['on', 'off'];
 const WRAP = ['on', 'v12auto', 'v12', 'v11', 'v10', 'v9', 'v8', 'v7', 'v6', 'v5', 'v4', 'v3', 'v2', 'v1', 'off'];
-const FALL = ['on', 'v1', 'off'];
+const FALL = ['on', 'v2', 'v1', 'off'];
 /** Additional PGS iterations the lab takes (the assessments ran 1 to 8). */
 const PGS_MAX = 16;
 
@@ -333,7 +336,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     else if (!/^(L3|HC)-/.test(out.id)) parts.push('fall n/a (not an L3 or HC fixture)');
     else if (!out.ragdoll) parts.push('fall n/a (no ragdoll profile)');
     else {
-      const want = v === 'on' ? FALL_REACT_V2 : v === 'v1' ? FALL_REACT_V1 : undefined;
+      const want = v === 'on' ? FALL_REACT_V3 : v === 'v2' ? FALL_REACT_V2 : v === 'v1' ? FALL_REACT_V1 : undefined;
       parts.push(`fall ${v}${want === out.fallResponse ? ' (registered)' : ''}`);
       if (want !== out.fallResponse) {
         out = { ...out, fallResponse: want };
@@ -344,12 +347,21 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   // polish 4 (p17): the forward-fall body plan on the fall response the view runs
   const fwd = params.get('fwd');
   if (fwd !== null && fwd !== '') {
-    if (fwd.toLowerCase() !== 'on') parts.push(`fwd=${fwd} ignored`);
+    const v = fwd.toLowerCase();
+    if (v !== 'on' && v !== 'off') parts.push(`fwd=${fwd} ignored`);
     else if (!out.fallResponse) parts.push('fwd n/a (no fall response)');
     else {
       const F = out.fallResponse;
-      const want = F === FALL_REACT_V2 ? FALL_REACT_V3 : F === FALL_L4 ? FALL_L4_V2 : F.forward ? F : withForwardFall(F);
-      parts.push(`fwd on${want === F ? ' (registered)' : ''}`);
+      let want = F;
+      if (v === 'on') want = F === FALL_REACT_V2 ? FALL_REACT_V3 : F === FALL_L4 ? FALL_L4_V2 : F.forward ? F : withForwardFall(F);
+      else if (F === FALL_REACT_V3) want = FALL_REACT_V2;
+      else if (F === FALL_L4_V2) want = FALL_L4;
+      else if (F.forward) {
+        const { forward, ...rest } = F;
+        void forward;
+        want = { ...rest, id: `${F.id}-fwd` };
+      }
+      parts.push(`fwd ${v}${want === F ? ' (registered)' : ''}`);
       out = { ...out, fallResponse: want };
     }
   }

@@ -306,26 +306,32 @@ to keep stepping while wrapped. Direction is ours. In order:
 4. **Falls.** The reaching arm palm down with give, some body control ("falls like a bag of wooden blocks"); the
    tackler's legs bounce backwards on contact (`HC-F3-lowRunner`); elbow give on landing (`LANDING_ELBOW_SNAP`);
    the bounce off a trapped arm (`LANDING_REBOUND`). The palm touches but does not plant.
-   Forward falls (p17, flag off): the hit runner lands folded (the reaction's tuck, hips 95-105 deg), so friction at hands,
-   head and chest turns him over his head (ends hips 0.42-0.64 m, head 7-38 deg down; main `.scratch/p17/landing/`).
-   Built `FORWARD_FALL_V1` (`FALL_REACT_V3`, `FALL_L4_V2`, lab `fwd=on`): on a fall decided forward at the switch the hips
-   drive toward 15 deg flexion over 0.3 s both ways at 60 N m (a man's hip extension is well over 100; at 18 the legs'
-   momentum wins; the 150 W / 100 J caps unchanged), damping x2 once the trunk is down, knees toward 15 deg; the free arm
-   braces with 30 deg of elbow and, landed, only damps (x2) under 60/40 N m shoulder/elbow (a man's shoulder 60-90).
-   The vault over the arm (`L3-F4-twoArm`, `L4-F10-wrap-on`) was the ball arm, held out where the switch found it (palm
-   0.38 m ahead of the chest): `carry` folds it in to the chest (upper arm 40 deg forward, elbow 130) from 2-3 m/s of
-   travel, giving once landed. Every hit runner travels about 4.0 m/s, so speed does not tell the vaulting runs from
-   the good ones; the free arm keeps the brace at every speed (folding it too turned `L3-F1-low` over). The plan's
-   drives give their ceiling up with the joint's speed along them (`concentricRadPerS` 4), so a fast joint does not take
-   the whole power budget before contact adds to it. Hit runs: 10 of 10 end flat (hips 0.26-0.35 m, head within 7 deg,
-   potential energy up 3-44 J after landing; at the previous step 6, 220 J on F4). Sweep of every L3/L4/HC forward
-   fall: other players better 64, unchanged 96, worse 12 (tacklers ending higher or head-up, e.g. `L4-F5-oneClamp-on`
-   rev); no new snap; the largest rebound 17 J (was 128). Who falls, to show the user: in `L4-F10-knee-on` (both
-   orders) the tackler no longer goes down (his fall at 0.69 s, after the carrier's laid-out one, does not happen).
-   Open for the flip: 5 runs newly over the power cap, peak 162 W: the forward brace's shoulder at 60 N m with no rate
-   rule (`L3-F9-noProbe-prep` both orders, `L3-F19-rear` rev: the same rule should cover it), the hold shoulder tipped
-   over by the plan's hips (`L3-F5-dragMirror` rev: 154 W without the plan), a carry elbow of a runner the plan does not
-   drive (`L3-F1-phase7`); shoulder twist past range up in 18 runs (main `.scratch/p17/fast/summary.txt`).
+   Forward falls (p17), **on for L3, L4 and HC** (`FALL_REACT_V3` where `FALL_REACT_V2` was, `FALL_L4_V2` where
+   `FALL_L4` was; lab `fwd=off` is the view before, `fall=v2` on L3/HC too). Before, a forward-falling man landed folded
+   (the reaction's tuck, hips 95-105 deg), so friction at hands, head and chest turned him over his head (ends hips
+   0.42-0.64 m, head 7-38 deg down). `FORWARD_FALL_V1`: on a fall decided forward at the switch the hips drive toward 15
+   deg flexion over 0.3 s both ways at 60 N m (a man's hip extension is well over 100; at 18 the legs' momentum wins; the
+   150 W / 100 J caps unchanged), damping x2 once the trunk is down, knees toward 15 deg; the free arm braces with 30 deg
+   of elbow and, landed, only damps (x2) under 60/40 N m shoulder/elbow. At 2-3 m/s of travel and more the ball arm
+   folds in to the chest (`carry`; held out, it was the pole the hit runner vaulted over). The plan's drives (hips,
+   knees, the folding carry arm, the brace's elbow) give their ceiling up with the joint's speed along them
+   (`concentricRadPerS` 4); the brace's shoulder does not (under the rule the reach loses its ceiling before the hand is
+   down and `L3-F4-twoArm` turns over the arm again). A viewer sees a man going down forward lay out flat behind his
+   arm and give on it, the ball tucked; backward and sideways falls are unchanged. The ten hit runs end flat (hips
+   0.25-0.33 m, head within 6 deg). Who falls: in `L4-F10-knee-on` (both orders) the
+   tackler no longer goes down: before, the carrier switched at 0.008 s and the tackler at 0.688 s; after the carrier's
+   laid-out fall the tackler's does not happen and he stays up. Runs without a forward fall are trace-identical (204 of 204).
+   The forward plan's hips and brace work under its own ceilings (60, 60/40 N m), above FALL_L4's 18 and 15/10: the L4
+   effort audit reads the ceiling the response declares for the joint. Tracked (tests/fall-forward-defects.test.ts,
+   each a capture with the plan off as its twin): `SUPPORTED_ELBOW_SNAP` (`HC-F3-mirror` 1.28 s: the upright tackler's
+   right elbow jumps one frame, 62 rad/s; 41 without the plan, and the same 62 with it off from 1.23 s: his arm's jump
+   reached harder, not made by the plan); `HOLD_SHOULDER_IMPACT_POWER` (`L3-F5-dragMirror` rev D, 164 W in an impact,
+   145 on the hold shoulder the plan does not drive, 17 on the plan's hips; 153 W without) and
+   `PROTECT_ELBOW_IMPACT_POWER` (`L3-F1-phase7` R, no forward episode, 179 W in an impact of the protect elbow; 149 W
+   without): realized power past the tolerance is a trend (ladder 15). Open: in the constructed standing fall
+   (`L4-F3-forward-on`, `L4-F10-palm-on`) the bent brace arrives late and misses (0.388 s, where the straight one
+   landed at 0.375 s), so the chest lands first; about 11 forward fallers end worse than before (tacklers higher or
+   head-up, e.g. `L4-F5-oneClamp-on` rev); shoulder twist past range up in about 18 runs (main `.scratch/p17/`).
 5. **Whiff.** On a miss the swinging arms rotate the tackler (`L3-F19-miss`); a real tackler may reach and fall.
 
 Accepted by the user, not to be worked: crossed legs in a fall, the carrier's arms folding into his trunk on

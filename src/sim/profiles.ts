@@ -1669,9 +1669,9 @@ export function withForwardFall(p: FallResponseProfile, plan: ForwardFallPlan = 
   return { ...p, id: `${p.id}+fwd`, forward: plan };
 }
 
-/** Polish 4 (p17): FALL_REACT_V2 (L3, HC) with the forward-fall body plan; no fixture uses it. */
+/** Polish 4 (p17): FALL_REACT_V2 with the forward-fall body plan; every L3 and HC fixture since the forward-fall flip. */
 export const FALL_REACT_V3: FallResponseProfile = { ...FALL_REACT_V2, id: 'fall-react-v3', forward: FORWARD_FALL_V1 };
-/** Polish 4 (p17): FALL_L4 with the forward-fall body plan; no fixture uses it. */
+/** Polish 4 (p17): FALL_L4 with the forward-fall body plan; every L4 fixture FALL_L4 was on since the forward-fall flip. */
 export const FALL_L4_V2: FallResponseProfile = { ...FALL_L4, id: 'fall-response-l4-v7', forward: FORWARD_FALL_V1 };
 
 export const RAGDOLL_G4: RagdollProfile = {
