@@ -1,12 +1,13 @@
 // Contact motion polish 1.4 (the bound-legs fall, WRAP_V8), tracked defects (rule 5) its flip reached: mechanisms the
 // bind's moved trajectories run into, each on a full-state capture a little before it (tests/data/state; how to capture:
 // tests/README.md). Each test pins the defect present in its captured state and fails once the defect is gone from it
-// (it then becomes the fix's test, with its fault twin). The twin shows the cause: the same state with the bind off
-// (WRAP_V7, `preWrapV8`).
+// (it then becomes the fix's test, with its fault twin: (a) since the shoulder twist flip). The twin shows the cause: the
+// same state with the bind off (WRAP_V7, `preWrapV8`).
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
+import { SHOULDER_TWIST_ANAT_V2, withShoulderTwistLimit } from '../src/sim/profiles';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preForwardFall, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
+import { asCaptured, create, FIX, preForwardFall, preShoulderTwist, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -37,23 +38,34 @@ describe('contact motion polish 1.4, the bound-legs fall: tracked defects (rule 
   // `preForwardFall`. With the plan V7 from the start reaches the twist too, 80 deg past at 2.67 s, 0.52 s: the plan's
   // moved trajectory reaching it. From the capture the plan does not worsen it: 64 deg past, 0.23 s, against 80 and 0.33
   // without; the bind off with the plan 48 deg, 0.23 s. The registered run, plan on, peaks 14 deg past, under 30.)
-  it('RAISED_ARM_TWIST (L3-F19-rear, from 1.800 s): the fallen carrier\'s raised ragdoll left arm twists over 60 deg past range, with the bind and without it from the same state; V7 from the start stays under 30', async () => {
+  // Fixed by the shoulder twist flip (p19, SHOULDER_TWIST_ANAT_V2 registered: the limit reads the anatomical twist of a
+  // raised arm and is stepped on the arm's own inertia): from the same state the arm is never 30 deg past until the
+  // run's last frames (29 deg at its end, 2.70 s, the arm swinging up as he lands), never 60. Now the fix's test: the
+  // fault twin is the capture's own profile, plan 09's limit, as above. (V7 from the start is the run as it ran, before
+  // the shoulder twist flip too: under the flip it peaks 12 deg past.)
+  it('RAISED_ARM_TWIST gone (L3-F19-rear, from 1.800 s): under the registered shoulder twist limit the fallen carrier\'s raised ragdoll left arm never twists 60 deg past range; the fault twin (plan 09\'s limit, the capture\'s) twists it over 60 past, with the bind and without it from the same state; V7 from the start stays under 30', async () => {
     const cap = loadState('tests/data/state/L3-F19-rear@108.json.gz');
     const def = asCaptured(cap);
     expect(def.wrap?.bind).toBeDefined();
+    expect(def.ragdoll!.shoulderTwistLimit).toBeUndefined();
+    expect(FIX(cap.fixture).ragdoll!.shoulderTwistLimit).toBe(SHOULDER_TWIST_ANAT_V2);
     const look = async (d: FixtureDef, variant?: string[]) => {
       const sim = await resumeState(cap, variant ? { def: d, variant } : { def: d });
       const out = ragdollShoulderTwist(sim);
       sim.dispose();
       return out;
     };
+    const pinned = (r: { peak: number; impS: number }): boolean => r.peak > 60 && r.impS > 0.1;
+    const fixed = await look({ ...def, ragdoll: withShoulderTwistLimit(def.ragdoll!, SHOULDER_TWIST_ANAT_V2) }, ['ragdoll']);
+    expect(fixed.peak, JSON.stringify(fixed)).toBeLessThan(60);
+    expect(fixed.impS, JSON.stringify(fixed)).toBeLessThan(0.1);
+    // the fault twin
     const on = await look(def);
     const off = await look(preWrapV8(def), ['wrap']);
-    const pinned = (r: { peak: number; impS: number }): boolean => r.peak > 60 && r.impS > 0.1;
-    const v7Sim = await create(preForwardFall(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(FIX('L3-F19-rear')))))))));
+    const v7Sim = await create(preForwardFall(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preShoulderTwist(FIX('L3-F19-rear'))))))))));
     const v7 = ragdollShoulderTwist(v7Sim);
     v7Sim.dispose();
-    const said = JSON.stringify({ on, off, v7 });
+    const said = JSON.stringify({ fixed, on, off, v7 });
     expect(off.peak, said).toBeGreaterThan(0);
     expect(pinned(on), said).toBe(true);
     expect(pinned(off), said).toBe(true);

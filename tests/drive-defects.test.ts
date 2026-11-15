@@ -6,10 +6,10 @@
 // "The drive".
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
-import { JOINT_RANGE_V3 } from '../src/sim/profiles';
+import { JOINT_RANGE_V3, SHOULDER_TWIST_ANAT_V2, withShoulderTwistLimit } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preHipTwist, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
+import { asCaptured, create, FIX, preHipTwist, preShoulderTwist, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -56,11 +56,17 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
   // keeps the twist it lands with (inferred from the swing; not isolated). Captured at 1.000 s (both ragdolls); twin,
   // WRAP_V4 from there: the same run to the last digit (once both are ragdolls the drive reads nothing). Before the flip
   // the forward order reaches the same: the arm overhead (swing 146 deg), 79 deg past at 1.72 s, 73 deg at the end.
-  // Reached, not made.
-  it('OVERHEAD_TWIST_UNHELD (L4-F9-transferFailed reversed, from 1.000 s): a passive ragdoll arm thrown overhead keeps its shoulder twist over 60 deg past range to the end, with the drive and without it from the same state, the bodies identical; before the flip the forward order holds the same', async () => {
+  // Reached, not made. Fixed by the shoulder twist flip (p19, SHOULDER_TWIST_ANAT_V2 registered: the limit reads the
+  // anatomical twist, regular overhead, and is stepped on the arm's own inertia): from the same state the arm peaks 14 deg
+  // past and never 30, and the forward order before the drive flip 2 deg. Now the fix's test: the fault twin is the
+  // capture's own profile, plan 09's limit, which keeps the twist as above (79 deg past at 1.28 s, 71 at the end).
+  it('OVERHEAD_TWIST_UNHELD gone (L4-F9-transferFailed reversed, from 1.000 s): under the registered shoulder twist limit the passive arm thrown overhead never goes 30 deg past range; the fault twin (plan 09\'s limit, the capture\'s) keeps it over 60 past to the end, with the drive and without it from the same state, the bodies identical; before the drive flip the forward order the same', async () => {
     const cap = loadState('tests/data/state/L4-F9-transferFailed~rev@60.json.gz');
     const def = asCaptured(cap);
     expect(def.wrap?.drive).toBeDefined();
+    expect(def.ragdoll!.shoulderTwistLimit).toBeUndefined();
+    expect(FIX(cap.fixture).ragdoll!.shoulderTwistLimit).toBe(SHOULDER_TWIST_ANAT_V2);
+    const reg = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withShoulderTwistLimit(d.ragdoll!, SHOULDER_TWIST_ANAT_V2) });
     const look = async (d: FixtureDef, variant?: string[]) => {
       const sim = await resumeState(cap, variant ? { def: d, variant } : { def: d });
       const out = overheadTwist(sim);
@@ -69,6 +75,11 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
       sim.dispose();
       return { ...out, bodies };
     };
+    const fixed = await look(reg(def), ['ragdoll']);
+    const fSaid = JSON.stringify({ ...fixed, bodies: undefined });
+    expect(fixed.peak, fSaid).toBeLessThan(30);
+    expect(fixed.impS, fSaid).toBe(0);
+    // the fault twin
     const on = await look(def);
     const off = await look(preWrapV5(def), ['wrap']);
     const said = JSON.stringify({ ...on, bodies: undefined });
@@ -77,9 +88,18 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
     expect(on.impS, said).toBeGreaterThan(4);
     expect(on.lastEx, said).toBeGreaterThan(60);
     expect(off.bodies).toBe(on.bodies);
-    const bSim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(FIX('L4-F9-transferFailed'))))))))), {});
-    const before = overheadTwist(bSim);
-    bSim.dispose();
+    // the forward order before the drive flip: registered limit, and plan 09's (the fault twin)
+    const beforeDrive = preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(FIX('L4-F9-transferFailed')))))))));
+    const fwd = async (d: FixtureDef) => {
+      const sim = await create(d, {});
+      const out = overheadTwist(sim);
+      sim.dispose();
+      return out;
+    };
+    const held = await fwd(beforeDrive);
+    expect(held.peak, JSON.stringify(held)).toBeLessThan(30);
+    expect(held.impS, JSON.stringify(held)).toBe(0);
+    const before = await fwd(preShoulderTwist(beforeDrive));
     const bSaid = JSON.stringify(before);
     expect(before.peak, bSaid).toBeGreaterThan(60);
     expect(Math.min(before.swing, before.lastSwing), bSaid).toBeGreaterThan(140);

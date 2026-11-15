@@ -218,7 +218,7 @@ to keep stepping while wrapped. Direction is ours. In order:
       Shoulder height at his conversion: rear 0.77 m, drag mirror 0.81 to 0.84, front 0.88 to 0.91; still 1.13 to
       1.28 m in the fast falls (side wrap, `L3-F1` phases, low runner, HC-F3, `L4-F10`). Tracked, reached not
       caused (`tests/ride-defects.test.ts`): `CLEARANCE_KNEE_TURNS_BACK` on `L3-F1-phase1` (posed knee turned
-      back 0.15 s) and the reversed drag mirror (0.05 s); `OVERHEAD_TWIST_UNHELD` on `L3-F1-phase5` reversed. Not
+      back 0.15 s) and the reversed drag mirror (0.05 s); `OVERHEAD_TWIST_UNHELD` on `L3-F1-phase5` reversed (fixed, p19). Not
       twinned: carrier shoulder twists on `L3-F1-phase5` forward, `L3-F19-front`, `HC-F3-phase0` reversed; an 82 J
       one-solve gain on the `L3-F1-phase1` carrier's forearm (looks like `CARRY_PINCH`).
       **User intent 2026-11-13 (standing): the ball carrier always biases forward and tries to fall forward** for
@@ -238,7 +238,7 @@ to keep stepping while wrapped. Direction is ours. In order:
       matters: momentum and the hold at his hips take him forward). Who falls: only `L3-F5-drag` (the carrier is
       bound at 0.69 s, goes down before the tackler, forward onto his side instead of onto his back). A braced
       carrier with no hold, a carrier surviving a hit and a miss are not felled. Tracked: `RAISED_ARM_TWIST` on
-      `L3-F19-rear` (`tests/bind-defects.test.ts`). `WRAP_V6` (the low tackle) now sits on V8: on the low rear
+      `L3-F19-rear` (`tests/bind-defects.test.ts`; fixed, p19). `WRAP_V6` (the low tackle) now sits on V8: on the low rear
       wrap the carrier goes down forward at the bind instead of late and backward. Open on the low tackle: the
       tackler ends 0.9 to 1.7 m beside or behind him, never on top (with one arm on he drops to the old one-arm
       reposition and the come-down starts late); a posed hip twist 37 degrees past range at his conversion; the
@@ -344,6 +344,14 @@ to keep stepping while wrapped. Direction is ours. In order:
    (`L4-F3-forward-on`, `L4-F10-palm-on`) the bent brace arrives late and misses (0.388 s, where the straight one
    landed at 0.375 s), so the chest lands first; about 11 forward fallers end worse than before (tacklers higher or
    head-up, e.g. `L4-F5-oneClamp-on` rev); shoulder twist past range up in about 18 runs (main `.scratch/p17/`).
+   Shoulder twist (p19), **on for L3, L4 and HC** (`SHOULDER_TWIST_ANAT_V2`; lab `armtwist=off` is before): a fallen
+   arm overhead keeps a natural twist instead of bending the wrong way, and an arm twisted to its stop stops there
+   (ragdoll shoulder past the impossible margin 32.4 -> 0.2 player-s). No who-falls change. Tracked, reached not caused:
+   `LANDING_SHOULDER_SNAP` (`L3-F9-low`, `L4-F9-low` rev: landing on the free arm whips the shoulder past the snap bar,
+   before the flip the elbow; `tests/shoulder-twist-stepped.test.ts`), `OWN_SHIN_TRUNK_REBOUND` (the own-leg rig,
+   `tests/self-legs.test.ts`). Left: `L4-F3-run-on` and `L4-F9-free` D's right shoulder 51 deg past for 0.07 s after a
+   fast spin at 1.55 s; a supported raised arm posed a few degrees past the twist range starts its ragdoll there as
+   slack (`HC-F1-low` D, 6 deg). `OVERHEAD_TWIST_UNHELD` and `RAISED_ARM_TWIST` are fixed (now the fix's tests).
 5. **Whiff.** On a miss the swinging arms rotate the tackler (`L3-F19-miss`); a real tackler may reach and fall.
 
 Accepted by the user, not to be worked: crossed legs in a fall, the carrier's arms folding into his trunk on

@@ -91,7 +91,7 @@ runner still falls, `L3-F19-miss` is unchanged. Tracked defects the flip reached
 
 | defect | capture | what |
 | --- | --- | --- |
-| `OVERHEAD_TWIST_UNHELD` | L4-F9-transferFailed reversed (1.000 s) | the failed-transfer carrier's passive left arm thrown overhead keeps its twist 70 to 79 deg past range to the end; before the flip the forward order does the same |
+| `OVERHEAD_TWIST_UNHELD` | L4-F9-transferFailed reversed (1.000 s) | the failed-transfer carrier's passive left arm thrown overhead keeps its twist 70 to 79 deg past range to the end; before the flip the forward order does the same. Fixed by the shoulder twist flip (p19): now the fix's test |
 | `CLEARANCE_KNEE_TURNS_BACK` | L3-F5-dragMirror reversed (1.500 s) | the defender's swing foot lifted close above the hip to clear the fallen carrier turns his supported knee back (hip twist 111 deg past, 1.65 to 1.93 s); the ladder 11b mechanism, within range under JOINT_RANGE_V3 (no fixture uses it); before the flip in L3-F1-phase1 |
 
 Not twinned, reached by falls that did not happen before (inferred): the rear-wrap carrier's ragdoll shoulder twist

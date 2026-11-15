@@ -10,8 +10,10 @@
 //   knees=off|140|145  the knee flexion stop at 140 or 145 (rung 8f), or none;
 //   retry=on|off       a conversion rejected on an overlap deferred and tried again (CONVERSION_RETRY_V1, rung 8j), or not;
 //   selfleg=on|off     the ragdoll's legs meeting each other and its trunk (own-leg contact, SELF_LEGS_V1, rung 9a), or not;
-//   armtwist=on|off    the ragdoll shoulder's twist limit in the anatomical measure, holding with the arm overhead
-//                      (SHOULDER_TWIST_ANAT_V1, rung 13a), or plan 09's, which fades out there;
+//   armtwist=on|v1|off the ragdoll shoulder's twist limit in the anatomical measure, holding with the arm overhead,
+//                      stepped on the arm's own inertia so a twisted arm is stopped, not thrown back
+//                      (SHOULDER_TWIST_ANAT_V2, 13a-iii; registered on L3, L4 and HC since p19), the same unstepped
+//                      (V1, rung 13a: plan 09's spring), or plan 09's, which fades out there (`off`: before the flip);
 //   born=on|off        a candidate overlapping another player converted with the overlapping collider pairs left out of
 //                      the solve until separated (BORN_OVERLAP_V1, ladder 17: ragdoll rather than fall stiff), or
 //                      refused (deferred) past the 1.5 cm tolerance as before; `on` keeps a born overlap already registered;
@@ -98,7 +100,7 @@
 // a test can build the same run headless (tests/lab-params.test.ts).
 import type { FixtureDef } from '../sim/fixture';
 import {
-  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry,
+  CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V1, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, SHOULDER_TWIST_ANAT_V2, withAdditionalPgsIterations, withConversionRetry,
   withHipStops, withKneeStop, withBornOverlap, withoutBornOverlap, withBornSeparation, withoutBornSeparation, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutMetArmStay, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
   withClipArmSwing, withMetArmStay, withUpperArmClearance, withBalancedClear, withoutBalancedClear, type RagdollProfile,
 } from '../sim/profiles';
@@ -113,7 +115,7 @@ const HIPS = ['on', 'l4', 'v1', 'off'];
 const KNEES = ['off', '140', '145'];
 const RETRY = ['on', 'off'];
 const SELFLEG = ['on', 'off'];
-const ARMTWIST = ['on', 'off'];
+const ARMTWIST = ['on', 'v1', 'off'];
 const BORN = ['on', 'off'];
 const BORNSEP = ['on', 'off'];
 const HOLDSTILL = ['on', 'off'];
@@ -216,9 +218,10 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const armtwist = params.get('armtwist');
   if (armtwist !== null && armtwist !== '') {
     const v = armtwist.toLowerCase();
-    out = ragdollParam(out, 'armtwist', armtwist, ARMTWIST.includes(v), parts, `shoulder twist limit ${v === 'on' ? 'anatomical' : 'plan 09'}`, (r) => {
+    const P = v === 'v1' ? SHOULDER_TWIST_ANAT_V1 : SHOULDER_TWIST_ANAT_V2;
+    out = ragdollParam(out, 'armtwist', armtwist, ARMTWIST.includes(v), parts, `shoulder twist limit ${v === 'on' ? 'anatomical' : v === 'v1' ? 'anatomical v1' : 'plan 09'}`, (r) => {
       if (v === 'off') return withoutShoulderTwistLimit(r);
-      return r.shoulderTwistLimit?.id === SHOULDER_TWIST_ANAT_V1.id ? r : withShoulderTwistLimit(withoutShoulderTwistLimit(r));
+      return r.shoulderTwistLimit?.id === P.id ? r : withShoulderTwistLimit(withoutShoulderTwistLimit(r), P);
     });
   }
   const born = params.get('born');

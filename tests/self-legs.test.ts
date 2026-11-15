@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { isSupportedLeg, RAPIER, segmentDistanceSq } from '../src/sim/physics';
-import { LEG_GUARD_V3, SELF_LEGS_V1, sideSignX, withoutHipStops, withSelfLegs, withoutSelfLegs, type RagdollProfile } from '../src/sim/profiles';
+import { LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V2, sideSignX, withoutHipStops, withSelfLegs, withoutSelfLegs, withShoulderTwistLimit, type RagdollProfile } from '../src/sim/profiles';
 import { poseOfRb, SEGMENTS, selfLegPair, selfLegPairs, type Ragdoll } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
 import { toWorld, v3, type Vec3 } from '../src/sim/vec';
-import { asCaptured, create, FIX as REGISTERED, preBornOverlap, preOwnLegs, rows, runSim } from './helpers';
+import { asCaptured, create, FIX as REGISTERED, preBornOverlap, preOwnLegs, preShoulderTwist, rows, runSim } from './helpers';
 import { INJECTION_J, passiveEnergyMeter } from './passive-energy';
-import { loadState, resumeState } from './state';
+import { captureState, loadState, resumeState } from './state';
 
 // Ladder rung 9a: ragdoll own-leg contact (`RagdollProfile.selfLegs`, SELF_LEGS_V1; every L3/L4/HC ragdoll since the
 // own-leg flip, ladder 9). Gate 4's
@@ -17,9 +17,9 @@ import { loadState, resumeState } from './state';
 // the other leg's and, the shin's and the shoe's, the own trunk; a group of pairs overlapping deeper than the skin at
 // the switch stays out of the solve until none of its pairs is.
 
-// (the definitions as before the own-leg flip, and the later born-overlap flip: each case switches it on itself, its twin
-// runs without it, and the capture was taken under rung 8m's registration)
-const FIX = (id: string): FixtureDef => preOwnLegs(preBornOverlap(REGISTERED(id)));
+// (the definitions as before the own-leg flip, and the later born-overlap and shoulder twist flips: each case switches it
+// on itself, its twin runs without it, and the capture was taken under rung 8m's registration)
+const FIX = (id: string): FixtureDef => preOwnLegs(preBornOverlap(preShoulderTwist(REGISTERED(id))));
 const on = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withSelfLegs(d.ragdoll!) });
 /** The summed contact impulse of a ragdoll's own-leg pairs in the last solve (N s). */
 function selfImpulse(sim: Simulation, rag: Ragdoll): number {
@@ -112,7 +112,7 @@ describe('own-leg contact: profile and shapes', () => {
     const ragdolls = allFixtures().filter((d) => d.ragdoll);
     for (const d of ragdolls) expect(d.ragdoll!.selfLegs, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) ? SELF_LEGS_V1 : undefined);
     expect(ragdolls.filter((d) => d.ragdoll!.selfLegs).length).toBeGreaterThan(100);
-    expect(on(FIX('HC-F1-at0.9'))).toEqual(preBornOverlap(REGISTERED('HC-F1-at0.9')));
+    expect(on(FIX('HC-F1-at0.9'))).toEqual(preBornOverlap(preShoulderTwist(REGISTERED('HC-F1-at0.9'))));
     expect(withoutSelfLegs(withSelfLegs(FIX('HC-F1-at0.9').ragdoll!))).toEqual(FIX('HC-F1-at0.9').ragdoll);
   });
 
@@ -204,6 +204,53 @@ describe('own-leg contact: a leg pulled across the other (constructed)', () => {
       },
     );
   }, 240000);
+});
+
+describe('own-leg contact: tracked defects (rule 5)', () => {
+  // OWN_SHIN_TRUNK_REBOUND, reached by the shoulder twist flip (p19). The rig above (authored body, right hip pulled across,
+  // the zero-gravity rig: no floor, no other player) under the registered shoulder twist limit (SHOULDER_TWIST_ANAT_V2):
+  // its free arms twist under another limit, the body turns otherwise, and at 1.0125 s the right shin's self shape meets
+  // the own trunk in a solve that gains 1.2 J, 11.5 J lost in the tick before (a rebound); the limit's work in that solve
+  // is 0.03 J. From the same state at 1.000 s under plan 09's limit (the rig as built) the same contact gains 2.2 J: the
+  // own-leg contact with the trunk giving back part of an impact is the rig's own. From 0.95 s plan 09's limit never
+  // reaches it. Reached by the moved trajectory, not made by the limit; the rows above run the rig as built. Pinned
+  // present; once it is gone this becomes the fix's test
+  it('OWN_SHIN_TRUNK_REBOUND (the rig, authored right, under the registered shoulder twist limit, from 1.000 s): the right shin\'s self shape on the own trunk gains over INJECTION_J in one solve, under that limit and under plan 09\'s from the same state', async () => {
+    const built = rig('authored', 'right', 20, true);
+    const reg = (d: FixtureDef): FixtureDef => ({ ...d, ragdoll: withShoulderTwistLimit(d.ragdoll!, SHOULDER_TWIST_ANAT_V2) });
+    const s0 = await create(reg(built));
+    while (!s0.done && s0.t < 1 - 1e-9) s0.stepTick();
+    const cap = captureState(s0);
+    s0.dispose();
+    const look = async (def: FixtureDef) => {
+      const sim = await resumeState(cap, { def, variant: ['ragdoll'] });
+      const pairs: string[] = [];
+      const meter = passiveEnergyMeter(sim, (e) => {
+        if (e.touched || e.passiveJ <= INJECTION_J) return;
+        const rag = sim.players[0].rag!;
+        for (const p of selfLegPairs(sim.physics, rag)) {
+          let J = 0;
+          sim.physics.world.contactPair(p.a.collider, p.b, (m) => {
+            for (let i = 0; i < m.numContacts(); i++) J += m.contactImpulse(i);
+          });
+          if (J > 0) pairs.push(`${p.a.segment}~${p.seg ?? 'trunk'}`);
+        }
+      });
+      while (!sim.done) sim.stepTick();
+      meter.restore();
+      const r = meter.runs().get('R')!;
+      sim.dispose();
+      return { injecting: r.injecting, maxJ: r.maxJ, at: r.maxAt, pairs: [...new Set(pairs)] };
+    };
+    const on = await look(reg(built));
+    const off = await look(built);
+    const said = JSON.stringify({ on, off });
+    for (const r of [on, off]) {
+      expect(r.maxJ, said).toBeGreaterThan(INJECTION_J);
+      expect(r.at, said).toBeCloseTo(1.0125, 6);
+      expect(r.pairs, said).toEqual(['rightShin~trunk']);
+    }
+  }, 60000);
 });
 
 describe('own-leg contact: the impact guard', () => {

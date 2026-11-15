@@ -936,7 +936,10 @@ export interface ShoulderTwistLimitProfile {
 }
 
 export const SHOULDER_TWIST_ANAT_V1: ShoulderTwistLimitProfile = { id: 'shoulder-twist-anat-v1', measure: 'anatomical' };
-/** Ladder 13a-iii: V1 with its stops stepped and critically damped: a firm stop that absorbs a twist instead of returning it. */
+/**
+ * Ladder 13a-iii: V1 with its stops stepped and critically damped: a firm stop that absorbs a twist instead of returning it.
+ * Registered on every L3, L4 and HC ragdoll (the shoulder twist flip, src/sim/fixtures/index.ts).
+ */
 export const SHOULDER_TWIST_ANAT_V2: ShoulderTwistLimitProfile = { id: 'shoulder-twist-anat-v2', measure: 'anatomical', stepped: { dampingRatio: 1 } };
 
 /** Ladder rung 13a: the ragdoll profile with the anatomical shoulder twist limit, under an id that names it. */

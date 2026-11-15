@@ -10,7 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear } from '../profiles';
+import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear, withShoulderTwistLimit, SHOULDER_TWIST_ANAT_V2 } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { CARRIER_BRACE_V2 } from '../brace';
 import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V13 } from '../controllers/wrap';
@@ -238,6 +238,16 @@ function aimFlip(d: FixtureDef): FixtureDef {
 }
 
 /**
+ * Ladder 13a-iii (p19), the shoulder twist flip: every L3, L4 and HC ragdoll's shoulder twist limit reads the anatomical
+ * twist and is stepped on the arm's own inertia (SHOULDER_TWIST_ANAT_V2): a fallen arm raised overhead is held inside
+ * its range, and an arm twisted to its stop is stopped there instead of thrown back. G, L1, L2 and RH keep plan 09's.
+ * The lab's `armtwist=off` is the view before it; tests/runs.ts `preShoulderTwist` gives a definition as before it.
+ */
+function shoulderTwistFlip(d: FixtureDef): FixtureDef {
+  return d.ragdoll && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withShoulderTwistLimit(d.ragdoll, SHOULDER_TWIST_ANAT_V2) } : d;
+}
+
+/**
  * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
  * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
  * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
@@ -296,6 +306,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip).map(shoulderTwistFlip));
   return registry.slice();
 }

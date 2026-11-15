@@ -6,11 +6,11 @@ import { HOLD_STILL_V1, LATE_LANDING_ID } from '../src/sim/footwork';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, WRAP_V13_AUTO, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import {
-  BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, withAdditionalPgsIterations, withConversionRetry, withHipStops,
-  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, FALL_L4, FALL_L4_V2, FORWARD_FALL_V1, withForwardFall,
+  BORN_OVERLAP_V1, BORN_OVERLAP_V2, CONVERSION_RETRY_V1, HIP_STOPS_L4_V1, HIP_STOPS_V2, hipStopsFor, LEG_GUARD_V1, LEG_GUARD_V3, SELF_LEGS_V1, SHOULDER_TWIST_ANAT_V1, SHOULDER_TWIST_ANAT_V2, withAdditionalPgsIterations, withConversionRetry, withHipStops,
+  withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withoutShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, FALL_L4, FALL_L4_V2, FORWARD_FALL_V1, withForwardFall,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preV3, preWrap, runSim } from './helpers';
+import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preShoulderTwist, preV3, preWrap, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -196,8 +196,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   // ladder rung 9a: selfleg=on|off, composed after the others; registered on every L3/L4/HC ragdoll since the own-leg flip
   it('on a fixture registered with own-leg contact (HC-F1-at0.9: every ragdoll gets its own-leg shapes), selfleg=off is the view before it, id and all, and its run differs; selfleg=on is the registered run and puts it back; with the view before both flips it is named last; unknown values change nothing', async () => {
     const id = 'HC-F1-at0.9';
-    // (before the ladder 17b flip, registered after own-leg contact on the same profile)
-    const d = preBornOverlap(FIX(id));
+    // (before the ladder 17b flip and the shoulder twist flip, both registered after own-leg contact on the same profile)
+    const d = preBornOverlap(preShoulderTwist(FIX(id)));
     expect(d.ragdoll!.selfLegs).toBe(SELF_LEGS_V1);
     expect(d.ragdoll!.id).toBe(`${preOwnLegs(d).ragdoll!.id}+${SELF_LEGS_V1.id}`);
     const s = await create(d, {});
@@ -230,29 +230,34 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('selfleg=maybe'))).toEqual({ def: d, opts: {}, label: 'selfleg=maybe ignored' });
   }, 120000);
 
-  // ladder rung 13a: armtwist=on|off, composed last; no fixture registers the anatomical shoulder twist limit yet
-  it('armtwist=on runs the fixture with the anatomical shoulder twist limit on its ragdoll, id and all, named last (HC-F5-strictTransfer: another run, R\'s raised arm); armtwist=off takes it off again and on the registered fixture is the registered run; unknown values change nothing', async () => {
+  // ladder rung 13a: armtwist=on|v1|off, composed last; registered on every L3/L4/HC ragdoll since 13a-iii (p19)
+  it('on a fixture registered with the stepped anatomical shoulder twist limit (SHOULDER_TWIST_ANAT_V2 on its ragdoll, id and all: HC-F5-strictTransfer), armtwist=off is the view before it (plan 09\'s limit), id and all, and another run (R\'s raised arm); armtwist=on is the registered run and puts it back; v1 the unstepped limit, named last; unknown values change nothing', async () => {
     const id = 'HC-F5-strictTransfer';
     const d = FIX(id);
-    expect(d.ragdoll!.shoulderTwistLimit).toBeUndefined();
-    const on = labRun(d, new URLSearchParams(`fixture=${id}&armtwist=on`));
-    expect(on.label).toBe('shoulder twist limit anatomical');
-    expect(on.def).toEqual({ ...d, ragdoll: withShoulderTwistLimit(d.ragdoll!) });
-    expect(on.def.ragdoll!.shoulderTwistLimit).toBe(SHOULDER_TWIST_ANAT_V1);
-    expect(on.def.ragdoll!.id).toBe(`${d.ragdoll!.id}+${SHOULDER_TWIST_ANAT_V1.id}`);
+    expect(d.ragdoll!.shoulderTwistLimit).toBe(SHOULDER_TWIST_ANAT_V2);
+    const off = labRun(d, new URLSearchParams(`fixture=${id}&armtwist=OFF`));
+    expect(off.label).toBe('shoulder twist limit plan 09');
+    expect(off.def).toEqual(preShoulderTwist(d));
+    expect(off.def.ragdoll!.shoulderTwistLimit).toBeUndefined();
+    expect(`${off.def.ragdoll!.id}+${SHOULDER_TWIST_ANAT_V2.id}`).toBe(d.ragdoll!.id);
     const run = await summaryOf(d, {});
     // the twin: the limit changes the run
-    expect(await summaryOf(on.def, on.opts)).not.toBe(run);
-    // off puts it back, id and all; on the registered fixture it is the registered run
-    const back = labRun(on.def, new URLSearchParams('armtwist=OFF'));
-    expect(back.label).toBe('shoulder twist limit plan 09');
+    expect(await summaryOf(off.def, off.opts)).not.toBe(run);
+    // on puts it back, id and all; on the registered fixture it is the registered run
+    const back = labRun(off.def, new URLSearchParams('armtwist=on'));
+    expect(back.label).toBe('shoulder twist limit anatomical');
     expect(back.def).toEqual(d);
-    expect(labRun(d, new URLSearchParams('armtwist=off'))).toEqual({ def: d, opts: {}, label: 'shoulder twist limit plan 09 (registered)' });
-    expect(labRun(on.def, new URLSearchParams('armtwist=on'))).toEqual({ def: on.def, opts: {}, label: 'shoulder twist limit anatomical (registered)' });
-    // composed after the others: with own-leg contact off, its id is named last
-    const both = labRun(d, new URLSearchParams('armtwist=on&selfleg=off'));
-    expect(both.label).toBe('own-leg contact off · shoulder twist limit anatomical');
-    expect(both.def).toEqual({ ...d, ragdoll: withShoulderTwistLimit(preOwnLegs(d).ragdoll!) });
+    expect(labRun(d, new URLSearchParams('armtwist=on'))).toEqual({ def: d, opts: {}, label: 'shoulder twist limit anatomical (registered)' });
+    expect(labRun(off.def, new URLSearchParams('armtwist=off'))).toEqual({ def: off.def, opts: {}, label: 'shoulder twist limit plan 09 (registered)' });
+    // v1: the anatomical limit unstepped, in V2's place
+    const v1 = labRun(d, new URLSearchParams('armtwist=v1'));
+    expect(v1.label).toBe('shoulder twist limit anatomical v1');
+    expect(v1.def).toEqual({ ...d, ragdoll: withShoulderTwistLimit(off.def.ragdoll!, SHOULDER_TWIST_ANAT_V1) });
+    expect(v1.def.ragdoll!.id).toBe(`${off.def.ragdoll!.id}+${SHOULDER_TWIST_ANAT_V1.id}`);
+    // composed after the others: with own-leg contact off, its id is taken off last
+    const both = labRun(d, new URLSearchParams('armtwist=off&selfleg=off'));
+    expect(both.label).toBe('own-leg contact off · shoulder twist limit plan 09');
+    expect(both.def).toEqual({ ...d, ragdoll: withoutShoulderTwistLimit(preOwnLegs(d).ragdoll!) });
     const g = allFixtures().find((x) => !x.ragdoll)!;
     expect(labRun(g, new URLSearchParams('armtwist=on'))).toEqual({ def: g, opts: {}, label: 'armtwist on n/a (no ragdoll profile)' });
     expect(labRun(d, new URLSearchParams('armtwist=maybe'))).toEqual({ def: d, opts: {}, label: 'armtwist=maybe ignored' });
@@ -402,8 +407,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   // the contact motion M2 brace flip and the M3 wrap flip (under which the run before the born overlap does not defer D)
   it('born=on runs the fixture with the born-overlap conversion on its ragdoll, id and all (L3-F1-falling before the 17b and 18e flips: D converts at his first try, where that run defers him), which is the registered fixture before the born separation; born=off takes it off again and on a fixture without it is that run; on the registered fixture it keeps V2; a fixture without a ragdoll and unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
-    // (contact motion M4: and before the fall flip, under which the run before the born overlap does not defer D either)
-    const reg = preMetArmStay(preBrace(preWrap(preFallReact(FIX(id)))));
+    // (contact motion M4: and before the fall flip, under which the run before the born overlap does not defer D either;
+    // and before the shoulder twist flip, registered after the born overlap on the same profile)
+    const reg = preMetArmStay(preBrace(preWrap(preFallReact(preShoulderTwist(FIX(id))))));
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const d = preBornOverlap(reg);
     expect(d.ragdoll!.bornOverlap).toBeUndefined();

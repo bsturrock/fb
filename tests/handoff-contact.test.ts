@@ -18,7 +18,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { poseProbe } from '../src/sim/debug';
 import { stableReach } from '../src/sim/pose';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
-import { POSE_GUARD_C6, withoutBornOverlap } from '../src/sim/profiles';
+import { POSE_GUARD_C6, withoutBornOverlap, withoutShoulderTwistLimit } from '../src/sim/profiles';
 import { add, dot, len, norm, qConj, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { breathe, create, FIX, metArmStayed, pace, preBornSeparation, preFallReact, preHipTwist, preWrap, rows, run, runSim, stepWhile, traceDiff, unflipped } from './helpers';
 import { heldBornBar, limbAndTrunk, limbInBody, LIMB_DEEP_M, LIMB_HELD_M, LIMB_HELD_S } from './visible-bar';
@@ -479,8 +479,8 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
           expect(guarded.length).toBeGreaterThan(20);
           expect(guarded.filter((d) => !ON(d)).map((d) => d.id)).toEqual([]);
           expect(allFixtures().filter((d) => ON(d) && d.ragdoll && !d.ragdoll.poseGuard).map((d) => d.id)).toEqual([]);
-          // (the profile before the visible and born-overlap flips, which add their parts after the guard)
-          for (const d of HC()) if (d.ragdoll) expect(unflipped(withoutBornOverlap(d.ragdoll)).id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
+          // (the profile before the visible, born-overlap and shoulder twist flips, which add their parts after the guard)
+          for (const d of HC()) if (d.ragdoll) expect(unflipped(withoutBornOverlap(withoutShoulderTwistLimit(d.ragdoll))).id.endsWith(`+${POSE_GUARD_C6.id}`), d.id).toBe(true);
         },
       ],
     ];

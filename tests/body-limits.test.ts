@@ -29,6 +29,7 @@ import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions 
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preHipTwist, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
+import { jointAngles } from './visible';
 
 /** A table of named checks: each runs, and the test fails once with every failing check's name and first failure. */
 type Check = [string, () => void | Promise<void>];
@@ -1149,15 +1150,29 @@ describe('contact motion M1: upper-arm twist', () => {
     }
   });
 
-  /** Per arm source: worst twist (deg) past the range, the largest change in one tick of one source, where. */
-  async function twistRun(def: FixtureDef): Promise<Record<Src, { over: number; jump: number; at: string; jat: string }> & { startOutside: number }> {
-    const out = { pose: { over: -999, jump: 0, at: '', jat: '' }, armTask: { over: -999, jump: 0, at: '', jat: '' }, ragdoll: { over: -999, jump: 0, at: '', jat: '' }, startOutside: 0 };
+  /**
+   * Per arm source: worst twist (deg) past the range, the largest change in one tick of one source, where. And the
+   * ragdolls' largest shoulder start slack, and how far it exceeds the posed arm's own twist past the human range on the
+   * last tick before the conversion (the visible meter's rotation, `jointAngles`): what the limit adds to the pose.
+   */
+  async function twistRun(def: FixtureDef): Promise<Record<Src, { over: number; jump: number; at: string; jat: string }> & { startOutside: number; startBeyondPose: number }> {
+    const out = { pose: { over: -999, jump: 0, at: '', jat: '' }, armTask: { over: -999, jump: 0, at: '', jat: '' }, ragdoll: { over: -999, jump: 0, at: '', jat: '' }, startOutside: 0, startBeyondPose: 0 };
     const last = new Map<string, { src: Src; tw: number }>();
+    const posed = new Map<string, number>();
     const sim = await Simulation.create(def);
     await runSim(sim, Infinity, (s) => {
       for (const pl of s.players) {
         if (!pl.pose?.segments.leftUpperArm) continue;
-        if (pl.rag) for (const e of pl.rag.envelope ?? []) if (/Shoulder/.test(e.jointId)) out.startOutside = Math.max(out.startOutside, e.startOutsideDeg);
+        if (pl.rag) {
+          for (const e of pl.rag.envelope ?? []) {
+            if (!/Shoulder/.test(e.jointId)) continue;
+            out.startOutside = Math.max(out.startOutside, e.startOutsideDeg);
+            out.startBeyondPose = Math.max(out.startBeyondPose, e.startOutsideDeg - (posed.get(`${pl.id}.${e.jointId}`) ?? 0));
+          }
+        } else {
+          const m = jointAngles(pl.pose, pl.body);
+          for (const side of SIDES) posed.set(`${pl.id}.${side}Shoulder`, Math.max(0, Math.abs(m[`${side}Shoulder`].rot) - 100));
+        }
         for (const side of SIDES) {
           const src: Src = pl.rag ? 'ragdoll' : s.arms?.obs(pl.id)?.[side]?.enabled ? 'armTask' : 'pose';
           const tw = ext(pl.pose.segments.core.rotationWorld, pl.pose.segments[`${side}UpperArm`].rotationWorld, sideSignX(pl.body, side));
@@ -1214,7 +1229,18 @@ describe('contact motion M1: upper-arm twist', () => {
       const S = FIX(id).solver.substeps;
       expect(on.armTask.jump, `${id} ${on.armTask.jat}`).toBeLessThanOrEqual(tick + (S * TWIST_FIT_TOL_RAD * 180) / Math.PI);
       const off = await twistRun(v1(FIX(id)));
-      expect(on.startOutside, id).toBeLessThanOrEqual(off.startOutside + 1);
+      // (the shoulder twist flip: the anatomical limit reads a raised arm's twist as the visible meter does, so a supported
+      // arm posed past the human range starts its ragdoll with that excess as slack: HC-F1-low D's raised arms, 4.9 and 6.0
+      // deg past, the same posed before the flip, where plan 09's measure read them inside. Slack beyond the twin's is
+      // allowed only where it is the pose's own, the limit adding none)
+      expect(Math.min(on.startOutside - off.startOutside, on.startBeyondPose), `${id} ${on.startOutside} ${off.startOutside} ${on.startBeyondPose}`).toBeLessThanOrEqual(1);
+      if (id === 'HC-F1-low') {
+        // the clause's fault twin: a shoulder twist range 10 deg narrower starts those arms 10 deg further out than the pose
+        const J = FIX(id).jointRange!;
+        const tw = J.shoulder.twistDeg;
+        const narrow = await twistRun({ ...FIX(id), jointRange: { ...J, id: `${J.id}-narrow`, shoulder: { ...J.shoulder, twistDeg: [tw[0] + 10, tw[1] - 10] } } });
+        expect(narrow.startBeyondPose, id).toBeGreaterThan(5);
+      }
     });
   }, 240000);
 });

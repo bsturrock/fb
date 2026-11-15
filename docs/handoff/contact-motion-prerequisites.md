@@ -12,7 +12,8 @@ ladder 15, ladder 16 (`11551f6`, `5c8d4aa`), ladder 17 (`8d50783`, `0926d2c`) an
 
 Ladder 13 (2026-11-12) took the user's three look rulings: the fallen arm bent the wrong way overhead (13a), legs
 planted and still in a stationary hold (13b), and the elbow and upper arm inside the own chest (13c). Each landed off;
-13a's and 13c's flips are parked, and 13b's was registered in 14a. Ladder 14:
+13c's flip is parked, 13b's was registered in 14a, and 13a's limit, stepped (13a-iii, `SHOULDER_TWIST_ANAT_V2`), was
+registered with the contact-motion work (p19, `SHOULDER_TWIST_REBOUND` below). Ladder 14:
 
 - **14a** registered 13b's still feet. It first replaced the coverage floor that blocked it (`c81146e`), then made the
   flip (`809d9aa`).
@@ -115,7 +116,7 @@ brace pressed on a body at the end of its window misses `obstructed` (9e); and t
 | `SELF_CLEARANCE_V2` `seamSettle` (11d iii) | The own trunk's share of an arm's continuity push halves each time it turns against the one before | `pose.ts` |
 | `JOINT_RANGE_V4` (11d ii) | The M1 twist window works in `limbAnatomicalTwistRad`: the envelope's measure up to horizontal, regular overhead. `guardEnvelopeTwist` keeps the envelope's twist in range | `joint-cone.ts`, `pose.ts` |
 | `JOINT_RANGE_V5` (12b) | V4 plus `fitMaxMps` 6: the M1 elbow fit moves the elbow at most 6 m/s | `pose.ts` |
-| `SHOULDER_TWIST_ANAT_V1` (13a, `withShoulderTwistLimit`) | The ragdoll shoulder's twist limit reads the anatomical twist (regular overhead) instead of plan 09's measure, which fades at the pole | `ragdoll.ts` |
+| `SHOULDER_TWIST_ANAT_V1` (13a, `withShoulderTwistLimit`, lab `armtwist=v1`) | The ragdoll shoulder's twist limit reads the anatomical twist (regular overhead) instead of plan 09's measure, which fades at the pole. Superseded by V2 (13a-iii, registered on every L3/L4/HC ragdoll since p19): the same measure, the push stepped over the substep on the arm's own inertia (`steppedLimitPush`) | `ragdoll.ts` |
 | `SelfClearanceProfile.upperArm` (13c, `withUpperArmClearance`) | The supported upper arm's distal half (at the forearm's radius) joins the arm's self shapes: candidate depth, the arm task's validity and the continuity push, whose target stays within the arm's reach of its shoulder | `pose.ts`, `arms.ts` |
 
 Kept but unregistered: `LEG_GUARD_V2`, `HIP_STOPS_V1` (no zone, lab `hips=v1`), `HIP_STOPS_L4_V1` (8g's L4 backstop,
@@ -211,22 +212,23 @@ owner-change jump, a shoulder held 100 deg behind on L4-F8-passive (`holdArmBehi
   `tests/data/state/`; `tests/seed.ts` is the older seed behind `headplant` and `corerock`.
 - **Rules as tests:** `tests/loaded-limb.ts` (7f), `tests/passive-energy.ts` (7g), `tests/visible.ts` (8c).
 - **Lab parameters** (`src/lab/lab-params.ts`): `order=rev`, `legs=v1|v2|v3`, `hips=on|l4|v1|off`, `pgs=<n>`,
-  `knees=off|140|145`, `retry=on|off`, `selfleg=on|off`, the ladder 13 flags `armtwist=on|off` and `upperarm=on|off`,
+  `knees=off|140|145`, `retry=on|off`, `selfleg=on|off`, the ladder 13 flags `armtwist=on|v1|off` (on: the stepped
+  anatomical limit, V2, registered since p19; v1 the unstepped one; off plan 09's) and `upperarm=on|off`,
   the ladder 14 flags `holdstill=on|off` (registered since 14a) and `armswing=on|off`, `armstay=on|off` (16b; both
   registered since 18e), `born=on|off` (registered since 17b) and `bornsep=on|off` (registered since 18c).
-  `armtwist=on` and `upperarm=on` each show a parked flip. Before-views (each equals the earlier registration on all
+  `upperarm=on` shows a parked flip. Before-views (each equals the earlier registration on all
   195 L3/L4/HC fixtures, `r18-e-flip/lab-views.txt`; `born=off`, `bornsep=off`, `armswing=off` and `armstay=off` are
   also tested in `lab-params.test.ts`):
 
   | as it was | add |
   | --- | --- |
-  | before 8m | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off&holdstill=off&born=off&armstay=off&armswing=off` |
-  | after 8m | `&legs=v1&selfleg=off&holdstill=off&born=off&armstay=off&armswing=off` |
-  | after 9d (through 10b) | `&legs=v1&holdstill=off&born=off&armstay=off&armswing=off` |
-  | after 10d (through 13c) | `&holdstill=off&born=off&armstay=off&armswing=off` |
-  | after 14a (through 17a) | `&born=off&armstay=off&armswing=off` |
-  | after 17b (through 18b) | `&bornsep=off&armstay=off&armswing=off` |
-  | after 18c (through 18e-i) | `&armstay=off&armswing=off` |
+  | before 8m | `&legs=v1&selfleg=off&hips=off&pgs=0&knees=off&retry=off&holdstill=off&born=off&armstay=off&armswing=off&armtwist=off` |
+  | after 8m | `&legs=v1&selfleg=off&holdstill=off&born=off&armstay=off&armswing=off&armtwist=off` |
+  | after 9d (through 10b) | `&legs=v1&holdstill=off&born=off&armstay=off&armswing=off&armtwist=off` |
+  | after 10d (through 13c) | `&holdstill=off&born=off&armstay=off&armswing=off&armtwist=off` |
+  | after 14a (through 17a) | `&born=off&armstay=off&armswing=off&armtwist=off` |
+  | after 17b (through 18b) | `&bornsep=off&armstay=off&armswing=off&armtwist=off` |
+  | after 18c (through 18e-i) | `&armstay=off&armswing=off&armtwist=off` |
 
   Rungs 3 to 7c have no lab view. Serve the lab from the ladder worktree (`npx vite --port 5180 --strictPort`).
 - **Who falls against the start:** `.scratch/ladder/r10d-v3-flip/tools/netfalls.py`.
@@ -319,15 +321,19 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
 - **A physical leg starting a solve inside another ragdoll:** at worst 1.85 cm (HC-F2-bothFallL2 rev A's right
   shoe in B's trunk, 0.683 s), and 2.3 cm for 0.05 s (L3-F1-phase2 and L3-F4-oneArm D's left shin in R's shoe,
   1.233 s), against `PHYS_LEG_OK` 1 mm. Small; no test.
-- **`SHOULDER_TWIST_REBOUND`** (blocks 13a's flip; replaces `SHOULDER_POLE_TWIST`): HC-F5-strictTransfer R lies with
+- **`SHOULDER_TWIST_REBOUND`, fixed** (p19: 13a-iii `2665441`, registered by the shoulder twist flip; it replaced
+  `SHOULDER_POLE_TWIST`). The limit term is stepped over the substep on the arm's own inertia (`steppedLimitPush`:
+  the spring on the end-of-substep excess, damping at most critical, never pushing the arm back past the stop within
+  the substep), so it adds no energy and does not reverse the spin (`tests/shoulder-twist-stepped.test.ts`, its fault
+  twins plan 09's push and V1; on the L4-F10-elbow-on capture the snap is gone). As it was: HC-F5-strictTransfer R lies with
   its right arm overhead, bent the wrong way (the user's ruling on question 1), because plan 09's twist limit fades at
   the pole. `SHOULDER_TWIST_ANAT_V1` brings it back inside (`shoulder-twist.test.ts` on `HC-F5-strictTransfer~v3@100`),
   but the limit is still plan 09's spring (400 N m/rad, about 0.3 of critical for a bent arm), and an arm lifted past
   it stores the impact and gives it back: L4-F10-elbow-on R's left shoulder snaps 86 deg in a frame at 0.517 s, and
   solves gain 8.2 J (HC-F3-phase75 rev D) and 3.1 J (L4-F9-low rev R). Same-state twins in `assess-13a/caps/`. Fix
-  (13a-iii): step the term as 8g's approach zone is stepped (`parked/arm-twist-flip/README.md`). Under 18e the
-  ragdoll shoulder rotation past range reads 42.8 player-s, both orders (31.6 before), the worst HC-F5-strictTransfer
-  forward R's left shoulder, 287 deg s over 1.52-6 s; not twinned (out of 18's scope); no gate row fails.
+  (13a-iii): step the term as 8g's approach zone is stepped (`parked/arm-twist-flip/README.md`). Under the flip the
+  ragdoll shoulder rotation past the impossible margin reads 0.2 player-s, both orders (32.4 before); its tracked
+  defects are in `docs/open/contact-motion/polish.md` (item 4).
 - **The solved-impulse reading misses coincident manifold points:** L3-F1-phase6 reversed, solve 266. Points 2-4
   share one position and one solver contact. Rapier wrote 15.53 N s to point 4, but the match gives it to point 2, so
   the pair reads 0. The energy meter uses max(solved, raw). Still to check: which records read 0 for a real contact.
@@ -412,7 +418,7 @@ Its README has the evidence and the suite failures by class.
 | `JOINT_RANGE_V3` (11b) | Supported knees turning sideways or backwards: HC supported impossible 4.22 -> 0.05 s | The proxy thigh sliding in a shoe (caused); 3 who-falls changes, all reached: HC-F3-phase0 rev D stands, L3-F1-phase0 rev D falls, L3-F1-phase7 D stands | `hip-twist-flip/map.patch`; `assess-11b/`, `assess-12a/` |
 | `LEG_GUARD_V4` (11c) | L3-F6's tucked knee (supSelfLegAxS L3 12.84 -> 10.44) | The hold's second plant (`HOLD_SETTLES`); on L3-F6-saturated, a cross-leg rise and a 1.22 cm transition, not twinned | `own-legs-flip/map.patch`; `assess-11c/` |
 | Arm pair: `JOINT_RANGE_V5` with `SELF_CLEARANCE_V2` (11d, 12b) | One-frame arm turns (supSnap60 L3 16 -> 2) and trembling palms (L3 3027 -> 405) | The raised held arm (L3 supImpS 0.95 -> 4.13, caused). Not yet twinned: three natural samples (falls' L4-F9 boundary identity first) and HC ragdoll implausible time 4.48 -> 6.58 | `arm-pair-flip/map.patch` (replaces `palm-seam-flip/`, `overhead-twist-flip/`); `assess-12b/` |
-| `SHOULDER_TWIST_ANAT_V1` on every L3/L4/HC ragdoll (13a) | The fallen arm bent the wrong way overhead: ragdoll shoulder impossible 31.5 -> 0.5 player-s | `SHOULDER_TWIST_REBOUND`: a rebound snap and two solve gains, caused; two soft suite rows (L4-F1-shoulderTwist, L4-F8-passive) | `arm-twist-flip/flip.patch`; `assess-13a/` |
+| `SHOULDER_TWIST_ANAT_V1` on every L3/L4/HC ragdoll (13a) | The fallen arm bent the wrong way overhead: ragdoll shoulder impossible 31.5 -> 0.5 player-s | Superseded: V2 (the limit stepped) registered in p19, which fixes `SHOULDER_TWIST_REBOUND`; the soft rows are printed trends since ladder 15 (L4-F1-shoulderTwist mean 2.17 deg against the load's 2.15; L4-F8-passive loses 0.57 J) | `arm-twist-flip/flip.patch`; `assess-13a/` |
 | `upperArm` on every L3/L4/HC self-clearance (13c) | Arms in the own chest: L3 upper arm past 5 cm 160 -> 85 player-s (arm tasks 16.7 -> 0); trembling palms L3 3027 -> 1111 | Caused: two runners fall as rigid figures, the low-tackle runner stays up, shape queries 4265 (budget 4000), the carry's tuck. Worsened: supported snaps L3 16 -> 53 (`CLIP_ARM_HELD_DEPARTURE`). With `clipArmSwing` too (14b) the snaps are 20, but the low-tackle runner, one rigid runner (HC-F1-at1.6 rev), the tuck and the queries (4759) remain | `upper-arm-flip/flip.patch`; `assess-13c/`, `assess-14b/full-upperarm/` |
 
 Not taken: the narrowed L4 envelope (`l4-hip-envelope-narrowed/`). From the old stack: `ARM_CLEARANCE_V1` and the

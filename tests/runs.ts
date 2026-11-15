@@ -10,7 +10,7 @@ import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V13, type WrapProfile } from '../src/sim/controllers/wrap';
 import {
   FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, HIP_STOPS_L4_V1, JOINT_RANGE_V2, JOINT_RANGE_V3, HIP_STOPS_V2, LEG_GUARD_V1, withAdditionalPgsIterations, withHipStops, withJointRange, withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop,
-  withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, withoutBalancedClear, type HipStopProfile, type RagdollProfile,
+  withClipArmSwing, withMetArmStay, withoutBornOverlap, withoutBornSeparation, withoutClipArmSwing, withoutMetArmStay, withoutPgsIterations, withoutSelfLegs, withoutBalancedClear, withoutShoulderTwistLimit, type HipStopProfile, type RagdollProfile,
 } from '../src/sim/profiles';
 
 /** The registered fixture `id` (a fresh definition each call); throws when there is none. */
@@ -168,6 +168,12 @@ export const preWrapV12 = (d: FixtureDef): FixtureDef =>
  */
 export const preWrapV13 = (d: FixtureDef): FixtureDef => (d.wrap?.id === WRAP_V13.id ? { ...d, wrap: WRAP_V12 } : d);
 /**
+ * Ladder 13a-iii (p19, the shoulder twist flip): `d` with its ragdoll profile as before it, plan 09's shoulder twist
+ * limit (no `shoulderTwistLimit`, its id as then): what every state capture and natural sample taken before it ran
+ * under. Composes with the other `pre*` helpers.
+ */
+export const preShoulderTwist = (d: FixtureDef): FixtureDef => (d.ragdoll?.shoulderTwistLimit ? { ...d, ragdoll: withoutShoulderTwistLimit(d.ragdoll) } : d);
+/**
  * WRAP_V6 as it was from the bound-legs fall (`fc616d3`) to the drag-down (polish 2.3): the same low strike and low arms on
  * WRAP_V8 (no fall link, no drive from behind, no hanging holder), its id as then. No fixture registered it; the state
  * captures taken under the lab's `wrap=v6` then (scripts/capture-state.ts `--wrap=v6`, suffix `wrapv6`) ran under it.
@@ -267,7 +273,7 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
  * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
  * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preWrapV13, preForwardFall, preWrapV12, preWrapV11, preWrapV10, preWrapV9, preHipTwist, preWrapV8, preWrapV7, preWrapV5, preWrapV4, prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preShoulderTwist, preWrapV13, preForwardFall, preWrapV12, preWrapV11, preWrapV10, preWrapV9, preHipTwist, preWrapV8, preWrapV7, preWrapV5, preWrapV4, prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before

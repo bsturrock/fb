@@ -6,12 +6,13 @@ import { anatomicalTwist, applyEnvelope, envelopeMoments, initEnvelope, steppedL
 import { add, cross, dot, qConj, qFromAxisAngle, qFromUnitVectors, qMul, qRot, scale, v3, type Quat, type Vec3 } from '../src/sim/vec';
 import { asCaptured } from './runs';
 import { loadState, resumeState } from './state';
-import { HUMAN_RANGES, shoulderRotationDeg, VisibleMeter } from './visible';
+import { HUMAN_RANGES, jointQuats, qAngle, shoulderRotationDeg, SNAP_RADPS, VisibleMeter } from './visible';
 
 // Ladder 13a-iii: the shoulder twist limit stepped over the substep on the arm's own inertia (SHOULDER_TWIST_ANAT_V2,
 // `steppedLimitPush`), in place of plan 09's explicit spring-damper (400 N m/rad with 2 N m s: about 0.3 of critical
 // for a bent arm, and for a straight one so light that one substep's push overshoots). Under V1 an arm lifted past its
-// stop stored the impact and gave it back (`SHOULDER_TWIST_REBOUND`). No fixture uses V2 yet.
+// stop stored the impact and gave it back (`SHOULDER_TWIST_REBOUND`). Registered on every L3, L4 and HC ragdoll since the
+// shoulder twist flip (src/sim/fixtures/index.ts `shoulderTwistFlip`).
 const E: JointEnvelope = JOINT_RANGE_V2.shoulder;
 const ROT = HUMAN_RANGES.find((r) => r.joint === 'Shoulder' && r.dof === 'rotation')!;
 const D = 180 / Math.PI;
@@ -254,3 +255,46 @@ describe('ladder 13a-iii: the stepped shoulder twist limit (SHOULDER_TWIST_ANAT_
 });
 
 const CAPTURE = 'tests/data/state/L4-F10-elbow-on@20.json.gz';
+
+// Tracked (rule 5), reached by the shoulder twist flip. LANDING_SHOULDER_SNAP: L3-F9-low (both orders) and L4-F9-low
+// reversed, the carrier R lands on his free left arm at 1.03 s (the landing of LANDING_ELBOW_SNAP,
+// tests/fall-react-defects.test.ts). The landing whips the passive arm; under the registered limit the shoulder is the
+// joint past the snap bar (62 rad/s forward, 88 reversed; 67 on L4-F9-low reversed), where before the flip the reversed
+// run's elbow was (62) and the forward run's shoulder spun 79 deg past its twist range for 0.1 s instead. Captured at
+// 1.000 s (L3-F9-low reversed, registered): plan 09's limit from the same state snaps the shoulder the same (87 rad/s);
+// through the whip the shoulder's limit absorbs about 70 J under either. The landing makes the snap and the limit brakes
+// it: reached by the moved trajectory, not made by the limit. Pinned present; once it is gone this becomes the fix's test
+describe('the shoulder twist flip: tracked defects (rule 5)', () => {
+  it("LANDING_SHOULDER_SNAP (L3-F9-low reversed, from 1.000 s): R's left shoulder turns past SNAP_RADPS in one drawn frame as he lands on the arm, under the registered limit and under plan 09's from the same state; the limit takes out more than it gives back meanwhile", async () => {
+    const cap = loadState('tests/data/state/L3-F9-low~rev@60.json.gz');
+    const def = asCaptured(cap);
+    expect(def.ragdoll!.shoulderTwistLimit).toBe(SHOULDER_TWIST_ANAT_V2);
+    const look = async (limit: ShoulderTwistLimitProfile | null) => {
+      const r = withoutShoulderTwistLimit(def.ragdoll!);
+      const sim = await resumeState(cap, { def: { ...def, ragdoll: limit ? withShoulderTwistLimit(r, limit) : r }, variant: ['ragdoll'] });
+      const R = sim.byId.get('R')!;
+      const e = R.rag!.envelope!.find((x) => x.jointId === 'leftShoulder')!;
+      const [pos0, neg0] = [e.passivePositiveJ, e.passiveNegativeJ];
+      let prev: Record<string, Quat> | null = null;
+      const snaps: { t: number; w: number }[] = [];
+      while (!sim.done && sim.t < 1.1 - 1e-9) {
+        sim.stepTick();
+        const q = jointQuats(R.pose!);
+        const w = prev ? qAngle(prev.leftShoulder, q.leftShoulder) / sim.def.solver.outerTickS : 0;
+        if (w > SNAP_RADPS) snaps.push({ t: sim.t, w });
+        prev = q;
+      }
+      const out = { snaps, returnedJ: e.passivePositiveJ - pos0, absorbedJ: e.passiveNegativeJ - neg0 };
+      sim.dispose();
+      return out;
+    };
+    const on = await look(SHOULDER_TWIST_ANAT_V2);
+    const off = await look(null);
+    const said = JSON.stringify({ on, off });
+    for (const r of [on, off]) {
+      expect(r.snaps.length, said).toBeGreaterThanOrEqual(1);
+      for (const x of r.snaps) expect(x.t, said).toBeCloseTo(1.033, 2);
+      expect(r.returnedJ, said).toBeLessThan(r.absorbedJ);
+    }
+  }, 60000);
+});
