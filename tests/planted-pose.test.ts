@@ -4,7 +4,7 @@ import { initPhysics, RAPIER } from '../src/sim/physics';
 import { add, addScaled, dist, len, norm, qFromUnitVectors, qFromYaw, qRot, scale, sub, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { asCaptured, FIX } from './helpers';
 import { LEG_GUARD_V3 } from '../src/sim/profiles';
-import { STEPS_V1 } from '../src/sim/contact-steps';
+import { plantAtShownFoot, STEPS_V1 } from '../src/sim/contact-steps';
 import { groundOf, legHit, nearestFree, type FootQuery, type Part } from '../src/sim/free-ground';
 import { runSim } from './runs';
 import { loadState, resumeState } from './state';
@@ -311,5 +311,42 @@ describe('plan 15: a model foot is shown where the model asks: the guard never m
     // (across the ground: the floor lift is not the guard, and the leg's soft reach at the end of the swing is millimetres)
     expect(off(true)).toBeLessThanOrEqual(0.005);
     expect(off(false)).toBeGreaterThan(0.03);
+  });
+
+  it('a step\'s plant is taken at the foot as shown: the shoe does not move when the plant begins; the twin (flat under the ankle) settles', () => {
+    // the left foot swung 0.2 m forward and 0.15 m out over 50 substeps, down onto the ground (the leg out to the side, so
+    // the shoe touches down rolled on its edge), then planted
+    const plant0 = standingPlant();
+    const start = add(plant0.heelW, v3(0, soleUp, 0));
+    const toeZ = R.shoe.forwardM + 0.5 * R.shoe.halfExtents.z;
+    const shoeCorners = (p: PhysicalPose): Vec3[] => {
+      const b = leftLeg(p).find((x) => x.key === 'leftShoe') as Extract<PoseShape, { kind: 'box' }>;
+      return [-1, 1].flatMap((a) => [-1, 1].flatMap((c) => [-1, 1].map((d) => add(b.c, qRot(b.q, v3(a * b.he.x, c * b.he.y, d * b.he.z))))));
+    };
+    // how far any shoe corner moves from the touchdown over the 30 substeps after it (m)
+    const moved = (flat: boolean): number => {
+      const m: PoseMemory = {};
+      let p: PhysicalPose | null = null;
+      for (let i = 1; i <= 50; i++) {
+        // (a minimum-jerk path, at rest at touchdown, as the model's)
+        const u = i / 50;
+        const k = u * u * u * (10 - 15 * u + 6 * u * u);
+        const want = add(start, v3(0.15 * k, 0.07 * Math.sin(Math.PI * k) ** 2, 0.2 * k));
+        p = buildProxyPose(input({ memory: m, dtS: DT, legSweep: true, feet: { left: { kind: 'target', ankleW: want, headingRad: 0, exact: true } } }));
+      }
+      const ankle = p!.jointLandmarksWorld.leftAnkle;
+      const at = plantAtShownFoot(ankle, footFrame(p!, 'left'), 0, 0, soleUp, toeZ, { he: R.shoe.halfExtents, centerFoot: v3(0, -R.shoe.belowAnkleM, R.shoe.forwardM) });
+      const pl: Plant = flat ? { kind: 'plant', heelW: v3(ankle.x, 0, ankle.z), headingRad: 0, rollF: 0, toeZ, tolM: TOL, exact: true } : { kind: 'plant', heelW: at.heelW, headingRad: 0, rollF: at.rollF, toeZ, edgeX: at.edgeX, tolM: TOL, exact: true };
+      const c0 = shoeCorners(p!);
+      let worst = 0;
+      for (let i = 0; i < 30; i++) {
+        const q = buildProxyPose(input({ memory: m, dtS: DT, legSweep: true, feet: { left: pl } }));
+        worst = Math.max(worst, ...shoeCorners(q).map((c, j) => dist(c, c0[j])));
+      }
+      return worst;
+    };
+    // (within the plant tolerance: the leg solve's own plant, its contact point on the anchor within it)
+    expect(moved(false)).toBeLessThanOrEqual(TOL);
+    expect(moved(true)).toBeGreaterThan(0.03);
   });
 });

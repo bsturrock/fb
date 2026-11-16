@@ -68,6 +68,10 @@ export interface FootDebug {
   stepsShortOnly?: boolean;
   /** Fault (negative control of plan 15's bound step, `FootworkProfile.steps`): a bound foot aims at its want, not under its hip. */
   stepsBoundWant?: boolean;
+  /** Fault (negative control of plan 15's touchdown, `FootworkProfile.steps`): a step lands with its heel under the ankle, flat, not as the foot is shown. */
+  stepsLandFlat?: boolean;
+  /** Fault (negative control of plan 15's touchdown, `FootworkProfile.steps`): a foot in the air turns at most at the swing's yaw rate, not onto the body's heading by touchdown. */
+  stepsTurnRate?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */

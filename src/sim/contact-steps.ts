@@ -15,8 +15,9 @@
 //   down, a foot steps when stepping improves its support by more than coverM (its aim is that much nearer its want than
 //   its plant is; a plant its leg no longer stands clear on is as far as can be), and they take turns: the foot that
 //   stepped last steps again only when its plant no longer stands clear. A step's time comes from its length, at a foot
-//   speed that grows with the travel (stepMps + travelK |v|, between minS and maxS), and never changes; when it is up
-//   the foot lands where the leg is.
+//   speed that grows with the travel (stepMps + travelK |v|, between minS and maxS), and never changes; the foot turns
+//   onto the body's heading over it; when it is up the foot lands where the leg is, the plant taken at the foot as shown
+//   (its lowest sole corner on the ground where it is).
 // Nothing is held off, retimed, re-picked or remembered: a foot is planted or in a step that will land. A foot is bound
 // when it cannot follow the hips: its plant is more than coverM from its want or out of range, or it is in the air, and
 // no free place is within its reach. The fall triggers read that (legsBound, standsNowhere): the legs are bound while a
@@ -31,7 +32,7 @@ import { isFree, nearestFree, type FootQuery } from './free-ground';
 import { armTwistRad, swingExcess } from './joint-cone';
 import { flexReach, maxFlexRad, plannedChain, plannedLeg, type FootRequest } from './pose';
 import { quinticStep } from './step-path';
-import { add, clamp, dist, headingOf, len, norm, qInvRot, qRot, rad, round, sub, v3, wrapPi, type Vec3 } from './vec';
+import { add, clamp, dist, headingOf, len, norm, qInvRot, qRot, rad, round, sub, v3, wrapPi, type Quat, type Vec3 } from './vec';
 
 export interface StepModelProfile {
   id: string;
@@ -332,23 +333,30 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
     f.speedMps = len(f.moveV);
     f.liftRateMps = Math.abs(f.stepY.v);
   }
-  const turn = rad(P.swing.maxYawRateDegPerS) * dt;
+  // the foot turns to the body's heading over the time left, so it is on it at touchdown (FootDebug.stepsTurnRate, a
+  // fault: at most the swing's yaw rate, as before)
   f.destHeadingRad = headingNow(inp);
-  f.headingRad += clamp(wrapPi(f.destHeadingRad - f.headingRad), -turn, turn);
+  const dh = wrapPi(f.destHeadingRad - f.headingRad);
+  const turn = rad(P.swing.maxYawRateDegPerS) * dt;
+  f.headingRad += inp.debug?.stepsTurnRate ? clamp(dh, -turn, turn) : dh * Math.min(1, dt / left);
 }
 
-/** When: the step's time is up: the foot lands where the leg is this substep (the achieved ankle at its motion), flat. */
+/**
+ * When: the step's time is up: the foot lands where the leg is this substep (the achieved ankle at its motion), as it is
+ * shown (`plantAtShownFoot`; FootDebug.stepsLandFlat, a fault: its heel under the ankle, flat, as before).
+ */
 function land(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[]): void {
   const f = plan.feet[s];
   const here = add(f.ankleW, v3(f.ankleV.x * inp.dt, 0, f.ankleV.z * inp.dt));
+  const p = inp.debug?.stepsLandFlat ? { heelW: v3(here.x, inp.groundY, here.z), rollF: 0, edgeX: 0, at: v3(here.x, inp.groundY, here.z) } : plantAtShownFoot(here, f.footQ, f.headingRad, inp.groundY, inp.soleM, inp.toeM, plan.shoe);
   f.mode = 'planted';
   f.solves = 0;
-  f.rollF = 0;
+  f.rollF = p.rollF;
   f.toeZ = inp.toeM;
-  f.edgeX = 0;
-  f.heelW = v3(here.x, inp.groundY, here.z);
-  f.anchorW = { ...f.heelW };
-  f.featureW = { ...f.heelW };
+  f.edgeX = p.edgeX;
+  f.heelW = p.heelW;
+  f.anchorW = { ...p.at };
+  f.featureW = { ...p.at };
   f.plantedAtS = inp.t;
   f.dest = null;
   f.offset = v3();
@@ -356,5 +364,24 @@ function land(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[]): 
   f.attempts++;
   plan.stats.attempts++;
   plan.stats.confirmed++;
-  ev.push({ type: 'footPlant', side: s, data: { at: [round(here.x, 4), round(inp.groundY, 4), round(here.z, 4)], headingDeg: round((f.headingRad * 180) / Math.PI, 2), rollF: 0, errM: 0 } });
+  ev.push({ type: 'footPlant', side: s, data: { at: [round(p.at.x, 4), round(inp.groundY, 4), round(p.at.z, 4)], headingDeg: round((f.headingRad * 180) / Math.PI, 2), rollF: round(p.rollF, 4), errM: 0 } });
+}
+
+/**
+ * Where a step's plant is taken: at the foot as shown, its ankle at `ankle` and its shoe frame `footQ`. The lowest sole
+ * corner (shoe frame x, z) is the plant's contact point, on the ground where it is (`at`); the heel is placed from it
+ * along the plan heading (`headingRad`), so the leg solve, which puts that corner on its anchor, shows the shoe where it
+ * touched down: no settle onto a flat footprint under the ankle.
+ */
+export function plantAtShownFoot(ankle: Vec3, footQ: Quat, headingRad: number, groundY: number, soleM: number, toeM: number, shoe: { he: Vec3; centerFoot: Vec3 }): { heelW: Vec3; rollF: number; edgeX: number; at: Vec3 } {
+  let low = { x: 0, z: 0, y: Infinity, w: v3() };
+  for (const x of [-shoe.he.x, shoe.he.x])
+    for (const z of [shoe.centerFoot.z - shoe.he.z, shoe.centerFoot.z + shoe.he.z]) {
+      const w = add(ankle, qRot(footQ, v3(x, -soleM, z)));
+      if (w.y < low.y) low = { x, z, y: w.y, w };
+    }
+  const at = v3(low.w.x, groundY, low.w.z);
+  const dir = v3(Math.sin(headingRad), 0, Math.cos(headingRad));
+  const lat = v3(Math.cos(headingRad), 0, -Math.sin(headingRad));
+  return { heelW: v3(at.x - dir.x * low.z - lat.x * low.x, groundY, at.z - dir.z * low.z - lat.z * low.x), rollF: low.z / toeM, edgeX: low.x, at };
 }

@@ -8,7 +8,7 @@ import { groundOf, isFree, legHit, type FreeGround, type Part } from '../src/sim
 import { swingExcess } from '../src/sim/joint-cone';
 import { plannedChain, plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
-import { add, dist, norm, qFromAxisAngle, qInvRot, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
+import { add, dist, norm, qFromAxisAngle, qFromYaw, qInvRot, qMul, sub, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
 import { POP_M, SLIDE_M } from './l3-pass';
 import { FIX } from './runs';
 
@@ -43,10 +43,12 @@ interface Scene {
   hipRange?: boolean;
   /** The hips' height above the sole (m; default 0.75). */
   hipM?: number;
+  /** The body's heading at time t (rad; default 0). */
+  yaw?: (t: number) => number;
   durS: number;
 }
 interface Run {
-  ev: (FootEvent & { t: number; hip: Vec3 })[];
+  ev: (FootEvent & { t: number; hip: Vec3; ankle: Vec3 })[];
   /**
    * Per substep: time, planted feet, requested ankles, hips, the aims of the feet in the air, the fall triggers' reads
    * (legsBound, standsNowhere; and the old planner's: a foot in the air past its time), the other players' free ground.
@@ -81,7 +83,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     return {
       t,
       dt: DT,
-      core: { p: v3(c.x, SOLE + 0.85, c.z), q: sc.leanBackRad ? qFromAxisAngle(v3(1, 0, 0), -sc.leanBackRad) : I },
+      core: { p: v3(c.x, SOLE + 0.85, c.z), q: qMul(qFromYaw(sc.yaw?.(t) ?? 0), sc.leanBackRad ? qFromAxisAngle(v3(1, 0, 0), -sc.leanBackRad) : I) },
       vel: v,
       yawRate: 0,
       supported: true,
@@ -114,7 +116,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     const req = planFeet(plan, inp, ev);
     const ankle = { left: ankleOf(req.left, inp, 'left'), right: ankleOf(req.right, inp, 'right') };
     observeFeet(plan, pose(ankle), SOLE, 0, ev, t);
-    for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side] });
+    for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side], ankle: ankle[e.side] });
     const aims = SIDES.filter((s) => plan.feet[s].mode !== 'planted').map((s) => plan.feet[s].contact!.aim);
     out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: legsBound(plan), nowhere: standsNowhere(plan), late: SIDES.some((s) => plan.feet[s].mode === 'swing' && plan.feet[s].elapsedS > plan.feet[s].durS), ground: inp.ground!, core: inp.core.q });
   }
@@ -122,10 +124,8 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
 }
 
 const plants = (r: Run) => r.ev.filter((e) => e.type === 'footPlant');
-const at = (e: FootEvent): Vec3 => {
-  const a = e.data.at as number[];
-  return v3(a[0], a[1], a[2]);
-};
+/** Where a landing put the foot: its requested ankle then, on the ground (the event's `at` is the plant's contact point). */
+const at = (e: Run['ev'][number]): Vec3 => v3(e.ankle.x, 0, e.ankle.z);
 /** Each step: its side, start, landing time and length in time (s: substeps from its first update to its landing). */
 function steps(r: Run): { side: ArmSide; t0: number; t1: number; s: number }[] {
   const out: { side: ArmSide; t0: number; t1: number; s: number }[] = [];
@@ -379,6 +379,19 @@ describe('contact stepping model (plan 15)', () => {
     expect(pops(run(sc))).toBeLessThanOrEqual(POP_M);
     // fault twin: the aim followed at once
     expect(pops(run(sc, { ...M, followMps: 1e9 }))).toBeGreaterThan(POP_M);
+  });
+
+  it('a step lands on the body\'s heading: spun by a hit, every foot is turned onto it by touchdown', () => {
+    // walked forward at 1 m/s, spun 140 degrees at 8 rad/s from 0.4 s (faster than a swing foot turns at its yaw rate)
+    const yaw = (t: number): number => 8 * Math.min(0.3, Math.max(0, t - 0.4));
+    const sc: Scene = { vel: push(v3(0, 0, 1), 1), yaw, durS: 1.5 };
+    // the largest turn between a landing's heading and the body's then (deg)
+    const offHeading = (r: Run): number => Math.max(...plants(r).map((e) => (Math.abs(wrapPi(((e.data.headingDeg as number) * Math.PI) / 180 - yaw(e.t))) * 180) / Math.PI));
+    const r = run(sc);
+    expect(plants(r).filter((e) => e.t > 0.4 && e.t < 0.8).length).toBeGreaterThan(1);
+    expect(offHeading(r)).toBeLessThanOrEqual(0.5);
+    // fault twin (FootDebug.stepsTurnRate): the foot turns at most at the swing's yaw rate, and lands turned off the body
+    expect(offHeading(run(sc, M, { stepsTurnRate: true }))).toBeGreaterThan(10);
   });
 
   // the fall triggers' reads (simulation.ts: the bound-legs fall's clause (b) and the ride-down's come-down; the drive's
