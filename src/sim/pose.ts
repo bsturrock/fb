@@ -416,13 +416,18 @@ export function legShapes(R: RagdollProfile, s: string, hip: Vec3, knee: Vec3, a
  * leg near it.
  */
 export function plannedLeg(R: RagdollProfile, s: ArmSide, hip: Vec3, ankle: Vec3, headingRad: number): PoseShape[] {
+  const r = plannedChain(R, hip, ankle, headingRad);
+  const q = qFromAxisAngle(v3(0, 1, 0), headingRad);
+  return legShapes(R, s, hip, r.mid, r.end, q, q);
+}
+
+/** The knee (`mid`) and ankle (`end`) of the planned leg (plannedLeg). */
+export function plannedChain(R: RagdollProfile, hip: Vec3, ankle: Vec3, headingRad: number): { mid: Vec3; end: Vec3 } {
   const d = sub(ankle, hip);
   const L = len(d);
   const t = L > 1e-9 ? addScaled(hip, d, softReachM(R, L) / L) : ankle;
   const pole = v3(Math.sin(headingRad), 0.2, Math.cos(headingRad));
-  const r = twoBone(hip, t, R.lengths.thigh, R.lengths.shin, pole, legReachM(R), flexReach(R.lengths.thigh, R.lengths.shin, maxFlexRad(R, 'knee')));
-  const q = qFromAxisAngle(v3(0, 1, 0), headingRad);
-  return legShapes(R, s, hip, r.mid, r.end, q, q);
+  return twoBone(hip, t, R.lengths.thigh, R.lengths.shin, pole, legReachM(R), flexReach(R.lengths.thigh, R.lengths.shin, maxFlexRad(R, 'knee')));
 }
 
 /**

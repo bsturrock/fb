@@ -5,8 +5,10 @@ import type { FootDebug } from '../src/sim/debug';
 import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
 import { groundOf, isFree, legHit, type FreeGround, type Part } from '../src/sim/free-ground';
-import { plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
-import { add, dist, v3, type Vec3 } from '../src/sim/vec';
+import { swingExcess } from '../src/sim/joint-cone';
+import { plannedChain, plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
+import { JOINT_RANGE_V3 } from '../src/sim/profiles';
+import { add, dist, norm, qFromAxisAngle, qInvRot, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
 import { POP_M, SLIDE_M } from './l3-pass';
 import { FIX } from './runs';
 
@@ -36,6 +38,11 @@ interface Scene {
   others?: (t: number, c: Vec3) => Part[];
   /** Ankles to start from (world; default: on the ground under the hips). */
   start?: Record<ArmSide, Vec3>;
+  /** The trunk leaning back by this (rad; default upright), and the hip's range (default: JOINT_RANGE_V3's; false: the knee's alone, a fault). */
+  leanBackRad?: number;
+  hipRange?: boolean;
+  /** The hips' height above the sole (m; default 0.75). */
+  hipM?: number;
   durS: number;
 }
 interface Run {
@@ -44,7 +51,7 @@ interface Run {
    * Per substep: time, planted feet, requested ankles, hips, the aims of the feet in the air, the fall triggers' reads
    * (legsBound, standsNowhere; and the old planner's: a foot in the air past its time), the other players' free ground.
    */
-  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; bound: boolean; nowhere: boolean; late: boolean; ground: FreeGround }[];
+  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; bound: boolean; nowhere: boolean; late: boolean; ground: FreeGround; core: Quat }[];
 }
 
 const I = { x: 0, y: 0, z: 0, w: 1 };
@@ -74,14 +81,14 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     return {
       t,
       dt: DT,
-      core: { p: v3(c.x, SOLE + 0.85, c.z), q: I },
+      core: { p: v3(c.x, SOLE + 0.85, c.z), q: sc.leanBackRad ? qFromAxisAngle(v3(1, 0, 0), -sc.leanBackRad) : I },
       vel: v,
       yawRate: 0,
       supported: true,
       falling: false,
       ragdoll: false,
       groundY: 0,
-      hips: { left: add(home.left, v3(0, 0.75, 0)), right: add(home.right, v3(0, 0.75, 0)) },
+      hips: { left: add(home.left, v3(0, sc.hipM ?? 0.75, 0)), right: add(home.right, v3(0, sc.hipM ?? 0.75, 0)) },
       home,
       request: home,
       clip: null,
@@ -92,6 +99,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
       contactHold: true,
       ground: groundOf(sc.others?.(t, c) ?? [], CEIL),
       ...(sc.footprintsOnly ? {} : { legs: R }),
+      ...(sc.hipRange === false ? {} : { range: { profile: JOINT_RANGE_V3, sideX: { left: -1, right: 1 } } }),
       ...(debug ? { debug } : {}),
     };
   };
@@ -108,7 +116,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     observeFeet(plan, pose(ankle), SOLE, 0, ev, t);
     for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side] });
     const aims = SIDES.filter((s) => plan.feet[s].mode !== 'planted').map((s) => plan.feet[s].contact!.aim);
-    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: legsBound(plan), nowhere: standsNowhere(plan), late: SIDES.some((s) => plan.feet[s].mode === 'swing' && plan.feet[s].elapsedS > plan.feet[s].durS), ground: inp.ground! });
+    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: legsBound(plan), nowhere: standsNowhere(plan), late: SIDES.some((s) => plan.feet[s].mode === 'swing' && plan.feet[s].elapsedS > plan.feet[s].durS), ground: inp.ground!, core: inp.core.q });
   }
   return out;
 }
@@ -178,6 +186,20 @@ const skates = (r: Run): number => {
   return worst;
 };
 /** Largest move of a requested ankle in one substep (m). */
+/**
+ * How far a planted leg's thigh goes past the hip's swing range (deg; negative inside): per frame, the planned leg at
+ * each plant from its hip, in the core frame, against JOINT_RANGE_V3's hip cone; the largest.
+ */
+const hipPast = (r: Run): number => {
+  let worst = -Infinity;
+  for (const f of r.frames)
+    for (const s of SIDES) {
+      if (!f.planted[s]) continue;
+      const { mid } = plannedChain(R, f.hips[s], f.ankle[s], 0);
+      worst = Math.max(worst, (swingExcess(JOINT_RANGE_V3.hipTwist!.envelope, qInvRot(f.core, norm(sub(mid, f.hips[s]))), s === 'right' ? 1 : -1).rad * 180) / Math.PI);
+    }
+  return worst;
+};
 const pops = (r: Run): number => {
   let worst = 0;
   for (let i = 1; i < r.frames.length; i++) for (const s of SIDES) worst = Math.max(worst, dist(r.frames[i].ankle[s], r.frames[i - 1].ankle[s]));
@@ -281,6 +303,17 @@ describe('contact stepping model (plan 15)', () => {
     expect(skates(run({ vel: push(v3(0, 0, 1), 1), others: (_, c) => legsAt(v3(c.x, 0, c.z + 0.5), v3(0, 0, 1)), durS: 2.5 }))).toBeLessThanOrEqual(1e-9);
     // fault twin (FootDebug.stepsStanceWaits): a plant past its reach waits for the other foot to land: its leg would drag it
     expect(skates(run(sc, M, { stepsStanceWaits: true }))).toBeGreaterThan(SLIDE_M);
+  });
+
+  it('a trailing plant lifts before its hip passes its range: driven at speed, crouched, the trunk leaning back', () => {
+    // driven to 4 m/s, the hips 0.6 m above the soles and the trunk leaning back 20 degrees (a hit that stands him up):
+    // a plant left behind the hips passes the hip's extension range before its knee's reach
+    const sc: Scene = { vel: push(v3(0, 0, 1), 4), leanBackRad: (20 * Math.PI) / 180, hipM: 0.6, durS: 1.5 };
+    const r = run(sc);
+    expect(steps(r).length).toBeGreaterThan(4);
+    expect(hipPast(r)).toBeLessThanOrEqual(0);
+    // fault twin: the knee's range alone (no hip range): the plant stands until its knee's reach, the hip past its range
+    expect(hipPast(run({ ...sc, hipRange: false }))).toBeGreaterThan(3);
   });
 
   it('at speed, both feet are in the air only briefly: never longer than one step time', () => {

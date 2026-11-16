@@ -6,9 +6,10 @@
 //   outline (one point for a ball, a capsule's segment, a box's outline) with a radius, and its velocity;
 // - a foot asks with its own radius (a disc over its shoe) and, so the legs never cross, a side wall: the line of its
 //   other foot, which it keeps a separation to its own side of; and with its leg: the leg (thigh, shin, shoe) that would
-//   stand on a place, which must be clear of every part by a skin (Rapier's contact query, as the leg guard asks it);
+//   stand on a place, which must be clear of every part by a skin (Rapier's contact query, as the leg guard asks it)
+//   and inside its joint ranges (the stepping player's own, asked of the place);
 // - a place is free when it is clear of every moved footprint by the footprint's radius plus the foot's, on its side of
-//   the wall, and its leg is clear. Nothing else decides whether a place is blocked.
+//   the wall, and its leg stands there (clear and in range). Nothing else decides whether a place is blocked.
 // The adapter from a simulation (`bodyParts`, `groundFor`) reads each player's parts once per substep: a supported or
 // falling player's proxy colliders and published limbs (his pose of the last substep), a ragdoll's segment colliders.
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -44,12 +45,13 @@ export interface FreeGround {
  * The foot that asks: its radius on the ground (m), the side wall of its other foot (`p` the other foot's point, `n` the
  * unit direction of this foot's own side): a free point lies at least `sepM` along `n` from `p`; and its leg: the shapes
  * (thigh, shin, shoe, in that order) of the leg standing on a place (its point on the ground), which must be clear of
- * every part by `skinM`.
+ * every part by `skinM`, and whether that leg is inside its joint ranges there (absent: always). The place under the
+ * hip is the leg's most natural: a leg out of range anywhere is out of range there too.
  */
 export interface FootQuery {
   clearM: number;
   wall?: { p: Pt; n: Pt; sepM: number };
-  leg?: { at: (p: Vec3) => PoseShape[]; skinM: number };
+  leg?: { at: (p: Vec3) => PoseShape[]; skinM: number; inRange?: (p: Vec3) => boolean };
 }
 
 const EPS = 1e-9;
@@ -93,7 +95,7 @@ export function isFree(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery): 
   const x = pt(p);
   if (q.wall && dot2(sub2(x, q.wall.p), q.wall.n) < q.wall.sepM - TOL) return false;
   for (const f of g.prints) if (outlineDist(moved(f, horizonS), x) < f.r + q.clearM - TOL) return false;
-  return !q.leg || !legHit(g, q.leg.at(p), horizonS, q.leg.skinM);
+  return !q.leg || ((!q.leg.inRange || q.leg.inRange(p)) && !legHit(g, q.leg.at(p), horizonS, q.leg.skinM));
 }
 
 // The boundary pieces of the region a point may not enter (each footprint dilated by its radius and the foot's), the
@@ -182,21 +184,66 @@ const LEG_TRIES = 8;
 /**
  * The nearest point to `want` (its point on the ground) that a foot (`q`) may stand on `horizonS` from now, within
  * `reachM` of `hip` (horizontal); null when there is none. On the ground it is exact (`nearestOnGround`); a place whose
- * leg is not clear is cut from the ground by the part it meets (`cutOf`) and the search asked again, at most LEG_TRIES
- * times.
+ * leg is out of its range is cut from the ground beyond the range's edge toward the hip (`rangeCut`), one whose leg is
+ * not clear by the part it meets (`cutOf`), and the search asked again, at most LEG_TRIES times.
  */
 export function nearestFree(g: FreeGround, want: Vec3, hip: Vec3, reachM: number, horizonS: number, q: FootQuery): Vec3 | null {
   if (!q.leg) return nearestOnGround(g.prints, want, hip, reachM, horizonS, q);
+  const inRange = q.leg.inRange;
+  const under = v3(hip.x, want.y, hip.z);
+  if (inRange && !inRange(under)) return null;
   const prints = [...g.prints];
   for (let i = 0; i < LEG_TRIES; i++) {
     const p = nearestOnGround(prints, want, hip, reachM, horizonS, q);
     if (!p) return null;
+    if (inRange && !inRange(p)) {
+      prints.push(rangeCut(inRange, p, under, q));
+      continue;
+    }
     const shapes = q.leg.at(p);
     const hit = legHit(g, shapes, horizonS, q.leg.skinM);
     if (!hit) return p;
     prints.push(cutOf(hit, shapes, p, hip, q));
   }
   return null;
+}
+
+/** A range cut's extent (m): far larger than a step, so the cut is the ground beyond a line. */
+const RANGE_CUT_M = 3;
+
+/**
+ * The ground a leg out of its range at `p` cannot stand on: beyond the range's edge, the line through two points of that
+ * edge (each found by halving a ray from the place under the hip, which is in range: the ray to `p` and one turned an
+ * eighth of a radian either way), the side away from the hip; across the first ray where no turned one finds an edge. A cut only
+ * steers the search, which verifies the next place.
+ */
+function rangeCut(inRange: (p: Vec3) => boolean, p: Vec3, under: Vec3, q: FootQuery): Footprint {
+  const H = pt(under);
+  const at = (c: Pt): Vec3 => v3(c.x, p.y, c.z);
+  const edge = (to: Pt): Pt => {
+    let a = H;
+    let b = to;
+    for (let i = 0; i < 12; i++) {
+      const m = { x: 0.5 * (a.x + b.x), z: 0.5 * (a.z + b.z) };
+      if (inRange(at(m))) a = m;
+      else b = m;
+    }
+    return a;
+  };
+  const d = sub2(pt(p), H);
+  const L = len2(d);
+  const u = L > 1e-9 ? { x: d.x / L, z: d.z / L } : { x: 1, z: 0 };
+  const b1 = edge(pt(p));
+  const c = Math.cos(0.125);
+  const sn = Math.sin(0.125);
+  const far = [add2(H, { x: d.x * c - d.z * sn, z: d.x * sn + d.z * c }), add2(H, { x: d.x * c + d.z * sn, z: -d.x * sn + d.z * c })].find((f) => !inRange(at(f)));
+  const t0 = far ? sub2(edge(far), b1) : null;
+  const t = t0 && len2(t0) > 1e-6 ? { x: t0.x / len2(t0), z: t0.z / len2(t0) } : { x: -u.z, z: u.x };
+  // (the line's normal, away from the hip)
+  const n = t.z * u.x - t.x * u.z >= 0 ? { x: t.z, z: -t.x } : { x: -t.z, z: t.x };
+  const o = add2(b1, n, q.clearM);
+  const corners = [add2(o, t, -RANGE_CUT_M), add2(o, t, RANGE_CUT_M)];
+  return { pts: hull([...corners, ...corners.map((x) => add2(x, n, 2 * RANGE_CUT_M))]), r: 0, v: { x: 0, z: 0 }, key: 'range' };
 }
 
 /**

@@ -628,7 +628,7 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
       return v3(c.x, 0, c.z);
     }),
     ...(host.def.jointRange ? { heelLift: true } : {}),
-    ...(parts ? { ground: groundFor(parts, pl.id, gy + soleM + R.lengths.shin), legs: R } : {}),
+    ...(parts ? { ground: groundFor(parts, pl.id, gy + soleM + R.lengths.shin), legs: R, ...(host.def.jointRange ? { range: { profile: host.def.jointRange, sideX: { left: sideSignX(pl.body, 'left'), right: sideSignX(pl.body, 'right') } } } : {}) } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
   };
 }

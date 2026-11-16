@@ -32,7 +32,7 @@ import type { ArmSide } from './contracts';
 import { advanceContactStep, stepFeet, type ContactFoot, type StepModelProfile } from './contact-steps';
 import type { FootDebug } from './debug';
 import type { FreeGround } from './free-ground';
-import type { RagdollProfile } from './profiles';
+import type { JointRangeProfile, RagdollProfile } from './profiles';
 import { plantReachM, type FootRequest, type PhysicalPose, footFrame } from './pose';
 import { add, addScaled, clamp, dist, dot, headingOf, len, norm, qRot, rad, round, scale, sub, v3, wrapPi, type Pose, type Vec3 } from './vec';
 import { canFollow, carryPath, chase, decayOffset, descentS, endRateY, finishSole, followNext, HANDOVER_M, handsOn, heldOff, REQUEST_JUMP_MPS, seedFollow, seedStep, startFollow, takeRequests, trialOf } from './foot-compose';
@@ -638,6 +638,11 @@ export interface FootPlanInput {
   ground?: FreeGround;
   /** Plan 15: the player's ragdoll profile, whose leg free ground stands on a place (absent: the footprints only). */
   legs?: RagdollProfile;
+  /**
+   * Plan 15: the joint ranges that leg stands within (the fixture's joint-range profile; absent: the knee's alone), and
+   * each leg's side sign along the core's X (`sideSignX`).
+   */
+  range?: { profile: JointRangeProfile; sideX: Record<ArmSide, number> };
   /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
   debug?: FootDebug;
 }

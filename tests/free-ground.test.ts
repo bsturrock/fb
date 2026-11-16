@@ -150,6 +150,33 @@ describe('free ground (plan 15)', () => {
     expect(legHit(g, leg.at(blind!), 0, 0)).not.toBeNull();
   });
 
+  it('the leg\'s range: the nearest place where the leg is in range, against a dense search; none where it is in range nowhere', () => {
+    // a leg in range only within a wedge ahead of a line 0.1 m behind the hip turned 30 degrees (as a hip's extension range
+    // bounds a trailing foot), with a shin standing ahead: the wanted place is behind the line
+    const hip = v3(0, 0.9, 0);
+    const n = { x: Math.sin(Math.PI / 6), z: Math.cos(Math.PI / 6) };
+    const inRange = (p: Vec3): boolean => (p.x - hip.x) * n.x + (p.z - hip.z) * n.z >= -0.1;
+    const g = groundOf([shin(0.1, 0.25)], CEIL);
+    const leg = { at: (): never[] => [], skinM: 0, inRange };
+    const q: FootQuery = { clearM: 0.1, leg };
+    for (const want of [v3(0, 0, -0.35), v3(0.3, 0, -0.35), v3(-0.3, 0, -0.2), v3(0.1, 0, 0.2)]) {
+      const p = nearestFree(g, want, hip, 0.4, 0, q);
+      expect(p).not.toBeNull();
+      expect(isFree(g, p!, 0, q)).toBe(true);
+      let best = Infinity;
+      for (let x = -0.4; x <= 0.4; x += 0.004)
+        for (let z = -0.4; z <= 0.4; z += 0.004) {
+          const s = v3(hip.x + x, 0, hip.z + z);
+          if (x * x + z * z <= 0.16 && isFree(g, s, 0, q)) best = Math.min(best, Math.hypot(s.x - want.x, s.z - want.z));
+        }
+      expect(Math.hypot(p!.x - want.x, p!.z - want.z)).toBeLessThanOrEqual(best + 1e-3);
+      // fault twin: the range not asked: a place where the leg is out of its range
+      if (!inRange(want)) expect(inRange(nearestFree(g, want, hip, 0.4, 0, { clearM: 0.1 })!)).toBe(false);
+    }
+    // out of range under the hip, it is out of range everywhere: nowhere to stand
+    expect(nearestFree(g, v3(0, 0, 0.1), hip, 0.4, 0, { clearM: 0.1, leg: { ...leg, inRange: () => false } })).toBeNull();
+  });
+
   it('only what comes down to the shin is ground: a leg below it, a body above it not, a box cut where it passes it', () => {
     // a thigh from the hip (0.9 m) to the knee (0.45 m) a little ahead: only its lowest part, near the knee
     const thigh = footprintOf(still({ kind: 'capsule', a: v3(0, 0.9, 0), b: v3(0, 0.45, 0.4), r: 0.085 }), CEIL)!;

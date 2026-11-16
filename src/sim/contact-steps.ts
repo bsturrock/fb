@@ -1,22 +1,23 @@
 // Plan 15 (contact footwork): one stepping model for a supported player once the clip regime ends (contact hold or
 // braking), in place of the reactive planner. Per substep, three rules:
-// - Free ground (free-ground.ts): where a leg may stand, the ground minus the other players' moving footprints, with the
-//   whole leg on the place (thigh, shin, shoe, as the leg solve gives it: pose.ts plannedLeg) clear of their parts.
+// - Free ground (free-ground.ts): where a leg can stand, the ground minus the other players' moving footprints, with the
+//   whole leg on the place (thigh, shin, shoe, as the leg solve gives it: pose.ts plannedLeg) clear of their parts and
+//   inside its joint ranges (`inRange`). That is the one test of a place, for a plant as for an aim.
 // - Where. Each foot's want is where the hips need it given their real motion now, the capture point home + v sqrt(h / g)
 //   (home: the foot's place under its hip, with its side offset and stagger; a hit or a lean is already in v), taken
 //   where the hips will be when the foot lands (moved along v for the time left), limited to a short step from the hip.
 //   Its aim is the nearest free place to its want (none when there is no free place within the step). A foot in the air
 //   follows its aim at a bounded rate that falls to zero at touchdown (the foot commits as it lands).
-// - When. A planted foot never moves on the ground: it stands or it steps. It stands while it can (within reach of its
-//   hip) and lifts the moment it cannot, whatever the other foot does: that is the only way both feet are in the air (a
-//   flight, as in running), and it ends when the other foot's step lands, within one step time. Otherwise, with both feet
+// - When. A planted foot never moves on the ground: it stands or it steps. It stands while its leg is in range and lifts
+//   the moment it is not, whatever the other foot does: that is the only way both feet are in the air (a flight, as in
+//   running), and it ends when the other foot's step lands, within one step time. Otherwise, with both feet
 //   down, a foot steps when stepping improves its support by more than coverM (its aim is that much nearer its want than
 //   its plant is; a plant its leg no longer stands clear on is as far as can be), and they take turns: the foot that
 //   stepped last steps again only when its plant no longer stands clear. A step's time comes from its length, at a foot
 //   speed that grows with the travel (stepMps + travelK |v|, between minS and maxS), and never changes; when it is up
 //   the foot lands where the leg is.
 // Nothing is held off, retimed, re-picked or remembered: a foot is planted or in a step that will land. A foot is bound
-// when it cannot follow the hips: its plant is more than coverM from its want or past its reach, or it is in the air, and
+// when it cannot follow the hips: its plant is more than coverM from its want or out of range, or it is in the air, and
 // no free place is within its step. The fall triggers read that (legsBound, standsNowhere): the legs are bound while a
 // foot cannot follow the hips, and the player stands nowhere while neither can. The leg solve gets the same requests as
 // from the old planner (FootRequest) and observeFeet measures the pose as before; under the model a plant is never
@@ -25,9 +26,10 @@ import type { ArmSide } from './contracts';
 import { seedStep } from './foot-compose';
 import type { FootEvent, FootPlan, FootPlanInput, FootReason, FootworkProfile } from './footwork';
 import { isFree, nearestFree, type FootQuery } from './free-ground';
-import { plannedLeg, type FootRequest } from './pose';
+import { armTwistRad, swingExcess } from './joint-cone';
+import { flexReach, maxFlexRad, plannedChain, plannedLeg, type FootRequest } from './pose';
 import { quinticStep } from './step-path';
-import { add, clamp, dist, headingOf, len, qRot, rad, round, sub, v3, wrapPi, type Vec3 } from './vec';
+import { add, clamp, dist, headingOf, len, norm, qInvRot, qRot, rad, round, sub, v3, wrapPi, type Vec3 } from './vec';
 
 export interface StepModelProfile {
   id: string;
@@ -167,9 +169,11 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   const hip = v3(inp.hips[s].x + inp.vel.x * aheadS, inp.hips[s].y, inp.hips[s].z + inp.vel.z * aheadS);
   const lead = aheadS + Math.sqrt(Math.max(0, hip.y - inp.groundY) / G);
   const support = v3(inp.home[s].x + inp.vel.x * lead, sole, inp.home[s].z + inp.vel.z * lead);
-  // a short step from the hip, within the reach at the stance height
+  // a short step from the hip, within the knee's range at the stance height (the rest of the leg's ranges: `inRange`),
+  // asked a margin inside the reach so the plant stands when it lands (the hips' motion over the step is a prediction)
   const vert = hip.y - sole;
-  const rMax = Math.min(M.maxStepM, Math.sqrt(Math.max(0, (plan.reachM - 2 * P.reachMarginM) ** 2 - vert * vert)));
+  const reach = plan.reachM - P.reachMarginM;
+  const rMax = Math.min(M.maxStepM, Math.sqrt(Math.max(0, reach ** 2 - vert * vert)));
   const off = hz(sub(support, hip));
   const L = len(off);
   const want = L > rMax ? v3(hip.x + (off.x * rMax) / L, sole, hip.z + (off.z * rMax) / L) : support;
@@ -178,7 +182,8 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   const o = plan.feet[other(s)];
   const at = o.mode === 'planted' ? o.heelW! : (o.dest ?? o.target);
   const R = inp.legs;
-  const leg = R ? { at: (p: Vec3) => plannedLeg(R, s, hip, v3(p.x - c.x, sole, p.z - c.z), h), skinM: M.legSkinM } : undefined;
+  const ankle = (p: Vec3): Vec3 => v3(p.x - c.x, sole, p.z - c.z);
+  const leg = R ? { at: (p: Vec3) => plannedLeg(R, s, hip, ankle(p), h), skinM: M.legSkinM, inRange: (p: Vec3) => inRange(inp, s, hip, ankle(p), h, reach) } : undefined;
   const q: FootQuery = { clearM: M.footR, wall: { p: { x: at.x + c.x, z: at.z + c.z }, n: { x: inp.rightW.x * inp.sideSign[s], z: inp.rightW.z * inp.sideSign[s] }, sepM: P.minSeparationM }, ...(leg ? { leg } : {}) };
   const free = nearestFree(inp.ground ?? { prints: [] }, add(want, c), add(hip, c), rMax, aheadS, q);
   return { support, want, aim: free ? v3(free.x - c.x, sole, free.z - c.z) : null };
@@ -200,8 +205,30 @@ function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { 
   return { ...to(T), T };
 }
 
-/** When: a plant can stand while its leg reaches it (hip to ankle within the plant reach). */
-const canStand = (plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean => dist(add(plan.feet[s].heelW!, v3(0, inp.soleM, 0)), inp.hips[s]) <= plan.reachM;
+/** When: a plant can stand while its leg is inside its joint ranges (`inRange`). */
+const canStand = (plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean => inRange(inp, s, inp.hips[s], add(plan.feet[s].heelW!, v3(0, inp.soleM, 0)), plan.feet[s].headingRad, plan.reachM);
+
+/**
+ * The leg's own part of the standable test (free ground asks the rest: the leg clear of the other players): the leg the
+ * solve gives a plant at `ankle` from `hip` (pose.ts plannedChain, the shoe on heading `h`) is inside its joint ranges.
+ * The knee between its fold and its reach (hip to ankle within `reachM`, the plant reach); under a range profile with a
+ * hip range (`hipTwist`), the thigh inside the hip's swing cone and its rotation inside the hip's twist range less its
+ * margin, in the core frame. The ankle's range bars no place: past its dorsiflexion the heel lifts, as the pose has it.
+ */
+function inRange(inp: FootPlanInput, s: ArmSide, hip: Vec3, ankle: Vec3, h: number, reachM: number): boolean {
+  const L = dist(ankle, hip);
+  const R = inp.legs;
+  // (the search's reach circle is this reach on the ground: rounding only)
+  if (L > reachM + 1e-7 || (R && L < flexReach(R.lengths.thigh, R.lengths.shin, maxFlexRad(R, 'knee')))) return false;
+  const H = inp.range?.profile.hipTwist;
+  if (!R || !H) return true;
+  const sx = inp.range!.sideX[s];
+  const { mid, end } = plannedChain(R, hip, ankle, h);
+  if (swingExcess(H.envelope, qInvRot(inp.core.q, norm(sub(mid, hip))), sx).rad > 0) return false;
+  const tw = armTwistRad(H.envelope, inp.core.q, hip, mid, end, sx);
+  const [lo, hi] = H.envelope.twistDeg;
+  return tw === null || Math.abs(wrapPi(tw - rad((lo + hi) / 2))) <= rad((hi - lo) / 2 - H.marginDeg);
+}
 
 /**
  * When: how much a standing plant's support improves by stepping now (m, horizontal): how far it is from its want (as
