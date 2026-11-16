@@ -46,6 +46,8 @@ export interface FootDebug {
    * hip every arrival stretch, as before (its arrival is still judged against the pose's target).
    */
   lateRepick?: boolean;
+  /** Fault (negative control of plan 15's choice of foot, `FootworkProfile.steps`): the foot nearer its aim steps, not the farther. */
+  stepsPickNearer?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */

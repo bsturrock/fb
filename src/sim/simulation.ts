@@ -44,6 +44,7 @@ import { applySupport, prepDropM, supportTargets, updateProbes } from './support
 import { advanceHinge, legOmega, legRotation, type HingeState } from './hinge';
 import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
+import type { Part } from './free-ground';
 import { carrySideOf, disablePhysicalLegs, footInputOf, legMeets, legPointMove, observePhysicalLegs, poseClearanceOf, publishedLimbs, sampledLimbsOf, updatePoses, type LegLedger, type PhysicalLegs } from './pose-runtime';
 import { EMPTY_APPLIED, applyMotors } from './motor-step';
 export type { AuditLeg, TransitionDelta } from './transition-audit';
@@ -1841,8 +1842,8 @@ export class Simulation {
   // can wrap them as they did before the split (`transitions-modes`, `p07-*`, `p07a-baseline`, `l1-carry`).
 
   /** Foot planner input from the solved state, the support probe and control mode, and the pose path's requests. */
-  footInput(pl: PlayerRuntime, inp: ProxyPoseInput, sampled: ProxyPoseInput['sampled'], dt: number): FootPlanInput {
-    const f = footInputOf(this, pl, inp, sampled, dt);
+  footInput(pl: PlayerRuntime, inp: ProxyPoseInput, sampled: ProxyPoseInput['sampled'], dt: number, parts?: Map<PlayerId, Part[]>): FootPlanInput {
+    const f = footInputOf(this, pl, inp, sampled, dt, parts);
     // ladder 13b: whether a hold is engaged, read only by a profile with the stationary hold's still feet
     return this.def.footwork?.holdStill ? { ...f, held: this.retained(pl) } : f;
   }

@@ -26,9 +26,12 @@
 // interval once the clip contact is made and the shoe is on the ground; liftoff at the interval's end). With no clip
 // weight and support, reactive steps: a planted foot steps when its anchor is far from its home under the hip (actual
 // travel), when the body has yawed away from it, or when its reach is nearly used; one foot at a time unless the geometry
-// releases both. A still body takes at most one settle step per foot (no marching).
+// releases both. A still body takes at most one settle step per foot (no marching). Plan 15 (`FootworkProfile.steps`):
+// with no clip weight the contact stepping model (contact-steps.ts) has the feet instead of the reactive steps.
 import type { ArmSide } from './contracts';
+import { advanceContactStep, stepFeet, type ContactFoot, type StepModelProfile } from './contact-steps';
 import type { FootDebug } from './debug';
+import type { FreeGround } from './free-ground';
 import type { RagdollProfile } from './profiles';
 import { plantReachM, type FootRequest, type PhysicalPose, footFrame } from './pose';
 import { add, addScaled, clamp, dist, dot, headingOf, len, norm, qRot, rad, round, scale, sub, v3, wrapPi, type Pose, type Vec3 } from './vec';
@@ -74,6 +77,8 @@ export interface FootworkProfile {
   compose?: FootComposeProfile;
   /** Ladder 13b: a stationary hold keeps its feet planted (`HoldStillProfile`); absent, a hold steps like any stance. */
   holdStill?: HoldStillProfile;
+  /** Plan 15: outside the clip regime the contact stepping model has the feet (`stepFeet`); absent, the reactive steps. */
+  steps?: StepModelProfile;
 }
 
 /**
@@ -409,6 +414,8 @@ export interface FootState {
   featureW: Vec3;
   /** Set when a plant was released after the pose: the next plan rejoins from the achieved ankle. */
   rejoin: boolean;
+  /** Plan 15: the foot under the contact stepping model (optional: written only under it, so a plan without it keeps its layout). */
+  contact?: ContactFoot;
 }
 
 export interface FootPlan {
@@ -431,6 +438,8 @@ export interface FootPlan {
   /** Plan 08 composed: the support state the last request was built on. */
   composition?: string;
   clipBack: boolean;
+  /** Plan 15: the contact stepping model had the feet at the last plan (written only under `FootworkProfile.steps`). */
+  stepsOwn?: boolean;
   initialized: boolean;
   /** Substep of the last plan (s): coverage accumulation in observeFeet. */
   dtS: number;
@@ -625,6 +634,8 @@ export interface FootPlanInput {
   others?: Vec3[];
   /** Ladder 13b (`FootworkProfile.holdStill`): a grip or clamp by or on this player is held. */
   held?: boolean;
+  /** Plan 15 (`FootworkProfile.steps`): this player's free ground, the other players' footprints (free-ground.ts). */
+  ground?: FreeGround;
   /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
   debug?: FootDebug;
 }
@@ -742,6 +753,7 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     }
     finishSole(plan, out, inp.dt);
     plan.clipLast = false;
+    if (P.steps) plan.stepsOwn = false;
     return out;
   }
   // plan 08: while braking the planner takes the legs at a held foot and keeps them until the brake lets go (the crossing
@@ -767,6 +779,13 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     plan.clipBack ||= plan.legsHeld;
     plan.legsHeld = false;
   } else if (C && inp.clip) plan.legsHeld = true;
+  // plan 15: outside the clip regime the contact stepping model has the feet
+  if (P.steps && !clip) {
+    const out = stepFeet(plan, inp, ev);
+    finishSole(plan, out, inp.dt);
+    return out;
+  }
+  if (P.steps) plan.stepsOwn = false;
   for (const s of SIDES) {
     const f = plan.feet[s];
     if (f.rejoin) {
@@ -1057,7 +1076,8 @@ export function continueOwners(copy: FootPlan, inp: FootPlanInput, was: Partial<
       chase(copy, s, inp);
       out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
     } else if (f.mode === 'swing' && f.source === 'step') {
-      advanceStep(copy, s, inp);
+      if (copy.stepsOwn && f.contact) advanceContactStep(copy, s, inp);
+      else advanceStep(copy, s, inp);
       out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
     } else if (f.mode === 'swing' && f.wait) out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
     else {
@@ -1666,7 +1686,8 @@ function observeFoot(plan: FootPlan, s: ArmSide, pose: PhysicalPose, soleM: numb
   }
   // controlled coverage (FootDebug.releasePlantAt): this solve releases the plant as a clearance solve would
   const forced = debug?.releasePlantAt?.side === s && Math.abs(t - debug.releasePlantAt.t) < plan.dtS / 2;
-  if (f.featureErrM > P.plantTolM || forced) {
+  // (plan 15: under the contact stepping model a plant is planted until it steps; its solve is measured, never a release)
+  if ((f.featureErrM > P.plantTolM || forced) && !plan.stepsOwn) {
     const why = forced ? 'clearance' : invalidWhy(f, info);
     release(plan, f, why, t, ev, s, detail());
     toFollow(f, ankle, why);

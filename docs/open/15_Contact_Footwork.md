@@ -1,6 +1,7 @@
 # 15. Contact footwork: one stepping model
 
-Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Step 1 done; step 2 in progress.
+Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Steps 1 and 2 done (the model behind
+`FootworkProfile.steps`, lab `&steps=new`, no fixture uses it); step 3 next.
 
 ## What a viewer should see (owner, 2026-11-15)
 
@@ -36,16 +37,25 @@ colliders); a foot asks with its radius and a side wall from its other foot (no 
 (exact), the sim adapter `bodyParts` / `groundFor`. About 0.06 ms per substep for two players.
 
 **Where.** The support point is where the hips need a foot given their real motion now:
-`hip + v * sqrt(h / g)` (the capture point: hit and lean are already in `v`), plus the foot's side offset. The step
+`hip + v * sqrt(h / g)` (the capture point: hit and lean are already in `v`), plus the foot's side offset, taken where
+the hips will be when the foot lands (hips and footprints moved along their motion for the step's time left). The step
 target is the support point, limited to a short step from the hip, then moved to the nearest free ground. The target
-follows the support point while the foot is in the air, at a bounded rate.
+follows the support point while the foot is in the air, at a bounded rate that falls to zero at touchdown.
 
-**When.** The stance foot holds while the support point is inside what the two feet can cover. When it leaves, the
-foot farther from it steps. One duration rule from step length (short and quick; one floor, one ceiling). When the
-time is up the foot lands where the leg is, always. A stance foot does not lift until the other is down; a plant
-past its reach slides (a drag) instead of lifting.
+**When.** The stance holds while each planted foot is within a few centimetres of its own aim now and within reach.
+When one is not, the foot farther from its aim steps. One duration rule from step length, at a foot speed that grows
+with the body's speed (one floor, one ceiling), fixed at lift-off. When the time is up the foot lands where the leg
+is, always. A stance foot does not lift until the other is down; a plant past its reach slides (a drag) instead of
+lifting. A foot in the air when the model takes over continues as a step from where it is, at its motion.
 
 That is the whole planner. No retimers, no blocked memory, no re-pick loop, no tentative landings.
+
+Built (`src/sim/contact-steps.ts`, `STEPS_V1`): step at most 0.4 m from the hip (less where the reach at the stance
+height is shorter), stance covered within 12 cm, step time = length / (1.6 + 2 |v|) m/s within 0.16-0.30 s, aim
+followed at 2 m/s at most. `planFeet` hands the feet to `stepFeet` wherever the reactive regime would run; the leg
+solve gets the same `FootRequest`s and under the model a plant is never released by its solve. Known limit: with no
+flight phase, a stance lasts one step time, so above about 4 m/s (a hit at full speed) the stance foot outruns its
+reach and drags.
 
 ## What stays
 

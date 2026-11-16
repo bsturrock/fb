@@ -8,6 +8,7 @@ import { buildProxyPose, legRequestLocal, poseLimbShapes, type PoseClearance, ty
 import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleTarget, idleWeight, idleWidthAddM, sampleIdle, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
+import { bodyParts, groundFor, type Part } from './free-ground';
 import { colliderWorldPose, externalFromColliders, ragdollPose, SEGMENTS, type ExternalShape } from './ragdoll';
 import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, solvedImpulses, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
@@ -44,6 +45,8 @@ export function updatePoses(host: PoseHost, dt: number): void {
   const R = host.def.ragdoll;
   // plan 07a: every player's published limbs before any pose of host substep is built (order independent)
   const limbs = publishedLimbs(host);
+  // plan 15: so too every player's body parts, the contact stepping model's free ground (only under it)
+  const parts = host.def.footwork?.steps ? bodyParts(host.players, R ?? DEFAULT_POSE_PROFILE) : undefined;
   for (const pl of host.players) {
     if (pl.rag) {
       pl.pose = ragdollPose(pl.rag);
@@ -126,7 +129,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
     const ev: FootEvent[] = [];
     if (fp && poseIn.ground) {
       poseIn.ground.fixedGait = true;
-      ftIn = host.footInput(pl, poseIn, sampled, dt);
+      ftIn = host.footInput(pl, poseIn, sampled, dt, parts);
       poseIn.feet = fp.initialized ? planFeet(fp, ftIn, ev) : {};
     }
     const oldIn = host.opts.transitionAudit && ftIn ? auditInput(host, pl, poseIn, ftIn) : null;
@@ -559,8 +562,11 @@ export function walkSwing(pl: PlayerRuntime, P: LocomotionProfile, core: ProxyPo
   return st.swing;
 }
 
-/** Foot planner input from the solved state, the support probe and control mode, and the pose path's requests. */
-export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInput, sampled: ProxyPoseInput['sampled'], dt: number): FootPlanInput {
+/**
+ * Foot planner input from the solved state, the support probe and control mode, and the pose path's requests; with the
+ * substep's body parts (the contact stepping model's), the player's free ground below his shin top.
+ */
+export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInput, sampled: ProxyPoseInput['sampled'], dt: number, parts?: Map<PlayerId, Part[]>): FootPlanInput {
   const R = inp.ragdoll;
   const core = inp.pose;
   const b = pl.proxy.body;
@@ -622,6 +628,7 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
       return v3(c.x, 0, c.z);
     }),
     ...(host.def.jointRange ? { heelLift: true } : {}),
+    ...(parts ? { ground: groundFor(parts, pl.id, v3(v.x, 0, v.z), gy + soleM + R.lengths.shin) } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
   };
 }
