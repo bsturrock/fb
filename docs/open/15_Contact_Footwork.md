@@ -1,6 +1,6 @@
 # 15. Contact footwork: one stepping model
 
-Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Step 1 in progress.
+Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Step 1 done; step 2 in progress.
 
 ## What a viewer should see (owner, 2026-11-15)
 
@@ -30,6 +30,10 @@ Per player, per substep, once the clip regime ends (contact hold or braking). Th
 **Free ground.** One function answers "may a foot or shin be here": the ground minus the footprints of other
 players' bodies and legs, each moved by its relative velocity over the step's remaining time. The planner and the
 leg guard both call it. Nothing else decides whether a place is blocked.
+Built (`src/sim/free-ground.ts`): a footprint is a part's span below the stepping player's shin top projected to the
+ground (supported: proxy colliders and published limbs, a leg moving at its measured ankle velocity; ragdoll: segment
+colliders); a foot asks with its radius and a side wall from its other foot (no crossing). `isFree`, `nearestFree`
+(exact), the sim adapter `bodyParts` / `groundFor`. About 0.06 ms per substep for two players.
 
 **Where.** The support point is where the hips need a foot given their real motion now:
 `hip + v * sqrt(h / g)` (the capture point: hit and lean are already in `v`), plus the foot's side offset. The step

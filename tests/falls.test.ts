@@ -810,8 +810,8 @@ describe('L4-F3 carrier with a free arm', () => {
         ],
       ),
       // (polish 4, the forward-fall flip: L4-F3-forward-on as before it, FALL_L4. With the plan its bent brace arrives
-      // late, a miss at 0.388 s where FALL_L4's palm landed at 0.375 s: an open finding, docs/open/contact-motion/polish.md
-      // item 4. The other three as registered, the plan on in the two model falls)
+      // late, a miss at 0.388 s where FALL_L4's palm landed at 0.375 s: an open finding, parked in
+      // docs/handoff/contact-motion-polish.md. The other three as registered, the plan on in the two model falls)
       ...['L4-F3-forward-on~preFwd', 'L4-F3-run-on', 'L4-F3-model-forward-on', 'L4-F3-model-oblique-on'].map(
         (id): Check => [
           `${id}: reaches the floor through a real collider`,

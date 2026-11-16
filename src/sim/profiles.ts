@@ -1663,7 +1663,7 @@ export const FALL_REACT_V2: FallResponseProfile = {
   brace: { ...FALL_REACT_V1.brace, load: { dampScale: 1, releaseS: 0.05 } },
 };
 
-/** Polish 4 (p17): the forward-fall body plan (ForwardFallPlan). Numbers and why: docs/open/contact-motion/polish.md item 4. */
+/** Polish 4 (p17): the forward-fall body plan (ForwardFallPlan). Numbers and why: docs/handoff/contact-motion-polish.md. */
 export const FORWARD_FALL_V1: ForwardFallPlan = {
   horizonS: 0.1,
   minLeanDeg: 10,
