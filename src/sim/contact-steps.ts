@@ -10,8 +10,8 @@
 //   where the hips will be when the foot lands (moved along v for the time left), limited to a short step from the hip.
 //   Its aim is the first place within the leg's reach in that order: with free ground within reach, the nearest free
 //   place to its want, within the short step first. A foot in the air follows its aim at a bounded rate that falls to
-//   zero at touchdown (the foot commits as it lands), and, unless it is bound, its path keeps to free ground: a move into
-//   another player's footprint slides along its edge (`onFreeGround`).
+//   zero at touchdown (the foot commits as it lands), and its path goes no deeper into the other players' footprints than
+//   its ends: a move deeper slides along the footprint's edge (`onFreeGround`).
 // - When. A planted foot never moves on the ground: it stands or it steps. It stands while its leg is in range and lifts
 //   the moment it is not, whatever the other foot does: that is the only way both feet are in the air (a flight, as in
 //   running), and it ends when the other foot's step lands, within one step time. Otherwise, with both feet down, a
@@ -31,7 +31,7 @@
 import type { ArmSide } from './contracts';
 import { seedStep } from './foot-compose';
 import type { FootEvent, FootPlan, FootPlanInput, FootReason, FootworkProfile } from './footwork';
-import { depthAt, isFree, leastDeep, nearestFree, type FootQuery } from './free-ground';
+import { depthAt, isFree, leastDeep, nearestNoDeeper, type FootQuery } from './free-ground';
 import { armTwistRad, swingExcess } from './joint-cone';
 import { flexReach, maxFlexRad, plannedChain, plannedLeg, type FootRequest } from './pose';
 import { quinticStep } from './step-path';
@@ -342,7 +342,7 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
   const prev = f.target;
   const x = quinticStep(prev.x, f.stepH.v.x, f.stepH.a.x, f.dest.x, left, dt);
   const z = quinticStep(prev.z, f.stepH.v.z, f.stepH.a.z, f.dest.z, left, dt);
-  if (!c.bound) ({ x: x.p, z: z.p } = onFreeGround(plan, inp, f.headingRad, prev, v3(x.p, 0, z.p)));
+  ({ x: x.p, z: z.p } = onFreeGround(plan, inp, f.headingRad, prev, v3(x.p, 0, z.p), f.dest!));
   f.elapsedS += dt;
   const p = Math.min(f.elapsedS / c.T, 1);
   const down = quinticStep(c.h0, c.vy0, 0, 0, c.T, Math.min(f.elapsedS, c.T));
@@ -364,20 +364,23 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
 }
 
 /**
- * The path keeps to free ground: a move of a foot in the air from `from` to `to` (ankles) that would take its shoe into
- * another player's footprint ends at the nearest free place to `to` within the move from `from` (the foot slides along
- * the footprint's edge); with none, as planned (FootDebug.stepsPathBlind, a fault: the path as planned). A bound foot's
- * path is as planned.
+ * The path goes no deeper than its ends: a move of a foot in the air from `from` to `to` (ankles) that would take its
+ * shoe deeper into another player's footprint than it is or than its destination `dest` is ends at the nearest place to
+ * `to` within the move from `from` that is no deeper (the foot slides along the footprint's edge, or round a deeper
+ * part); with none, as planned (FootDebug.stepsPathBlind, a fault: the path as planned). With free ground at both ends
+ * the path keeps to free ground.
  */
-function onFreeGround(plan: FootPlan, inp: FootPlanInput, h: number, from: Vec3, to: Vec3): Vec3 {
+function onFreeGround(plan: FootPlan, inp: FootPlanInput, h: number, from: Vec3, to: Vec3, dest: Vec3): Vec3 {
   const g = inp.ground;
   if (!g || inp.debug?.stepsPathBlind) return to;
   const c = v3(Math.sin(h) * plan.shoe.centerFoot.z, 0, Math.cos(h) * plan.shoe.centerFoot.z);
   const q: FootQuery = { clearM: plan.profile.steps!.footR };
-  const t = v3(to.x + c.x, 0, to.z + c.z);
-  if (isFree(g, t, 0, q)) return to;
-  const fr = v3(from.x + c.x, 0, from.z + c.z);
-  const p = nearestFree(g, t, fr, Math.hypot(t.x - fr.x, t.z - fr.z) + 1e-6, 0, q);
+  const shoe = (a: Vec3): Vec3 => v3(a.x + c.x, 0, a.z + c.z);
+  const t = shoe(to);
+  const fr = shoe(from);
+  const D = Math.max(depthAt(g, fr, 0, q), depthAt(g, shoe(dest), 0, q));
+  if (depthAt(g, t, 0, q) <= D) return to;
+  const p = nearestNoDeeper(g, t, fr, Math.hypot(t.x - fr.x, t.z - fr.z) + 1e-6, 0, q, D);
   return p ? v3(p.x - c.x, to.y, p.z - c.z) : to;
 }
 

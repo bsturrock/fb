@@ -127,6 +127,30 @@ export function depthAt(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery):
   return d > TOL ? d : 0;
 }
 
+/**
+ * The nearest point to `to` within `reachM` of `from` (horizontal) where a foot (`q`, its footprint part: no leg) stands
+ * no deeper than `depthM` `horizonS` from now; null when there is none. Exact while that depth leaves the foot outside
+ * every outline (`nearestFree` with the clearance less the depth); deeper, from a sample of the disc (as `leastDeep`).
+ */
+export function nearestNoDeeper(g: FreeGround, to: Vec3, from: Vec3, reachM: number, horizonS: number, q: FootQuery, depthM: number): Vec3 | null {
+  if (depthM <= q.clearM) return nearestFree(g, to, from, reachM, horizonS, { ...q, leg: undefined, clearM: q.clearM - depthM });
+  const F = pt(from);
+  const T = pt(to);
+  const at = (c: Pt): Vec3 => v3(c.x, to.y, c.z);
+  const ok = (c: Pt): boolean => len2(sub2(c, F)) <= reachM + TOL && depthAt(g, at(c), horizonS, { ...q, leg: undefined }) <= depthM + TOL;
+  if (ok(T)) return to;
+  const near = discSamples(F, reachM, T).filter(ok);
+  if (!near.length) return null;
+  let a = near.reduce((x, c) => (len2(sub2(c, T)) < len2(sub2(x, T)) ? c : x));
+  let b = T;
+  for (let i = 0; i < DEEP_HALVINGS; i++) {
+    const m = { x: 0.5 * (a.x + b.x), z: 0.5 * (a.z + b.z) };
+    if (ok(m)) a = m;
+    else b = m;
+  }
+  return at(a);
+}
+
 /** A disc's samples for the depth searches: `first`, its centre, then its rings and spokes. */
 function discSamples(c: Pt, r: number, first: Pt): Pt[] {
   const out: Pt[] = [first, c];

@@ -4,7 +4,7 @@ import { legsBound, standsNowhere, STEPS_V1, withSteps, type StepModelProfile } 
 import type { FootDebug } from '../src/sim/debug';
 import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
-import { groundOf, isFree, legHit, outlineDist, type FreeGround, type Part } from '../src/sim/free-ground';
+import { depthAt, groundOf, isFree, legHit, outlineDist, type FreeGround, type Part } from '../src/sim/free-ground';
 import { swingExcess } from '../src/sim/joint-cone';
 import { plannedChain, plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
@@ -386,6 +386,38 @@ describe('contact stepping model (plan 15)', () => {
     expect(inPrint(r)).toBeLessThanOrEqual(1e-6);
     // fault twin (FootDebug.stepsPathBlind): the path as planned: the foot passes through his shin
     expect(inPrint(run(sc, M, { stepsPathBlind: true }))).toBeGreaterThan(0.1);
+  });
+
+  it('a foot in the air goes no deeper into a man than where it lifts or lands: driven on over a man down, bound', () => {
+    const down: Part[] = [{ shape: { kind: 'box', c: v3(0, 0.12, 1.1), he: v3(0.7, 0.12, 0.75), q: I }, v: v3(), key: 'B:down' }];
+    const sc: Scene = { vel: push(v3(0, 0, 1), 1), others: () => down, durS: 1.6 };
+    // over each step, how much deeper (m) its shoe goes into him in the air than at its two ends (seen from above, the
+    // shoe's disc, as the model asks)
+    const deeper = (r: Run): number => {
+      let worst = 0;
+      for (const s of SIDES) {
+        let lift = 0;
+        let peak = -1;
+        let last = 0;
+        for (const f of r.frames) {
+          const d = depthAt(f.ground, add(f.ankle[s], v3(0, 0, R.shoe.forwardM)), 0, { clearM: M.footR });
+          if (!f.planted[s]) {
+            if (peak < 0) [lift, peak] = [last, 0];
+            peak = Math.max(peak, d);
+          } else if (peak >= 0) {
+            worst = Math.max(worst, peak - Math.max(lift, d));
+            peak = -1;
+          }
+          last = d;
+        }
+      }
+      return worst;
+    };
+    const r = run(sc);
+    expect(held(r, (f) => f.bound)).toBeGreaterThan(CONFIRM_S);
+    expect(deeper(r)).toBeLessThanOrEqual(0.01);
+    // fault twin (FootDebug.stepsPathBlind): the path as planned: straight across him
+    expect(deeper(run(sc, M, { stepsPathBlind: true }))).toBeGreaterThan(0.1);
   });
 
   it('an aim that moves late is followed at a bounded rate: no jump of the foot', () => {
