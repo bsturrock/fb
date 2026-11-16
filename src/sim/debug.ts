@@ -66,8 +66,16 @@ export interface FootDebug {
    * has no aim, though there is one within its leg's reach.
    */
   stepsShortOnly?: boolean;
-  /** Fault (negative control of plan 15's bound step, `FootworkProfile.steps`): a bound foot aims at its want, not under its hip. */
-  stepsBoundWant?: boolean;
+  /**
+   * Fault (negative control of plan 15's least-deep aim, `FootworkProfile.steps`): a foot with no free place within reach
+   * aims under its hip (plan 15 round 3), not where its leg stands least deep.
+   */
+  stepsBoundUnder?: boolean;
+  /**
+   * Fault (negative control of plan 15's depth order, `FootworkProfile.steps`): depths are compared strictly, not as equal
+   * within the leg's skin, for the aim and for whether a plant steps.
+   */
+  stepsStrictDepth?: boolean;
   /** Fault (negative control of plan 15's touchdown, `FootworkProfile.steps`): a step lands with its heel under the ankle, flat, not as the foot is shown. */
   stepsLandFlat?: boolean;
   /** Fault (negative control of plan 15's touchdown, `FootworkProfile.steps`): a foot in the air turns at most at the swing's yaw rate, not onto the body's heading by touchdown. */

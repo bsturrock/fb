@@ -9,7 +9,9 @@
 //   stand on a place, which must be clear of every part by a skin (Rapier's contact query, as the leg guard asks it)
 //   and inside its joint ranges (the stepping player's own, asked of the place);
 // - a place is free when it is clear of every moved footprint by the footprint's radius plus the foot's, on its side of
-//   the wall, and its leg stands there (clear and in range). Nothing else decides whether a place is blocked.
+//   the wall, and its leg stands there (clear and in range). Nothing else decides whether a place is blocked;
+// - places are ordered by how deep the foot stands in the other players (`depthAt`: 0 free), and the least deep within
+//   reach is the one a foot takes (`leastDeep`: the nearest free place when there is one).
 // The adapter from a simulation (`bodyParts`, `groundFor`) reads each player's parts once per substep: a supported or
 // falling player's proxy colliders and published limbs (his pose of the last substep), a ragdoll's segment colliders.
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -87,6 +89,15 @@ export function outlineDist(pts: Pt[], p: Pt): number {
   return inside ? 0 : d;
 }
 
+/** Signed distance from `p` to a convex outline: inside it, less than zero by its distance to the edge. */
+function outlineSigned(pts: Pt[], p: Pt): number {
+  const d = outlineDist(pts, p);
+  if (d > 0 || pts.length < 3) return d;
+  let m = Infinity;
+  for (let i = 0; i < pts.length; i++) m = Math.min(m, segDist(p, pts[i], pts[(i + 1) % pts.length]));
+  return -m;
+}
+
 /** A footprint where its motion puts it `horizonS` from now. */
 const moved = (f: Footprint, horizonS: number): Pt[] => (horizonS === 0 ? f.pts : f.pts.map((p) => add2(p, f.v, horizonS)));
 
@@ -96,6 +107,79 @@ export function isFree(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery): 
   if (q.wall && dot2(sub2(x, q.wall.p), q.wall.n) < q.wall.sepM - TOL) return false;
   for (const f of g.prints) if (outlineDist(moved(f, horizonS), x) < f.r + q.clearM - TOL) return false;
   return !q.leg || ((!q.leg.inRange || q.leg.inRange(p)) && !legHit(g, q.leg.at(p), horizonS, q.leg.skinM));
+}
+
+/**
+ * How deep a foot (`q`) stands at `p` `horizonS` from now (m): 0 where it is free (`isFree`), otherwise how far its shoe
+ * is past its clearance into the deepest moved footprint, or its leg past its skin into the deepest part, whichever is
+ * more; Infinity where it is no place at all (across the wall, or its leg out of range).
+ */
+export function depthAt(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery): number {
+  const x = pt(p);
+  if (q.wall && dot2(sub2(x, q.wall.p), q.wall.n) < q.wall.sepM - TOL) return Infinity;
+  if (q.leg?.inRange && !q.leg.inRange(p)) return Infinity;
+  let d = 0;
+  for (const f of g.prints) d = Math.max(d, f.r + q.clearM - outlineSigned(moved(f, horizonS), x));
+  if (q.leg) {
+    const hit = legHit(g, q.leg.at(p), horizonS, q.leg.skinM);
+    if (hit) d = Math.max(d, q.leg.skinM - hit.gap);
+  }
+  return d > TOL ? d : 0;
+}
+
+/** A disc's samples for the depth searches: `first`, its centre, then its rings and spokes. */
+function discSamples(c: Pt, r: number, first: Pt): Pt[] {
+  const out: Pt[] = [first, c];
+  for (let i = 1; i <= DEEP_RINGS; i++)
+    for (let k = 0; k < DEEP_SPOKES; k++) {
+      const a = (2 * Math.PI * k) / DEEP_SPOKES;
+      out.push({ x: c.x + ((r * i) / DEEP_RINGS) * Math.sin(a), z: c.z + ((r * i) / DEEP_RINGS) * Math.cos(a) });
+    }
+  return out;
+}
+
+/** How the least-deep search samples the reach disc where no place is free: rings about the hip, spokes on each. */
+const DEEP_RINGS = 4;
+const DEEP_SPOKES = 12;
+/** How many halvings move the least-deep sample toward the want. */
+const DEEP_HALVINGS = 6;
+
+/**
+ * The place within `reachM` of `hip` (horizontal) where a foot (`q`) stands least deep (`depthAt`) `horizonS` from now,
+ * and its depth: among the places within `equalM` of the least depth, one within `shortM` of the hip (a short step)
+ * first, then the nearest `want`; null when no place within reach is in range. With free ground within reach it is the
+ * nearest free place (`nearestFree`, depth 0), within the short step first; otherwise the least depth is read from a
+ * sample of the disc (the want, the place under the hip, rings and spokes), the first of the samples within `equalM` of
+ * it taken in that order, and moved toward the want as far as its depth stays within `equalM` of the least.
+ */
+export function leastDeep(g: FreeGround, want: Vec3, hip: Vec3, shortM: number, reachM: number, horizonS: number, q: FootQuery, equalM: number): { p: Vec3; depthM: number } | null {
+  const free = nearestFree(g, want, hip, Math.min(shortM, reachM), horizonS, q) ?? (reachM > shortM ? nearestFree(g, want, hip, reachM, horizonS, q) : null);
+  if (free) return { p: free, depthM: 0 };
+  const H = pt(hip);
+  const W = pt(want);
+  const at = (c: Pt): Vec3 => v3(c.x, want.y, c.z);
+  const depth = (c: Pt): number => (len2(sub2(c, H)) > reachM + TOL ? Infinity : depthAt(g, at(c), horizonS, q));
+  const samples = discSamples(H, reachM, W);
+  const ds = samples.map(depth);
+  const least = Math.min(...ds);
+  if (!Number.isFinite(least)) return null;
+  const long = (c: Pt): number => (len2(sub2(c, H)) > shortM + TOL ? 1 : 0);
+  let bi = -1;
+  for (let i = 0; i < samples.length; i++) {
+    if (ds[i] > least + equalM) continue;
+    const c = samples[i];
+    if (bi < 0 || long(c) < long(samples[bi]) || (long(c) === long(samples[bi]) && len2(sub2(c, W)) < len2(sub2(samples[bi], W)))) bi = i;
+  }
+  let a = samples[bi];
+  let da = ds[bi];
+  let b = W;
+  for (let i = 0; i < DEEP_HALVINGS && bi !== 0; i++) {
+    const m = { x: 0.5 * (a.x + b.x), z: 0.5 * (a.z + b.z) };
+    const dm = depth(m);
+    if (dm <= least + equalM) [a, da] = [m, dm];
+    else b = m;
+  }
+  return { p: at(a), depthM: da };
 }
 
 // The boundary pieces of the region a point may not enter (each footprint dilated by its radius and the foot's), the

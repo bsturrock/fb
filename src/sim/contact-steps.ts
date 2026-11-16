@@ -1,35 +1,37 @@
 // Plan 15 (contact footwork): one stepping model for a supported player once the clip regime ends (contact hold or
 // braking), in place of the reactive planner. Per substep, three rules:
-// - Free ground (free-ground.ts): where a leg can stand, the ground minus the other players' moving footprints, with the
-//   whole leg on the place (thigh, shin, shoe, as the leg solve gives it: pose.ts plannedLeg) clear of their parts and
-//   inside its joint ranges (`inRange`). That is the one test of a place, for a plant as for an aim.
+// - A place (free-ground.ts): how deep a leg stands there in the other players: its shoe in their moving footprints, the
+//   whole leg on the place (thigh, shin, shoe, as the leg solve gives it: pose.ts plannedLeg) in their parts; 0 is free.
+//   A place out of the leg's joint ranges (`inRange`) is no place. That is the one measure of a place, for a plant as for
+//   an aim: places are ordered by it (equal within the leg's skin), then within a short step first, then by nearness to
+//   the want.
 // - Where. Each foot's want is where the hips need it given their real motion now, the capture point home + v sqrt(h / g)
 //   (home: the foot's place under its hip, with its side offset and stagger; a hit or a lean is already in v), taken
 //   where the hips will be when the foot lands (moved along v for the time left), limited to a short step from the hip.
-//   Its aim is the nearest free place to its want within the short step, and with none there, within the leg's reach
-//   (none when there is no free place within either). A foot in the air follows its aim at a bounded rate that falls to
-//   zero at touchdown (the foot commits as it lands); with no aim, it steps under its hip (the shortest step). With an
-//   aim its path keeps to free ground: a move into another player's footprint slides along its edge (`onFreeGround`).
+//   Its aim is the first place within the leg's reach in that order: with free ground within reach, the nearest free
+//   place to its want, within the short step first. A foot in the air follows its aim at a bounded rate that falls to
+//   zero at touchdown (the foot commits as it lands), and, unless it is bound, its path keeps to free ground: a move into
+//   another player's footprint slides along its edge (`onFreeGround`).
 // - When. A planted foot never moves on the ground: it stands or it steps. It stands while its leg is in range and lifts
 //   the moment it is not, whatever the other foot does: that is the only way both feet are in the air (a flight, as in
-//   running), and it ends when the other foot's step lands, within one step time. Otherwise, with both feet
-//   down, a foot steps when stepping improves its support by more than coverM (its aim is that much nearer its want than
-//   its plant is; a plant its leg no longer stands clear on is as far as can be), and they take turns: the foot that
-//   stepped last steps again only when its plant no longer stands clear. A step's time comes from its length, at a foot
-//   speed that grows with the travel (stepMps + travelK |v|, between minS and maxS), and never changes; the foot turns
-//   onto the body's heading over it; when it is up the foot lands where the leg is, the plant taken at the foot as shown
-//   (its lowest sole corner on the ground where it is).
+//   running), and it ends when the other foot's step lands, within one step time. Otherwise, with both feet down, a
+//   foot steps when its aim comes before its plant in that order by more than coverM (less deep, or as deep and coverM
+//   nearer its want; a plant that stands clear is as deep as free ground), and they take turns: the foot that stepped
+//   last steps again only when its plant is visibly in another player (deeper than boundM) and its aim less deep. A
+//   step's time comes from its length, at a foot speed that grows with the travel (stepMps + travelK |v|, between minS
+//   and maxS), and never changes; the foot turns onto the body's heading over it; when it is up the foot lands where the
+//   leg is, the plant taken at the foot as shown (its lowest sole corner on the ground where it is).
 // Nothing is held off, retimed, re-picked or remembered: a foot is planted or in a step that will land. A foot is bound
 // when it cannot follow the hips: its plant is more than coverM from its want or out of range, or it is in the air, and
-// no free place is within its reach. The fall triggers read that (legsBound, standsNowhere): the legs are bound while a
-// foot cannot follow the hips, and the player stands nowhere while neither can. The leg solve shows the feet where the
-// model asks (FootRequest, `exact`): the leg guard never moves them (a plant's knee may turn to another pole); a body
-// coming into a standing leg is the model's to answer, by stepping. observeFeet measures the pose as before; under the
-// model a plant is never released by its solve.
+// its aim is visibly in another player (deeper than boundM). The fall triggers read that (legsBound, standsNowhere): the
+// legs are bound while a foot cannot follow the hips, and the player stands nowhere while neither can. The leg solve
+// shows the feet where the model asks (FootRequest, `exact`): the leg guard never moves them (a plant's knee may turn to
+// another pole); a body coming into a standing leg is the model's to answer, by stepping. observeFeet measures the pose
+// as before; under the model a plant is never released by its solve.
 import type { ArmSide } from './contracts';
 import { seedStep } from './foot-compose';
 import type { FootEvent, FootPlan, FootPlanInput, FootReason, FootworkProfile } from './footwork';
-import { isFree, nearestFree, type FootQuery } from './free-ground';
+import { depthAt, isFree, leastDeep, nearestFree, type FootQuery } from './free-ground';
 import { armTwistRad, swingExcess } from './joint-cone';
 import { flexReach, maxFlexRad, plannedChain, plannedLeg, type FootRequest } from './pose';
 import { quinticStep } from './step-path';
@@ -56,6 +58,8 @@ export interface StepModelProfile {
   /** Free ground: the foot's radius about its shoe centre (m), and how clear of every other player's part its leg must stand (m). */
   footR: number;
   legSkinM: number;
+  /** A foot whose least-deep place within reach stands deeper than this (m, `depthAt`) cannot follow the hips (bound). */
+  boundM: number;
 }
 
 /**
@@ -66,8 +70,11 @@ export interface StepModelProfile {
  * radius covers the shoe's width and most of its length. The leg's skin (3 cm) covers how far the leg solve departs from
  * the planned leg toward a body in front (a plant's shoe at the ankle range lifts the ankle about 3 cm and brings the knee
  * forward about 4 cm; 90% within 2.8 cm over the L3 holds and drives), so a leg stood on clear is clear to the guard.
+ * A foot is bound when the least it can stand in another player is 8 cm: its leg 5 cm past the skin. A few centimetres of
+ * contact is not that: a held carrier's thighs against the holder's (L3-F6-hold: his left foot's least depth is 2-6 cm
+ * for 2.4 s of the hold, 6-8 cm for 0.7 s, deeper for 0.1 s).
  */
-export const STEPS_V1: StepModelProfile = { id: 'steps-v1', maxStepM: 0.4, coverM: 0.12, stepMps: 1.6, travelK: 2, minS: 0.16, maxS: 0.3, followMps: 2, liftM: 0.07, footR: 0.1, legSkinM: 0.03 };
+export const STEPS_V1: StepModelProfile = { id: 'steps-v1', maxStepM: 0.4, coverM: 0.12, stepMps: 1.6, travelK: 2, minS: 0.16, maxS: 0.3, followMps: 2, liftM: 0.07, footR: 0.1, legSkinM: 0.03, boundM: 0.08 };
 
 /** The footwork profile with the contact stepping model, under an id that names it (a profile without compose is returned as it is). */
 export const withSteps = (f: FootworkProfile, m: StepModelProfile = STEPS_V1): FootworkProfile => (!f.compose || f.steps ? f : { ...f, id: `${f.id}+${m.id}`, steps: m });
@@ -85,10 +92,12 @@ export interface ContactFoot {
   h0: number;
   vy0: number;
   liftM: number;
-  /** This substep's support point and aim (ankle, world, at the sole height; with no free place, the want or the destination). */
+  /** This substep's support point and aim (ankle, world, at the sole height). */
   support: Vec3;
   aim: Vec3;
-  /** It cannot follow the hips: it needs a step (or is in one) and no free place is within its step. */
+  /** How deep the foot stands at its aim in the other players (m, free-ground.ts `depthAt`: 0 free). */
+  depthM: number;
+  /** It cannot follow the hips: it needs a step (or is in one) and its least-deep place within reach is deeper than boundM. */
   bound: boolean;
 }
 
@@ -122,7 +131,7 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     f.clipSwingP = null;
     f.rejoin = f.wait = f.inherited = f.released = f.tentative = false;
     // taking over: a plant stays where it is; a foot in the air steps from where it is, at its motion
-    if (f.mode === 'planted' && (entering || !f.contact)) f.contact = { T: 0, h0: 0, vy0: 0, liftM: 0, support: v3(), aim: v3(), bound: false };
+    if (f.mode === 'planted' && (entering || !f.contact)) f.contact = { T: 0, h0: 0, vy0: 0, liftM: 0, support: v3(), aim: v3(), depthM: 0, bound: false };
     else if (f.mode !== 'planted' && (entering || !f.contact)) begin(plan, s, inp, ev, 'continue');
   }
   // When: a plant that cannot stand lifts at once (FootDebug.stepsStanceWaits, a fault: not while the other foot is in
@@ -161,13 +170,15 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
 }
 
 /**
- * Where: foot `s`'s support point, its want (the support point limited to a short step), its aim and the place under its
- * hip (`under`) for a landing `aheadS` from now: the hips and the free ground moved that far along their motion. The aim
- * is the nearest free place to the want within the short step, and with none there, within the leg's reach at the
- * stance height; with none there either, there is no aim. The free ground is asked at the shoe's centre (along the body
- * heading) with the foot's radius, its other foot's side wall (no crossing) and its leg from the hip there.
+ * Where: foot `s`'s support point, its want (the support point limited to a short step), its aim and how deep the foot
+ * stands there in the other players, for a landing `aheadS` from now: the hips and the other players moved that far along
+ * their motion. The aim is the place within the leg's reach at the stance height where the foot stands least deep,
+ * nearest the want among equals (free-ground.ts `leastDeep`, equal within the leg's skin): with free ground within reach,
+ * the nearest free place to the want. With no place in range at all, the want, infinitely deep. The ground is asked at
+ * the shoe's centre (along the body heading) with the foot's radius, its other foot's side wall (no crossing) and its leg
+ * from the hip there.
  */
-function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): { support: Vec3; want: Vec3; aim: Vec3 | null; under: Vec3 } {
+function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): { support: Vec3; want: Vec3; aim: Vec3; depthM: number } {
   const P = plan.profile;
   const M = P.steps!;
   const sole = inp.groundY + inp.soleM;
@@ -193,31 +204,30 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   const q: FootQuery = { clearM: M.footR, wall: { p: { x: at.x + c.x, z: at.z + c.z }, n: { x: inp.rightW.x * inp.sideSign[s], z: inp.rightW.z * inp.sideSign[s] }, sepM: P.minSeparationM }, ...(leg ? { leg } : {}) };
   const g = inp.ground ?? { prints: [] };
   // (FootDebug.stepsShortOnly, a fault: the short step alone)
-  const free = nearestFree(g, add(want, c), add(hip, c), rMax, aheadS, q) ?? (rLegal > rMax && !inp.debug?.stepsShortOnly ? nearestFree(g, add(want, c), add(hip, c), rLegal, aheadS, q) : null);
-  const under = v3(inp.home[s].x + inp.vel.x * aheadS, sole, inp.home[s].z + inp.vel.z * aheadS);
-  return { support, want, aim: free ? v3(free.x - c.x, sole, free.z - c.z) : null, under };
+  const best = leastDeep(g, add(want, c), add(hip, c), rMax, inp.debug?.stepsShortOnly ? rMax : rLegal, aheadS, q, equalM(plan, inp));
+  if (!best) return { support, want, aim: want, depthM: Infinity };
+  // (FootDebug.stepsBoundUnder, a fault: with no free place, the place under the hip, as in plan 15 round 3)
+  if (best.depthM > 0 && inp.debug?.stepsBoundUnder) return { support, want, aim: v3(inp.home[s].x + inp.vel.x * aheadS, sole, inp.home[s].z + inp.vel.z * aheadS), depthM: best.depthM };
+  return { support, want, aim: v3(best.p.x - c.x, sole, best.p.z - c.z), depthM: best.depthM };
 }
 
-/**
- * Where, for a step from `from`: its time (from its length) and its aim for a landing then; with no free place then, the
- * place under its hip then (a bound foot takes the shortest step: `boundAim`).
- */
-function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { support: Vec3; aim: Vec3; bound: boolean; T: number } {
+/** Where, for a step from `from`: its time (from its length) and its aim for a landing then. */
+function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { support: Vec3; aim: Vec3; depthM: number; bound: boolean; T: number } {
   // (the length depends on the landing time and the time on the length: twice round from the shortest step)
   const to = (T: number) => {
     const a = aimOf(plan, s, inp, T);
-    return { support: a.support, aim: a.aim ?? boundAim(inp, a), bound: !a.aim };
+    return { support: a.support, aim: a.aim, depthM: a.depthM, bound: isBound(plan, a.depthM) };
   };
   let T = plan.profile.steps!.minS;
   for (let i = 0; i < 2; i++) T = stepTime(plan, inp, dist(from, to(T).aim));
   return { ...to(T), T };
 }
 
-/**
- * Where a bound foot goes: under its hip, the shortest step (FootDebug.stepsBoundWant, a fault: its want, as before plan 15
- * round 3, into whatever bars it).
- */
-const boundAim = (inp: FootPlanInput, a: { want: Vec3; under: Vec3 }): Vec3 => (inp.debug?.stepsBoundWant ? a.want : a.under);
+/** Depths within the leg's skin of each other are equal (FootDebug.stepsStrictDepth, a fault: compared strictly). */
+const equalM = (plan: FootPlan, inp: FootPlanInput): number => (inp.debug?.stepsStrictDepth ? 0 : plan.profile.steps!.legSkinM);
+
+/** A foot whose least-deep place is that deep (m) cannot follow the hips: that place is visibly in another player. */
+const isBound = (plan: FootPlan, depthM: number): boolean => depthM > plan.profile.steps!.boundM;
 
 /** When: a plant can stand while its leg is inside its joint ranges (`inRange`). */
 const canStand = (plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean => inRange(inp, s, inp.hips[s], add(plan.feet[s].heelW!, v3(0, inp.soleM, 0)), plan.feet[s].headingRad, plan.reachM);
@@ -245,28 +255,37 @@ function inRange(inp: FootPlanInput, s: ArmSide, hip: Vec3, ankle: Vec3, h: numb
 }
 
 /**
- * When: how much a standing plant's support improves by stepping now (m, horizontal): how far it is from its want (as
- * far as can be when its leg no longer stands clear: its footprint and leg free with no margin) less how far its aim is;
- * -Infinity with no aim. Writes the plant's support, aim and whether it is bound.
+ * When: what stepping now gains a standing plant (a step is worth it past coverM). Places are ordered by depth (equal
+ * within the leg's skin), then by nearness to the want: stepping to a deeper place gains nothing (-Infinity); to one
+ * less deep, more than coverM by how much less, and everything (Infinity: whatever the turn) when the plant is visibly in
+ * another player (deeper than boundM); at equal depth, how much nearer its want the aim is than the plant (m,
+ * horizontal). A plant that stands clear (its footprint and leg free with no margin) is as deep as a free place; one that
+ * does not, as deep as its place measures for an aim. Writes the plant's support, aim, its depth and whether it is bound
+ * (its least-deep place visibly in another player while it needs a step: far from its want, or out of range).
  */
 function gainOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput): number {
+  const M = plan.profile.steps!;
   const f = plan.feet[s];
   const c = f.contact!;
   const ankle = add(f.heelW!, v3(0, inp.soleM, 0));
-  const a = aimOf(plan, s, inp, 0);
-  const { support, want, aim } = a;
+  const { support, want, aim, depthM } = aimOf(plan, s, inp, 0);
   const off = len(hz(sub(ankle, want)));
   c.support = support;
-  c.aim = aim ?? boundAim(inp, a);
-  c.bound = !aim && (off > plan.profile.steps!.coverM || !canStand(plan, s, inp));
-  if (!aim) return -Infinity;
+  c.aim = aim;
+  c.depthM = depthM;
+  c.bound = isBound(plan, depthM) && (off > M.coverM || !canStand(plan, s, inp));
+  if (!Number.isFinite(depthM)) return -Infinity;
   const R = inp.legs;
   const h = f.headingRad;
-  const shoe = v3(Math.sin(h) * plan.shoe.centerFoot.z, 0, Math.cos(h) * plan.shoe.centerFoot.z);
-  const stands = isFree(inp.ground ?? { prints: [] }, add(ankle, shoe), 0, { clearM: 0, ...(R ? { leg: { at: () => plannedLeg(R, s, inp.hips[s], ankle, h), skinM: 0 } } : {}) });
+  const shoe = add(ankle, v3(Math.sin(h) * plan.shoe.centerFoot.z, 0, Math.cos(h) * plan.shoe.centerFoot.z));
+  const g = inp.ground ?? { prints: [] };
+  const leg = (skinM: number) => (R ? { leg: { at: () => plannedLeg(R, s, inp.hips[s], ankle, h), skinM } } : {});
+  const plantM = isFree(g, shoe, 0, { clearM: 0, ...leg(0) }) ? 0 : depthAt(g, shoe, 0, { clearM: M.footR, ...leg(M.legSkinM) });
   // (FootDebug.stepsToAim, a fault: how far the plant is from its aim, as in the step 2 model)
-  if (inp.debug?.stepsToAim) return len(hz(sub(ankle, aim)));
-  return (stands ? off : Infinity) - len(hz(sub(aim, want)));
+  if (inp.debug?.stepsToAim) return depthM > 0 ? -Infinity : len(hz(sub(ankle, aim)));
+  if (depthM > plantM + equalM(plan, inp)) return -Infinity;
+  if (depthM < plantM - equalM(plan, inp)) return plantM > M.boundM ? Infinity : M.coverM + plantM - depthM;
+  return off - len(hz(sub(aim, want)));
 }
 
 /** When: foot `s` lifts (or, in the air, is taken over) for a step to its aim, from the achieved ankle at its motion. */
@@ -284,10 +303,10 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
   f.why = why;
   f.drag = f.short = false;
   seedStep(plan, f);
-  const { support, aim, bound, T } = aimFrom(plan, s, inp, f.target);
+  const { support, aim, depthM, bound, T } = aimFrom(plan, s, inp, f.target);
   const L = dist(f.target, aim);
   const h0 = Math.max(0, f.target.y - (inp.groundY + inp.soleM));
-  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim, bound };
+  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim, depthM, bound };
   f.elapsedS = 0;
   f.durS = T;
   f.dest = aim;
@@ -313,8 +332,9 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
   const left = Math.max(c.T - f.elapsedS, dt);
   const a = aimOf(plan, s, inp, left);
   c.support = a.support;
-  c.aim = a.aim ?? boundAim(inp, a);
-  c.bound = !a.aim;
+  c.aim = a.aim;
+  c.depthM = a.depthM;
+  c.bound = isBound(plan, a.depthM);
   const d = hz(sub(c.aim, f.dest!));
   const dl = len(d);
   const k = M.followMps * dt * clamp((c.T - f.elapsedS) / c.T, 0, 1);
@@ -347,7 +367,7 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
  * The path keeps to free ground: a move of a foot in the air from `from` to `to` (ankles) that would take its shoe into
  * another player's footprint ends at the nearest free place to `to` within the move from `from` (the foot slides along
  * the footprint's edge); with none, as planned (FootDebug.stepsPathBlind, a fault: the path as planned). A bound foot's
- * path is as planned: it goes under its hip, where no free place is.
+ * path is as planned.
  */
 function onFreeGround(plan: FootPlan, inp: FootPlanInput, h: number, from: Vec3, to: Vec3): Vec3 {
   const g = inp.ground;

@@ -438,30 +438,65 @@ describe('contact stepping model (plan 15)', () => {
 
   it('a man down in front with space beside him: the feet step to his sides, not bound', () => {
     // driven on at 1 m/s, crouched (the hips 0.6 m above the soles), over a man lying flat across the path from 0.35 m
-    // ahead (0.8 m wide, 12 cm high): no place within a short step, the places beside him within the leg's reach
-    const down: Part[] = [{ shape: { kind: 'box', c: v3(0, 0.06, 1.1), he: v3(0.4, 0.06, 0.75), q: I }, v: v3(), key: 'B:down' }];
+    // ahead (1 m wide, 12 cm high): no place within a short step, the places beside him within the leg's reach
+    const down: Part[] = [{ shape: { kind: 'box', c: v3(0, 0.06, 1.1), he: v3(0.5, 0.06, 0.75), q: I }, v: v3(), key: 'B:down' }];
     const sc: Scene = { vel: push(v3(0, 0, 1), 1), others: () => down, hipM: 0.6, durS: 1.6 };
-    const beside = (r: Run): number => plants(r).filter((e) => at(e).z > 0.3 && Math.abs(at(e).x) > 0.4 + M.footR - 0.01).length;
+    const beside = (r: Run): number => plants(r).filter((e) => at(e).z > 0.3 && Math.abs(at(e).x) > 0.5 + M.footR - 0.01).length;
+    const onHim = (r: Run) => plants(r).filter((e) => at(e).z > 0.3 && Math.abs(at(e).x) < 0.5);
     const r = run(sc);
     expect(beside(r)).toBeGreaterThan(2);
-    expect(plants(r).filter((e) => at(e).z > 0.3 && Math.abs(at(e).x) < 0.4)).toEqual([]);
+    expect(onHim(r)).toEqual([]);
     expect(held(r, (f) => f.bound)).toBeLessThan(CONFIRM_S);
-    // fault twin (FootDebug.stepsShortOnly): the short step alone: the feet are bound past a fall's confirm time
+    // fault twin (FootDebug.stepsShortOnly): the short step alone: the feet land on him, at its end
     const short = run(sc, M, { stepsShortOnly: true });
-    expect(beside(short)).toBe(0);
-    expect(held(short, (f) => f.bound)).toBeGreaterThan(CONFIRM_S + 0.05);
+    expect(onHim(short)).not.toEqual([]);
   });
 
-  it('a bound foot steps under the hips: driven on over a man down, every step lands under its hip', () => {
+  it('with nowhere free, a foot lands where it stands least in the man: driven on over a man down, at his edges, not on top of him', () => {
     const down: Part[] = [{ shape: { kind: 'box', c: v3(0, 0.12, 1.1), he: v3(0.7, 0.12, 0.75), q: I }, v: v3(), key: 'B:down' }];
     const sc: Scene = { vel: push(v3(0, 0, 1), 1), others: () => down, durS: 1.6 };
-    // how far a landing is from its hip (horizontal), over the landings while the legs are bound
-    const fromHip = (r: Run): number[] => plants(r).filter((e) => r.frames.find((f) => f.t === e.t)!.bound).map((e) => Math.hypot(at(e).x - e.hip.x, at(e).z - e.hip.z));
+    // how far inside his outline a landing's shoe centre is at most (m, seen from above; below 0 outside him)
+    const inHim = (r: Run): number =>
+      Math.max(
+        ...plants(r).map((e) => {
+          const c = add(at(e), v3(0, 0, R.shoe.forwardM));
+          return Math.min(0.7 - Math.abs(c.x), c.z - 0.35, 1.85 - c.z);
+        }),
+      );
+    // the hips pass over his middle, his near and far edges and his sides at the reach's end: the least-deep places
+    // there stand about a quarter metre in
     const r = run(sc);
-    expect(fromHip(r).length).toBeGreaterThan(1);
-    expect(Math.max(...fromHip(r))).toBeLessThanOrEqual(0.05);
-    // fault twin (FootDebug.stepsBoundWant): a bound foot aims at its want, a short step ahead, into him
-    expect(Math.max(...fromHip(run(sc, M, { stepsBoundWant: true })))).toBeGreaterThan(0.25);
+    expect(plants(r).length).toBeGreaterThan(5);
+    expect(inHim(r)).toBeLessThanOrEqual(0.3);
+    // fault twin (FootDebug.stepsBoundUnder): with nowhere free, under the hip (plan 15 round 3): on top of him
+    expect(inHim(run(sc, M, { stepsBoundUnder: true }))).toBeGreaterThan(0.5);
+  });
+
+  it('legs touching a man at skin level are not bound, legs locked in him are: a holder\'s thighs across the hips', () => {
+    // walked forward at 0.5 m/s with a man's thighs across the front of the hips, moving with him (a holder): a slab at
+    // thigh height (above the shin top: no footprint), its face `into` m into the thighs at the hips, where every place's
+    // thigh starts (no place stands less deep than that)
+    const slab = (into: number): Scene => ({
+      vel: push(v3(0, 0, 1), 0.5),
+      others: (t, c) => [{ shape: { kind: 'box', c: v3(c.x, SOLE + 0.8, c.z + R.radii.thigh - into + 0.15), he: v3(0.4, 0.15, 0.15), q: I }, v: push(v3(0, 0, 1), 0.5)(t), key: 'B:thighs' }],
+      durS: 1.5,
+    });
+    // touching, 2 cm in: never bound (the fall triggers do not read it)
+    expect(held(run(slab(0.02)), (f) => f.bound)).toBe(0);
+    // locked, 6 cm in: bound past a fall's confirm time
+    expect(held(run(slab(0.06)), (f) => f.bound)).toBeGreaterThan(CONFIRM_S + 0.05);
+    // fault twin (boundM 0: any depth binds): touching binds
+    expect(held(run(slab(0.02), { ...M, boundM: 0 }), (f) => f.bound)).toBeGreaterThan(CONFIRM_S + 0.05);
+  });
+
+  it('near-equal depths do not make the feet chatter: against a man\'s thighs, no more steps than on open ground', () => {
+    const walk: Scene = { vel: push(v3(0, 0, 1), 0.5), durS: 1.5 };
+    const touching: Scene = { ...walk, others: (t, c) => [{ shape: { kind: 'box', c: v3(c.x, SOLE + 0.8, c.z + R.radii.thigh - 0.02 + 0.15), he: v3(0.4, 0.15, 0.15), q: I }, v: walk.vel(t), key: 'B:thighs' }] };
+    const open = steps(run(walk)).length;
+    expect(steps(run(touching)).length).toBeLessThanOrEqual(open + 1);
+    // fault twin (FootDebug.stepsStrictDepth): depths compared strictly: the aim jumps between places a millimetre less
+    // deep, and the feet step for it
+    expect(steps(run(touching, M, { stepsStrictDepth: true })).length).toBeGreaterThan(open + 3);
   });
 
   it('a stride\'s flight is not a fall: at speed on open ground the legs are never bound, though both feet are up for longer than the grace', () => {
