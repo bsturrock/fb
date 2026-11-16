@@ -20,9 +20,10 @@
 // Nothing is held off, retimed, re-picked or remembered: a foot is planted or in a step that will land. A foot is bound
 // when it cannot follow the hips: its plant is more than coverM from its want or out of range, or it is in the air, and
 // no free place is within its reach. The fall triggers read that (legsBound, standsNowhere): the legs are bound while a
-// foot cannot follow the hips, and the player stands nowhere while neither can. The leg solve gets the same requests as
-// from the old planner (FootRequest) and observeFeet measures the pose as before; under the model a plant is never
-// released by its solve.
+// foot cannot follow the hips, and the player stands nowhere while neither can. The leg solve shows the feet where the
+// model asks (FootRequest, `exact`): the leg guard never moves them (a plant's knee may turn to another pole); a body
+// coming into a standing leg is the model's to answer, by stepping. observeFeet measures the pose as before; under the
+// model a plant is never released by its solve.
 import type { ArmSide } from './contracts';
 import { seedStep } from './foot-compose';
 import type { FootEvent, FootPlan, FootPlanInput, FootReason, FootworkProfile } from './footwork';
@@ -148,11 +149,11 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     const f = plan.feet[s];
     f.eligible = f.mode === 'planted';
     if (f.mode !== 'planted') {
-      out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
+      out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad, exact: true };
       continue;
     }
     f.target = add(f.heelW!, v3(0, inp.soleM, 0));
-    out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX, tolM: P.plantTolM };
+    out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX, tolM: P.plantTolM, exact: true };
   }
   return out;
 }

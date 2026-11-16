@@ -255,3 +255,61 @@ describe('plan 15: a plant the model picks beside another player is kept by the 
     expect(moved(blind)).toBeGreaterThan(20);
   });
 });
+
+// Plan 15 round 3: the contact stepping model's feet are shown where the model asks (FootBlend.exact): it stands a plant
+// only where the leg can stand and answers a body coming into it by stepping, so the leg guard never moves a model
+// foot. On the same constructed pose as rung 7, a ball (a knee or a shin of another player) coming into the planted
+// leg, and one standing in a swing's path. The fault twin is the same request without `exact` (the guard on).
+describe('plan 15: a model foot is shown where the model asks: the guard never moves it (constructed pose)', () => {
+  beforeAll(initPhysics);
+  it('a body coming into a planted leg never moves the shown foot off its anchor; the twin (the guard on) takes the foot off it', () => {
+    const plant = { ...standingPlant(), exact: true };
+    const m0: PoseMemory = {};
+    buildProxyPose(input({ memory: m0, dtS: DT, legSweep: true, feet: { left: plant } }));
+    const p0 = buildProxyPose(input({ memory: m0, dtS: DT, legSweep: true, feet: { left: plant } }));
+    const shinMid = scale(add(p0.jointLandmarksWorld.leftKnee, p0.jointLandmarksWorld.leftAnkle), 0.5);
+    // the ball comes in from 0.3 m in front of the shin to 2 cm in front of its axis over 60 substeps (1.1 m/s), then stays
+    const ballAt = (i: number) => [{ c: add(shinMid, v3(0, 0, 0.3 - 0.28 * Math.min(1, i / 60))), r: 0.07 }];
+    const errs = (f: Plant): { err: number; depth: number }[] => {
+      const m: PoseMemory = {};
+      const out: { err: number; depth: number }[] = [];
+      for (let i = 0; i < 100; i++) {
+        const cl = ballsClearance(ballAt(i));
+        const p = buildProxyPose(input({ memory: m, dtS: DT, clearance: cl, legSweep: true, feet: { left: f } }));
+        out.push({ err: featureErr(p, f), depth: cl.external(leftLeg(p)) });
+      }
+      return out;
+    };
+    const on = errs(plant);
+    // (the premise: the ball ends in the leg past HARD_OK)
+    expect(on[on.length - 1].depth).toBeGreaterThan(HARD_OK);
+    for (const [i, x] of on.entries()) expect(x.err, `pose ${i}`).toBeLessThanOrEqual(TOL);
+    // fault twin: the guard on (no `exact`): it moves the foot off its anchor past the plant tolerance
+    const { exact: _, ...guarded } = plant;
+    expect(Math.max(...errs(guarded).map((x) => x.err))).toBeGreaterThan(TOL);
+  });
+
+  it('a swing passing a body follows its path: the shown ankle is the asked one; the twin (the guard on) holds it off', () => {
+    // the left foot swung forward 0.5 m in 0.25 s, 6 cm up, past a ball standing in its path at ankle height
+    const plant = standingPlant();
+    const start = add(plant.heelW, v3(0, soleUp, -0.25));
+    const path = (i: number): Vec3 => add(start, v3(0, 0.06 * Math.sin((Math.PI * i) / 60), (0.5 * i) / 60));
+    const balls = [{ c: add(start, v3(0, 0.02, 0.25)), r: 0.06 }];
+    // how far the shown ankle is from the asked one across the ground (m), the largest over the swing
+    const off = (exact: boolean): number => {
+      const m: PoseMemory = {};
+      const cl = ballsClearance(balls);
+      let worst = 0;
+      for (let i = 0; i <= 60; i++) {
+        const want = path(i);
+        const p = buildProxyPose(input({ memory: m, dtS: DT, clearance: cl, legSweep: true, feet: { left: { kind: 'target', ankleW: want, headingRad: 0, ...(exact ? { exact } : {}) } } }));
+        const a = p.jointLandmarksWorld.leftAnkle;
+        worst = Math.max(worst, Math.hypot(a.x - want.x, a.z - want.z));
+      }
+      return worst;
+    };
+    // (across the ground: the floor lift is not the guard, and the leg's soft reach at the end of the swing is millimetres)
+    expect(off(true)).toBeLessThanOrEqual(0.005);
+    expect(off(false)).toBeGreaterThan(0.03);
+  });
+});

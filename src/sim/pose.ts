@@ -92,6 +92,13 @@ export interface FootBlend {
   seed?: number;
   /** Plan 08: this step took over the old owner's path of a held leg: same owner to the pose, the leg's departure stays. */
   carried?: boolean;
+  /**
+   * Plan 15 (the contact stepping model's feet, which stand only where the leg can stand and step through free ground):
+   * the foot is shown where it is asked. The leg guard takes the primary placement only and never pushes, sweeps or holds
+   * it: a plant's ankle stays on its anchor and a swing follows its path. A plant whose primary leg is in a body may
+   * still turn its knee to another pole about the same ankle (rung 7); what is left is incidental contact.
+   */
+  exact?: boolean;
 }
 
 /** The shin frame pitched about its hinge axis X (the shoe frame for an ankle pitch, rad; positive = toe down). */
@@ -1481,6 +1488,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     const hipL = hipLocal(body, s);
     const sl = smp ? smp.legs[s] : null;
     const fr = gr ? inp.feet?.[s] : undefined;
+    // plan 15: a foot shown where it is asked (FootBlend.exact)
+    const exact = !!fr?.exact;
     let base = legRequestLocal(inp, s);
     // plan 07 foot requests: a plant or swing target replaces the request (alternatives stay offsets around it); an
     // offset shifts it; the foot heading becomes the primary variant's knee pole
@@ -1716,7 +1725,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       return Math.hypot(Math.hypot(feat.x - anchor.x, feat.z - anchor.z), low - p.heelW.y) <= (p.tolM ?? 0.01) + 1e-9;
     };
     // the ordinary choice: a leg kept at a knee-pole placement re-picks from the primary
-    const ordinaryR = pick(cands, prevV !== undefined && prevV >= alts.length ? 0 : prevV, !!sl || !!gr, !!gr);
+    // (an exact foot: the primary)
+    const ordinaryR = exact ? { best: cands[0](), index: 0 } : pick(cands, prevV !== undefined && prevV >= alts.length ? 0 : prevV, !!sl || !!gr, !!gr);
     // One leg step from the chosen placement `r` (index alts.length + j: the primary at knee pole LEG_POLES[j]): the
     // continuity blend toward it, its push-outs, and (`legSweep`) its judgement; `ok` says whether the shown leg is clear
     // (no physical body past the larger of HARD_OK and its depth at the step's start), `keptOn` whether a plant's shown leg
@@ -1764,7 +1774,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // leg held so (`${k}:mh`) moves at most at the plant rate from where it stands, push-out included, until it is
         // clear of the met bodies (PHYS_LEG_OK): it leaves the plant's own correction as a plant would make it. Fault:
         // PoseDebug.noHeldMetExit
-        const heldMet = sweep && physMet && mem[`${k}:mh`] === 1 && !inp.debug?.noHeldMetExit;
+        const heldMet = sweep && physMet && mem[`${k}:mh`] === 1 && !inp.debug?.noHeldMetExit && !exact;
         // the step toward a placement (its departure `dcT`, pole `pcT`, candidate `ch`, plant pivot `pv`) at blend `al`: the
         // chosen one, or (`legSweep`) another placement tried for a step that is not clear
         const atTo = (dcT: Vec3, pcT: Vec3, ch: LegC, pv: typeof pivot, al: number, deep = false): LegC & { good: boolean; rank: number } => {
@@ -1780,7 +1790,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           let dm = metD(c);
           // pushed toward validity (HARD_OK), also when no candidate is valid (tangled with another body)
           const G = deep ? inp.ragdoll.poseGuard : undefined;
-          for (let i = 0; i < (G ? G.deepPushIterations : CONT_PUSH_IT) && (de > HARD_OK || c.depth > floorOk || dm > PHYS_LEG_OK) && inp.clearance?.push; i++) {
+          for (let i = 0; i < (G ? G.deepPushIterations : CONT_PUSH_IT) && (de > HARD_OK || c.depth > floorOk || dm > PHYS_LEG_OK) && inp.clearance?.push && !exact; i++) {
             // Correct only the excess depth: a full push at the validity threshold jumps by the whole tolerance.
             const tol = inp.loco ? HARD_OK - 0.001 : 0;
             const pv = physMet ? legs!.pushMet!(c.shapes, tol, 0) : legs ? legs.push(c.shapes, tol) : inp.clearance.push(c.shapes, tol);
@@ -1806,7 +1816,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
           return { ...c, depth: de, soft: softExt(c.shapes), req: t, ik: ch.ik, rollF: ch.rollF, edgeX: ch.edgeX, good: de <= extOk && c.depth <= floorOk, rank: Math.max(de, c.depth) };
         };
         const at = (al: number, deep = false): ReturnType<typeof atTo> => atTo(dc, pc, chosen, pivot, al, deep);
-        const guard = inp.handoffPossible !== false;
+        // (an exact foot: no guard, the blend at its rate)
+        const guard = inp.handoffPossible !== false && !exact;
         const memo = new Map<number, ReturnType<typeof at>>();
         const atM = (x: number): ReturnType<typeof at> => {
           let c = memo.get(x);
@@ -1950,7 +1961,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     let res: ReturnType<typeof legStep> | null = null;
     const metHit = physMet && kneePoles.length > 0 && fr?.kind === 'plant' && metL(cands[0]().shapes) > PHYS_LEG_OK;
     const onPole = prevV !== undefined && prevV >= alts.length;
-    if (kneePoles.length && fr?.kind === 'plant' && !rebased && !inp.debug?.noPlantedPole && (ordinaryR.index !== 0 || metHit || onPole) && (prevV === undefined || prevV === 0 || onPole)) {
+    // (an exact plant: also when its primary leg is in a body past HARD_OK)
+    if (kneePoles.length && fr?.kind === 'plant' && !rebased && !inp.debug?.noPlantedPole && (ordinaryR.index !== 0 || metHit || onPole || (exact && cands[0]().depth > HARD_OK)) && (prevV === undefined || prevV === 0 || onPole)) {
       // ladder 11c: a knee pole crossing the other leg reads as no valid placement (never taken)
       const keep = [cands[0], ...poleCands.map((f) => (otherAx ? once((): LegC => (ownCross(f()) ? { ...f(), depth: Infinity } : f())) : f))];
       // A knee pole is kept while valid; the primary wins back once it is fully clear (and clear of the met bodies) at its
@@ -1965,7 +1977,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       else
         for (const i of [...(prevK ? [prevK] : []), ...keep.keys()]) {
           const c = keep[i]();
-          if (c.depth <= HARD_OK && metL(c.shapes) <= PHYS_LEG_OK) {
+          if (c.depth <= HARD_OK && (!physMet || metL(c.shapes) <= PHYS_LEG_OK)) {
             rk = { best: c, index: i };
             break;
           }
