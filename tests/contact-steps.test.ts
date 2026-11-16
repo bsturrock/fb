@@ -6,9 +6,9 @@ import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
 import { depthAt, groundOf, isFree, legHit, outlineDist, type FreeGround, type Part } from '../src/sim/free-ground';
 import { swingExcess } from '../src/sim/joint-cone';
-import { plannedChain, plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
+import { footFrame, plannedChain, plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
-import { add, dist, norm, qFromAxisAngle, qFromYaw, qInvRot, qMul, sub, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
+import { add, dist, norm, qFromAxisAngle, qFromYaw, qInvRot, qMul, qRot, sub, v3, wrapPi, type Quat, type Vec3 } from '../src/sim/vec';
 import { POP_M, SLIDE_M } from './l3-pass';
 import { FIX } from './runs';
 
@@ -45,6 +45,8 @@ interface Scene {
   hipM?: number;
   /** The body's heading at time t (rad; default 0). */
   yaw?: (t: number) => number;
+  /** The shoes as shown, pitched by this from the shin (deg, the pose's ankle angle; default 0, flat). */
+  anklePitchDeg?: number;
   durS: number;
 }
 interface Run {
@@ -57,7 +59,7 @@ interface Run {
 }
 
 const I = { x: 0, y: 0, z: 0, w: 1 };
-const pose = (ankles: Record<ArmSide, Vec3>): PhysicalPose => {
+const pose = (ankles: Record<ArmSide, Vec3>, pitchDeg = 0): PhysicalPose => {
   const seg = (id: string) => ({ segmentId: id, originWorld: v3(), rotationWorld: I });
   const li = (s: ArmSide) => ({ variant: 0, request: ankles[s], liftM: 0, softM: 0 });
   return {
@@ -65,6 +67,7 @@ const pose = (ankles: Record<ArmSide, Vec3>): PhysicalPose => {
     segments: { leftShin: seg('leftShin'), rightShin: seg('rightShin') } as unknown as PhysicalPose['segments'],
     jointLandmarksWorld: { leftAnkle: { ...ankles.left }, rightAnkle: { ...ankles.right } } as unknown as PhysicalPose['jointLandmarksWorld'],
     hingeDeg: {},
+    anklePitchDeg: { left: pitchDeg, right: pitchDeg },
     straightFallback: [],
     limbClearance: {},
     legInfo: { left: li('left'), right: li('right') },
@@ -107,7 +110,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
   };
   const out: Run = { ev: [], frames: [] };
   const first = input(0);
-  initFeet(plan, pose(sc.start ?? { left: first.home.left, right: first.home.right }), first, []);
+  initFeet(plan, pose(sc.start ?? { left: first.home.left, right: first.home.right }, sc.anklePitchDeg), first, []);
   for (let k = 1; k * DT <= sc.durS + 1e-9; k++) {
     const t = k * DT;
     c = add(c, v3(sc.vel(t).x * DT, 0, sc.vel(t).z * DT));
@@ -115,7 +118,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     const ev: FootEvent[] = [];
     const req = planFeet(plan, inp, ev);
     const ankle = { left: ankleOf(req.left, inp, 'left'), right: ankleOf(req.right, inp, 'right') };
-    observeFeet(plan, pose(ankle), SOLE, 0, ev, t);
+    observeFeet(plan, pose(ankle, sc.anklePitchDeg), SOLE, 0, ev, t);
     for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side], ankle: ankle[e.side] });
     const aims = SIDES.filter((s) => plan.feet[s].mode !== 'planted').map((s) => plan.feet[s].contact!.aim);
     out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: legsBound(plan), nowhere: standsNowhere(plan), late: SIDES.some((s) => plan.feet[s].mode === 'swing' && plan.feet[s].elapsedS > plan.feet[s].durS), ground: inp.ground!, core: inp.core.q });
@@ -364,6 +367,30 @@ describe('contact stepping model (plan 15)', () => {
     expect(gallops(r)).toEqual([]);
     // fault twin (FootDebug.stepsNoTurns): the foot that gains more steps, also when it stepped last
     expect(gallops(run(sc, M, { stepsNoTurns: true }))).not.toEqual([]);
+  });
+
+  it('a foot in the air never goes into the turf: a shoe pitched toe down by the leg is held up by its toe', () => {
+    // walked forward at 1.2 m/s, the shoes shown pitched 35 deg from the shin (a body leaning far over its feet)
+    for (const deg of [35, -35]) {
+      const sc: Scene = { vel: push(v3(0, 0, 1), 1.2), anklePitchDeg: deg, durS: 1.2 };
+      // the deepest a shoe in the air goes under the turf (m): its lowest sole corner, as shown
+      const under = (r: Run): number => {
+        let worst = 0;
+        for (const f of r.frames)
+          for (const s of SIDES) {
+            if (f.planted[s]) continue;
+            const q = footFrame(pose(f.ankle, deg), s);
+            for (const x of [-R.shoe.halfExtents.x, R.shoe.halfExtents.x])
+              for (const z of [R.shoe.forwardM - R.shoe.halfExtents.z, R.shoe.forwardM + R.shoe.halfExtents.z]) worst = Math.max(worst, -(f.ankle[s].y + qRot(q, v3(x, -SOLE, z)).y));
+          }
+        return worst;
+      };
+      const r = run(sc);
+      expect(plants(r).length, `${deg}`).toBeGreaterThan(2);
+      expect(under(r), `${deg}`).toBeLessThanOrEqual(1e-6);
+      // fault twin (FootDebug.stepsTurfBlind): the planned height, the toe through the turf
+      expect(under(run(sc, M, { stepsTurfBlind: true })), `${deg}`).toBeGreaterThan(0.03);
+    }
   });
 
   it('a step passes beside another player\'s shin, never through it: the path keeps to free ground', () => {

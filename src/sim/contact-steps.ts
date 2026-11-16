@@ -11,7 +11,8 @@
 //   Its aim is the first place within the leg's reach in that order: with free ground within reach, the nearest free
 //   place to its want, within the short step first. A foot in the air follows its aim at a bounded rate that falls to
 //   zero at touchdown (the foot commits as it lands), and its path goes no deeper into the other players' footprints than
-//   its ends: a move deeper slides along the footprint's edge (`onFreeGround`).
+//   its ends: a move deeper slides along the footprint's edge (`onFreeGround`). It never goes into the turf: its height
+//   keeps the shoe's lowest sole corner, as last shown, on or above it (`overTurf`).
 // - When. A planted foot never moves on the ground: it stands or it steps. It stands while its leg is in range and lifts
 //   the moment it is not, whatever the other foot does: that is the only way both feet are in the air (a flight, as in
 //   running), and it ends when the other foot's step lands, within one step time. Otherwise, with both feet down, a
@@ -346,7 +347,7 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
   f.elapsedS += dt;
   const p = Math.min(f.elapsedS / c.T, 1);
   const down = quinticStep(c.h0, c.vy0, 0, 0, c.T, Math.min(f.elapsedS, c.T));
-  const y = sole + down.p + c.liftM * Math.sin(Math.PI * p) ** 2;
+  const y = Math.max(sole + down.p + c.liftM * Math.sin(Math.PI * p) ** 2, inp.debug?.stepsTurfBlind ? -Infinity : overTurf(plan, f.footQ, inp));
   f.target = v3(x.p, y, z.p);
   if (dt > 0) {
     f.stepH = { v: v3(x.v, 0, z.v), a: v3(x.a, 0, z.a) };
@@ -382,6 +383,19 @@ function onFreeGround(plan: FootPlan, inp: FootPlanInput, h: number, from: Vec3,
   if (depthAt(g, t, 0, q) <= D) return to;
   const p = nearestNoDeeper(g, t, fr, Math.hypot(t.x - fr.x, t.z - fr.z) + 1e-6, 0, q, D);
   return p ? v3(p.x - c.x, to.y, p.z - c.z) : to;
+}
+
+/**
+ * The lowest an ankle in the air may be (m, world y) for its shoe, turned as `footQ` (the shoe as last shown), to keep its
+ * lowest sole corner on or above the turf: a foot pitched toe down by the leg (a body leaning far over its feet) is held
+ * up by its toe, not shown through the turf. Flat, it is the sole height. (FootDebug.stepsTurfBlind, a fault: the step's
+ * height as planned, at the sole height whatever the shoe's pitch.)
+ */
+function overTurf(plan: FootPlan, footQ: Quat, inp: FootPlanInput): number {
+  const { he, centerFoot } = plan.shoe;
+  let low = 0;
+  for (const x of [-he.x, he.x]) for (const z of [centerFoot.z - he.z, centerFoot.z + he.z]) low = Math.min(low, qRot(footQ, v3(x, -inp.soleM, z)).y);
+  return inp.groundY - low;
 }
 
 /**

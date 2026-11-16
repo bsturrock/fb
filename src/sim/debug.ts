@@ -82,6 +82,8 @@ export interface FootDebug {
   stepsTurnRate?: boolean;
   /** Fault (negative control of plan 15's path, `FootworkProfile.steps`): a foot in the air moves along its path as planned, through another player's footprint. */
   stepsPathBlind?: boolean;
+  /** Fault (negative control of plan 15's swing height, `FootworkProfile.steps`): a foot in the air keeps the planned height, its shoe pitched toe down through the turf. */
+  stepsTurfBlind?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */
