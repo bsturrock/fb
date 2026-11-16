@@ -79,14 +79,27 @@ about 3 cm: a plant's shoe at the ankle range lifts the ankle and brings the kne
 solve gets the same `FootRequest`s and under the model a plant is never released by its solve. Above about 4 m/s (a
 hit at full speed) a plant runs out of reach within one step time, so the stride has a flight.
 
-## Known limits (the model as built; the guard's remaining moves of a model leg)
+## Known limits (the model as built, measured on all L3, L4 and HC runs with `steps=new`)
 
-- A body coming into a standing leg (the plant was clear when it landed): the guard holds the shown leg out until the
-  foot steps, which it does as soon as the other foot is down.
-- A bound foot (no free place within a step: chest to chest with crouched legs, legs inside a wrap): the guard holds
-  the shown leg out; the fall triggers read the bound feet.
-- Free ground judges places, not the swing's path: a swing passing another player's leg on its way is held off by the
-  guard.
+A model plant never moves, but the shown foot can: about 9% of plants are shown more than 5 cm off their anchor at some
+point (the old planner released such plants instead). By mechanism, in shown-off time:
+- A bound foot (no free place within a step: chest to chest with crouched legs, legs inside a wrap), about 45%: the
+  guard holds the shown leg out, up to about 15 cm, and flickers between its offset and the primary every few
+  substeps (L3-F6-holdMirror, the carrier's right foot from 2.1 s). The fall triggers read the bound feet.
+- A landing on the shoe's edge, about 23%: the swing's shoe comes down rolled 30-40 degrees and turned 7-20 degrees off
+  the plan's heading, while the plant is set flat on the heading; the plant solve pivots on the edge, the contact point
+  5-15 cm off the anchor, settling over a few substeps and then jumping (the hit's first steps: L3-F1-phase*, HC-F1-*,
+  L3-F10-both, near 0.8 s).
+- The guard moving a plant whose planned leg is clear, about 25%, half at landing (the shown leg still coming from the
+  swing), half later (the leg solve's leg deeper than the planned one, past the skin).
+- A body pushing into a standing leg while the other foot is in the air, about 6%: the plant may not lift until the
+  other foot lands, and the guard drags the shown leg meanwhile (L3-F5-drag, the defender's right foot, 42 cm at 0.6 s).
+Other limits:
+- A hit at speed (3.5-5 m/s) into a man leaves no free place ahead: the foot is bound and lands where the ground was
+  free when it lifted, 0.45-0.75 m behind the hips (most steps over the short-step limit).
+- A plant stands while its leg reaches it; the hip's range is not read. Braking from a run, a trailing plant stays
+  until the hip is past its extension range (L3-F16-runStopFree, 37 degrees at 1.6 s).
+- Free ground judges places, not the swing's path: a swing passing another player's leg is held off by the guard.
 - The leg search can miss a free place (1.3% of blocked asks); the foot is then bound for that substep.
 
 ## What stays
