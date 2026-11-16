@@ -4,7 +4,7 @@ import { STEPS_V1, withSteps, type StepModelProfile } from '../src/sim/contact-s
 import type { FootDebug } from '../src/sim/debug';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
 import { groundOf, isFree, type FreeGround, type Part } from '../src/sim/free-ground';
-import type { FootRequest, PhysicalPose } from '../src/sim/pose';
+import { plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, v3, type Vec3 } from '../src/sim/vec';
 import { POP_M, SLIDE_M } from './l3-pass';
 import { FIX } from './runs';
@@ -12,8 +12,8 @@ import { FIX } from './runs';
 // Plan 15 step 2: the contact stepping model (src/sim/contact-steps.ts) on constructed input, no physics: a body moved
 // along a given velocity, its hips and homes with it, the other players as footprints, the leg solve exact (the shown
 // ankle is the requested one). Each check states a viewer rule and has its fault twin: the same scene under a fault
-// (no step ceiling, no free ground, the nearer foot stepping, a stance outlasting its reach, an aim followed at once),
-// which must fail it.
+// (no step ceiling, no free ground, the nearer foot stepping, a plant past its reach waiting for the other foot, an aim
+// followed at once), which must fail it.
 
 const R = FIX('L3-F6-hold').ragdoll!;
 const SOLE = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
@@ -23,6 +23,7 @@ const DT = 1 / 240;
 const SIDES: ArmSide[] = ['left', 'right'];
 const M = STEPS_V1;
 const ON = withSteps(FOOTWORK_L3);
+const REACH = plantReachM(R, ON.plantTolM);
 
 interface Scene {
   /** The body's horizontal velocity at time t (m/s). */
@@ -35,8 +36,8 @@ interface Scene {
 }
 interface Run {
   ev: (FootEvent & { t: number; hip: Vec3 })[];
-  /** Per substep: time, planted feet, requested ankles, the aims of the feet in the air, the other players' free ground. */
-  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; aims: Vec3[]; ground: FreeGround }[];
+  /** Per substep: time, planted feet, requested ankles, hips, the aims of the feet in the air, the other players' free ground. */
+  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; ground: FreeGround }[];
 }
 
 const I = { x: 0, y: 0, z: 0, w: 1 };
@@ -99,7 +100,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     observeFeet(plan, pose(ankle), SOLE, 0, ev, t);
     for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side] });
     const aims = SIDES.filter((s) => plan.feet[s].mode !== 'planted').map((s) => plan.feet[s].contact!.aim);
-    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, aims, ground: inp.ground! });
+    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, ground: inp.ground! });
   }
   return out;
 }
@@ -147,8 +148,25 @@ function gallops(r: Run): string[] {
   }
   return out;
 }
-/** Largest slide of a plant while it stood (m): the release's slideM, or a plant still standing at the end. */
-const slides = (r: Run): number => Math.max(0, ...r.ev.filter((e) => e.type === 'footRelease').map((e) => Number(e.data.slideM ?? 0)));
+/**
+ * A planted foot that moves on the ground (m): per plant, how far its requested ankle goes from where it landed while it
+ * stands, plus how far past the plant reach its hip goes from it (a leg that cannot reach its plant drags it along).
+ */
+const skates = (r: Run): number => {
+  let worst = 0;
+  for (const s of SIDES) {
+    let at0: Vec3 | null = null;
+    for (const f of r.frames) {
+      if (!f.planted[s]) {
+        at0 = null;
+        continue;
+      }
+      at0 ??= f.ankle[s];
+      worst = Math.max(worst, dist(f.ankle[s], at0) + Math.max(0, dist(f.ankle[s], f.hips[s]) - REACH));
+    }
+  }
+  return worst;
+};
 /** Largest move of a requested ankle in one substep (m). */
 const pops = (r: Run): number => {
   let worst = 0;
@@ -222,13 +240,26 @@ describe('contact stepping model (plan 15)', () => {
     expect(gallops(run(sc, M, { stepsPickNearer: true }))).not.toEqual([]);
   });
 
-  it('a steady drive: no plant skates, and no foot request jumps, lifting or landing', () => {
-    const sc: Scene = { vel: push(v3(0, 0, 1), 1), others: (_, c) => legsAt(v3(c.x, 0, c.z + 0.5), v3(0, 0, 1)), durS: 2.5 };
+  it('no plant ever moves on the ground: a plant that cannot stand lifts, also with the other foot in the air', () => {
+    // a hit at speed: the body driven from still to 5 m/s, where a plant runs out of reach within a step
+    const sc: Scene = { vel: push(v3(0, 0, 1), 5), durS: 1.5 };
     const r = run(sc);
-    expect(slides(r)).toBeLessThanOrEqual(SLIDE_M);
-    expect(pops(r)).toBeLessThanOrEqual(POP_M);
-    // fault twin (skate): a step slow enough that the stance foot outlasts its reach is dragged along
-    expect(slides(run(sc, { ...M, stepMps: 0.4, travelK: 0, maxS: 1 }))).toBeGreaterThan(SLIDE_M);
+    expect(plants(r).length).toBeGreaterThan(6);
+    expect(skates(r)).toBeLessThanOrEqual(1e-9);
+    // (and at a steady drive into a man)
+    expect(skates(run({ vel: push(v3(0, 0, 1), 1), others: (_, c) => legsAt(v3(c.x, 0, c.z + 0.5), v3(0, 0, 1)), durS: 2.5 }))).toBeLessThanOrEqual(1e-9);
+    // fault twin (FootDebug.stepsStanceWaits): a plant past its reach waits for the other foot to land: its leg would drag it
+    expect(skates(run(sc, M, { stepsStanceWaits: true }))).toBeGreaterThan(SLIDE_M);
+  });
+
+  it('at speed, both feet are in the air only briefly: never longer than one step time', () => {
+    const sc: Scene = { vel: push(v3(0, 0, 1), 5), durS: 1.5 };
+    const r = run(sc);
+    // (there are flights: a plant runs out of reach while the other foot is still in the air)
+    expect(unplanted(r, 0.3)).toBeGreaterThan(DT);
+    expect(unplanted(r)).toBeLessThanOrEqual(M.maxS + DT);
+    // fault twin: a step's time with no ceiling (a slow foot): the flight lasts as long as the slow step
+    expect(unplanted(run(sc, { ...M, stepMps: 0.4, travelK: 0, maxS: 1 }))).toBeGreaterThan(M.maxS + DT);
   });
 
   it('an aim that moves late is followed at a bounded rate: no jump of the foot', () => {

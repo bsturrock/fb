@@ -6,11 +6,12 @@
 //   already in v), taken where the hips will be when the foot lands (moved along v for the time left). Its aim is that
 //   point limited to a short step from the hip, then moved to the nearest free ground. A foot in the air follows its aim
 //   at a bounded rate that falls to zero at touchdown (the foot commits as it lands).
-// - When. The stance holds while each planted foot is within coverM of its aim now and within reach; otherwise the foot
-//   farther from its aim steps. A stance foot does not lift while the other is in the air. A step's time comes from
-//   its length, at a foot speed that grows with the travel (stepMps + travelK |v|, between minS and maxS), and never
-//   changes; when it is up the foot lands where the leg is. A plant past its reach slides toward the hip (a drag)
-//   instead of lifting.
+// - When. A planted foot never moves on the ground: it stands or it steps. It stands while it can (within reach of its
+//   hip) and lifts the moment it cannot, whatever the other foot does: that is the only way both feet are in the air (a
+//   flight, as in running), and it ends when the other foot's step lands, within one step time. Otherwise a foot lifts
+//   only while the other stands, when it is farther than coverM from its aim now (the farther foot of the two). A step's
+//   time comes from its length, at a foot speed that grows with the travel (stepMps + travelK |v|, between minS and
+//   maxS), and never changes; when it is up the foot lands where the leg is.
 // Nothing is held off, retimed, re-picked or remembered: a foot is planted or in a step that will land. The leg solve
 // gets the same requests as from the old planner (FootRequest) and observeFeet measures the pose as before; under the
 // model a plant is never released by its solve.
@@ -72,8 +73,6 @@ export interface ContactFoot {
   /** This substep's support point and aim (ankle, world, at the sole height). */
   support: Vec3;
   aim: Vec3;
-  /** Planted: how far the plant has slid since it landed (m). */
-  slideM: number;
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -97,10 +96,15 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     f.clipSwingP = null;
     f.rejoin = f.wait = f.inherited = f.released = f.tentative = false;
     // taking over: a plant stays where it is; a foot in the air steps from where it is, at its motion
-    if (f.mode === 'planted' && (entering || !f.contact)) f.contact = { T: 0, h0: 0, vy0: 0, liftM: 0, support: v3(), aim: v3(), slideM: 0 };
+    if (f.mode === 'planted' && (entering || !f.contact)) f.contact = { T: 0, h0: 0, vy0: 0, liftM: 0, support: v3(), aim: v3() };
     else if (f.mode !== 'planted' && (entering || !f.contact)) begin(plan, s, inp, ev, 'continue');
   }
-  // When: the stance holds while both plants cover their aims; else the farther foot steps
+  // When: a plant that cannot stand lifts at once (FootDebug.stepsStanceWaits, a fault: not while the other foot is in
+  // the air); with both standing, the foot farther than coverM from its aim steps, the farther of the two
+  for (const s of SIDES) {
+    const o = plan.feet[other(s)];
+    if (plan.feet[s].mode === 'planted' && !canStand(plan, s, inp) && !(inp.debug?.stepsStanceWaits && o.mode !== 'planted')) begin(plan, s, inp, ev, 'reach');
+  }
   if (plan.feet.left.mode === 'planted' && plan.feet.right.mode === 'planted') {
     const gap = { left: stanceGap(plan, 'left', inp), right: stanceGap(plan, 'right', inp) };
     if (gap.left > P.steps!.coverM || gap.right > P.steps!.coverM) {
@@ -123,7 +127,6 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
       out[s] = { kind: 'target', ankleW: f.target, headingRad: f.headingRad };
       continue;
     }
-    slide(plan, s, inp);
     f.target = add(f.heelW!, v3(0, inp.soleM, 0));
     out[s] = { kind: 'plant', heelW: f.heelW!, headingRad: f.headingRad, rollF: f.rollF, toeZ: f.toeZ, edgeX: f.edgeX, tolM: P.plantTolM };
   }
@@ -165,14 +168,17 @@ function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { 
   return { ...aimOf(plan, s, inp, T), T };
 }
 
-/** When: how far a plant is from its aim now (m, horizontal); past its reach, Infinity. */
+/** When: a plant can stand while its leg reaches it (hip to ankle within the plant reach). */
+const canStand = (plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean => dist(add(plan.feet[s].heelW!, v3(0, inp.soleM, 0)), inp.hips[s]) <= plan.reachM;
+
+/** When: how far a standing plant is from its aim now (m, horizontal). */
 function stanceGap(plan: FootPlan, s: ArmSide, inp: FootPlanInput): number {
   const f = plan.feet[s];
   const ankle = add(f.heelW!, v3(0, inp.soleM, 0));
   const { support, aim } = aimOf(plan, s, inp, 0);
   f.contact!.support = support;
   f.contact!.aim = aim;
-  return dist(ankle, inp.hips[s]) > plan.reachM ? Infinity : len(hz(sub(ankle, aim)));
+  return len(hz(sub(ankle, aim)));
 }
 
 /** When: foot `s` lifts (or, in the air, is taken over) for a step to its aim, from the achieved ankle at its motion. */
@@ -180,7 +186,7 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
   const M = plan.profile.steps!;
   const f = plan.feet[s];
   if (f.mode === 'planted') {
-    ev.push({ type: 'footRelease', side: s, data: { reason: why, driftM: round(f.driftM, 5), featureErrM: round(f.featureErrM, 5), plantedS: round(inp.t - f.plantedAtS, 5), solves: f.solves, slideM: round(f.contact?.slideM ?? 0, 5) } });
+    ev.push({ type: 'footRelease', side: s, data: { reason: why, driftM: round(f.driftM, 5), featureErrM: round(f.featureErrM, 5), plantedS: round(inp.t - f.plantedAtS, 5), solves: f.solves } });
     f.releaseReason = why;
     f.releaseAtS = inp.t;
     f.heelW = f.anchorW = null;
@@ -193,7 +199,7 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
   const { support, aim, T } = aimFrom(plan, s, inp, f.target);
   const L = dist(f.target, aim);
   const h0 = Math.max(0, f.target.y - (inp.groundY + inp.soleM));
-  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim, slideM: 0 };
+  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim };
   f.elapsedS = 0;
   f.durS = T;
   f.dest = aim;
@@ -258,25 +264,8 @@ function land(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[]): 
   f.dest = null;
   f.offset = v3();
   f.driftM = f.featureErrM = 0;
-  f.contact!.slideM = 0;
   f.attempts++;
   plan.stats.attempts++;
   plan.stats.confirmed++;
   ev.push({ type: 'footPlant', side: s, data: { at: [round(here.x, 4), round(inp.groundY, 4), round(here.z, 4)], headingDeg: round((f.headingRad * 180) / Math.PI, 2), rollF: 0, errM: 0 } });
-}
-
-/** A plant past its reach slides toward the hip until it is back within it (a drag), instead of lifting. */
-function slide(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void {
-  const f = plan.feet[s];
-  const hip = inp.hips[s];
-  const ankle = add(f.heelW!, v3(0, inp.soleM, 0));
-  f.drag = dist(ankle, hip) > plan.reachM;
-  if (!f.drag) return;
-  const off = hz(sub(ankle, hip));
-  const L = len(off);
-  const r = Math.sqrt(Math.max(0, plan.reachM ** 2 - (hip.y - ankle.y) ** 2));
-  const to = L > 1e-9 ? v3(hip.x + (off.x * r) / L, inp.groundY, hip.z + (off.z * r) / L) : v3(hip.x, inp.groundY, hip.z);
-  f.contact!.slideM += len(hz(sub(to, f.heelW!)));
-  f.heelW = to;
-  f.anchorW = { ...to };
 }

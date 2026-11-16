@@ -42,20 +42,21 @@ the hips will be when the foot lands (hips and footprints moved along their moti
 target is the support point, limited to a short step from the hip, then moved to the nearest free ground. The target
 follows the support point while the foot is in the air, at a bounded rate that falls to zero at touchdown.
 
-**When.** The stance holds while each planted foot is within a few centimetres of its own aim now and within reach.
-When one is not, the foot farther from its aim steps. One duration rule from step length, at a foot speed that grows
-with the body's speed (one floor, one ceiling), fixed at lift-off. When the time is up the foot lands where the leg
-is, always. A stance foot does not lift until the other is down; a plant past its reach slides (a drag) instead of
-lifting. A foot in the air when the model takes over continues as a step from where it is, at its motion.
+**When.** A planted foot never moves on the ground: it stands or it steps. It stands while it can (its leg reaches
+it) and lifts the moment it cannot, whatever the other foot does: the only way both feet are in the air (a flight, as
+in running), ended by the other foot's landing within one step time. Otherwise a foot lifts only while the other
+stands, when it is more than a few centimetres from its own aim now (the farther foot of the two). One duration rule
+from step length, at a foot speed that grows with the body's speed (one floor, one ceiling), fixed at lift-off. When
+the time is up the foot lands where the leg is, always. A foot in the air when the model takes over continues as a
+step from where it is, at its motion.
 
 That is the whole planner. No retimers, no blocked memory, no re-pick loop, no tentative landings.
 
 Built (`src/sim/contact-steps.ts`, `STEPS_V1`): step at most 0.4 m from the hip (less where the reach at the stance
 height is shorter), stance covered within 12 cm, step time = length / (1.6 + 2 |v|) m/s within 0.16-0.30 s, aim
 followed at 2 m/s at most. `planFeet` hands the feet to `stepFeet` wherever the reactive regime would run; the leg
-solve gets the same `FootRequest`s and under the model a plant is never released by its solve. Known limit: with no
-flight phase, a stance lasts one step time, so above about 4 m/s (a hit at full speed) the stance foot outruns its
-reach and drags.
+solve gets the same `FootRequest`s and under the model a plant is never released by its solve. Above about 4 m/s (a
+hit at full speed) a plant runs out of reach within one step time, so the stride has a flight.
 
 ## What stays
 
@@ -104,5 +105,5 @@ Each is one commit with a full check, per `CLAUDE.md`.
 
 - The flip changes conversion timing through `boundLegs` and `rideUnsupported`, so who falls will move.
 - The capture point assumes a fixed hip height; a crouched driving player may want a lead term. Decide from the lab.
-- Free ground between two supported players standing chest to chest may leave little room; the short-step limit and
-  the slide rule must still give a natural stance. This is the first thing to look at in step 2's lab switch.
+- Free ground between two supported players standing chest to chest may leave little room; the short-step limit must
+  still give a natural stance. This is the first thing to look at in step 2's lab switch.

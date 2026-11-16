@@ -48,6 +48,11 @@ export interface FootDebug {
   lateRepick?: boolean;
   /** Fault (negative control of plan 15's choice of foot, `FootworkProfile.steps`): the foot nearer its aim steps, not the farther. */
   stepsPickNearer?: boolean;
+  /**
+   * Fault (negative control of plan 15's stance, `FootworkProfile.steps`): a plant past its reach waits for the other foot
+   * to land before it lifts, as in the step 2 model (which then slid it along the turf).
+   */
+  stepsStanceWaits?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */
