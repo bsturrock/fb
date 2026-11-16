@@ -1,7 +1,8 @@
 # 15. Contact footwork: one stepping model
 
 Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Steps 1 and 2 done (the model behind
-`FootworkProfile.steps`, lab `&steps=new`, no fixture uses it); step 3 next.
+`FootworkProfile.steps`, lab `&steps=new`, no fixture uses it), with the owner's 2026-11-15 rulings built in: no slide,
+free ground judges the whole leg, a step only for a gain. Step 3 next.
 
 ## What a viewer should see (owner, 2026-11-15)
 
@@ -28,41 +29,65 @@ structural faults, and two attempts to patch a body test into it each worsened a
 
 Per player, per substep, once the clip regime ends (contact hold or braking). Three rules.
 
-**Free ground.** One function answers "may a foot or shin be here": the ground minus the footprints of other
-players' bodies and legs, each moved by its relative velocity over the step's remaining time. The planner and the
-leg guard both call it. Nothing else decides whether a place is blocked.
+**Free ground.** One function answers "may a leg stand here": the ground minus the footprints of other players'
+bodies and legs, and the whole leg (thigh, knee, shin, shoe) standing on the place clear of their parts, each part
+moved along its own velocity over the step's remaining time (a foot lands at a place on the ground). Nothing else
+decides whether a place is blocked.
 Built (`src/sim/free-ground.ts`): a footprint is a part's span below the stepping player's shin top projected to the
 ground (supported: proxy colliders and published limbs, a leg moving at its measured ankle velocity; ragdoll: segment
-colliders); a foot asks with its radius and a side wall from its other foot (no crossing). `isFree`, `nearestFree`
-(exact), the sim adapter `bodyParts` / `groundFor`. About 0.06 ms per substep for two players.
+colliders); a foot asks with its radius, a side wall from its other foot (no crossing) and its leg: `pose.ts`
+`plannedLeg`, the leg the leg solve gives a request with no memory, which must clear every part by a skin (Rapier's
+contact query, as the guard asks it). `isFree`; `nearestFree`, exact on the ground, and for the leg a search that cuts
+the ground a blocked leg cannot stand on and asks again (at most 8 times; against a 1 cm grid over the L3 holds and
+drives: 1.3% of blocked asks find none where the grid finds one, p90 1.6 cm farther than the grid's nearest). The
+guard's bodies and free ground's parts agree on the same leg 99.9% of plant time (`.scratch/p21/bodies.ts`). About
+40 us per ask where a body is near.
 
 **Where.** The support point is where the hips need a foot given their real motion now:
 `hip + v * sqrt(h / g)` (the capture point: hit and lean are already in `v`), plus the foot's side offset, taken where
-the hips will be when the foot lands (hips and footprints moved along their motion for the step's time left). The step
-target is the support point, limited to a short step from the hip, then moved to the nearest free ground. The target
-follows the support point while the foot is in the air, at a bounded rate that falls to zero at touchdown.
+the hips will be when the foot lands (hips and parts moved along their motion for the step's time left). The want is
+the support point limited to a short step from the hip; the aim is the nearest free place to it (none when no place
+within the step is free). The target follows the aim while the foot is in the air, at a bounded rate that falls to
+zero at touchdown; with no free place it stays.
 
 **When.** A planted foot never moves on the ground: it stands or it steps. It stands while it can (its leg reaches
 it) and lifts the moment it cannot, whatever the other foot does: the only way both feet are in the air (a flight, as
 in running), ended by the other foot's landing within one step time. Otherwise a foot lifts only while the other
-stands, when it is more than a few centimetres from its own aim now (the farther foot of the two). One duration rule
-from step length, at a foot speed that grows with the body's speed (one floor, one ceiling), fixed at lift-off. When
-the time is up the foot lands where the leg is, always. A foot in the air when the model takes over continues as a
-step from where it is, at its motion.
+stands, when stepping improves its support by more than a few centimetres (its aim is that much nearer its want than
+its plant; a plant whose leg no longer stands clear is as far as can be), and the feet take turns: the foot that
+stepped last steps again only when its leg no longer stands clear. So a foot that stands as near as free ground allows
+never steps in place, and a foot never steps twice running while the other stands. One duration rule from step
+length, at a foot speed that grows with the body's speed (one floor, one ceiling), fixed at lift-off. When the time is
+up the foot lands where the leg is, always. A foot in the air when the model takes over continues as a step from where
+it is, at its motion. A foot is bound when it cannot follow the hips: it needs a step (or is in one) and no free place
+is within its step.
 
 That is the whole planner. No retimers, no blocked memory, no re-pick loop, no tentative landings.
 
 Built (`src/sim/contact-steps.ts`, `STEPS_V1`): step at most 0.4 m from the hip (less where the reach at the stance
-height is shorter), stance covered within 12 cm, step time = length / (1.6 + 2 |v|) m/s within 0.16-0.30 s, aim
-followed at 2 m/s at most. `planFeet` hands the feet to `stepFeet` wherever the reactive regime would run; the leg
+height is shorter), a step only for a gain over 12 cm, step time = length / (1.6 + 2 |v|) m/s within 0.16-0.30 s, aim
+followed at 2 m/s at most, the leg's skin 3 cm (the leg solve departs from the planned leg toward a body by up to
+about 3 cm: a plant's shoe at the ankle range lifts the ankle and brings the knee forward). `planFeet` hands the feet to `stepFeet` wherever the reactive regime would run; the leg
 solve gets the same `FootRequest`s and under the model a plant is never released by its solve. Above about 4 m/s (a
 hit at full speed) a plant runs out of reach within one step time, so the stride has a flight.
+
+## Known limits (the model as built; the guard's remaining moves of a model leg)
+
+- A body coming into a standing leg (the plant was clear when it landed): the guard holds the shown leg out until the
+  foot steps, which it does as soon as the other foot is down.
+- A bound foot (no free place within a step: chest to chest with crouched legs, legs inside a wrap): the guard holds
+  the shown leg out; the fall triggers read the bound feet.
+- Free ground judges places, not the swing's path: a swing passing another player's leg on its way is held off by the
+  guard.
+- The leg search can miss a free place (1.3% of blocked asks); the foot is then bound for that substep.
 
 ## What stays
 
 - The clip regime (running) and the switch condition into contact.
 - `FootRequest` to the leg solve, and `observeFeet` feeding the achieved pose back.
-- The leg guard as the last-resort geometry check on the solved leg, now reading the same free ground.
+- The leg guard as the last-resort geometry check on the solved leg. It reads the same bodies as free ground (measured,
+  above); where it still moves a model leg, the cause is the leg solve's own shape, a body coming into a standing leg,
+  or a bound foot (see Known limits).
 - The fields `boundLegs` clause (b), `rideUnsupported`, `clipJoin` and the transition audit read (mode, swing age,
   planted). "Held off" disappears as a state: a foot is planted or in a step that will land.
 - Feet stay pose-only. Feeding foot support into balance is a separate later decision.

@@ -46,8 +46,16 @@ export interface FootDebug {
    * hip every arrival stretch, as before (its arrival is still judged against the pose's target).
    */
   lateRepick?: boolean;
-  /** Fault (negative control of plan 15's choice of foot, `FootworkProfile.steps`): the foot nearer its aim steps, not the farther. */
-  stepsPickNearer?: boolean;
+  /**
+   * Fault (negative control of plan 15's turns, `FootworkProfile.steps`): with both feet down the foot that gains more by
+   * stepping steps, also when it stepped last (as in the step 2 model, where the farther foot stepped).
+   */
+  stepsNoTurns?: boolean;
+  /**
+   * Fault (negative control of plan 15's gain, `FootworkProfile.steps`): a plant steps when it is more than coverM from its
+   * aim (as in the step 2 model), not when stepping brings it that much nearer its want.
+   */
+  stepsToAim?: boolean;
   /**
    * Fault (negative control of plan 15's stance, `FootworkProfile.steps`): a plant past its reach waits for the other foot
    * to land before it lifts, as in the step 2 model (which then slid it along the turf).

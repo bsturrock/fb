@@ -1,21 +1,21 @@
-// Plan 15 (contact footwork), free ground: "may a foot or shin be here". The ground minus the footprints of the other
-// players' bodies and legs, each moved by its motion relative to the stepping player over a horizon (the step's
-// remaining time), and the nearest free point to a wanted one within reach of a hip. Pure and deterministic, on the
-// ground plane (x, z):
+// Plan 15 (contact footwork), free ground: "may a leg stand here". The ground minus the footprints of the other
+// players' bodies and legs, and the whole leg standing on a place clear of their parts, each moved along its motion over
+// a horizon (the step's remaining time: a foot lands at a place on the ground, so the parts move by their own velocity),
+// and the nearest free place to a wanted one within reach of a hip. Pure and deterministic:
 // - a footprint is a body part's span below the top of the stepping player's shin, projected onto the ground: a convex
-//   outline (one point for a ball, a capsule's segment, a box's outline) with a radius, and its velocity relative to the
-//   stepping player;
+//   outline (one point for a ball, a capsule's segment, a box's outline) with a radius, and its velocity;
 // - a foot asks with its own radius (a disc over its shoe) and, so the legs never cross, a side wall: the line of its
-//   other foot, which it keeps a separation to its own side of;
-// - a point is free when it is clear of every moved footprint by the footprint's radius plus the foot's, and on its side
-//   of the wall. Nothing else decides whether a place is blocked.
+//   other foot, which it keeps a separation to its own side of; and with its leg: the leg (thigh, shin, shoe) that would
+//   stand on a place, which must be clear of every part by a skin (Rapier's contact query, as the leg guard asks it);
+// - a place is free when it is clear of every moved footprint by the footprint's radius plus the foot's, on its side of
+//   the wall, and its leg is clear. Nothing else decides whether a place is blocked.
 // The adapter from a simulation (`bodyParts`, `groundFor`) reads each player's parts once per substep: a supported or
 // falling player's proxy colliders and published limbs (his pose of the last substep), a ragdoll's segment colliders.
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmSide, PlayerId } from './contracts';
 import { poseLimbShapes, type PhysicalPose, type PoseShape } from './pose';
 import type { RagdollProfile } from './profiles';
-import { qRot, v3, vc, type Quat, type Vec3 } from './vec';
+import { addScaled, dist, len, qFromUnitVectors, qRot, scale, sub, v3, vc, type Quat, type Vec3 } from './vec';
 
 /** A point or direction on the ground plane. */
 export interface Pt {
@@ -25,7 +25,7 @@ export interface Pt {
 
 /**
  * One body part's footprint: a convex outline on the ground (one point: a ball's centre; two: a capsule's segment; more:
- * a box's outline, counter-clockwise), the radius about it (m), and its velocity relative to the stepping player (m/s).
+ * a box's outline, counter-clockwise), the radius about it (m), and its velocity (m/s).
  */
 export interface Footprint {
   pts: Pt[];
@@ -36,15 +36,20 @@ export interface Footprint {
 
 export interface FreeGround {
   prints: Footprint[];
+  /** The parts themselves, for the whole leg (absent: the footprints only). */
+  parts?: Part[];
 }
 
 /**
- * The foot that asks: its radius on the ground (m), and the side wall of its other foot (`p` the other foot's point,
- * `n` the unit direction of this foot's own side): a free point lies at least `sepM` along `n` from `p`.
+ * The foot that asks: its radius on the ground (m), the side wall of its other foot (`p` the other foot's point, `n` the
+ * unit direction of this foot's own side): a free point lies at least `sepM` along `n` from `p`; and its leg: the shapes
+ * (thigh, shin, shoe, in that order) of the leg standing on a place (its point on the ground), which must be clear of
+ * every part by `skinM`.
  */
 export interface FootQuery {
   clearM: number;
   wall?: { p: Pt; n: Pt; sepM: number };
+  leg?: { at: (p: Vec3) => PoseShape[]; skinM: number };
 }
 
 const EPS = 1e-9;
@@ -88,7 +93,7 @@ export function isFree(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery): 
   const x = pt(p);
   if (q.wall && dot2(sub2(x, q.wall.p), q.wall.n) < q.wall.sepM - TOL) return false;
   for (const f of g.prints) if (outlineDist(moved(f, horizonS), x) < f.r + q.clearM - TOL) return false;
-  return true;
+  return !q.leg || !legHit(g, q.leg.at(p), horizonS, q.leg.skinM);
 }
 
 // The boundary pieces of the region a point may not enter (each footprint dilated by its radius and the foot's), the
@@ -171,17 +176,40 @@ function meet(p: Piece, q: Piece): Pt[] {
   return out;
 }
 
+/** How many places the whole leg is tried at before a search gives up (each a cut of the ground, see `cutOf`). */
+const LEG_TRIES = 8;
+
 /**
  * The nearest point to `want` (its point on the ground) that a foot (`q`) may stand on `horizonS` from now, within
- * `reachM` of `hip` (horizontal); null when there is none. Exact: the nearest point of the free region within reach is
- * `want` itself, the nearest point of one boundary piece, or a point where two pieces cross; every such candidate is
- * tested and the nearest free one taken (the first of equals, in a fixed order).
+ * `reachM` of `hip` (horizontal); null when there is none. On the ground it is exact (`nearestOnGround`); a place whose
+ * leg is not clear is cut from the ground by the part it meets (`cutOf`) and the search asked again, at most LEG_TRIES
+ * times.
  */
 export function nearestFree(g: FreeGround, want: Vec3, hip: Vec3, reachM: number, horizonS: number, q: FootQuery): Vec3 | null {
+  if (!q.leg) return nearestOnGround(g.prints, want, hip, reachM, horizonS, q);
+  const prints = [...g.prints];
+  for (let i = 0; i < LEG_TRIES; i++) {
+    const p = nearestOnGround(prints, want, hip, reachM, horizonS, q);
+    if (!p) return null;
+    const shapes = q.leg.at(p);
+    const hit = legHit(g, shapes, horizonS, q.leg.skinM);
+    if (!hit) return p;
+    prints.push(cutOf(hit, shapes, p, hip, q));
+  }
+  return null;
+}
+
+/**
+ * The nearest point to `want` on the ground: clear of the footprints `prints`, on its side of the wall, within reach.
+ * Exact: the nearest point of the free region within reach is `want` itself, the nearest point of one boundary piece, or
+ * a point where two pieces cross; every such candidate is tested and the nearest free one taken (the first of equals, in
+ * a fixed order).
+ */
+function nearestOnGround(prints: Footprint[], want: Vec3, hip: Vec3, reachM: number, horizonS: number, q: FootQuery): Vec3 | null {
   const x = pt(want);
   const H = pt(hip);
   const near: { pts: Pt[]; R: number }[] = [];
-  for (const f of g.prints) {
+  for (const f of prints) {
     const pts = moved(f, horizonS);
     const R = f.r + q.clearM;
     // (a footprint whose dilated region does not reach the reach disc changes nothing in it)
@@ -216,6 +244,90 @@ export function nearestFree(g: FreeGround, want: Vec3, hip: Vec3, reachM: number
   return best ? at(best) : null;
 }
 
+// ---------------------------------------------------------------------------------------------------- the whole leg
+
+/** A shape as Rapier queries it: its shape, centre and rotation, bounding radius about the centre, and its girth (m). */
+interface Solid {
+  shape: RAPIER.Shape;
+  c: Vec3;
+  q: Quat;
+  R: number;
+  girth: number;
+}
+const NO_TURN: Quat = { x: 0, y: 0, z: 0, w: 1 };
+
+function solidOf(s: PartShape | PoseShape): Solid {
+  if (s.kind === 'ball') return { shape: new RAPIER.Ball(s.r), c: s.c, q: NO_TURN, R: s.r, girth: s.r };
+  if (s.kind === 'box') return { shape: new RAPIER.Cuboid(s.he.x, s.he.y, s.he.z), c: s.c, q: s.q, R: len(s.he), girth: Math.min(s.he.x, s.he.y, s.he.z) };
+  const d = sub(s.b, s.a);
+  const L = len(d);
+  const c = addScaled(s.a, d, 0.5);
+  if (L < 1e-6) return { shape: new RAPIER.Ball(s.r), c, q: NO_TURN, R: s.r, girth: s.r };
+  return { shape: new RAPIER.Capsule(L / 2, s.r), c, q: qFromUnitVectors(v3(0, 1, 0), scale(d, 1 / L)), R: L / 2 + s.r, girth: s.r };
+}
+
+/** Each part's solid, built once (a part is read for every foot of every player in its substep). */
+const partSolids = new WeakMap<Part, Solid>();
+const solidOfPart = (p: Part): Solid => {
+  let s = partSolids.get(p);
+  if (!s) partSolids.set(p, (s = solidOf(p.shape)));
+  return s;
+};
+
+/** Where a leg meets a part: the gap (m, < 0 inside), which leg shape, its point there and the part's outward normal. */
+export interface LegHit {
+  gap: number;
+  i: number;
+  point: Vec3;
+  normal: Vec3;
+  girth: number;
+}
+
+/** The leg's (`shapes`) nearest approach to a part `horizonS` from now closer than `skinM` (the least gap); null when none is. */
+export function legHit(g: FreeGround, shapes: PoseShape[], horizonS: number, skinM: number): LegHit | null {
+  if (!g.parts?.length) return null;
+  let worst: LegHit | null = null;
+  for (let i = 0; i < shapes.length; i++) {
+    const a = solidOf(shapes[i]);
+    for (const p of g.parts) {
+      const b = solidOfPart(p);
+      const c = horizonS === 0 ? b.c : v3(b.c.x + p.v.x * horizonS, b.c.y, b.c.z + p.v.z * horizonS);
+      if (dist(a.c, c) > a.R + b.R + skinM) continue;
+      const r = b.shape.contactShape(c, b.q, a.shape, a.c, a.q, skinM);
+      if (r && r.distance < skinM && (!worst || r.distance < worst.gap)) worst = { gap: r.distance, i, point: vc(r.point2), normal: vc(r.normal1), girth: a.girth + b.girth };
+    }
+  }
+  return worst;
+}
+
+/** How far past the skin a cut puts the next place (m): so the search does not stop at the linearised edge. */
+const CUT_MARGIN = 0.005;
+
+/**
+ * The ground a leg standing at `p` cannot stand on for the part it meets (`hit`): a disc in place space. A point of the
+ * leg moves with the place by about `alpha` of the place's move (the shoe as far; along the shin from a half at the knee
+ * to all at the ankle; along the thigh from none at the hip to a half at the knee), so the place must move about
+ * (skin - gap) / alpha along the part's normal to clear it; the disc is the pair's girth / alpha across, with `p` that far
+ * inside it along the normal. The search verifies the next place; a cut only steers it.
+ */
+function cutOf(hit: LegHit, shapes: PoseShape[], p: Vec3, hip: Vec3, q: FootQuery): Footprint {
+  let alpha = 1;
+  const sh = shapes[hit.i];
+  if (hit.i < 2 && sh.kind === 'capsule') {
+    const d = sub(sh.b, sh.a);
+    const L2 = d.x * d.x + d.y * d.y + d.z * d.z;
+    const t = L2 > 0 ? Math.max(0, Math.min(1, ((hit.point.x - sh.a.x) * d.x + (hit.point.y - sh.a.y) * d.y + (hit.point.z - sh.a.z) * d.z) / L2)) : 0;
+    alpha = hit.i === 0 ? Math.max(0.1, t / 2) : (1 + t) / 2;
+  }
+  const n = { x: hit.normal.x, z: hit.normal.z };
+  const m = len2(n);
+  const out = sub2(pt(p), pt(hip));
+  const dir = m > 1e-3 ? { x: n.x / m, z: n.z / m } : len2(out) > 1e-6 ? { x: out.x / len2(out), z: out.z / len2(out) } : { x: 1, z: 0 };
+  const move = (q.leg!.skinM - hit.gap + CUT_MARGIN) / (alpha * Math.max(m, 0.3));
+  const rho = Math.max(hit.girth / alpha, move + 0.01);
+  return { pts: [add2(pt(p), dir, -(rho - move))], r: Math.max(0, rho - q.clearM), v: { x: 0, z: 0 }, key: 'leg' };
+}
+
 // ---------------------------------------------------------------------------------------------------- footprints
 
 /** A body part in the world: a capsule (segment and radius), a ball or a box, with the world velocity of its centre. */
@@ -243,12 +355,12 @@ function hull(ps: Pt[]): Pt[] {
 }
 
 /**
- * The footprint of one part for a stepping player moving at `selfV` whose shin reaches up to `ceilingY`: the part's span
- * that comes down to the shin (a capsule's segment cut where its underside passes the ceiling; a ball or box that comes
- * below it), projected onto the ground; null when the part stays above. Velocity relative to the stepping player.
+ * The footprint of one part for a stepping player whose shin reaches up to `ceilingY`: the part's span that comes down
+ * to the shin (a capsule's segment cut where its underside passes the ceiling; a ball or box that comes below it),
+ * projected onto the ground; null when the part stays above. It moves at the part's velocity.
  */
-export function footprintOf(p: Part, selfV: Vec3, ceilingY: number): Footprint | null {
-  const v = { x: p.v.x - selfV.x, z: p.v.z - selfV.z };
+export function footprintOf(p: Part, ceilingY: number): Footprint | null {
+  const v = { x: p.v.x, z: p.v.z };
   const s = p.shape;
   if (s.kind === 'ball') return s.c.y - s.r > ceilingY ? null : { pts: [pt(s.c)], r: s.r, v, key: p.key };
   if (s.kind === 'capsule') {
@@ -283,14 +395,14 @@ export function footprintOf(p: Part, selfV: Vec3, ceilingY: number): Footprint |
   return below.length ? { pts: hull(below), r: 0, v, key: p.key } : null;
 }
 
-/** Free ground for a stepping player moving at `selfV` (shin top `ceilingY`): the footprints of the other players' parts. */
-export function groundOf(parts: Part[], selfV: Vec3, ceilingY: number): FreeGround {
+/** Free ground for a stepping player (shin top `ceilingY`) among the other players' parts: their footprints and themselves. */
+export function groundOf(parts: Part[], ceilingY: number): FreeGround {
   const prints: Footprint[] = [];
   for (const p of parts) {
-    const f = footprintOf(p, selfV, ceilingY);
+    const f = footprintOf(p, ceilingY);
     if (f) prints.push(f);
   }
-  return { prints };
+  return { prints, parts };
 }
 
 // ---------------------------------------------------------------------------------------------------- the simulation
@@ -366,9 +478,9 @@ export function bodyParts(players: readonly PartsPlayer[], R: RagdollProfile): M
   return out;
 }
 
-/** Free ground for player `id` moving at `selfV` (shin top `ceilingY`): every other player's parts of `parts`. */
-export function groundFor(parts: Map<PlayerId, Part[]>, id: PlayerId, selfV: Vec3, ceilingY: number): FreeGround {
+/** Free ground for player `id` (shin top `ceilingY`): every other player's parts of `parts`. */
+export function groundFor(parts: Map<PlayerId, Part[]>, id: PlayerId, ceilingY: number): FreeGround {
   const others: Part[] = [];
   for (const [k, ps] of parts) if (k !== id) others.push(...ps);
-  return groundOf(others, selfV, ceilingY);
+  return groundOf(others, ceilingY);
 }

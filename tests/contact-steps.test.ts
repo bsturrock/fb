@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { ArmSide } from '../src/sim/contracts';
 import { STEPS_V1, withSteps, type StepModelProfile } from '../src/sim/contact-steps';
 import type { FootDebug } from '../src/sim/debug';
+import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
-import { groundOf, isFree, type FreeGround, type Part } from '../src/sim/free-ground';
-import { plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
+import { groundOf, isFree, legHit, type FreeGround, type Part } from '../src/sim/free-ground';
+import { plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, v3, type Vec3 } from '../src/sim/vec';
 import { POP_M, SLIDE_M } from './l3-pass';
 import { FIX } from './runs';
@@ -12,8 +13,8 @@ import { FIX } from './runs';
 // Plan 15 step 2: the contact stepping model (src/sim/contact-steps.ts) on constructed input, no physics: a body moved
 // along a given velocity, its hips and homes with it, the other players as footprints, the leg solve exact (the shown
 // ankle is the requested one). Each check states a viewer rule and has its fault twin: the same scene under a fault
-// (no step ceiling, no free ground, the nearer foot stepping, a plant past its reach waiting for the other foot, an aim
-// followed at once), which must fail it.
+// (no step ceiling, no free ground, the footprints without the leg, a plant past its reach waiting for the other foot,
+// a step to the aim rather than for a gain, no turns, an aim followed at once), which must fail it.
 
 const R = FIX('L3-F6-hold').ragdoll!;
 const SOLE = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
@@ -28,6 +29,8 @@ const REACH = plantReachM(R, ON.plantTolM);
 interface Scene {
   /** The body's horizontal velocity at time t (m/s). */
   vel: (t: number) => Vec3;
+  /** Free ground judges the whole leg (default) or the footprints only (a fault). */
+  footprintsOnly?: boolean;
   /** The other players' parts at time t, given the body centre (world). */
   others?: (t: number, c: Vec3) => Part[];
   /** Ankles to start from (world; default: on the ground under the hips). */
@@ -37,7 +40,7 @@ interface Scene {
 interface Run {
   ev: (FootEvent & { t: number; hip: Vec3 })[];
   /** Per substep: time, planted feet, requested ankles, hips, the aims of the feet in the air, the other players' free ground. */
-  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; ground: FreeGround }[];
+  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; bound: Record<ArmSide, boolean>; ground: FreeGround }[];
 }
 
 const I = { x: 0, y: 0, z: 0, w: 1 };
@@ -83,7 +86,8 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
       rightW: v3(1, 0, 0),
       sideSign: { left: -1, right: 1 },
       contactHold: true,
-      ground: groundOf(sc.others?.(t, c) ?? [], v, CEIL),
+      ground: groundOf(sc.others?.(t, c) ?? [], CEIL),
+      ...(sc.footprintsOnly ? {} : { legs: R }),
       ...(debug ? { debug } : {}),
     };
   };
@@ -100,7 +104,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     observeFeet(plan, pose(ankle), SOLE, 0, ev, t);
     for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side] });
     const aims = SIDES.filter((s) => plan.feet[s].mode !== 'planted').map((s) => plan.feet[s].contact!.aim);
-    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, ground: inp.ground! });
+    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: { left: !!plan.feet.left.contact?.bound, right: !!plan.feet.right.contact?.bound }, ground: inp.ground! });
   }
   return out;
 }
@@ -178,6 +182,28 @@ const push = (dir: Vec3, mps: number, at0 = 0.2) => (t: number): Vec3 => {
   const k = Math.min(1, Math.max(0, (t - at0) / 0.05));
   return v3(dir.x * mps * k, 0, dir.z * mps * k);
 };
+/**
+ * A man facing the stepping player (toward -z) with his hips at `c` (world, ground level), crouched: his support capsule,
+ * thighs from his hips (0.93 m) down to knees `kneeY` high and `kneeZ` in front of them, shins down to his ankles.
+ */
+const manAt = (c: Vec3, kneeY = 0.5, kneeZ = 0.15, v: Vec3 = v3()): Part[] =>
+  [-1, 1].flatMap((x) => {
+    const hip = v3(c.x + 0.12 * x, 0.93, c.z);
+    const knee = v3(c.x + 0.12 * x, kneeY, c.z - kneeZ);
+    return [
+      { shape: { kind: 'capsule', a: hip, b: knee, r: R.radii.thigh }, v, key: `B:${x}Thigh` },
+      { shape: { kind: 'capsule', a: knee, b: v3(knee.x, 0.1, c.z), r: R.radii.shin }, v, key: `B:${x}Shin` },
+    ] as Part[];
+  });
+/** The landings whose planned leg (at its plant, from the hip then) is inside another player's part. */
+const legsIn = (r: Run): string[] =>
+  plants(r)
+    .filter((e) => {
+      const f = r.frames.find((x) => x.t === e.t)!;
+      const p = at(e);
+      return !!legHit(f.ground, plannedLeg(R, e.side, e.hip, v3(p.x, SOLE, p.z), 0), 0, 0);
+    })
+    .map((e) => `${e.side} ${e.t.toFixed(3)}`);
 /** A standing player's lower body at `c` (world): his support capsule and two shins. */
 const legsAt = (c: Vec3, v: Vec3 = v3(), key = 'B'): Part[] => [
   { shape: { kind: 'capsule', a: v3(c.x, 0.16, c.z), b: v3(c.x, 1.4, c.z), r: 0.16 }, v, key: `${key}:proxy` },
@@ -186,6 +212,7 @@ const legsAt = (c: Vec3, v: Vec3 = v3(), key = 'B'): Part[] => [
 ];
 
 describe('contact stepping model (plan 15)', () => {
+  beforeAll(initPhysics);
   // the feet in the air when the model takes over (mid stride at a hit), the body pushed from each side at 2 m/s
   const AIR = { left: v3(-0.12, SOLE + 0.25, -0.3), right: v3(0.12, SOLE + 0.08, 0.25) };
   const DIRS: [string, Vec3][] = [['ahead', v3(0, 0, 1)], ['behind', v3(0, 0, -1)], ['from the left', v3(1, 0, 0)], ['from the right', v3(-1, 0, 0)]];
@@ -208,7 +235,7 @@ describe('contact stepping model (plan 15)', () => {
   it('a body in the path: the foot lands beside his legs, never on them, and never aims into them', () => {
     // pushed at 1.5 m/s toward a man standing 0.85 m ahead, slowing to a stop 0.44 m short of him (centre to centre)
     const man = legsAt(v3(0.05, 0, 0.85));
-    const g = groundOf(man, v3(), CEIL);
+    const g = groundOf(man, CEIL);
     const vel = (t: number): Vec3 => v3(0, 0, t < 0.2 ? 0 : t < 0.35 ? 1.5 : Math.max(0, 1.5 - (t - 0.35) * 6));
     const sc: Scene = { vel, others: () => man, durS: 1.2 };
     // (a foot is on him when its shoe, the disc the model asks with, overlaps his footprint)
@@ -236,8 +263,6 @@ describe('contact stepping model (plan 15)', () => {
       expect(s.s).toBeGreaterThanOrEqual(M.minS - 1e-9);
       expect(s.s).toBeLessThanOrEqual(M.maxS + DT);
     }
-    // fault twin: the nearer foot steps (FootDebug.stepsPickNearer): the foot that just landed steps again
-    expect(gallops(run(sc, M, { stepsPickNearer: true }))).not.toEqual([]);
   });
 
   it('no plant ever moves on the ground: a plant that cannot stand lifts, also with the other foot in the air', () => {
@@ -260,6 +285,46 @@ describe('contact stepping model (plan 15)', () => {
     expect(unplanted(r)).toBeLessThanOrEqual(M.maxS + DT);
     // fault twin: a step's time with no ceiling (a slow foot): the flight lasts as long as the slow step
     expect(unplanted(run(sc, { ...M, stepMps: 0.4, travelK: 0, maxS: 1 }))).toBeGreaterThan(M.maxS + DT);
+  });
+
+  it('chest to chest, standing still: no step, though his foot stands where a foot would want to be and shuffles', () => {
+    // a man 0.8 m ahead (hip to hip), his left foot reaching in across under the stepping player's right hip, shuffling
+    // 3 cm to and fro: the right foot, planted behind it, has its nearest free place now behind it, now in front of it
+    const toe = (t: number): Part => {
+      const z = R.shoe.forwardM + 0.03 * Math.sign(Math.sin(t * 5));
+      return { shape: { kind: 'capsule', a: v3(0.05, 0.05, z), b: v3(0.3, 0.05, z), r: 0.04 }, v: v3(), key: 'B:leftShoe' };
+    };
+    const man = (t: number): Part[] => [...manAt(v3(0, 0, 0.8), 0.55, 0.1), toe(t)];
+    const start = { left: v3(-0.12, SOLE, 0), right: v3(0.12, SOLE, -0.28) };
+    // (the premise: both legs stand clear where they are)
+    for (const t of [0.1, 0.8]) for (const s of SIDES) expect(legHit(groundOf(man(t), CEIL), plannedLeg(R, s, v3(s === 'left' ? -0.12 : 0.12, SOLE + 0.75, 0), start[s], 0), 0, 0)).toBeNull();
+    const sc: Scene = { vel: () => v3(), others: (t) => man(t), start, durS: 2 };
+    expect(steps(run(sc))).toEqual([]);
+    // fault twin (FootDebug.stepsToAim): a plant farther than coverM from its aim steps: the foot steps over his for nothing
+    // (and with no turns either, as in the step 2 model, to and fro)
+    expect(steps(run(sc, M, { stepsToAim: true })).length).toBeGreaterThan(0);
+    expect(steps(run(sc, M, { stepsToAim: true, stepsNoTurns: true })).length).toBeGreaterThan(1);
+  });
+
+  it('a foot never lands where its leg would be in another player: his knees at the height of the thighs', () => {
+    // a steady drive at 1 m/s into a man crouched 0.75 m ahead (hip to hip), driven back as fast, his knees forward at
+    // thigh height (above the ground he blocks)
+    const sc: Scene = { vel: push(v3(0, 0, 1), 1), others: (_, c) => manAt(v3(c.x, 0, c.z + 0.75), 0.75, 0.3, v3(0, 0, 1)), durS: 2 };
+    const r = run(sc);
+    expect(plants(r).length).toBeGreaterThan(6);
+    expect(legsIn(r)).toEqual([]);
+    // fault twin: free ground of the footprints only (the leg not judged): a foot lands with its knee in his
+    expect(legsIn(run({ ...sc, footprintsOnly: true }))).not.toEqual([]);
+  });
+
+  it('weaving, the feet take turns: never the same foot twice while the other is planted', () => {
+    // walked forward at 0.5 m/s, weaving 1.2 m/s from side to side
+    const sc: Scene = { vel: (t) => v3(Math.sin(t * 4) * 1.2, 0, 0.5), durS: 2.5 };
+    const r = run(sc);
+    expect(steps(r).length).toBeGreaterThan(10);
+    expect(gallops(r)).toEqual([]);
+    // fault twin (FootDebug.stepsNoTurns): the foot that gains more steps, also when it stepped last
+    expect(gallops(run(sc, M, { stepsNoTurns: true }))).not.toEqual([]);
   });
 
   it('an aim that moves late is followed at a bounded rate: no jump of the foot', () => {

@@ -1,14 +1,17 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { describe, expect, it } from 'vitest';
-import { bodyParts, footprintOf, groundFor, groundOf, isFree, nearestFree, outlineDist, type FootQuery, type FreeGround, type Part, type PartsPlayer } from '../src/sim/free-ground';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { bodyParts, footprintOf, groundFor, groundOf, isFree, legHit, nearestFree, outlineDist, type FootQuery, type FreeGround, type Part, type PartsPlayer } from '../src/sim/free-ground';
+import { initPhysics } from '../src/sim/physics';
+import { plannedLeg } from '../src/sim/pose';
 import type { Simulation } from '../src/sim/simulation';
 import { qFromAxisAngle, qRot, v3, vc, type Vec3 } from '../src/sim/vec';
-import { asCaptured } from './runs';
+import { asCaptured, FIX } from './runs';
 import { loadState, resumeState } from './state';
 
 // Plan 15 step 1: free ground, "may a foot or shin be here". Constructed scenes on the ground plane, each check with its
 // fault twin: the same check on the answer a faulty rule gives (the footprint not moved, a part not cut at the shin,
-// no wall, one footprint at a time, the stepping player's own body counted, the legs left out), which must fail it.
+// no wall, one footprint at a time, the stepping player's own body counted, the legs left out, the whole leg not judged),
+// which must fail it.
 
 const FOOT: FootQuery = { clearM: 0.12 };
 const V0 = v3();
@@ -20,8 +23,9 @@ const CEIL = 0.46;
 const holds = (g: FreeGround, p: Vec3 | null, hip: Vec3, reachM: number, h: number, q: FootQuery): boolean => !!p && isFree(g, p, h, q) && Math.hypot(p.x - hip.x, p.z - hip.z) <= reachM + 1e-6;
 
 describe('free ground (plan 15)', () => {
+  beforeAll(initPhysics);
   it('a foot asked for inside a standing leg lands beside it, clear by both radii, and the nearest such place', () => {
-    const g = groundOf([shin(0.3, 0)], V0, CEIL);
+    const g = groundOf([shin(0.3, 0)], CEIL);
     const hip = v3(0, 0.9, 0);
     const want = v3(0.28, 0, 0.02);
     const p = nearestFree(g, want, hip, 0.45, 0, FOOT);
@@ -34,7 +38,7 @@ describe('free ground (plan 15)', () => {
 
   it('a leg coming at the foot is avoided where it will be, not where it is', () => {
     // a shin 0.5 m ahead closing at 2 m/s: over 0.2 s it comes 0.4 m nearer
-    const g = groundOf([shin(0, 0.5, v3(0, 0, -2))], V0, CEIL);
+    const g = groundOf([shin(0, 0.5, v3(0, 0, -2))], CEIL);
     const hip = v3(0, 0.9, 0);
     const want = v3(0, 0, 0.15);
     const p = nearestFree(g, want, hip, 0.45, 0.2, FOOT);
@@ -43,15 +47,20 @@ describe('free ground (plan 15)', () => {
     const unmoved = nearestFree(g, want, hip, 0.45, 0, FOOT);
     expect(unmoved).toEqual(want);
     expect(holds(g, unmoved, hip, 0.45, 0.2, FOOT)).toBe(false);
-    // the relative velocity is what moves it: the same leg moving with the stepping player stays where it is
-    const along = groundOf([shin(0, 0.5, v3(0, 0, -2))], v3(0, 0, -2), CEIL);
-    expect(nearestFree(along, want, hip, 0.45, 0.2, FOOT)).toEqual(want);
+    // a foot lands on a place on the ground, so a leg's own velocity moves it: a leg standing still is avoided where it
+    // stands, however the stepping player moves (fault twin: moved by its velocity relative to a player coming at 2 m/s,
+    // it moves out of the way of the wanted point)
+    const stand = groundOf([shin(0, 0.15)], CEIL);
+    expect(nearestFree(stand, want, hip, 0.45, 0.2, FOOT)).not.toEqual(want);
+    const relative = groundOf([shin(0, 0.15, v3(0, 0, -2))], CEIL);
+    expect(nearestFree(relative, want, hip, 0.45, 0.2, FOOT)).toEqual(want);
+    expect(isFree(stand, want, 0.2, FOOT)).toBe(false);
   });
 
   it('the foot keeps to its own side of its other foot (the legs never cross)', () => {
     // the right foot (its side +x) asks for a place across the planted left foot at x = -0.1
     const q: FootQuery = { clearM: 0.12, wall: { p: { x: -0.1, z: 0 }, n: { x: 1, z: 0 }, sepM: 0.14 } };
-    const g = groundOf([], V0, CEIL);
+    const g = groundOf([], CEIL);
     const hip = v3(0.1, 0.9, 0);
     const want = v3(-0.2, 0, 0.1);
     const p = nearestFree(g, want, hip, 0.45, 0, q);
@@ -63,13 +72,13 @@ describe('free ground (plan 15)', () => {
 
   it('two bodies side by side leave the gap only where both allow it (every footprint at once)', () => {
     // two shins 0.35 m apart; the wanted point between them is inside both clearances
-    const g = groundOf([shin(-0.175, 0.3), shin(0.175, 0.3)], V0, CEIL);
+    const g = groundOf([shin(-0.175, 0.3), shin(0.175, 0.3)], CEIL);
     const hip = v3(0, 0.9, 0);
     const want = v3(0.02, 0, 0.3);
     const p = nearestFree(g, want, hip, 0.45, 0, FOOT);
     expect(holds(g, p, hip, 0.45, 0, FOOT)).toBe(true);
     // fault twin: out of the nearer leg alone, the foot is pushed into the other
-    const one = nearestFree(groundOf([shin(0.175, 0.3)], V0, CEIL), want, hip, 0.45, 0, FOOT);
+    const one = nearestFree(groundOf([shin(0.175, 0.3)], CEIL), want, hip, 0.45, 0, FOOT);
     expect(holds(g, one, hip, 0.45, 0, FOOT)).toBe(false);
   });
 
@@ -79,7 +88,7 @@ describe('free ground (plan 15)', () => {
     const r = (lo: number, hi: number): number => lo + (hi - lo) * rnd();
     let none = 0;
     let faulty = 0;
-    const dPart = (p: Part, x: Vec3): number => { const f = footprintOf(p, V0, CEIL); return f ? outlineDist(f.pts, { x: x.x, z: x.z }) - f.r : Infinity; };
+    const dPart = (p: Part, x: Vec3): number => { const f = footprintOf(p, CEIL); return f ? outlineDist(f.pts, { x: x.x, z: x.z }) - f.r : Infinity; };
     for (let n = 0; n < 24; n++) {
       const parts: Part[] = [];
       const k = 1 + Math.floor(r(0, 4));
@@ -90,7 +99,7 @@ describe('free ground (plan 15)', () => {
         else if (kind === 1) parts.push(still({ kind: 'capsule', a: v3(c.x, 0.1, c.z), b: v3(c.x + r(-0.4, 0.4), 0.15, c.z + r(-0.4, 0.4)), r: 0.08 }, `c${i}`));
         else parts.push(still({ kind: 'box', c: v3(c.x, 0.15, c.z), he: v3(0.2, 0.12, 0.1), q: qFromAxisAngle(v3(0, 1, 0), r(0, Math.PI)) }, `b${i}`));
       }
-      const g = groundOf(parts, V0, CEIL);
+      const g = groundOf(parts, CEIL);
       const hip = v3(r(-0.2, 0.2), 0.9, r(-0.2, 0.2));
       const reach = r(0.3, 0.5);
       const want = v3(r(-0.6, 0.6), 0, r(-0.6, 0.6));
@@ -113,30 +122,51 @@ describe('free ground (plan 15)', () => {
       expect(Math.hypot(p.x - want.x, p.z - want.z)).toBeLessThanOrEqual(best + 1e-9);
       // fault twin: out of the footprint nearest the wanted point alone (one footprint at a time)
       const nearest = [...parts].sort((u, w) => dPart(u, want) - dPart(w, want))[0];
-      const one = nearestFree(groundOf([nearest], V0, CEIL), want, hip, reach, 0, q);
+      const one = nearestFree(groundOf([nearest], CEIL), want, hip, reach, 0, q);
       if (!(holds(g, one, hip, reach, 0, q) && Math.hypot(one!.x - want.x, one!.z - want.z) <= best + 1e-9)) faulty++;
     }
     expect(none).toBeLessThan(24);
     expect(faulty).toBeGreaterThan(0);
   });
 
+  it('the whole leg: a place in front of another player\'s knee is free ground but not for the leg standing on it', () => {
+    const R = FIX('L3-F6-hold').ragdoll!;
+    const sole = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
+    // his thigh reaching in at the height of the stepping player's thighs, his knee 0.72 m up, 0.33 m ahead of the hip
+    const g = groundOf([still({ kind: 'capsule', a: v3(0.12, 0.95, 0.8), b: v3(0.12, 0.72, 0.33), r: R.radii.thigh }, 'B:thigh')], sole + R.lengths.shin);
+    const hip = v3(0.12, sole + 0.75, 0);
+    const leg = { at: (p: Vec3) => plannedLeg(R, 'right', hip, v3(p.x, sole, p.z), 0), skinM: 0.01 };
+    const want = v3(0.12, 0, 0.35);
+    const q: FootQuery = { clearM: 0.1, leg };
+    // (on the ground he is no footprint: the place itself is free ground)
+    expect(isFree(g, want, 0, { clearM: 0.1 })).toBe(true);
+    const p = nearestFree(g, want, hip, 0.4, 0, q);
+    expect(p).not.toBeNull();
+    expect(legHit(g, leg.at(p!), 0, 0.01)).toBeNull();
+    expect(isFree(g, p!, 0, q)).toBe(true);
+    // fault twin: the leg not judged: the wanted place is taken, and the leg standing there is in his thigh
+    const blind = nearestFree(g, want, hip, 0.4, 0, { clearM: 0.1 });
+    expect(blind).toEqual(want);
+    expect(legHit(g, leg.at(blind!), 0, 0)).not.toBeNull();
+  });
+
   it('only what comes down to the shin is ground: a leg below it, a body above it not, a box cut where it passes it', () => {
     // a thigh from the hip (0.9 m) to the knee (0.45 m) a little ahead: only its lowest part, near the knee
-    const thigh = footprintOf(still({ kind: 'capsule', a: v3(0, 0.9, 0), b: v3(0, 0.45, 0.4), r: 0.085 }), V0, CEIL)!;
+    const thigh = footprintOf(still({ kind: 'capsule', a: v3(0, 0.9, 0), b: v3(0, 0.45, 0.4), r: 0.085 }), CEIL)!;
     expect(thigh.pts.length).toBe(2);
     expect(Math.min(...thigh.pts.map((p) => p.z))).toBeGreaterThan(0.3);
     // fault twin: the whole thigh down to the hip would block the ground under the stepping player's own hip
     expect(outlineDist(thigh.pts, { x: 0, z: 0 })).toBeGreaterThan(0.3);
     // an upright torso over the hips is no footprint; the same torso lying on the ground is
     const torso = (c: Vec3, q = qFromAxisAngle(v3(1, 0, 0), 0)): Part => still({ kind: 'box', c, he: v3(0.25, 0.29, 0.16), q });
-    expect(footprintOf(torso(v3(0, 1.15, 0)), V0, CEIL)).toBeNull();
-    expect(footprintOf(torso(v3(0, 0.16, 0), qFromAxisAngle(v3(1, 0, 0), Math.PI / 2)), V0, CEIL)).not.toBeNull();
+    expect(footprintOf(torso(v3(0, 1.15, 0)), CEIL)).toBeNull();
+    expect(footprintOf(torso(v3(0, 0.16, 0), qFromAxisAngle(v3(1, 0, 0), Math.PI / 2)), CEIL)).not.toBeNull();
     // a torso pitched 60 deg forward, its lower edge down at 0.3 m: cut at the shin, it covers less than its whole outline
     const q = qFromAxisAngle(v3(1, 0, 0), Math.PI / 3);
     const drop = Math.max(...[-1, 1].flatMap((y) => [-1, 1].map((z) => -qRot(q, v3(0, 0.29 * y, 0.16 * z)).y)));
     const pitched = torso(v3(0, 0.3 + drop, 0.3), q);
-    const cut = footprintOf(pitched, V0, CEIL)!;
-    const whole = footprintOf(pitched, V0, 10)!;
+    const cut = footprintOf(pitched, CEIL)!;
+    const whole = footprintOf(pitched, 10)!;
     const area = (ps: { x: number; z: number }[]): number => Math.abs(ps.reduce((s, p, i) => s + p.x * ps[(i + 1) % ps.length].z - ps[(i + 1) % ps.length].x * p.z, 0)) / 2;
     expect(area(cut.pts)).toBeGreaterThan(0);
     expect(area(cut.pts)).toBeLessThan(0.6 * area(whole.pts));
@@ -151,21 +181,20 @@ describe('free ground (plan 15)', () => {
       const parts = bodyParts(sim.players as unknown as PartsPlayer[], sim.def.ragdoll!);
       for (const me of sim.players) {
         if (me.rag || !me.pose) continue;
-        const v = vc(me.proxy.body.linvel());
-        const g = groundFor(parts, me.id, v, CEIL);
+        const g = groundFor(parts, me.id, CEIL);
         for (const o of sim.players) {
           if (o === me) continue;
           // a foot on the other man's foot is not free ...
           expect(feetOf(o).length).toBe(2);
           for (const p of feetOf(o)) expect(isFree(g, p, 0, THIN)).toBe(false);
           // fault twin: his legs (a ragdoll: all of him) left out, the proxy alone; a foot of his reads free
-          const body = groundOf(parts.get(o.id)!.filter((p) => p.key.endsWith(':proxy')), v, CEIL);
+          const body = groundOf(parts.get(o.id)!.filter((p) => p.key.endsWith(':proxy')), CEIL);
           expect(feetOf(o).some((p) => isFree(body, p, 0, THIN))).toBe(true);
         }
         // the stepping player's own feet stand on free ground (he is not his own obstacle) ...
         for (const p of feetOf(me)) expect(isFree(g, p, 0, THIN)).toBe(true);
         // fault twin: counted among the others, they do not
-        const self = groundOf(parts.get(me.id)!, v, CEIL);
+        const self = groundOf(parts.get(me.id)!, CEIL);
         for (const p of feetOf(me)) expect(isFree(self, p, 0, THIN)).toBe(false);
       }
     };

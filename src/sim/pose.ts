@@ -410,6 +410,22 @@ export function legShapes(R: RagdollProfile, s: string, hip: Vec3, knee: Vec3, a
 }
 
 /**
+ * Plan 15 (contact footwork): the leg a foot request at `ankle` (world) is solved to, with no memory of earlier poses:
+ * the soft reach, the knee toward the foot heading (a foot request's primary placement), the shoe flat along the heading.
+ * Free ground judges a place for a foot by this leg; the leg solve gives the same leg, its continuity keeping the shown
+ * leg near it.
+ */
+export function plannedLeg(R: RagdollProfile, s: ArmSide, hip: Vec3, ankle: Vec3, headingRad: number): PoseShape[] {
+  const d = sub(ankle, hip);
+  const L = len(d);
+  const t = L > 1e-9 ? addScaled(hip, d, softReachM(R, L) / L) : ankle;
+  const pole = v3(Math.sin(headingRad), 0.2, Math.cos(headingRad));
+  const r = twoBone(hip, t, R.lengths.thigh, R.lengths.shin, pole, legReachM(R), flexReach(R.lengths.thigh, R.lengths.shin, maxFlexRad(R, 'knee')));
+  const q = qFromAxisAngle(v3(0, 1, 0), headingRad);
+  return legShapes(R, s, hip, r.mid, r.end, q, q);
+}
+
+/**
  * Plan 07a: the limb and shoe shapes of a published pose (upper arm, forearm, palm, thigh, shin, shoe per side) with
  * the candidate's geometry: the same capsules, palm ball and shoe box (at the pose's ankle pitch) its ragdoll bodies
  * would carry if it converted now. Keys are segment-like (`leftUpperArm`, `rightShoe`, ...).

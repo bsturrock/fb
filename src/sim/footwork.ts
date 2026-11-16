@@ -634,8 +634,10 @@ export interface FootPlanInput {
   others?: Vec3[];
   /** Ladder 13b (`FootworkProfile.holdStill`): a grip or clamp by or on this player is held. */
   held?: boolean;
-  /** Plan 15 (`FootworkProfile.steps`): this player's free ground, the other players' footprints (free-ground.ts). */
+  /** Plan 15 (`FootworkProfile.steps`): this player's free ground, the other players' footprints and parts (free-ground.ts). */
   ground?: FreeGround;
+  /** Plan 15: the player's ragdoll profile, whose leg free ground stands on a place (absent: the footprints only). */
+  legs?: RagdollProfile;
   /** Plan 10f (F2): this simulation's foot plan switches (`SimOptions.debug.foot`); absent: all off. */
   debug?: FootDebug;
 }
