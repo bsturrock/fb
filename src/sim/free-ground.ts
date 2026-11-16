@@ -15,6 +15,7 @@
 // The adapter from a simulation (`bodyParts`, `groundFor`) reads each player's parts once per substep: a supported or
 // falling player's proxy colliders and published limbs (his pose of the last substep), a ragdoll's segment colliders.
 import RAPIER from '@dimforge/rapier3d-compat';
+import { cullGeom, geomNear } from './physics';
 import type { ArmSide, PlayerId } from './contracts';
 import { poseLimbShapes, type PhysicalPose, type PoseShape } from './pose';
 import type { RagdollProfile } from './profiles';
@@ -112,16 +113,17 @@ export function isFree(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery): 
 /**
  * How deep a foot (`q`) stands at `p` `horizonS` from now (m): 0 where it is free (`isFree`), otherwise how far its shoe
  * is past its clearance into the deepest moved footprint, or its leg past its skin into the deepest part, whichever is
- * more; Infinity where it is no place at all (across the wall, or its leg out of range).
+ * more; Infinity where it is no place at all (across the wall, or its leg out of range). Past `boundM` it may stop
+ * early: a depth past the bound, not always the deepest (a search that only needs to know the place is out).
  */
-export function depthAt(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery): number {
+export function depthAt(g: FreeGround, p: Vec3, horizonS: number, q: FootQuery, boundM = Infinity): number {
   const x = pt(p);
   if (q.wall && dot2(sub2(x, q.wall.p), q.wall.n) < q.wall.sepM - TOL) return Infinity;
   if (q.leg?.inRange && !q.leg.inRange(p)) return Infinity;
   let d = 0;
   for (const f of g.prints) d = Math.max(d, f.r + q.clearM - outlineSigned(moved(f, horizonS), x));
-  if (q.leg) {
-    const hit = legHit(g, q.leg.at(p), horizonS, q.leg.skinM);
+  if (q.leg && d <= boundM) {
+    const hit = legHit(g, q.leg.at(p), horizonS, q.leg.skinM, q.leg.skinM - boundM);
     if (hit) d = Math.max(d, q.leg.skinM - hit.gap);
   }
   return d > TOL ? d : 0;
@@ -182,10 +184,15 @@ export function leastDeep(g: FreeGround, want: Vec3, hip: Vec3, shortM: number, 
   const H = pt(hip);
   const W = pt(want);
   const at = (c: Pt): Vec3 => v3(c.x, want.y, c.z);
-  const depth = (c: Pt): number => (len2(sub2(c, H)) > reachM + TOL ? Infinity : depthAt(g, at(c), horizonS, q));
+  // (a place found deeper than `bound` is out whatever its depth: the search stops there, depthAt's bound)
+  const depth = (c: Pt, bound = Infinity): number => (len2(sub2(c, H)) > reachM + TOL ? Infinity : depthAt(g, at(c), horizonS, q, bound));
   const samples = discSamples(H, reachM, W);
-  const ds = samples.map(depth);
-  const least = Math.min(...ds);
+  const ds: number[] = [];
+  let least = Infinity;
+  for (const c of samples) {
+    ds.push(depth(c, least + equalM));
+    least = Math.min(least, ds[ds.length - 1]);
+  }
   if (!Number.isFinite(least)) return null;
   const long = (c: Pt): number => (len2(sub2(c, H)) > shortM + TOL ? 1 : 0);
   let bi = -1;
@@ -199,7 +206,7 @@ export function leastDeep(g: FreeGround, want: Vec3, hip: Vec3, shortM: number, 
   let b = W;
   for (let i = 0; i < DEEP_HALVINGS && bi !== 0; i++) {
     const m = { x: 0.5 * (a.x + b.x), z: 0.5 * (a.z + b.z) };
-    const dm = depth(m);
+    const dm = depth(m, least + equalM);
     if (dm <= least + equalM) [a, da] = [m, dm];
     else b = m;
   }
@@ -438,18 +445,23 @@ export interface LegHit {
   girth: number;
 }
 
-/** The leg's (`shapes`) nearest approach to a part `horizonS` from now closer than `skinM` (the least gap); null when none is. */
-export function legHit(g: FreeGround, shapes: PoseShape[], horizonS: number, skinM: number): LegHit | null {
+/**
+ * The leg's (`shapes`) nearest approach to a part `horizonS` from now closer than `skinM` (the least gap); null when none
+ * is. With `stopGapM`, the first approach found closer than that is returned (not always the least).
+ */
+export function legHit(g: FreeGround, shapes: PoseShape[], horizonS: number, skinM: number, stopGapM = -Infinity): LegHit | null {
   if (!g.parts?.length) return null;
   let worst: LegHit | null = null;
   for (let i = 0; i < shapes.length; i++) {
     const a = solidOf(shapes[i]);
+    const ga = cullGeom(a.shape, a.c, a.q);
     for (const p of g.parts) {
       const b = solidOfPart(p);
       const c = horizonS === 0 ? b.c : v3(b.c.x + p.v.x * horizonS, b.c.y, b.c.z + p.v.z * horizonS);
-      if (dist(a.c, c) > a.R + b.R + skinM) continue;
+      if (dist(a.c, c) > a.R + b.R + skinM || !geomNear(ga, cullGeom(b.shape, c, b.q), skinM)) continue;
       const r = b.shape.contactShape(c, b.q, a.shape, a.c, a.q, skinM);
       if (r && r.distance < skinM && (!worst || r.distance < worst.gap)) worst = { gap: r.distance, i, point: vc(r.point2), normal: vc(r.normal1), girth: a.girth + b.girth };
+      if (worst && worst.gap < stopGapM) return worst;
     }
   }
   return worst;
