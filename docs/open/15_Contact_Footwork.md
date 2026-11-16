@@ -2,7 +2,8 @@
 
 Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Steps 1 and 2 done (the model behind
 `FootworkProfile.steps`, lab `&steps=new`, no fixture uses it), with the owner's 2026-11-15 rulings built in: no slide,
-free ground judges the whole leg, a step only for a gain. Step 3 done as a measurement and a test (below). Step 4 next.
+free ground judges the whole leg, a step only for a gain, the fall triggers read the model. Step 3 done as a measurement
+and a test (below). Step 4 next.
 
 ## What a viewer should see (owner, 2026-11-15)
 
@@ -62,6 +63,13 @@ up the foot lands where the leg is, always. A foot in the air when the model tak
 it is, at its motion. A foot is bound when it cannot follow the hips: it needs a step (or is in one) and no free place
 is within its step.
 
+**Falls.** The two fall triggers that read the feet read the model under it: the bound-legs fall's clause (b) holds
+while a foot is bound (it cannot follow the hips) and the player is still pushed, for the existing confirm time; the
+ride-down's come-down holds while neither foot can follow the hips (a flight is not that). They replace the old reads
+"held off" and "past its time", which cannot happen under the model (every step lands on time), and "no planted foot",
+which a flight at speed would trip. Built: `legsBound`, `standsNowhere` (contact-steps.ts), read by
+`Simulation.boundLegs` and `rideUnsupported` while the model owns the feet; the old reads stay for the old planner.
+
 That is the whole planner. No retimers, no blocked memory, no re-pick loop, no tentative landings.
 
 Built (`src/sim/contact-steps.ts`, `STEPS_V1`): step at most 0.4 m from the hip (less where the reach at the stance
@@ -88,8 +96,8 @@ hit at full speed) a plant runs out of reach within one step time, so the stride
 - The leg guard as the last-resort geometry check on the solved leg. It reads the same bodies as free ground (measured,
   above); where it still moves a model leg, the cause is the leg solve's own shape, a body coming into a standing leg,
   or a bound foot (see Known limits).
-- The fields `boundLegs` clause (b), `rideUnsupported`, `clipJoin` and the transition audit read (mode, swing age,
-  planted). "Held off" disappears as a state: a foot is planted or in a step that will land.
+- The fields `clipJoin` and the transition audit read (mode, swing age, planted). "Held off" disappears as a state: a
+  foot is planted or in a step that will land; the fall triggers read bound feet instead (Falls, above).
 - Feet stay pose-only. Feeding foot support into balance is a separate later decision.
 
 ## What is deleted

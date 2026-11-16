@@ -137,7 +137,9 @@ export interface WrapHitAim {
  *      round his legs or hips;
  *  (b) his legs cannot step: a foot of his is in a swing the leg guard holds off its target or past its planned time
  *      (stranded), no foot of his has planted since the clock began, and he is still pushed or dragged (his legs lean
- *      `pushLeanDeg` or more, or his speed over the ground is `pushMps` or more).
+ *      `pushLeanDeg` or more, or his speed over the ground is `pushMps` or more). Under the stepping model (plan 15,
+ *      `FootworkProfile.steps`), where every step lands on time: a foot of his cannot follow his hips (contact-steps.ts
+ *      `legsBound`), and he is still pushed or dragged.
  * Never from a touch that is not a secure hold, never without a holder, never for a carrier braced against a man without
  * his hold. While a clause's clock runs his posture request leans toward his travel (his horizontal velocity, his facing
  * when slow) at `leanDeg` (the balance's posture cap bounds it): the carrier tries to fall forward; his momentum and
@@ -243,8 +245,9 @@ export interface WrapRide {
  * finds him off his support (the hold gone), or `maxS` has passed since it began (t: he never stays posed and upright
  * over a man on the ground; within the referee's 0.5 s settle). In the come-down he converts too the moment his
  * support's probe finds no ground (f: his origin over the carrier, or off his feet), and (the simulation) riding with the
- * carrier off his support, once he has had no planted foot, no contact with the carrier and no hold of him for longer
- * than the drive's grace (`commit.graceS`: a stride's flight is not a fall): he never falls posed.
+ * carrier off his support, once he has had no planted foot (under the stepping model: neither foot can follow his hips,
+ * contact-steps.ts `standsNowhere`), no contact with the carrier and no hold of him for longer than the drive's grace
+ * (`commit.graceS`: a stride's flight is not a fall): he never falls posed.
  */
 export interface WrapRideDown {
   maxS: number;

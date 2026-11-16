@@ -17,9 +17,10 @@
 //   the foot lands where the leg is.
 // Nothing is held off, retimed, re-picked or remembered: a foot is planted or in a step that will land. A foot is bound
 // when it cannot follow the hips: its plant is more than coverM from its want or past its reach, or it is in the air, and
-// no free place is within its step (the fall triggers read it). The leg solve gets the same requests as from the old
-// planner (FootRequest) and observeFeet measures the pose as before; under the model a plant is never released by its
-// solve.
+// no free place is within its step. The fall triggers read that (legsBound, standsNowhere): the legs are bound while a
+// foot cannot follow the hips, and the player stands nowhere while neither can. The leg solve gets the same requests as
+// from the old planner (FootRequest) and observeFeet measures the pose as before; under the model a plant is never
+// released by its solve.
 import type { ArmSide } from './contracts';
 import { seedStep } from './foot-compose';
 import type { FootEvent, FootPlan, FootPlanInput, FootReason, FootworkProfile } from './footwork';
@@ -94,6 +95,15 @@ const stepTime = (plan: FootPlan, inp: FootPlanInput, L: number): number => {
   const M = plan.profile.steps!;
   return clamp(L / (M.stepMps + M.travelK * len(hz(inp.vel))), M.minS, M.maxS);
 };
+
+/**
+ * The fall triggers' reads under the model (simulation.ts: the bound-legs fall's clause (b), the ride-down's come-down),
+ * in place of a foot held off or past its time, which cannot happen here (every step lands on time). The legs are bound
+ * while a foot cannot follow the hips.
+ */
+export const legsBound = (plan: FootPlan): boolean => SIDES.some((s) => !!plan.feet[s].contact?.bound);
+/** The player stands nowhere while neither foot can follow the hips (a flight is not that: a foot in the air with a free place to land is following). */
+export const standsNowhere = (plan: FootPlan): boolean => SIDES.every((s) => !!plan.feet[s].contact?.bound);
 
 /** The model's substep: the feet's requests for the leg solve (planFeet calls it outside the clip regime). */
 export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): Record<ArmSide, FootRequest> {

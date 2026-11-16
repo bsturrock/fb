@@ -21,6 +21,7 @@ import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newL
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import { heldOff } from './foot-compose';
+import { legsBound, standsNowhere } from './contact-steps';
 import {
   applyEnvelope, applyHipApproaches, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, releaseSelfLegs, SEGMENTS, SELF_ARM_KEY, SELF_LEG_KEY, SELF_TRUNK_KEY, selfLegNear, selfLegPair,
   selfLegPairs, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll, type RagdollCollider, type TransferAudit,
@@ -160,7 +161,7 @@ export interface PlayerRuntime {
   hinge?: HingeState;
   /**
    * Contact motion polish 1.2, the ride-down's come-down (`WrapRideDown`): since when (s) the riding tackler has had no
-   * planted foot, no contact with the carrier and no hold of him, the carrier off his support (`rideUnsupported`).
+   * foot to stand on, no contact with the carrier and no hold of him, the carrier off his support (`rideUnsupported`).
    * Absent otherwise.
    */
   rideLooseT?: number;
@@ -1383,15 +1384,17 @@ export class Simulation {
 
   /**
    * Contact motion polish 1.2, the ride-down's come-down (`WrapRideDown`): a riding tackler whose carrier (the focus) is
-   * off his support, with no planted foot (or, without the foot plan, no support), no solved contact with the carrier and
-   * no clamp or grip on him.
+   * off his support, with no foot to stand on (under the stepping model, plan 15: neither foot can follow his hips,
+   * `standsNowhere`; under the reactive planner: no planted foot; without the foot plan: no support), no solved contact
+   * with the carrier and no clamp or grip on him.
    */
   private rideUnsupported(pl: PlayerRuntime): boolean {
     const tid = this.def.focus?.[pl.id];
     const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
     if (!tid || !tgt || tgt.controlMode === 'supported') return false;
-    const planted = pl.feet ? (['left', 'right'] as ArmSide[]).some((s) => pl.feet!.feet[s].mode === 'planted') : pl.grounded;
-    if (planted || (this.contactObs[pl.id] ?? []).some((c) => c.other === tid)) return false;
+    const F = pl.feet;
+    const stands = F ? (F.stepsOwn ? !standsNowhere(F) : (['left', 'right'] as ArmSide[]).some((s) => F.feet[s].mode === 'planted')) : pl.grounded;
+    if (stands || (this.contactObs[pl.id] ?? []).some((c) => c.other === tid)) return false;
     const grips = this.arms ? [...this.arms.grips.values()] : [];
     return !(['left', 'right'] as ArmSide[]).some((s) => this.arms?.clampOf(pl.id, s)?.targetId === tid || grips.some((g) => g.ownerId === pl.id && g.arm === s && g.targetId === tid));
   }
@@ -1454,15 +1457,16 @@ export class Simulation {
       }
     }
     st.holder = holder ? holder.id : linker ? linker.id : st.holder;
-    // (b) his legs cannot step: a foot stranded (held off its target by the leg guard, or past its planned time), no plant
-    // since the clock began, and still pushed or dragged
+    // (b) his legs cannot step, and he is still pushed or dragged. Under the stepping model (plan 15): a foot cannot follow
+    // his hips (`legsBound`), the clock running while one cannot. Under the reactive planner: a foot stranded (held off its
+    // target by the leg guard, or past its planned time) and no plant since the clock began.
     let blocked = false;
     if (holder && pl.feet) {
       const F = pl.feet;
-      const stranded = sides.some((s) => F.feet[s].mode === 'swing' && (!!dbg?.bindAnySwing || heldOff(F, F.feet[s]) || (F.feet[s].source === 'step' && F.feet[s].elapsedS > F.feet[s].durS)));
+      const stranded = F.stepsOwn ? legsBound(F) : sides.some((s) => F.feet[s].mode === 'swing' && (!!dbg?.bindAnySwing || heldOff(F, F.feet[s]) || (F.feet[s].source === 'step' && F.feet[s].elapsedS > F.feet[s].durS)));
       const pushed = thetaRad >= rad(BD.pushLeanDeg) - 1e-12 || len(horiz(vc(this.coreBody(pl).linvel()))) >= BD.pushMps - 1e-12;
       blocked = stranded && pushed;
-      if (st.b.since !== null && sides.some((s) => F.feet[s].mode === 'planted' && F.feet[s].plantedAtS > st.b.since! + 1e-9)) st.b.since = null;
+      if (!F.stepsOwn && st.b.since !== null && sides.some((s) => F.feet[s].mode === 'planted' && F.feet[s].plantedAtS > st.b.since! + 1e-9)) st.b.since = null;
     }
     const run = (c: { since: number | null; lastT: number }, on: boolean, confirmS: number, g = grace): number | null => {
       if (on) {

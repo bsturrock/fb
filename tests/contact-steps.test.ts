@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ArmSide } from '../src/sim/contracts';
-import { STEPS_V1, withSteps, type StepModelProfile } from '../src/sim/contact-steps';
+import { legsBound, standsNowhere, STEPS_V1, withSteps, type StepModelProfile } from '../src/sim/contact-steps';
 import type { FootDebug } from '../src/sim/debug';
 import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
@@ -14,7 +14,8 @@ import { FIX } from './runs';
 // along a given velocity, its hips and homes with it, the other players as footprints, the leg solve exact (the shown
 // ankle is the requested one). Each check states a viewer rule and has its fault twin: the same scene under a fault
 // (no step ceiling, no free ground, the footprints without the leg, a plant past its reach waiting for the other foot,
-// a step to the aim rather than for a gain, no turns, an aim followed at once), which must fail it.
+// a step to the aim rather than for a gain, no turns, an aim followed at once, the fall triggers' old reads), which must
+// fail it.
 
 const R = FIX('L3-F6-hold').ragdoll!;
 const SOLE = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
@@ -39,8 +40,11 @@ interface Scene {
 }
 interface Run {
   ev: (FootEvent & { t: number; hip: Vec3 })[];
-  /** Per substep: time, planted feet, requested ankles, hips, the aims of the feet in the air, the other players' free ground. */
-  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; bound: Record<ArmSide, boolean>; ground: FreeGround }[];
+  /**
+   * Per substep: time, planted feet, requested ankles, hips, the aims of the feet in the air, the fall triggers' reads
+   * (legsBound, standsNowhere; and the old planner's: a foot in the air past its time), the other players' free ground.
+   */
+  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; bound: boolean; nowhere: boolean; late: boolean; ground: FreeGround }[];
 }
 
 const I = { x: 0, y: 0, z: 0, w: 1 };
@@ -104,7 +108,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     observeFeet(plan, pose(ankle), SOLE, 0, ev, t);
     for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side] });
     const aims = SIDES.filter((s) => plan.feet[s].mode !== 'planted').map((s) => plan.feet[s].contact!.aim);
-    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: { left: !!plan.feet.left.contact?.bound, right: !!plan.feet.right.contact?.bound }, ground: inp.ground! });
+    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: legsBound(plan), nowhere: standsNowhere(plan), late: SIDES.some((s) => plan.feet[s].mode === 'swing' && plan.feet[s].elapsedS > plan.feet[s].durS), ground: inp.ground! });
   }
   return out;
 }
@@ -127,17 +131,19 @@ function steps(r: Run): { side: ArmSide; t0: number; t1: number; s: number }[] {
   }
   return out;
 }
-/** Longest stretch with no planted foot (s). */
-const unplanted = (r: Run, from = 0): number => {
+/** Longest stretch (s) over which `read` holds, from `from`. */
+const held = (r: Run, read: (f: Run['frames'][number]) => boolean, from = 0): number => {
   let n = 0;
   let worst = 0;
   for (const f of r.frames) {
     if (f.t < from) continue;
-    n = f.planted.left || f.planted.right ? 0 : n + 1;
+    n = read(f) ? n + 1 : 0;
     worst = Math.max(worst, n * DT);
   }
   return worst;
 };
+/** Longest stretch with no planted foot (s). */
+const unplanted = (r: Run, from = 0): number => held(r, (f) => !f.planted.left && !f.planted.right, from);
 /** Gallops: a foot landing twice in a row while the other stayed planted all the while. */
 function gallops(r: Run): string[] {
   const out: string[] = [];
@@ -340,5 +346,32 @@ describe('contact stepping model (plan 15)', () => {
     expect(pops(run(sc))).toBeLessThanOrEqual(POP_M);
     // fault twin: the aim followed at once
     expect(pops(run(sc, { ...M, followMps: 1e9 }))).toBeGreaterThan(POP_M);
+  });
+
+  // the fall triggers' reads (simulation.ts: the bound-legs fall's clause (b) and the ride-down's come-down; the drive's
+  // grace 0.05 s, the bound-legs confirm 0.2 s)
+  const GRACE_S = 0.05;
+  const CONFIRM_S = 0.2;
+
+  it('legs bound: driven on over a man down in front, the feet cannot follow the hips, for longer than a fall\'s confirm time', () => {
+    // a man lying across the path from 0.35 m ahead (all of him below the shin top: no place on him), the body driven on
+    // over him at 1 m/s (a rider whose carrier went down in front of him)
+    const down: Part[] = [{ shape: { kind: 'box', c: v3(0, 0.12, 1.1), he: v3(0.7, 0.12, 0.75), q: I }, v: v3(), key: 'B:down' }];
+    const r = run({ vel: push(v3(0, 0, 1), 1), others: () => down, durS: 1.6 });
+    // on open ground (before he is within a step) the legs are free
+    expect(r.frames.filter((f) => f.t < 0.4 && (f.bound || f.nowhere)).length).toBe(0);
+    // over him the legs are bound and he stands nowhere, past the confirm time
+    expect(held(r, (f) => f.bound)).toBeGreaterThan(CONFIRM_S + 0.05);
+    expect(held(r, (f) => f.nowhere)).toBeGreaterThan(CONFIRM_S + 0.05);
+    // fault twin: the old planner's read on the same run (a foot in the air past its time) never holds: every step lands
+    // on time
+    expect(held(r, (f) => f.late)).toBe(0);
+  });
+
+  it('a stride\'s flight is not a fall: at speed on open ground the legs are never bound, though both feet are up for longer than the grace', () => {
+    const r = run({ vel: push(v3(0, 0, 1), 5), durS: 1.5 });
+    expect(r.frames.filter((f) => f.bound || f.nowhere).length).toBe(0);
+    // fault twin: the old read (no planted foot) holds through a flight past the drive's grace: a rider would go down in his stride
+    expect(unplanted(r, 0.3)).toBeGreaterThan(GRACE_S);
   });
 });
