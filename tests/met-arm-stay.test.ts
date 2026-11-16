@@ -5,7 +5,7 @@ import { allFixtures } from '../src/sim/fixtures/index';
 import { CLIP_ARM_SWING_ID, MET_ARM_STAY_ID, withClipArmSwing, withMetArmStay, withoutMetArmStay } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { armProbe, firstDifference, watch, type Seen, type Watched } from './arm-watch';
-import { asCaptured, FIX, preBornOverlap, preMetArmStay } from './runs';
+import { asCaptured, FIX, preBornOverlap, preMetArmStay, preSteps } from './runs';
 import { captureState, loadState, resumeState, type StateCapture } from './state';
 import { DEEP_M, SNAP_RADPS } from './visible';
 
@@ -124,7 +124,8 @@ describe('ladder 16b: a composed arm another body has met keeps its natural pose
   it('what nothing has met is unchanged: the free run (L3-F18-runLab) runs identically; in the grips (L3-F4-gripBoth), the two-palm hold (L4-F5-twoPalm-on), the wrap (L4-F10-wrap-on) and the hold (L3-F6-hold) the first difference is a composed arm, not an arm task; with it clipArmSwing changes nothing (L3-F5-drag). The fault twins: the rules on for every composed arm change the free run\'s carry tuck; without it clipArmSwing changes L3-F5-drag', async () => {
     expect(await firstDifference(PRE('L3-F18-runLab'), stay(PRE('L3-F18-runLab')))).toBeNull();
     for (const id of ['L3-F4-gripBoth', 'L4-F5-twoPalm-on', 'L4-F10-wrap-on', 'L3-F6-hold']) {
-      const d = await firstDifference(PRE(id), stay(PRE(id)));
+      // (plan 15 step 4: the runs as sampled, before the stepping flip)
+      const d = await firstDifference(preSteps(PRE(id)), stay(preSteps(PRE(id))));
       expect(d, id).not.toBeNull();
       expect(d!.task, id).toBe(false);
     }

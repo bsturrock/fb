@@ -20,7 +20,7 @@ import { ENVELOPE_L4, FALL_L4, JOINT_RANGE_V1, LEG_GUARD_V1, LEG_GUARD_V3, SOLVE
 import { applyEnvelope, bulkOf, clampDirToEnvelope, envelopeMoments, initEnvelope, externalTwistRad, hingeAngles, landmarkWorld, limbDirWorld, swingExcess, swingExtentDeg, swingTwistOf, twistAxis, type Ragdoll } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromAxisAngle, qInvRot, qMul, rad, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { breathe, create, evs, FIX, nonEmpty, pace, preFlip, preForwardFall, preShoulderTwist, preV3, rows, run, runSim, stepWhile, traceDiff } from './helpers';
+import { breathe, create, evs, FIX, nonEmpty, pace, preFlip, preForwardFall, preShoulderTwist, preSteps, preV3, rows, run, runSim, stepWhile, traceDiff } from './helpers';
 import { loadedLimbMonitor } from './loaded-limb';
 import { JOINT_PAST_DEG, JOINT_PAST_S } from './visible-bar';
 
@@ -615,7 +615,8 @@ describe('L4 audits on every fixture', () => {
           // The shoulder twist flip moves D's fall, and under it his landing stays under the cap: the twin is the landing
           // as sampled, before that flip too)
           const d = FIX('L4-F3-run-on');
-          const s = await runSim(await create({ ...preShoulderTwist(d), legGuard: LEG_GUARD_V1 }), Infinity);
+          // (plan 15 step 4: and before the stepping flip)
+          const s = await runSim(await create({ ...preShoulderTwist(preSteps(d)), legGuard: LEG_GUARD_V1 }), Infinity);
           const D = powerAudit(d, s).find((r) => r.label === 'L4-F3-run-on D')!;
           expect([D.overPowerSubsteps, D.impactPowerSubsteps, D.overEvents]).toEqual([1, 1, 1]);
           expect(D.peakImpactW).toBeGreaterThan(D.capW);

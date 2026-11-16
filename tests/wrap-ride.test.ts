@@ -10,7 +10,10 @@ import { BALANCE_G3, upperBodyCompound } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, deg, dot, horiz, m3Add, m3Inverse, m3ParallelAxis, m3Vec, norm, qFromAxisAngle, qMul, scale, sub, UP, upOf, v3, vc, worldInertia, type Mat3, type Vec3 } from '../src/sim/vec';
-import { asCaptured, FIX, preForwardFall } from './helpers';
+import { asCaptured, FIX as REGISTERED, preForwardFall, preSteps } from './helpers';
+
+// Plan 15 step 4: the ride's runs as sampled, before the stepping flip (the falls move with the model's footwork)
+const FIX = (id: string): FixtureDef => preSteps(REGISTERED(id));
 import { loadState, resumeState } from './state';
 
 const RD = WRAP_V7.ride!;

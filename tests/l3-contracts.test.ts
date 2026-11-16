@@ -26,7 +26,7 @@ import type { FootDebug } from '../src/sim/debug';
 import { CONT_L3_RADPS, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { add, dist, norm, v3, type Vec3 } from '../src/sim/vec';
 import { LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { asCaptured, breathe, FIX, preBraceV2, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, rows, run, runSim } from './helpers';
+import { asCaptured, breathe, FIX as REGISTERED, preBraceV2, preSteps, preFallReact, preFlip, preHipTwist, preHoldStill, preMetArmStay, preV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, rows, run, runSim } from './helpers';
 import { loadState, resumeState } from './state';
 import { L3 } from './transitions-shared';
 import {
@@ -130,6 +130,10 @@ import {
   WALK_VALID,
   type Watch,
 } from './l3-pass';
+
+// Plan 15 step 4: the reactive planner's contracts, on the L3 fixtures as before the stepping flip, until step 5 deletes
+// the planner (no registered fixture composes it since; the model's own rules are tests/contact-steps.test.ts')
+const FIX = (id: string): FixtureDef => preSteps(REGISTERED(id));
 
 /** A fixture as before the strike flip (WRAP_V3): the bound-legs flip's `preWrapV8`, the ride-down flip's `preWrapV7`, the drive flip's `preWrapV5`, then the strike flip's `preWrapV4`. */
 const preStrikeFlip = (d: FixtureDef): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(d)))))))));

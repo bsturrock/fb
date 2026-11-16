@@ -12,7 +12,7 @@ import { LEG_GUARD_V1, RAGDOLL_G4, RULES_FOOTBALL, rulesRevision2, type RuleProf
 import { RuleObserver, type RetentionObs, type RuleFrame } from '../src/sim/rules';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dot, len, qRot, v3, type Vec3 } from '../src/sim/vec';
-import { evs, nonEmpty, pace, preBraceV2, preWrap, rows, run, runEach, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
+import { evs, nonEmpty, pace, preBraceV2, preSteps, preWrap, rows, run, runEach, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
 import { FixedStepDriver } from '../src/sim/driver';
 
 const R = RAGDOLL_G4;
@@ -1074,7 +1074,8 @@ describe('plan 10e: rules revision 2', () => {
     // Contact motion M2 follow-up: taken before CARRIER_BRACE_V2 (`preBraceV2`); with the braced carrier leaning in time
     // the defender goes down with him before the ending. Contact motion M3: and before the wrap flip (`preWrap`; under
     // it the core sinks 1 cm more in the historical window than in revision 2's)
-    const base = { ...preBraceV2(preWrap(allFixtures().find((d) => d.id === 'L3-F1-mirror0')!)), legGuard: LEG_GUARD_V1 };
+    // Plan 15 step 4: and before the stepping flip (the stance request is the reactive planner's)
+    const base = { ...preBraceV2(preWrap(preSteps(allFixtures().find((d) => d.id === 'L3-F1-mirror0')!))), legGuard: LEG_GUARD_V1 };
     const variant = (rules: RuleProfile): FixtureDef => ({
       ...base,
       id: `test-E1-${rules.revision ?? 1}`,

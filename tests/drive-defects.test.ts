@@ -9,7 +9,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { JOINT_RANGE_V3, SHOULDER_TWIST_ANAT_V2, withShoulderTwistLimit } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preHipTwist, preShoulderTwist, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
+import { asCaptured, create, FIX, preHipTwist, preShoulderTwist, preSteps, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -139,7 +139,8 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
     expect(off, said).toEqual(on);
     expect(bound.peak, said).toBeLessThan(30);
     const phase1 = async (d: FixtureDef) => {
-      const sim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(d)))))))), {});
+      // (plan 15 step 4: and before the stepping flip: the clearance step is the reactive planner's)
+      const sim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preSteps(d))))))))), {});
       const out = supportedHipTwist(sim, 0.6, 0.95);
       sim.dispose();
       return out;

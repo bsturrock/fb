@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import { SHOULDER_TWIST_ANAT_V2, withShoulderTwistLimit } from '../src/sim/profiles';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preForwardFall, preShoulderTwist, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
+import { asCaptured, create, FIX, preForwardFall, preSteps, preShoulderTwist, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
 
@@ -62,7 +62,8 @@ describe('contact motion polish 1.4, the bound-legs fall: tracked defects (rule 
     // the fault twin
     const on = await look(def);
     const off = await look(preWrapV8(def), ['wrap']);
-    const v7Sim = await create(preForwardFall(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preShoulderTwist(FIX('L3-F19-rear'))))))))));
+    const v7Sim = await create(preForwardFall(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preShoulderTwist(preSteps(FIX('L3-F19-rear')))))))))));
+    // (plan 15 step 4: and before the stepping flip: V7 from the start as sampled)
     const v7 = ragdollShoulderTwist(v7Sim);
     v7Sim.dispose();
     const said = JSON.stringify({ fixed, on, off, v7 });

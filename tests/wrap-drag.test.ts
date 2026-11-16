@@ -11,7 +11,7 @@ import { WRAP_V10, WRAP_V6, type WrapBindLinked, type WrapDebug, type WrapProfil
 import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions, Simulation } from '../src/sim/simulation';
 import { dot, horiz, norm, vc, type Vec3 } from '../src/sim/vec';
-import { create, FIX } from './helpers';
+import { create, FIX, preSteps } from './helpers';
 
 const LK = WRAP_V6.bind!.linked!;
 
@@ -76,9 +76,10 @@ async function dragRun(make: Make, checkAt?: number, untilS = Infinity): Promise
   return out;
 }
 
-/** L3-F19-rear (the registered rear wrap: the tackler from behind) under `wrap`, with fault switches. */
+/** L3-F19-rear (the registered rear wrap: the tackler from behind) under `wrap`, with fault switches (plan 15 step 4: as
+ * sampled, before the stepping flip). */
 function rear(wrap: WrapProfile, faults?: WrapDebug): Make {
-  return (opts) => create({ ...FIX('L3-F19-rear'), wrap }, { ...opts, ...(faults ? { debug: { wrap: faults } } : {}) });
+  return (opts) => create({ ...preSteps(FIX('L3-F19-rear')), wrap }, { ...opts, ...(faults ? { debug: { wrap: faults } } : {}) });
 }
 
 /** L3-F19-rear with the wrapping defender starting `m` further back along his line (the long rear approach), reversed order. */

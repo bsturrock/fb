@@ -8,7 +8,11 @@ import { WRAP_V7, type WrapDebug, type WrapProfile } from '../src/sim/controller
 import type { FixtureDef } from '../src/sim/fixture';
 import { ARM_G2 } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
-import { FIX } from './helpers';
+import { FIX as REGISTERED, preSteps } from './helpers';
+
+// Plan 15 step 4: the ride hold's runs as sampled, before the stepping flip (the tackler's and carrier's falls move with
+// the model's footwork, and the samples' times with them)
+const FIX = (id: string): FixtureDef => preSteps(REGISTERED(id));
 
 // The ride hold on the ride it was built on: WRAP_V7 without the come-down (`ride.down`, which ends the ride, and with it the
 // hold, once he is low; tests/wrap-ride.test.ts covers it).

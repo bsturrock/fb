@@ -13,8 +13,11 @@ import { FOOTWORK_L3, HOLD_STILL_V1, holdStillAt } from '../src/sim/footwork';
 import { IDLE_POSE_RECORD, IDLE_STANCE_FADE_MPS } from '../src/sim/locomotion';
 import { add, dist, dot, horiz, len, qConj, qMul, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { expect } from './plain-expect';
-import { create, FIX, pace, run, traceRowsDiff } from './runs';
+import { create, FIX as REGISTERED, pace, preSteps, run, traceRowsDiff } from './runs';
 import { armLengthErr, armProfile, count, L3, LIMBS, modes, peaks, ragOf, SIDES } from './transitions-shared';
+
+/** Plan 15 step 4: a fixture as before the stepping flip (the pass checks the reactive planner's contracts). */
+const FIX = (id: string): FixtureDef => preSteps(REGISTERED(id));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The pass
@@ -2143,7 +2146,10 @@ export interface FixturePass {
 }
 
 /** Runs `d` once with every check that covers it attached (and the copy comparison, where it is in the sample). */
-export async function passFixture(d: FixtureDef): Promise<FixturePass> {
+export async function passFixture(registered: FixtureDef): Promise<FixturePass> {
+  // (plan 15 step 4: the pass checks the reactive planner's contracts, on the L3 fixtures as before the stepping flip,
+  // until step 5 deletes the planner; the contact stepping model's rules are tests/contact-steps.test.ts')
+  const d = preSteps(registered);
   const out: FixturePass = { covered: [], failures: [] };
   const watches = CHECKS.filter((c) => covers(c, d.id)).map((c) => {
     out.covered.push(c.name);

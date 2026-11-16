@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { WRAP_V1, WRAP_V2, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import { Simulation } from '../src/sim/simulation';
-import { FIX, preFallReact } from './helpers';
+import { FIX, preFallReact, preSteps } from './helpers';
 
 const C = WRAP_V2.commit!;
 const SUB = 1 / 240;
@@ -82,7 +82,8 @@ describe('contact motion M3: a secure hold lowers the defender and takes him dow
 
   it('if the carrier he holds securely is off his support first, he follows at once (constructed: the front wrap with a 1 s lowering, the carrier converted, labelled, 0.1 s into the hold): he asks on the substep he sees the carrier down and leaves at the next. The fault twin: under WRAP_V1 he stays up for over half a second', async () => {
     const at = 0.6;
-    const def = (w: WrapProfile): FixtureDef => withWrap(FIX('L3-F19-front'), w, { diagnostics: { conversions: [{ playerId: 'R', atS: at }] } });
+    // (plan 15 step 4: the construct as built, before the stepping flip: under the model the twin's tackler goes down too)
+    const def = (w: WrapProfile): FixtureDef => withWrap(preSteps(FIX('L3-F19-front')), w, { diagnostics: { conversions: [{ playerId: 'R', atS: at }] } });
     const r = await run(def(commitWith({ lowerS: 1 })), 1.5);
     expect(r.secureS!).toBeLessThan(at - 0.05);
     expect(r.loss.R?.why).toBe('diagnostic');

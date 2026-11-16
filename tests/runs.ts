@@ -5,6 +5,7 @@ import { Simulation, type SimOptions, type TraceRow } from '../src/sim/simulatio
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { withoutHoldStill } from '../src/sim/footwork';
+import { withoutSteps } from '../src/sim/contact-steps';
 import { RAPIER } from '../src/sim/physics';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V13, type WrapProfile } from '../src/sim/controllers/wrap';
@@ -174,6 +175,12 @@ export const preWrapV13 = (d: FixtureDef): FixtureDef => (d.wrap?.id === WRAP_V1
  */
 export const preShoulderTwist = (d: FixtureDef): FixtureDef => (d.ragdoll?.shoulderTwistLimit ? { ...d, ragdoll: withoutShoulderTwistLimit(d.ragdoll) } : d);
 /**
+ * Plan 15 step 4 (p24, the stepping flip): `d` with its footwork as before it, the reactive planner's contact stepping
+ * (no `steps`, its id as then): what every state capture and natural sample taken before it ran under, and the
+ * reactive planner's own tests until step 5 deletes it. Composes with the other `pre*` helpers.
+ */
+export const preSteps = (d: FixtureDef): FixtureDef => (d.footwork?.steps ? { ...d, footwork: withoutSteps(d.footwork) } : d);
+/**
  * WRAP_V6 as it was from the bound-legs fall (`fc616d3`) to the drag-down (polish 2.3): the same low strike and low arms on
  * WRAP_V8 (no fall link, no drive from behind, no hanging holder), its id as then. No fixture registered it; the state
  * captures taken under the lab's `wrap=v6` then (scripts/capture-state.ts `--wrap=v6`, suffix `wrapv6`) ran under it.
@@ -269,11 +276,11 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
 
 /**
  * The flips registered on L3, L4 and HC since the first state capture, the latest first: each gives a definition as
- * before its flip (polish 4 the hit's aim, polish 4 the forward fall, polish 4 the hit, 2.4 staying on from behind, 2.2 the drive from behind, 2.1 the hold, 11b the thigh's rotation, polish 1.4 the bound-legs fall, 1.2 the ride-down and the drive, 1.1 the strike, M4 the landed palm, M4 the fall, M3 the hold, M3 the takedown, M3 the wrap, M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
+ * before its flip (plan 15 the stepping model, polish 4 the hit's aim, polish 4 the forward fall, polish 4 the hit, 2.4 staying on from behind, 2.2 the drive from behind, 2.1 the hold, 11b the thigh's rotation, polish 1.4 the bound-legs fall, 1.2 the ride-down and the drive, 1.1 the strike, M4 the landed palm, M4 the fall, M3 the hold, M3 the takedown, M3 the wrap, M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
  * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
  * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preShoulderTwist, preWrapV13, preForwardFall, preWrapV12, preWrapV11, preWrapV10, preWrapV9, preHipTwist, preWrapV8, preWrapV7, preWrapV5, preWrapV4, prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preSteps, preShoulderTwist, preWrapV13, preForwardFall, preWrapV12, preWrapV11, preWrapV10, preWrapV9, preHipTwist, preWrapV8, preWrapV7, preWrapV5, preWrapV4, prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before

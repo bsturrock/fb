@@ -17,7 +17,7 @@ import { legHull, legMeets, legPointMove, legSurfaceAdvance, observePhysicalLegs
 import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
 import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromUnitVectors, qFromYaw, qInvRot, qMul, qRot, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { asCaptured, FIX, rows } from './helpers';
+import { asCaptured, FIX, preSteps, rows } from './helpers';
 import { loadState, resumeState } from './state';
 import { SEGMENTS } from '../src/sim/ragdoll';
 
@@ -624,7 +624,9 @@ describe('rung 6 (D1): the posed leg yields where a met body would stop', () => 
   const GAP = 0.4;
   const SUBSTEPS = 12;
   async function stoppedDepths(opts: SimOptions): Promise<{ out: number[]; dt: number }> {
-    const base = FIX('L3-F9-convert-free');
+    // (plan 15 step 4: the construct as built, D's feet the reactive planner's; under the model his planted foot steps
+    // out in the same substeps, moving the thigh faster than the yield alone)
+    const base = preSteps(FIX('L3-F9-convert-free'));
     const d = V3(base, { durationS: AT + 0.1, diagnostics: { conversions: [{ playerId: 'R', atS: 0.15 }] } });
     const aheadS = LEG_GUARD_V3.aheadS;
     let placed = -1;

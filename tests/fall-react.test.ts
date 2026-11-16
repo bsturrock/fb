@@ -10,7 +10,7 @@ import { ARM_G2, FALL_HOLD_V1, FALL_L4, FALL_REACT_V1, FALL_REACT_V2, withoutHip
 import { armSystemProfile, checkLimbContract, Simulation } from '../src/sim/simulation';
 import { hingeAngles, limbDirWorld } from '../src/sim/ragdoll';
 import { dot, qInvRot } from '../src/sim/vec';
-import { FIX, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './helpers';
+import { FIX, preSteps, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './helpers';
 
 const SIDES: ArmSide[] = ['left', 'right'];
 /**
@@ -18,7 +18,8 @@ const SIDES: ArmSide[] = ['left', 'right'];
  * (WRAP_V4) the front wrap's carrier goes down from the hit and the tackler later loses his own support, so neither the
  * takedown nor the tackler's held arms at it are in that run. Every other fixture as registered.
  */
-const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(FIX(id))))))))));
+// (plan 15 step 4: and before the stepping flip, the runs these were sampled in)
+const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preSteps(FIX(id)))))))))));
 const MEMORY = FALL_REACT_V1.arms.holdMemoryS;
 const deg = (r: number): number => (r * 180) / Math.PI;
 
@@ -229,7 +230,8 @@ describe('contact motion M4: a landed palm bears load (FALL_REACT_V2)', () => {
   // L3-F9-convert-free: the carrier, a ragdoll from 0.658 s, lands his free left palm at 0.6625 s, the body coming down
   // on it; the palm and forearm leave the floor at 0.6708 s for 54 ms (the elbow folding under him), then touch on and off
   it('a landed brace bears load and lets go when unloaded: from the carrier\'s palm landing (L3-F9-convert-free) every command on that arm opposes its joint\'s motion and the arm gives back no work while loaded, and it goes passive once neither palm nor forearm has touched the floor for 50 ms (at 0.725 s). The fault twins: FALL_REACT_V1 (the pose at contact held on springs) pushes along the joints\' motion, gives back over 5 J and never lets go before its window ends; with no release time the arm lets go at the first substep off the floor', async () => {
-    const d = FIX('L3-F9-convert-free');
+    // (plan 15 step 4: the palm landing as sampled, before the stepping flip)
+    const d = preSteps(FIX('L3-F9-convert-free'));
     const v2 = await landed(reacting(d, FALL_REACT_V2), 1.6, 'R', 'left');
     expect(v2.contactS).toBeCloseTo(0.6625, 4);
     expect(v2.steps.every((s) => s.opposed)).toBe(true);

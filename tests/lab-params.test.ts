@@ -11,7 +11,7 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withoutShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, FALL_L4, FALL_L4_V2, FORWARD_FALL_V1, withForwardFall,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preShoulderTwist, preV3, preWrap, runSim } from './helpers';
+import { create, FIX, flip8i, preSteps, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preShoulderTwist, preV3, preWrap, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -139,7 +139,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     // 18e met-arm flip, under which the variant alone converts D as well; and before the contact motion M2 brace flip;
     // and before the M3 wrap flip, under which the variant alone converts D too; and before the M4 fall flip, under which
     // the variant alone converts D as well, the carrier's reaction moving the fall)
-    const d = preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preWrap(preFallReact(FIX(id))))))));
+    // (plan 15 step 4: and before the stepping flip)
+    const d = preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preWrap(preFallReact(preSteps(FIX(id)))))))));
     const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
     expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
     const want = withConversionRetry(flip8i(d).ragdoll!);
@@ -267,7 +268,9 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   // ladder rung 13b: holdstill=on|off on the fixture's footwork; registered on every L3/L4/HC footwork since rung 14a
   it('on a fixture registered with the stationary hold keeping its feet (HOLD_STILL_V1 on its footwork, id and all: L3-F6-hold), holdstill=off is the view before it, id and all, and another run; holdstill=on is the registered run and puts it back; a fixture without footwork and unknown values change nothing', async () => {
     const id = 'L3-F6-hold';
-    const d = FIX(id);
+    // (plan 15 step 4: the still feet are the reactive planner's rule, which the contact stepping model does not read:
+    // the switch on the fixture as before the stepping flip)
+    const d = preSteps(FIX(id));
     expect(d.footwork!.holdStill).toBe(HOLD_STILL_V1);
     expect(d.footwork!.id).toBe(`${preHoldStill(d).footwork!.id}+${HOLD_STILL_V1.id}`);
     const off = labRun(d, new URLSearchParams(`fixture=${id}&holdstill=off`));
@@ -431,7 +434,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const id = 'L3-F1-falling';
     // (contact motion M4: and before the fall flip, under which the run before the born overlap does not defer D either;
     // and before the shoulder twist flip, registered after the born overlap on the same profile)
-    const reg = preMetArmStay(preBrace(preWrap(preFallReact(preShoulderTwist(FIX(id))))));
+    // (plan 15 step 4: and before the stepping flip, the run all these were taken in)
+    const reg = preMetArmStay(preBrace(preWrap(preFallReact(preShoulderTwist(preSteps(FIX(id)))))));
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const d = preBornOverlap(reg);
     expect(d.ragdoll!.bornOverlap).toBeUndefined();
@@ -470,7 +474,8 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   it('bornsep=on runs the fixture with its born pairs pushed apart (BORN_OVERLAP_V2 in V1\'s place, its id renamed in place: L3-F1-falling before the 18c and 18e flips, where D\'s palm pair is released with the separation\'s work, which V1\'s release has no part of), which is the registered fixture before the met-arm flip; bornsep=off takes it back; born=on keeps V2; with born=off, or a fixture without a born overlap, it is n/a; unknown values change nothing', async () => {
     const id = 'L3-F1-falling';
     // (contact motion M4: and before the fall flip, under which no born pair of D's is released by 1.3 s either)
-    const registered = preMetArmStay(preBrace(preWrap(preFallReact(FIX(id)))));
+    // (plan 15 step 4: and before the stepping flip)
+    const registered = preMetArmStay(preBrace(preWrap(preFallReact(preSteps(FIX(id))))));
     expect(registered.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const reg = preBornSeparation(registered);
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);

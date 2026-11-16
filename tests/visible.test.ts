@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { labRun } from '../src/lab/lab-params';
-import { preFallReact, preFlip, preShoulderTwist } from './runs';
+import { preFallReact, preFlip, preShoulderTwist, preSteps } from './runs';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { modelBody } from '../src/sim/model/profiles';
 import type { PhysicalPose } from '../src/sim/pose';
@@ -157,7 +157,8 @@ describe('visible quality: the screenshot run (L3-F9-convert-free, legs=v3, forw
     // (the audited run: the profile before the visible flip, which removes these poses)
     // (and before the contact motion M4 fall flip, whose response needs the visible flip's hip stops, and the shoulder
     // twist flip, which moves the ragdolls' arms)
-    const base = preFlip(preFallReact(preShoulderTwist(allFixtures().find((d) => d.id === 'L3-F9-convert-free')!)));
+    // (and plan 15's stepping flip)
+    const base = preFlip(preFallReact(preShoulderTwist(preSteps(allFixtures().find((d) => d.id === 'L3-F9-convert-free')!))));
     const { def, opts } = labRun(base, new URLSearchParams('legs=v3'));
     const sim = await Simulation.create(def, opts);
     type World = ReturnType<typeof hipAngles>;
