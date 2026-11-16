@@ -12,6 +12,7 @@ import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
 import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear, withShoulderTwistLimit, SHOULDER_TWIST_ANAT_V2 } from '../profiles';
 import { withHoldStill } from '../footwork';
+import { withSteps } from '../contact-steps';
 import { CARRIER_BRACE_V2 } from '../brace';
 import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V13 } from '../controllers/wrap';
 
@@ -278,6 +279,17 @@ function hipTwistFlip(d: FixtureDef): FixtureDef {
   return VISIBLE_FLIP.test(d.id) && d.jointRange === JOINT_RANGE_V2 ? { ...d, jointRange: JOINT_RANGE_V3 } : d;
 }
 
+/**
+ * Plan 15 step 4, the stepping flip: every L3, L4 and HC fixture with a composed foot planner steps by the contact
+ * stepping model (STEPS_V1, contact-steps.ts: where a foot can stand, where it steps, when) in place of the reactive
+ * planner's contact stepping, and the bound-legs fall and the come-down read it (`legsBound`, `standsNowhere`). L2 and RH
+ * keep the reactive planner. The lab's `steps=old` is the view before it; tests/runs.ts `preSteps` gives a definition as
+ * before it.
+ */
+function stepsFlip(d: FixtureDef): FixtureDef {
+  return d.footwork?.compose && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withSteps(d.footwork) } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -306,6 +318,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip).map(shoulderTwistFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip).map(shoulderTwistFlip).map(stepsFlip));
   return registry.slice();
 }

@@ -310,24 +310,25 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('latestep=maybe'))).toEqual({ def: d, opts: {}, label: 'latestep=maybe ignored' });
   }, 120000);
 
-  // plan 15 step 2: steps=new|old on the fixture's composed footwork; no fixture registers the contact stepping model yet
-  it('steps=new runs the fixture with the contact stepping model on its footwork (`steps`, id and all: L3-F19-rear, another run); steps=old takes it off again and on the registered fixture is the registered run; a fixture without composed footwork and unknown values change nothing', async () => {
+  // plan 15: steps=old|new on the fixture's composed footwork; the contact stepping model registered on L3, L4 and HC since step 4
+  it('steps=old runs the fixture with the reactive planner, as before plan 15\'s stepping flip (`preSteps`, id and all: L3-F19-rear, registered with the model since step 4, another run); steps=new puts the model back and on the registered fixture is the registered run; a fixture without composed footwork and an unknown value are ignored', async () => {
     const id = 'L3-F19-rear';
     const d = FIX(id);
-    expect(d.footwork!.steps).toBeUndefined();
-    const on = labRun(d, new URLSearchParams(`fixture=${id}&steps=new`));
-    expect(on.label).toBe('steps new');
-    expect(on.def.footwork!.steps).toBe(STEPS_V1);
-    expect(on.def.footwork!.id).toBe(`${d.footwork!.id}+${STEPS_V1.id}`);
+    expect(d.footwork!.steps).toBe(STEPS_V1);
+    expect(d.footwork!.id).toBe(`${preSteps(d).footwork!.id}+${STEPS_V1.id}`);
+    const off = labRun(d, new URLSearchParams(`fixture=${id}&steps=old`));
+    expect(off.label).toBe('steps old');
+    expect(off.def).toEqual(preSteps(d));
+    expect(off.def.footwork!.steps).toBeUndefined();
     // the twin: the model changes the run
-    expect(await summaryOf(on.def, on.opts)).not.toBe(await summaryOf(d, {}));
-    const back = labRun(on.def, new URLSearchParams('steps=OLD'));
-    expect(back.label).toBe('steps old');
+    expect(await summaryOf(off.def, off.opts)).not.toBe(await summaryOf(d, {}));
+    const back = labRun(off.def, new URLSearchParams('steps=NEW'));
+    expect(back.label).toBe('steps new');
     expect(back.def).toEqual(d);
-    expect(labRun(d, new URLSearchParams('steps=old'))).toEqual({ def: d, opts: {}, label: 'steps old (registered)' });
-    expect(labRun(on.def, new URLSearchParams('steps=new'))).toEqual({ def: on.def, opts: {}, label: 'steps new (registered)' });
+    expect(labRun(d, new URLSearchParams('steps=new'))).toEqual({ def: d, opts: {}, label: 'steps new (registered)' });
+    expect(labRun(off.def, new URLSearchParams('steps=old'))).toEqual({ def: off.def, opts: {}, label: 'steps old (registered)' });
     const g = allFixtures().find((x) => !x.footwork?.compose)!;
-    expect(labRun(g, new URLSearchParams('steps=new'))).toEqual({ def: g, opts: {}, label: 'steps n/a (no composed footwork)' });
+    expect(labRun(g, new URLSearchParams('steps=old'))).toEqual({ def: g, opts: {}, label: 'steps n/a (no composed footwork)' });
     expect(labRun(d, new URLSearchParams('steps=maybe'))).toEqual({ def: d, opts: {}, label: 'steps=maybe ignored' });
   }, 120000);
 

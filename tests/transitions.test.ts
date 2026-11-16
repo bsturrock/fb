@@ -21,6 +21,7 @@ import { add, dist, len, qRot, scale, sub, toLocal, v3, vc, type Vec3 } from '..
 import { allFixtures } from '../src/sim/fixtures/index';
 import { lockedOutOfLocomotion, onModel } from '../src/sim/fixtures/with-locomotion';
 import { FOOTWORK_L3, withHoldStill } from '../src/sim/footwork';
+import { withSteps } from '../src/sim/contact-steps';
 import { chestArm } from '../src/sim/run-clip';
 import { idleIntake } from '../scripts/model/idle-intake';
 import { pace, preBraceV2, preHipTwist, preSteps, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, rows, run, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
@@ -205,8 +206,8 @@ describe('plan 13e idle cycle and coverage', () => {
         expect(d.notes, d.id).toMatch(/No locomotion set \(plan 13e\)/);
         continue;
       }
-      // since rung 14a with the stationary hold's still feet
-      expect(d.footwork, d.id).toEqual(withHoldStill(FOOTWORK_L3));
+      // since rung 14a with the stationary hold's still feet, and since plan 15 step 4 the contact stepping model
+      expect(d.footwork, d.id).toEqual(withSteps(withHoldStill(FOOTWORK_L3)));
       expect(d.locomotion, d.id).toBe(LOCOMOTION_L3_IDLE);
       expect(d.runClips?.walk, d.id).toBeDefined();
       expect(d.runClips!.clips.map((c) => c.id), d.id).toEqual(['walk', 'fast-run']);

@@ -35,6 +35,7 @@ import { SHAPE_QUERY_BUDGET } from '../scripts/check/lib';
 import { g1f4, g1f8Cases, g1f9Fit } from '../src/sim/fixtures/gate1';
 import { asL3 } from '../src/sim/fixtures/transitions';
 import { FOOTWORK_L2, FOOTWORK_L3, HOLD_STILL_V1, withHoldStill } from '../src/sim/footwork';
+import { STEPS_V1, withSteps } from '../src/sim/contact-steps';
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
@@ -166,8 +167,8 @@ const OPT_IN: Row[] = [
         if (d.id.startsWith('L4-')) continue; // later than L3: its falls start from L3 fixtures, with their profiles
         if (d.id.startsWith('L3-') || d.id.startsWith('HC-')) {
           // the player model plays the idle cycle; the authored body keeps the static fitted idle (the planner with the
-          // stationary hold's still feet since rung 14a: the row below)
-          expect(d.footwork, d.id).toEqual(withHoldStill(FOOTWORK_L3));
+          // stationary hold's still feet since rung 14a: the row below; and the contact stepping model since plan 15 step 4)
+          expect(d.footwork, d.id).toEqual(withSteps(withHoldStill(FOOTWORK_L3)));
           expect(d.locomotion, d.id).toBe(onModel(d) ? LOCOMOTION_L3_IDLE : LOCOMOTION_L3);
         } else {
           expect(d.locomotion, d.id).toBeUndefined();
@@ -274,6 +275,14 @@ const OPT_IN: Row[] = [
         expect(e.profiles.footwork, d.id).toEqual(d.footwork);
         sim.dispose();
       }
+    },
+  ],
+  [
+    'plan 15 step 4: the contact stepping model (STEPS_V1) on exactly the L3, L4 and HC composed foot planners; L2\'s and RH\'s planners have none',
+    () => {
+      const planned = allFixtures().filter((d) => d.footwork);
+      expect(planned.some((d) => !/^(L3|L4|HC)-/.test(d.id))).toBe(true);
+      for (const d of planned) expect(d.footwork!.steps, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) && d.footwork!.compose ? STEPS_V1 : undefined);
     },
   ],
 ];

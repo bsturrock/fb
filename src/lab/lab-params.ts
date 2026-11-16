@@ -26,8 +26,8 @@
 //                      fixed on the turf (the footwork's `compose.lateLanding`, polish 2, the leg gallop; no fixture
 //                      registers it yet), or as before; a fixture without composed footwork is run as it is;
 //   steps=new|old      the contact stepping model (plan 15, STEPS_V1: free ground, where, when; contact-steps.ts) in place
-//                      of the reactive planner once the clip regime ends, or the reactive planner; no fixture registers
-//                      it yet. A fixture without composed footwork is run as it is;
+//                      of the reactive planner once the clip regime ends (registered on L3, L4 and HC since step 4), or
+//                      the reactive planner, the view before it. A fixture without composed footwork is run as it is;
 //   upperarm=on|off    the supported arms keeping the upper arm and elbow out of their own trunk too (the self-clearance
 //                      profile's `upperArm`, rung 13c), or only the forearm and palm; a fixture without self-clearance is
 //                      run as it is;
