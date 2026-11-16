@@ -61,6 +61,13 @@ export interface FootDebug {
    * to land before it lifts, as in the step 2 model (which then slid it along the turf).
    */
   stepsStanceWaits?: boolean;
+  /**
+   * Fault (negative control of plan 15's search, `FootworkProfile.steps`): a foot with no free place within its short step
+   * has no aim, though there is one within its leg's reach.
+   */
+  stepsShortOnly?: boolean;
+  /** Fault (negative control of plan 15's bound step, `FootworkProfile.steps`): a bound foot aims at its want, not under its hip. */
+  stepsBoundWant?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */

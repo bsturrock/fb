@@ -185,7 +185,6 @@ const skates = (r: Run): number => {
   }
   return worst;
 };
-/** Largest move of a requested ankle in one substep (m). */
 /**
  * How far a planted leg's thigh goes past the hip's swing range (deg; negative inside): per frame, the planned leg at
  * each plant from its hip, in the core frame, against JOINT_RANGE_V3's hip cone; the largest.
@@ -200,6 +199,7 @@ const hipPast = (r: Run): number => {
     }
   return worst;
 };
+/** Largest move of a requested ankle in one substep (m). */
 const pops = (r: Run): number => {
   let worst = 0;
   for (let i = 1; i < r.frames.length; i++) for (const s of SIDES) worst = Math.max(worst, dist(r.frames[i].ankle[s], r.frames[i - 1].ankle[s]));
@@ -399,6 +399,34 @@ describe('contact stepping model (plan 15)', () => {
     // fault twin: the old planner's read on the same run (a foot in the air past its time) never holds: every step lands
     // on time
     expect(held(r, (f) => f.late)).toBe(0);
+  });
+
+  it('a man down in front with space beside him: the feet step to his sides, not bound', () => {
+    // driven on at 1 m/s, crouched (the hips 0.6 m above the soles), over a man lying flat across the path from 0.35 m
+    // ahead (0.8 m wide, 12 cm high): no place within a short step, the places beside him within the leg's reach
+    const down: Part[] = [{ shape: { kind: 'box', c: v3(0, 0.06, 1.1), he: v3(0.4, 0.06, 0.75), q: I }, v: v3(), key: 'B:down' }];
+    const sc: Scene = { vel: push(v3(0, 0, 1), 1), others: () => down, hipM: 0.6, durS: 1.6 };
+    const beside = (r: Run): number => plants(r).filter((e) => at(e).z > 0.3 && Math.abs(at(e).x) > 0.4 + M.footR - 0.01).length;
+    const r = run(sc);
+    expect(beside(r)).toBeGreaterThan(2);
+    expect(plants(r).filter((e) => at(e).z > 0.3 && Math.abs(at(e).x) < 0.4)).toEqual([]);
+    expect(held(r, (f) => f.bound)).toBeLessThan(CONFIRM_S);
+    // fault twin (FootDebug.stepsShortOnly): the short step alone: the feet are bound past a fall's confirm time
+    const short = run(sc, M, { stepsShortOnly: true });
+    expect(beside(short)).toBe(0);
+    expect(held(short, (f) => f.bound)).toBeGreaterThan(CONFIRM_S + 0.05);
+  });
+
+  it('a bound foot steps under the hips: driven on over a man down, every step lands under its hip', () => {
+    const down: Part[] = [{ shape: { kind: 'box', c: v3(0, 0.12, 1.1), he: v3(0.7, 0.12, 0.75), q: I }, v: v3(), key: 'B:down' }];
+    const sc: Scene = { vel: push(v3(0, 0, 1), 1), others: () => down, durS: 1.6 };
+    // how far a landing is from its hip (horizontal), over the landings while the legs are bound
+    const fromHip = (r: Run): number[] => plants(r).filter((e) => r.frames.find((f) => f.t === e.t)!.bound).map((e) => Math.hypot(at(e).x - e.hip.x, at(e).z - e.hip.z));
+    const r = run(sc);
+    expect(fromHip(r).length).toBeGreaterThan(1);
+    expect(Math.max(...fromHip(r))).toBeLessThanOrEqual(0.05);
+    // fault twin (FootDebug.stepsBoundWant): a bound foot aims at its want, a short step ahead, into him
+    expect(Math.max(...fromHip(run(sc, M, { stepsBoundWant: true })))).toBeGreaterThan(0.25);
   });
 
   it('a stride\'s flight is not a fall: at speed on open ground the legs are never bound, though both feet are up for longer than the grace', () => {

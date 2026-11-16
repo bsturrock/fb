@@ -6,8 +6,9 @@
 // - Where. Each foot's want is where the hips need it given their real motion now, the capture point home + v sqrt(h / g)
 //   (home: the foot's place under its hip, with its side offset and stagger; a hit or a lean is already in v), taken
 //   where the hips will be when the foot lands (moved along v for the time left), limited to a short step from the hip.
-//   Its aim is the nearest free place to its want (none when there is no free place within the step). A foot in the air
-//   follows its aim at a bounded rate that falls to zero at touchdown (the foot commits as it lands).
+//   Its aim is the nearest free place to its want within the short step, and with none there, within the leg's reach
+//   (none when there is no free place within either). A foot in the air follows its aim at a bounded rate that falls to
+//   zero at touchdown (the foot commits as it lands); with no aim, it steps under its hip (the shortest step).
 // - When. A planted foot never moves on the ground: it stands or it steps. It stands while its leg is in range and lifts
 //   the moment it is not, whatever the other foot does: that is the only way both feet are in the air (a flight, as in
 //   running), and it ends when the other foot's step lands, within one step time. Otherwise, with both feet
@@ -18,7 +19,7 @@
 //   the foot lands where the leg is.
 // Nothing is held off, retimed, re-picked or remembered: a foot is planted or in a step that will land. A foot is bound
 // when it cannot follow the hips: its plant is more than coverM from its want or out of range, or it is in the air, and
-// no free place is within its step. The fall triggers read that (legsBound, standsNowhere): the legs are bound while a
+// no free place is within its reach. The fall triggers read that (legsBound, standsNowhere): the legs are bound while a
 // foot cannot follow the hips, and the player stands nowhere while neither can. The leg solve gets the same requests as
 // from the old planner (FootRequest) and observeFeet measures the pose as before; under the model a plant is never
 // released by its solve.
@@ -157,12 +158,13 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
 }
 
 /**
- * Where: foot `s`'s support point, its want (the support point limited to a step) and its aim for a landing `aheadS` from
- * now: the hips and the free ground moved that far along their motion. The free ground is asked at the shoe's centre
- * (along the body heading) with the foot's radius, its other foot's side wall (no crossing) and its leg from the hip
- * there; with no free place within the step, there is no aim.
+ * Where: foot `s`'s support point, its want (the support point limited to a short step), its aim and the place under its
+ * hip (`under`) for a landing `aheadS` from now: the hips and the free ground moved that far along their motion. The aim
+ * is the nearest free place to the want within the short step, and with none there, within the leg's reach at the
+ * stance height; with none there either, there is no aim. The free ground is asked at the shoe's centre (along the body
+ * heading) with the foot's radius, its other foot's side wall (no crossing) and its leg from the hip there.
  */
-function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): { support: Vec3; want: Vec3; aim: Vec3 | null } {
+function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): { support: Vec3; want: Vec3; aim: Vec3 | null; under: Vec3 } {
   const P = plan.profile;
   const M = P.steps!;
   const sole = inp.groundY + inp.soleM;
@@ -173,7 +175,8 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   // asked a margin inside the reach so the plant stands when it lands (the hips' motion over the step is a prediction)
   const vert = hip.y - sole;
   const reach = plan.reachM - P.reachMarginM;
-  const rMax = Math.min(M.maxStepM, Math.sqrt(Math.max(0, reach ** 2 - vert * vert)));
+  const rLegal = Math.sqrt(Math.max(0, reach ** 2 - vert * vert));
+  const rMax = Math.min(M.maxStepM, rLegal);
   const off = hz(sub(support, hip));
   const L = len(off);
   const want = L > rMax ? v3(hip.x + (off.x * rMax) / L, sole, hip.z + (off.z * rMax) / L) : support;
@@ -185,25 +188,33 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   const ankle = (p: Vec3): Vec3 => v3(p.x - c.x, sole, p.z - c.z);
   const leg = R ? { at: (p: Vec3) => plannedLeg(R, s, hip, ankle(p), h), skinM: M.legSkinM, inRange: (p: Vec3) => inRange(inp, s, hip, ankle(p), h, reach) } : undefined;
   const q: FootQuery = { clearM: M.footR, wall: { p: { x: at.x + c.x, z: at.z + c.z }, n: { x: inp.rightW.x * inp.sideSign[s], z: inp.rightW.z * inp.sideSign[s] }, sepM: P.minSeparationM }, ...(leg ? { leg } : {}) };
-  const free = nearestFree(inp.ground ?? { prints: [] }, add(want, c), add(hip, c), rMax, aheadS, q);
-  return { support, want, aim: free ? v3(free.x - c.x, sole, free.z - c.z) : null };
+  const g = inp.ground ?? { prints: [] };
+  // (FootDebug.stepsShortOnly, a fault: the short step alone)
+  const free = nearestFree(g, add(want, c), add(hip, c), rMax, aheadS, q) ?? (rLegal > rMax && !inp.debug?.stepsShortOnly ? nearestFree(g, add(want, c), add(hip, c), rLegal, aheadS, q) : null);
+  const under = v3(inp.home[s].x + inp.vel.x * aheadS, sole, inp.home[s].z + inp.vel.z * aheadS);
+  return { support, want, aim: free ? v3(free.x - c.x, sole, free.z - c.z) : null, under };
 }
 
 /**
  * Where, for a step from `from`: its time (from its length) and its aim for a landing then; with no free place then, the
- * free place now, and with none either, its want (a foot that must lift and has nowhere to go).
+ * place under its hip then (a bound foot takes the shortest step: `boundAim`).
  */
 function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { support: Vec3; aim: Vec3; bound: boolean; T: number } {
   // (the length depends on the landing time and the time on the length: twice round from the shortest step)
-  const now = aimOf(plan, s, inp, 0).aim;
   const to = (T: number) => {
     const a = aimOf(plan, s, inp, T);
-    return { support: a.support, aim: a.aim ?? now ?? a.want, bound: !a.aim };
+    return { support: a.support, aim: a.aim ?? boundAim(inp, a), bound: !a.aim };
   };
   let T = plan.profile.steps!.minS;
   for (let i = 0; i < 2; i++) T = stepTime(plan, inp, dist(from, to(T).aim));
   return { ...to(T), T };
 }
+
+/**
+ * Where a bound foot goes: under its hip, the shortest step (FootDebug.stepsBoundWant, a fault: its want, as before plan 15
+ * round 3, into whatever bars it).
+ */
+const boundAim = (inp: FootPlanInput, a: { want: Vec3; under: Vec3 }): Vec3 => (inp.debug?.stepsBoundWant ? a.want : a.under);
 
 /** When: a plant can stand while its leg is inside its joint ranges (`inRange`). */
 const canStand = (plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean => inRange(inp, s, inp.hips[s], add(plan.feet[s].heelW!, v3(0, inp.soleM, 0)), plan.feet[s].headingRad, plan.reachM);
@@ -239,10 +250,11 @@ function gainOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput): number {
   const f = plan.feet[s];
   const c = f.contact!;
   const ankle = add(f.heelW!, v3(0, inp.soleM, 0));
-  const { support, want, aim } = aimOf(plan, s, inp, 0);
+  const a = aimOf(plan, s, inp, 0);
+  const { support, want, aim } = a;
   const off = len(hz(sub(ankle, want)));
   c.support = support;
-  c.aim = aim ?? want;
+  c.aim = aim ?? boundAim(inp, a);
   c.bound = !aim && (off > plan.profile.steps!.coverM || !canStand(plan, s, inp));
   if (!aim) return -Infinity;
   const R = inp.legs;
@@ -283,8 +295,7 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
 }
 
 /**
- * One substep of foot `s`'s step: the destination follows the aim (with no free place, it stays) at a bounded rate
- * falling to zero at touchdown; the
+ * One substep of foot `s`'s step: the destination follows the aim at a bounded rate falling to zero at touchdown; the
  * target moves along the minimum-jerk path from where it is, at its motion, to the destination in the time left; its
  * height is the descent from the start height and rate to the sole at rest over the step, plus the lift arc. Exported
  * for the transition audit (`continueOwners`).
@@ -299,7 +310,7 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
   const left = Math.max(c.T - f.elapsedS, dt);
   const a = aimOf(plan, s, inp, left);
   c.support = a.support;
-  c.aim = a.aim ?? f.dest!;
+  c.aim = a.aim ?? boundAim(inp, a);
   c.bound = !a.aim;
   const d = hz(sub(c.aim, f.dest!));
   const dl = len(d);
