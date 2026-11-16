@@ -21,7 +21,7 @@ import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newL
 import { type SimDebug } from './debug';
 import { clipJoin, newFootPlan, type FootPlan, type FootPlanInput } from './footwork';
 import { heldOff } from './foot-compose';
-import { legsBound, standsNowhere } from './contact-steps';
+import { footUnder, legsBound, standsNowhere } from './contact-steps';
 import {
   applyEnvelope, applyHipApproaches, auditEnvelope, bulkOf, easeLimpFeet, limitGradients, poseOfRb, ratchetHipStops, ratchetKneeStops, releaseSelfLegs, SEGMENTS, SELF_ARM_KEY, SELF_LEG_KEY, SELF_TRUNK_KEY, selfLegNear, selfLegPair,
   selfLegPairs, type CandidateEdit, type CandidateReport, type ExternalShape, type Ragdoll, type RagdollCollider, type TransferAudit,
@@ -1386,15 +1386,19 @@ export class Simulation {
    * Contact motion polish 1.2, the ride-down's come-down (`WrapRideDown`): a riding tackler whose carrier (the focus) is
    * off his support, with no foot to stand on (under the stepping model, plan 15: neither foot can follow his hips,
    * `standsNowhere`; under the reactive planner: no planted foot; without the foot plan: no support), no solved contact
-   * with the carrier and no clamp or grip on him.
+   * with the carrier and no clamp or grip on him. Under a stepping model with `underHips` (while it owns the feet): no
+   * foot can get under his hips (`footUnder`), no contact of his body (not his legs) with the carrier, and no clamp or
+   * grip on him unless the carrier is down (core within `carrierDownM`, or the play ended).
    */
   private rideUnsupported(pl: PlayerRuntime): boolean {
     const tid = this.def.focus?.[pl.id];
     const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
     if (!tid || !tgt || tgt.controlMode === 'supported') return false;
     const F = pl.feet;
-    const stands = F ? (F.stepsOwn ? !standsNowhere(F) : (['left', 'right'] as ArmSide[]).some((s) => F.feet[s].mode === 'planted')) : pl.grounded;
-    if (stands || (this.contactObs[pl.id] ?? []).some((c) => c.other === tid)) return false;
+    const UH = !!F?.stepsOwn && !!this.def.footwork?.steps?.underHips;
+    const stands = F ? (F.stepsOwn ? (UH ? footUnder(F) : !standsNowhere(F)) : (['left', 'right'] as ArmSide[]).some((s) => F.feet[s].mode === 'planted')) : pl.grounded;
+    if (stands || (this.contactObs[pl.id] ?? []).some((c) => c.other === tid && !(UH && (c.ownRegion === 'thigh' || c.ownRegion === 'shin' || c.ownRegion === 'shoe')))) return false;
+    if (UH && (this.coreBody(tgt).translation().y <= (this.def.wrap?.ride?.carrierDownM ?? -Infinity) || !!this.rules?.ending)) return true;
     const grips = this.arms ? [...this.arms.grips.values()] : [];
     return !(['left', 'right'] as ArmSide[]).some((s) => this.arms?.clampOf(pl.id, s)?.targetId === tid || grips.some((g) => g.ownerId === pl.id && g.arm === s && g.targetId === tid));
   }

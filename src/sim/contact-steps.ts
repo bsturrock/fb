@@ -61,6 +61,16 @@ export interface StepModelProfile {
   legSkinM: number;
   /** A foot whose least-deep place within reach stands deeper than this (m, `depthAt`) cannot follow the hips (bound). */
   boundM: number;
+  /**
+   * Plan 15, the tackler going down late: what holds up a riding tackler whose carrier is off his support, read on the
+   * model (simulation.ts `rideUnsupported`; absent: a foot not bound, `standsNowhere`, any part of him touching the
+   * carrier, any hold of him). A foot to stand on is one that can get under his hips (`footUnder`: not bound and the
+   * hips' capture point within its short step); a contact is his body's on the carrier (trunk, head, arms: the legs the
+   * model shows where it asks for them lie against a fallen man and hold nothing up); a hold of the carrier holds him up
+   * until the carrier is down (core within the ride's `carrierDownM` of the ground, or the play ended: the come-down's
+   * own start; a man on the ground holds nobody up by an arm).
+   */
+  underHips?: true;
 }
 
 /**
@@ -76,6 +86,14 @@ export interface StepModelProfile {
  * for 2.4 s of the hold, 6-8 cm for 0.7 s, deeper for 0.1 s).
  */
 export const STEPS_V1: StepModelProfile = { id: 'steps-v1', maxStepM: 0.4, coverM: 0.12, stepMps: 1.6, travelK: 2, minS: 0.16, maxS: 0.3, followMps: 2, liftM: 0.07, footR: 0.1, legSkinM: 0.03, boundM: 0.08 };
+
+/**
+ * STEPS_V1 with the come-down's read of what holds the tackler up (`underHips`). Under STEPS_V1 the read was the reactive
+ * planner's translated: neither foot bound, any contact, any hold; on the L3, L4 and HC rides the model's feet always
+ * stand, the legs it shows touch the fallen carrier and the clamp stays on him, so the tackler rode the come-down to its
+ * low exit or its 0.4 s bound (0.1-0.45 s after the reactive planner's tackler went down).
+ */
+export const STEPS_V2: StepModelProfile = { ...STEPS_V1, id: 'steps-v2', underHips: true };
 
 /** The footwork profile with the contact stepping model, under an id that names it (a profile without compose is returned as it is). */
 export const withSteps = (f: FootworkProfile, m: StepModelProfile = STEPS_V1): FootworkProfile => (!f.compose || f.steps ? f : { ...f, id: `${f.id}+${m.id}`, steps: m });
@@ -100,6 +118,8 @@ export interface ContactFoot {
   depthM: number;
   /** It cannot follow the hips: it needs a step (or is in one) and its least-deep place within reach is deeper than boundM. */
   bound: boolean;
+  /** The hips outrun it: their support point (the capture point) lies beyond its short step, its want cut short. */
+  outrun: boolean;
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -120,6 +140,15 @@ const stepTime = (plan: FootPlan, inp: FootPlanInput, L: number): number => {
 export const legsBound = (plan: FootPlan): boolean => SIDES.some((s) => !!plan.feet[s].contact?.bound);
 /** The player stands nowhere while neither foot can follow the hips (a flight is not that: a foot in the air with a free place to land is following). */
 export const standsNowhere = (plan: FootPlan): boolean => SIDES.every((s) => !!plan.feet[s].contact?.bound);
+/**
+ * A foot can get under the hips (`StepModelProfile.underHips`, the come-down's read): it is not bound and the hips need it
+ * within its step (their capture point no further from the hip than its short step: its want not cut short). A body
+ * moving faster than a short step can catch has no foot under it, whatever its feet are doing.
+ */
+export const footUnder = (plan: FootPlan): boolean => SIDES.some((s) => {
+  const c = plan.feet[s].contact;
+  return !!c && !c.bound && !c.outrun;
+});
 
 /** The model's substep: the feet's requests for the leg solve (planFeet calls it outside the clip regime). */
 export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): Record<ArmSide, FootRequest> {
@@ -132,7 +161,7 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
     f.clipSwingP = null;
     f.rejoin = f.wait = f.inherited = f.released = f.tentative = false;
     // taking over: a plant stays where it is; a foot in the air steps from where it is, at its motion
-    if (f.mode === 'planted' && (entering || !f.contact)) f.contact = { T: 0, h0: 0, vy0: 0, liftM: 0, support: v3(), aim: v3(), depthM: 0, bound: false };
+    if (f.mode === 'planted' && (entering || !f.contact)) f.contact = { T: 0, h0: 0, vy0: 0, liftM: 0, support: v3(), aim: v3(), depthM: 0, bound: false, outrun: false };
     else if (f.mode !== 'planted' && (entering || !f.contact)) begin(plan, s, inp, ev, 'continue');
   }
   // When: a plant that cannot stand lifts at once (FootDebug.stepsStanceWaits, a fault: not while the other foot is in
@@ -179,7 +208,7 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
  * the shoe's centre (along the body heading) with the foot's radius, its other foot's side wall (no crossing) and its leg
  * from the hip there.
  */
-function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): { support: Vec3; want: Vec3; aim: Vec3; depthM: number } {
+function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): { support: Vec3; want: Vec3; aim: Vec3; depthM: number; outrun: boolean } {
   const P = plan.profile;
   const M = P.steps!;
   const sole = inp.groundY + inp.soleM;
@@ -194,7 +223,8 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   const rMax = Math.min(M.maxStepM, rLegal);
   const off = hz(sub(support, hip));
   const L = len(off);
-  const want = L > rMax ? v3(hip.x + (off.x * rMax) / L, sole, hip.z + (off.z * rMax) / L) : support;
+  const outrun = L > rMax;
+  const want = outrun ? v3(hip.x + (off.x * rMax) / L, sole, hip.z + (off.z * rMax) / L) : support;
   const h = headingNow(inp);
   const c = v3(Math.sin(h) * plan.shoe.centerFoot.z, 0, Math.cos(h) * plan.shoe.centerFoot.z);
   const o = plan.feet[other(s)];
@@ -206,18 +236,18 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   const g = inp.ground ?? { prints: [] };
   // (FootDebug.stepsShortOnly, a fault: the short step alone)
   const best = leastDeep(g, add(want, c), add(hip, c), rMax, inp.debug?.stepsShortOnly ? rMax : rLegal, aheadS, q, equalM(plan, inp));
-  if (!best) return { support, want, aim: want, depthM: Infinity };
+  if (!best) return { support, want, aim: want, depthM: Infinity, outrun };
   // (FootDebug.stepsBoundUnder, a fault: with no free place, the place under the hip, as in plan 15 round 3)
-  if (best.depthM > 0 && inp.debug?.stepsBoundUnder) return { support, want, aim: v3(inp.home[s].x + inp.vel.x * aheadS, sole, inp.home[s].z + inp.vel.z * aheadS), depthM: best.depthM };
-  return { support, want, aim: v3(best.p.x - c.x, sole, best.p.z - c.z), depthM: best.depthM };
+  if (best.depthM > 0 && inp.debug?.stepsBoundUnder) return { support, want, aim: v3(inp.home[s].x + inp.vel.x * aheadS, sole, inp.home[s].z + inp.vel.z * aheadS), depthM: best.depthM, outrun };
+  return { support, want, aim: v3(best.p.x - c.x, sole, best.p.z - c.z), depthM: best.depthM, outrun };
 }
 
 /** Where, for a step from `from`: its time (from its length) and its aim for a landing then. */
-function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { support: Vec3; aim: Vec3; depthM: number; bound: boolean; T: number } {
+function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { support: Vec3; aim: Vec3; depthM: number; bound: boolean; outrun: boolean; T: number } {
   // (the length depends on the landing time and the time on the length: twice round from the shortest step)
   const to = (T: number) => {
     const a = aimOf(plan, s, inp, T);
-    return { support: a.support, aim: a.aim, depthM: a.depthM, bound: isBound(plan, a.depthM) };
+    return { support: a.support, aim: a.aim, depthM: a.depthM, bound: isBound(plan, a.depthM), outrun: a.outrun };
   };
   let T = plan.profile.steps!.minS;
   for (let i = 0; i < 2; i++) T = stepTime(plan, inp, dist(from, to(T).aim));
@@ -269,12 +299,13 @@ function gainOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput): number {
   const f = plan.feet[s];
   const c = f.contact!;
   const ankle = add(f.heelW!, v3(0, inp.soleM, 0));
-  const { support, want, aim, depthM } = aimOf(plan, s, inp, 0);
+  const { support, want, aim, depthM, outrun } = aimOf(plan, s, inp, 0);
   const off = len(hz(sub(ankle, want)));
   c.support = support;
   c.aim = aim;
   c.depthM = depthM;
   c.bound = isBound(plan, depthM) && (off > M.coverM || !canStand(plan, s, inp));
+  c.outrun = outrun;
   if (!Number.isFinite(depthM)) return -Infinity;
   const R = inp.legs;
   const h = f.headingRad;
@@ -304,10 +335,10 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
   f.why = why;
   f.drag = f.short = false;
   seedStep(plan, f);
-  const { support, aim, depthM, bound, T } = aimFrom(plan, s, inp, f.target);
+  const { support, aim, depthM, bound, outrun, T } = aimFrom(plan, s, inp, f.target);
   const L = dist(f.target, aim);
   const h0 = Math.max(0, f.target.y - (inp.groundY + inp.soleM));
-  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim, depthM, bound };
+  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim, depthM, bound, outrun };
   f.elapsedS = 0;
   f.durS = T;
   f.dest = aim;
@@ -336,6 +367,7 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
   c.aim = a.aim;
   c.depthM = a.depthM;
   c.bound = isBound(plan, a.depthM);
+  c.outrun = a.outrun;
   const d = hz(sub(c.aim, f.dest!));
   const dl = len(d);
   const k = M.followMps * dt * clamp((c.T - f.elapsedS) / c.T, 0, 1);

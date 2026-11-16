@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ArmSide } from '../src/sim/contracts';
-import { legsBound, standsNowhere, STEPS_V1, withSteps, type StepModelProfile } from '../src/sim/contact-steps';
+import { footUnder, legsBound, standsNowhere, STEPS_V1, withSteps, type StepModelProfile } from '../src/sim/contact-steps';
 import type { FootDebug } from '../src/sim/debug';
 import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
@@ -53,9 +53,10 @@ interface Run {
   ev: (FootEvent & { t: number; hip: Vec3; ankle: Vec3 })[];
   /**
    * Per substep: time, planted feet, requested ankles, hips, the aims of the feet in the air, the fall triggers' reads
-   * (legsBound, standsNowhere; and the old planner's: a foot in the air past its time), the other players' free ground.
+   * (legsBound, standsNowhere, footUnder; and the old planner's: a foot in the air past its time), the other players' free
+   * ground.
    */
-  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; bound: boolean; nowhere: boolean; late: boolean; ground: FreeGround; core: Quat }[];
+  frames: { t: number; planted: Record<ArmSide, boolean>; ankle: Record<ArmSide, Vec3>; hips: Record<ArmSide, Vec3>; aims: Vec3[]; bound: boolean; nowhere: boolean; under: boolean; late: boolean; ground: FreeGround; core: Quat }[];
 }
 
 const I = { x: 0, y: 0, z: 0, w: 1 };
@@ -121,7 +122,7 @@ function run(sc: Scene, steps: StepModelProfile = M, debug?: FootDebug): Run {
     observeFeet(plan, pose(ankle, sc.anklePitchDeg), SOLE, 0, ev, t);
     for (const e of ev) out.ev.push({ ...e, t, hip: inp.hips[e.side], ankle: ankle[e.side] });
     const aims = SIDES.filter((s) => plan.feet[s].mode !== 'planted').map((s) => plan.feet[s].contact!.aim);
-    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: legsBound(plan), nowhere: standsNowhere(plan), late: SIDES.some((s) => plan.feet[s].mode === 'swing' && plan.feet[s].elapsedS > plan.feet[s].durS), ground: inp.ground!, core: inp.core.q });
+    out.frames.push({ t, planted: { left: plan.feet.left.mode === 'planted', right: plan.feet.right.mode === 'planted' }, ankle, hips: inp.hips, aims, bound: legsBound(plan), nowhere: standsNowhere(plan), under: footUnder(plan), late: SIDES.some((s) => plan.feet[s].mode === 'swing' && plan.feet[s].elapsedS > plan.feet[s].durS), ground: inp.ground!, core: inp.core.q });
   }
   return out;
 }
@@ -556,6 +557,18 @@ describe('contact stepping model (plan 15)', () => {
     // fault twin (FootDebug.stepsStrictDepth): depths compared strictly: the aim jumps between places a millimetre less
     // deep, and the feet step for it
     expect(steps(run(touching, M, { stepsStrictDepth: true })).length).toBeGreaterThan(open + 3);
+  });
+
+  it('a foot under the hips (the come-down\'s read, STEPS_V2): standing or walking on, a foot is under them throughout; driven on faster than a short step can catch, none is, though no foot is bound', () => {
+    for (const mps of [0, 1]) {
+      const r = run({ vel: push(v3(0, 0, 1), mps), durS: 1.5 });
+      expect(r.frames.filter((f) => !f.under).map((f) => f.t), `${mps} m/s`).toEqual([]);
+    }
+    // a riding tackler's speed over a fallen carrier (3.5-3.9 m/s in the L3 phase scenes)
+    const r = run({ vel: push(v3(0, 0, 1), 3.5), durS: 1.5 });
+    expect(r.frames.filter((f) => f.t > 0.3 && f.under).map((f) => f.t)).toEqual([]);
+    // fault twin: STEPS_V1's read (he stands while a foot is not bound) stands him throughout
+    expect(r.frames.filter((f) => f.nowhere).length).toBe(0);
   });
 
   it('a stride\'s flight is not a fall: at speed on open ground the legs are never bound, though both feet are up for longer than the grace', () => {
