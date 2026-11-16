@@ -69,6 +69,9 @@ ride-down's come-down holds while neither foot can follow the hips (a flight is 
 "held off" and "past its time", which cannot happen under the model (every step lands on time), and "no planted foot",
 which a flight at speed would trip. Built: `legsBound`, `standsNowhere` (contact-steps.ts), read by
 `Simulation.boundLegs` and `rideUnsupported` while the model owns the feet; the old reads stay for the old planner.
+Measured: clause (b) fires in none of the L3, L4, HC runs under the model (the old reads: once, the L3-F5-drag carrier
+at 0.69 s; under the model his legs are bound in spells of 0.13 s and 0.18 s and the balance envelope takes him at
+0.96 s).
 
 That is the whole planner. No retimers, no blocked memory, no re-pick loop, no tentative landings.
 
@@ -98,7 +101,9 @@ Other limits:
 - A hit at speed (3.5-5 m/s) into a man leaves no free place ahead: the foot is bound and lands where the ground was
   free when it lifted, 0.45-0.75 m behind the hips (most steps over the short-step limit).
 - A plant stands while its leg reaches it; the hip's range is not read. Braking from a run, a trailing plant stays
-  until the hip is past its extension range (L3-F16-runStopFree, 37 degrees at 1.6 s).
+  until the hip is about 37 degrees past its extension range for 0.1-0.2 s (68 of 290 runs: L3-F7-*, L3-F16-stop*,
+  L3-F9-lift-*; L3-F16-runStopFree at 1.6 s). The largest new visible column: supported hip past its range 6.5 s over
+  all runs, against the old planner's 0.9 s.
 - Free ground judges places, not the swing's path: a swing passing another player's leg is held off by the guard.
 - The leg search can miss a free place (1.3% of blocked asks); the foot is then bound for that substep.
 
