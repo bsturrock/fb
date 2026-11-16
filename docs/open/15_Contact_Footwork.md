@@ -2,7 +2,7 @@
 
 Status: approved by the owner 2026-11-17 (rewrite yes; older families option A). Steps 1 and 2 done (the model behind
 `FootworkProfile.steps`, lab `&steps=new`, no fixture uses it), with the owner's 2026-11-15 rulings built in: no slide,
-free ground judges the whole leg, a step only for a gain. Step 3 next.
+free ground judges the whole leg, a step only for a gain. Step 3 done as a measurement and a test (below). Step 4 next.
 
 ## What a viewer should see (owner, 2026-11-15)
 
@@ -113,7 +113,11 @@ Each is one commit with a full check, per `CLAUDE.md`.
 2. The new planner in its own module behind a profile no fixture uses, lab switch `&steps=new`. Constructed tests:
    pushed from each side a foot is down within the step ceiling; a blocker in the path, the foot lands beside him;
    steady drive gives alternating steps of bounded length and duration. Summaries identical.
-3. Leg guard reads free ground under the new profile. Summaries identical.
+3. Leg guard and free ground read the same geometry. Measured, not built as a rewire: the guard's bodies and free
+   ground's parts agree on the same leg 99.9% of plant time, so the guard reading free ground would change nothing.
+   What differed was the leg: free ground now judges the leg the leg solve gives (`plannedLeg`, with a skin for the
+   solve's departure). Test: a plant the model picks beside another player's knee is kept by the guard, primary and on
+   its anchor (`tests/planted-pose.test.ts`; twin: footprints only). Summaries identical.
 4. Flip on L3, L4 and HC. Every contact scene moves. Who-falls changes go to the owner. Milestone: lab review.
 5. Older families per the decision above, then delete the old planner and its tests.
 6. Polish what looks worst in the lab.

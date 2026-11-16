@@ -1,9 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { buildProxyPose, CONT_FAST_MPS, CONT_L3_PLANT_MPS, CONT_L3_RADPS, footFrame, HARD_OK, poseLimbShapes, type FootRequest, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from '../src/sim/pose';
+import { buildProxyPose, CONT_FAST_MPS, CONT_L3_PLANT_MPS, CONT_L3_RADPS, footFrame, HARD_OK, plannedLeg, poseLimbShapes, type FootRequest, type PhysicalPose, type PoseClearance, type PoseMemory, type PoseShape, type ProxyPoseInput } from '../src/sim/pose';
 import { initPhysics, RAPIER } from '../src/sim/physics';
 import { add, addScaled, dist, len, norm, qFromUnitVectors, qFromYaw, qRot, scale, sub, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { asCaptured, FIX } from './helpers';
 import { LEG_GUARD_V3 } from '../src/sim/profiles';
+import { STEPS_V1 } from '../src/sim/contact-steps';
+import { groundOf, legHit, nearestFree, type FootQuery, type Part } from '../src/sim/free-ground';
 import { runSim } from './runs';
 import { loadState, resumeState } from './state';
 
@@ -213,4 +215,43 @@ describe('rung 7b: a leg leaving a plant held in a body the legs meet (physical 
     expect(on.over).toEqual([]);
     expect(off.over).toEqual(['R 1.7125 leftShoe', 'R 2.0833 rightAnkle']);
   }, 60000);
+});
+
+// Plan 15 (contact footwork): free ground judges a place by the whole leg standing on it (pose.ts plannedLeg, the leg
+// this solve gives a plant request), so a step the model picks beside another player is one the leg guard keeps. On
+// the same constructed pose as rung 7, the other player's knee and thigh as fixed balls, judged by free ground and by the
+// guard alike. The fault twin is free ground by the footprints only (step 2's free ground).
+describe('plan 15: a plant the model picks beside another player is kept by the leg guard (constructed pose)', () => {
+  beforeAll(initPhysics);
+  it('his knee reaching in front of the leg at the height of the shin top: the plant on free ground stands, primary and on its anchor; the twin (footprints only) is moved by the guard', () => {
+    const M = STEPS_V1;
+    const balls = [{ c: v3(0.16, 0.5, 0.36), r: 0.07 }, { c: v3(0.16, 0.6, 0.46), r: 0.08 }];
+    const ground = groundOf(balls.map((b): Part => ({ shape: { kind: 'ball', c: b.c, r: b.r }, v: v3(), key: 'B:knee' })), soleUp + R.lengths.shin);
+    const hip = buildProxyPose(input({ memory: {}, dtS: DT })).jointLandmarksWorld.leftHip;
+    // the model's ask (contact-steps.ts aimOf, standing still, heading 0): at the shoe centre, its want 0.3 m ahead of the hip
+    const c = v3(0, 0, R.shoe.forwardM);
+    const want = v3(hip.x, soleUp, hip.z + 0.3);
+    const leg = { at: (p: Vec3) => plannedLeg(R, 'left', hip, v3(p.x - c.x, soleUp, p.z - c.z), 0), skinM: M.legSkinM };
+    const pick = (q: FootQuery): Plant => {
+      const f = nearestFree(ground, add(want, c), add(hip, c), M.maxStepM, 0, q)!;
+      return { kind: 'plant', heelW: v3(f.x - c.x, 0, f.z - c.z), headingRad: 0, rollF: 0, toeZ: 0.12, tolM: TOL };
+    };
+    // the guard moved it: another variant, another placement than the primary, or the foot off its anchor past the tolerance
+    const moved = (plant: Plant): number => {
+      const m: PoseMemory = {};
+      const cl = ballsClearance(balls);
+      let n = 0;
+      for (let i = 0; i < 40; i++) {
+        const p = buildProxyPose(input({ memory: m, dtS: DT, clearance: cl, legSweep: true, feet: { left: plant } }));
+        if (p.legInfo!.left!.variant !== 0 || m.leftLeg !== 0 || featureErr(p, plant) > TOL) n++;
+      }
+      return n;
+    };
+    expect(moved(pick({ clearM: M.footR, leg }))).toBe(0);
+    // fault twin: footprints only: only the bottom of his knee comes below the shin top, so the foot is put where its
+    // footprint clears him, the leg standing there through his knee
+    const blind = pick({ clearM: M.footR });
+    expect(legHit(ground, leg.at(add(v3(blind.heelW.x, soleUp, blind.heelW.z), c)), 0, 0)!.gap).toBeLessThan(-0.02);
+    expect(moved(blind)).toBeGreaterThan(20);
+  });
 });
