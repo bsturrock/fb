@@ -72,6 +72,8 @@ export interface FootDebug {
   stepsLandFlat?: boolean;
   /** Fault (negative control of plan 15's touchdown, `FootworkProfile.steps`): a foot in the air turns at most at the swing's yaw rate, not onto the body's heading by touchdown. */
   stepsTurnRate?: boolean;
+  /** Fault (negative control of plan 15's path, `FootworkProfile.steps`): a foot in the air moves along its path as planned, through another player's footprint. */
+  stepsPathBlind?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */

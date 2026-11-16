@@ -4,7 +4,7 @@ import { legsBound, standsNowhere, STEPS_V1, withSteps, type StepModelProfile } 
 import type { FootDebug } from '../src/sim/debug';
 import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
-import { groundOf, isFree, legHit, type FreeGround, type Part } from '../src/sim/free-ground';
+import { groundOf, isFree, legHit, outlineDist, type FreeGround, type Part } from '../src/sim/free-ground';
 import { swingExcess } from '../src/sim/joint-cone';
 import { plannedChain, plannedLeg, plantReachM, type FootRequest, type PhysicalPose } from '../src/sim/pose';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
@@ -364,6 +364,28 @@ describe('contact stepping model (plan 15)', () => {
     expect(gallops(r)).toEqual([]);
     // fault twin (FootDebug.stepsNoTurns): the foot that gains more steps, also when it stepped last
     expect(gallops(run(sc, M, { stepsNoTurns: true }))).not.toEqual([]);
+  });
+
+  it('a step passes beside another player\'s shin, never through it: the path keeps to free ground', () => {
+    // walked into at 1.2 m/s, a man's shin standing 0.45 m ahead, just outside the right foot's line: the right foot's
+    // first step lands beyond it, its straight path through it
+    const sc: Scene = { vel: push(v3(0, 0, 1), 1.2), others: () => [{ shape: { kind: 'capsule', a: v3(0.2, 0.07, 0.45), b: v3(0.2, 0.5, 0.45), r: R.radii.shin }, v: v3(), key: 'B:shin' }], durS: 1.2 };
+    // how deep a foot in the air goes into a footprint (m): its shoe's disc, the radius the model asks with
+    const inPrint = (r: Run): number => {
+      let worst = 0;
+      for (const f of r.frames)
+        for (const s of SIDES) {
+          if (f.planted[s]) continue;
+          const c = add(f.ankle[s], v3(0, 0, R.shoe.forwardM));
+          for (const p of f.ground.prints) worst = Math.max(worst, p.r + M.footR - outlineDist(p.pts, { x: c.x, z: c.z }));
+        }
+      return worst;
+    };
+    const r = run(sc);
+    expect(plants(r).length).toBeGreaterThan(2);
+    expect(inPrint(r)).toBeLessThanOrEqual(1e-6);
+    // fault twin (FootDebug.stepsPathBlind): the path as planned: the foot passes through his shin
+    expect(inPrint(run(sc, M, { stepsPathBlind: true }))).toBeGreaterThan(0.1);
   });
 
   it('an aim that moves late is followed at a bounded rate: no jump of the foot', () => {
