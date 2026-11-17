@@ -29,7 +29,7 @@
 //                      what holds a riding tackler up; contact-steps.ts) in place of the reactive planner once the clip
 //                      regime ends (registered on L3, L4 and HC since step 4, STEPS_V2 since step 4b), the model with
 //                      the come-down reading as at step 4 (STEPS_V1), or the reactive planner, the view before step 4.
-//                      A fixture without composed footwork is run as it is;
+//                      On plan 07's planner (L2, FOOTWORK_L2) the same. A fixture without footwork is run as it is;
 //   upperarm=on|off    the supported arms keeping the upper arm and elbow out of their own trunk too (the self-clearance
 //                      profile's `upperArm`, rung 13c), or only the forearm and palm; a fixture without self-clearance is
 //                      run as it is;
@@ -272,7 +272,7 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   if (steps !== null && steps !== '') {
     const v = steps.toLowerCase();
     if (!STEPS.includes(v)) parts.push(`steps=${steps} ignored`);
-    else if (!out.footwork?.compose) parts.push('steps n/a (no composed footwork)');
+    else if (!out.footwork) parts.push('steps n/a (no footwork)');
     else {
       const m = v === 'v1' ? STEPS_V1 : STEPS_V2;
       const f = v === 'old' ? withoutSteps(out.footwork) : out.footwork.steps === m ? out.footwork : withSteps(withoutSteps(out.footwork), m);

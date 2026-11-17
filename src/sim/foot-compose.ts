@@ -223,7 +223,14 @@ export function carryPath(plan: FootPlan, s: ArmSide, inp: FootPlanInput): void 
 
 /** A planner step of a composed profile starts from the achieved ankle and its velocity. */
 export function seedStep(plan: FootPlan, f: FootState): void {
-  if (!plan.profile.compose) return;
+  if (plan.profile.compose) seedAchieved(f);
+}
+
+/**
+ * A step from the achieved ankle (as last solved) at its velocity: a composed planner step's start, and the contact
+ * stepping model's on either planner (plan 15: `observeFeet` keeps the achieved foot and its motion under it).
+ */
+export function seedAchieved(f: FootState): void {
   f.target = { ...f.solvedW };
   f.stepH = { v: horiz(f.ankleV), a: v3() };
   f.stepY = { v: f.ankleV.y, a: 0 };

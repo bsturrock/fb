@@ -30,7 +30,7 @@
 // another pole); a body coming into a standing leg is the model's to answer, by stepping. observeFeet measures the pose
 // as before; under the model a plant is never released by its solve.
 import type { ArmSide } from './contracts';
-import { seedStep } from './foot-compose';
+import { seedAchieved } from './foot-compose';
 import type { FootEvent, FootPlan, FootPlanInput, FootReason, FootworkProfile } from './footwork';
 import { depthAt, isFree, leastDeep, nearestNoDeeper, type FootQuery } from './free-ground';
 import { armTwistRad, swingExcess } from './joint-cone';
@@ -97,9 +97,12 @@ export const STEPS_V2: StepModelProfile = { ...STEPS_V1, id: 'steps-v2', underHi
 
 /**
  * The footwork profile with the contact stepping model (default the registered one, STEPS_V2 since plan 15 step 4b), under
- * an id that names it (a profile without compose, or with a model already, is returned as it is).
+ * an id that names it (a profile with a model already is returned as it is). The model takes the reactive steps' place on
+ * either planner, plan 08's composed one (L3, L4, HC) or plan 07's (L2, since step 5a): its steps start from the achieved
+ * foot at its motion (`seedAchieved`) and the foot's motion is observed for it on both (footwork.ts `observeFeet`); the
+ * clip regime, the airborne feet and the shown sole stay the planner's own.
  */
-export const withSteps = (f: FootworkProfile, m: StepModelProfile = STEPS_V2): FootworkProfile => (!f.compose || f.steps ? f : { ...f, id: `${f.id}+${m.id}`, steps: m });
+export const withSteps = (f: FootworkProfile, m: StepModelProfile = STEPS_V2): FootworkProfile => (f.steps ? f : { ...f, id: `${f.id}+${m.id}`, steps: m });
 /** The footwork profile without it. */
 export const withoutSteps = (f: FootworkProfile): FootworkProfile => {
   if (!f.steps) return f;
@@ -337,7 +340,7 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
   f.source = 'step';
   f.why = why;
   f.drag = f.short = false;
-  seedStep(plan, f);
+  seedAchieved(f);
   const { support, aim, depthM, bound, outrun, T } = aimFrom(plan, s, inp, f.target);
   const L = dist(f.target, aim);
   const h0 = Math.max(0, f.target.y - (inp.groundY + inp.soleM));

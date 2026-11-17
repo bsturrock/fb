@@ -581,8 +581,8 @@ export interface PartsPlayer {
   proxy: { body: RAPIER.RigidBody; colliders: RAPIER.Collider[] };
   pose: PhysicalPose | null;
   body: { kind: string };
-  /** The player's foot plan: a composed one measures each achieved ankle's velocity (`ankleV`), which its leg moves at. */
-  feet: { initialized: boolean; profile: { compose?: unknown }; feet: Record<ArmSide, { ankleV: Vec3 }> } | null;
+  /** The player's foot plan: a composed one, or one under the stepping model, measures each achieved ankle's velocity (`ankleV`), which its leg moves at. */
+  feet: { initialized: boolean; profile: { compose?: unknown; steps?: unknown }; feet: Record<ArmSide, { ankleV: Vec3 }> } | null;
 }
 
 /** A Rapier collider as a part (capsule along its local y, ball, cuboid; other shapes are not body parts). */
@@ -631,7 +631,7 @@ export function bodyParts(players: readonly PartsPlayer[], R: RagdollProfile): M
         if (p) parts.push(p);
       }
       if (o.pose && o.body.kind === 'upperBodyCompound') {
-        const legs = o.feet?.initialized && o.feet.profile.compose ? o.feet.feet : null;
+        const legs = o.feet?.initialized && (o.feet.profile.compose || o.feet.profile.steps) ? o.feet.feet : null;
         for (const s of poseLimbShapes(R, o.pose)) {
           const side: ArmSide = s.key.startsWith('left') ? 'left' : 'right';
           const at = s.kind === 'capsule' ? { x: 0.5 * (s.a.x + s.b.x), y: 0.5 * (s.a.y + s.b.y), z: 0.5 * (s.a.z + s.b.z) } : s.c;

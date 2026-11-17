@@ -1633,7 +1633,8 @@ function observeFoot(plan: FootPlan, s: ArmSide, pose: PhysicalPose, soleM: numb
   const ankle = pose.jointLandmarksWorld[`${s}Ankle`];
   const q = footFrame(pose, s);
   const info = pose.legInfo?.[s];
-  if (P.compose) {
+  // (the achieved foot and its motion: the composed planner's, and the contact stepping model's on either planner)
+  if (P.compose || P.steps) {
     f.ankleV = plan.dtS > 0 ? scale(sub(ankle, f.ankleW), 1 / plan.dtS) : v3();
     f.solvedW = info?.request ?? ankle;
     f.rangeLiftM = info?.rangeLiftM ?? 0;
