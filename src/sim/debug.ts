@@ -10,26 +10,12 @@ import type { WrapDebug } from './controllers/wrap';
 export interface FootDebug {
   /** Skip the clip touchdown reach pre-check (proposals then rely on confirmation). */
   noReachCheck?: boolean;
-  /** The reactive entry before plan 07 item 3: every following foot starts a step at once. */
-  legacyEntry?: boolean;
   /** No quick-step rules of plan 07 item 3 (stance-window retiming, little-step touchdown, drag lift). */
   noQuick?: boolean;
   /** No handover check: a following foot joins the ordinary request at once. */
   noJoinCheck?: boolean;
-  /** The composed crossing sets a following foot's heading to the body's, as before plan 10b (negative control). */
-  crossingBodyHeading?: boolean;
-  /** An inherited foot settles over one substep, as before plan 13e: a sliding shoe can plant (negative control). */
-  settleOneSubstep?: boolean;
   /** The planner's home includes the idle sway's displacement, as before plan 13e's fix (negative control). */
   swayInHome?: boolean;
-  /** A foot held off its home by another body steps toward it again at once, as before plan 13e (negative control). */
-  noBlockedMemory?: boolean;
-  /**
-   * Fault (negative control of the step coverage, ladder 14a): no planted foot steps home, settles or steps to turn
-   * anywhere, as if every substep were a stationary hold (`FootworkProfile.holdStill`). Steps a plant cannot avoid
-   * (reach, liftoff, a released plant) still happen.
-   */
-  noVoluntarySteps?: boolean;
   /**
    * Controlled coverage (tests only): the solve at time `t` (s, within half a substep) releases a confirmed plant of
    * `side` as a clearance solve does (observeFeet: the foot rejoins the request from the achieved ankle on the next plan;

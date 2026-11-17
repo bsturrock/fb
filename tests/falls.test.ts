@@ -24,6 +24,7 @@ import { asCaptured, breathe, create, evs, FIX, nonEmpty, pace, preFlip, preForw
 import { loadedLimbMonitor } from './loaded-limb';
 import { loadState, resumeState } from './state';
 import { JOINT_PAST_DEG, JOINT_PAST_S } from './visible-bar';
+import { withSteps } from '../src/sim/contact-steps';
 
 const ALL = fallFixtures();
 
@@ -1394,7 +1395,11 @@ describe('L4-F9 fall boundaries', () => {
     ['L4-F9-defenderFalling', 'L3-F9-defenderFalling', ['R', 'D']],
     ['L4-F9-both', 'L3-F10-both', ['R', 'D']],
   ];
-  const L3 = (id: string): FixtureDef => transitionFixtures().find((d) => d.id === id)!;
+  // (the builder's definition with the registered stepping model: since plan 15 step 5b the feet need it outside a clip)
+  const L3 = (id: string): FixtureDef => {
+    const d = transitionFixtures().find((x) => x.id === id)!;
+    return { ...d, footwork: withSteps(d.footwork!) };
+  };
 
   it('a rejected or failed conversion starts no response, and nothing starts a gait after the handoff', async () => {
     await checks([
