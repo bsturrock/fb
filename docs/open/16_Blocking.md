@@ -93,6 +93,40 @@ events a scene against the clamp's thousands. Open from it:
 - Symmetric hands share a lane, so the two men's forearms pass through each other; arms avoid bodies, not other arms.
 - The drawn palm sits 2-3.4 cm off the drawn chest (the patch is on the proxy box, as grips are).
 
+**Items 2 and 3 done (2026-11-17, `a219796`..`ab4b7b2`; 590/590, the 414 earlier fixtures' summaries and traces
+byte-identical, check `.scratch/p31/final` against `p30/final`).** First lab look is the user's (milestone).
+
+- Controller: `ControllerSpec` kind `block` (target, effort, hold or drive, hands `under|over`), profile `BLOCK_V1`
+  with `BLOCK_V1_HANDS`; the posture is one stance request (lean, hinge, drop, height, stagger) an authored pose can
+  replace. State: `PlayerRuntime.block`, phase `approach|engaged|lost`, advanced by `advanceBlockState`, observed as
+  `ctx.observed.block`. Read by `retained()` (the feet stay on contact stepping while engaged) and by the hinge
+  (`pl.block || pl.hinge?.limits`, no longer only `def.wrap.strike`). Faults `SimDebug.block`. Tests
+  `tests/block.test.ts` (6 with twins): follows his man, hands on within 0.8 s and kept, chest gap 0.62-0.80 m,
+  engagement survives 0.25 s without hands, a swap to another controller releases cleanly, the even scene stands 9 s.
+- Family `BL` (8 scenes, two `defender`s, no ball, no rules), its layers named in `registered()`: the L3 layers, its
+  arm profile `+palm-push-block`. `BL-F1-even`, `-F2-walkIn`, `-F3-blockerDrives`, `-F4-defenderStronger`,
+  `-F5-offCentre`, `-F6` its mirror, `-F7-hard`, `-F8-hardNoHinge` (shows the backward tip: hands off about 2 s, both
+  ragdolls by 2.76 s). BL is in the leg and L4 matrices because it carries the leg guard and fall response.
+- Seen: hands on in about 0.5 s; square, hips back, knees bent, chest gap 0.66-0.70 m; the stronger man drives the
+  other back about 2 m at 0.24 m/s in short steps, no gallop.
+
+Tracked from this step (polish order by look):
+
+1. Forearm through forearm, 8-9 cm, sustained in every scene (under/over hands cut it from 12 cm; arms avoid bodies,
+   not other arms).
+2. The crouch is deep and A-framed; the stance waits for the user's animations.
+3. The rear foot does not go behind the hips (even scene: front foot +0.14 m, rear +0.03 m along the push line; the
+   requested 0.24 m stagger is not kept), so there is no base to lean on. Balance torque 123-129 N m even, 180 steady
+   in `-F7-hard` with a 0.17 s peak of 454-518 over the 240 cap, 244 then about 1159 at the fall in `-F8`.
+4. The driven man has both feet off the ground 0.18-0.23 s (`-F3`, `-F4`).
+5. `-F8`: the fallen man's upper arm 11.4 cm in his own trunk from 2.65 s (ragdoll), and one substep each way over the
+   power ceiling in his fall (165 W against 135 W predicted): the two new L4 matrix entries.
+6. A starting stance with a stagger (`initial.stance.staggerM`) slides the planted foot 5.8 cm at scene start; the BL
+   scenes start square to avoid it. Own fix step.
+
+Next: the base (item 5's rule: resistible moment from hips to rear planted foot, and a stance that keeps a foot back),
+then the stance and punch from the user's animations.
+
 Each is flag off first, then on, full-checked (`CLAUDE.md`). Roles: first slice uses two `defender`s; a blocker role
 and the rules (`progressStopped`) wait until blocking meets a ball carrier.
 
