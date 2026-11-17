@@ -8,14 +8,8 @@ import type { WrapDebug } from './controllers/wrap';
 
 /** Foot plan switches (A/B probes and negative controls); each is off by default and changes behaviour when on. */
 export interface FootDebug {
-  /** Skip the clip touchdown reach pre-check (proposals then rely on confirmation). */
-  noReachCheck?: boolean;
   /** No quick-step rules of plan 07 item 3 (stance-window retiming, little-step touchdown, drag lift). */
   noQuick?: boolean;
-  /** No handover check: a following foot joins the ordinary request at once. */
-  noJoinCheck?: boolean;
-  /** The planner's home includes the idle sway's displacement, as before plan 13e's fix (negative control). */
-  swayInHome?: boolean;
   /**
    * Controlled coverage (tests only): the solve at time `t` (s, within half a substep) releases a confirmed plant of
    * `side` as a clearance solve does (observeFeet: the foot rejoins the request from the achieved ankle on the next plan;
@@ -75,25 +69,10 @@ export interface PoseDebug {
   /** Plan 13f fault put back: under a leg-guard profile, measure legs against other bodies where they are now only (no prediction). */
   noLegAhead?: boolean;
   /**
-   * Fault (negative control of the transition audit): a composed leg whose foot owner changed starts its continuity step
-   * this far (m, body up) off the shown path, so the shown leg jumps at the ownership change.
-   */
-  ownerChangeJumpM?: number;
-  /**
-   * Fault (contact motion D1, physical legs): the bodies a physical leg meets are taken to keep moving as the 13f
-   * prediction has them, never stopped (a body backed by the floor gives way to nothing).
-   */
-  noLegStop?: boolean;
-  /**
    * Fault (rung 7, the swept guard): a plant whose primary placement gives up takes the ordinary choice (an offset, which
    * footwork releases), never the primary at another knee pole.
    */
   noPlantedPole?: boolean;
-  /**
-   * Fault (rung 7b, physical legs): a leg shown exactly at its plant inside a body the legs meet is pushed out of it at
-   * once by its next step (an ownership change jumps by the whole push-out), not at the continuity rate.
-   */
-  noHeldMetExit?: boolean;
   /**
    * Fault (ladder 10b, physical legs): a proxy whose support probe finds a refused surface or normal within travel keeps
    * its physical legs live (the D2 rule before 10b), though it has no support.

@@ -1424,10 +1424,10 @@ export class Simulation {
     for (const h of this.players) {
       if (h === pl || h.controlMode !== 'supported' || h.rag || this.def.focus?.[h.id] !== pl.id || !this.arms) continue;
       const ob = this.arms.obs(h.id) ?? {};
-      // the drive's secure test (the fault: any contact with him, an arm touching him held or not or the bodies meeting)
-      const on = sides.filter((s) => (dbg?.bindAnyTouch ? true : !!(ob[s]?.clampContactId || ob[s]?.gripId)) && ob[s]?.touchingTarget === pl.id);
+      // the drive's secure test
+      const on = sides.filter((s) => !!(ob[s]?.clampContactId || ob[s]?.gripId) && ob[s]?.touchingTarget === pl.id);
       const body = (this.contactObs[h.id] ?? []).some((c) => c.other === pl.id);
-      if (!(on.length === 2 || (W.drive?.oneArmBody && on.length === 1 && body) || (dbg?.bindAnyTouch && (on.length > 0 || body)))) continue;
+      if (!(on.length === 2 || (W.drive?.oneArmBody && on.length === 1 && body))) continue;
       holder = h;
       // (a) both holds at or below his pelvis: each hold's point (the clamp's, else the palm's) under his pelvis box's centre
       if (on.length === 2 && pl.body.kind !== 'legacyCapsule') {
@@ -1468,7 +1468,7 @@ export class Simulation {
     let blocked = false;
     if (holder && pl.feet) {
       const F = pl.feet;
-      const stranded = F.stepsOwn ? legsBound(F) : sides.some((s) => F.feet[s].mode === 'swing' && (!!dbg?.bindAnySwing || heldOff(F, F.feet[s]) || (F.feet[s].source === 'step' && F.feet[s].elapsedS > F.feet[s].durS)));
+      const stranded = F.stepsOwn ? legsBound(F) : sides.some((s) => F.feet[s].mode === 'swing' && (heldOff(F, F.feet[s]) || (F.feet[s].source === 'step' && F.feet[s].elapsedS > F.feet[s].durS)));
       const pushed = thetaRad >= rad(BD.pushLeanDeg) - 1e-12 || len(horiz(vc(this.coreBody(pl).linvel()))) >= BD.pushMps - 1e-12;
       blocked = stranded && pushed;
       if (!F.stepsOwn && st.b.since !== null && sides.some((s) => F.feet[s].mode === 'planted' && F.feet[s].plantedAtS > st.b.since! + 1e-9)) st.b.since = null;

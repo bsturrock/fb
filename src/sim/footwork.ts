@@ -639,7 +639,6 @@ function failProposal(plan: FootPlan, f: FootState, why: FootReason, t: number, 
 
 /** Composed: a step's own path and the request's agree on this substep's foot within one handover. */
 function joinsRequest(plan: FootPlan, s: ArmSide, inp: FootPlanInput): boolean {
-  if (inp.debug?.noJoinCheck) return true;
   const t = trialOf(plan, s);
   advanceStep(t, s, inp);
   // plan 12 (heel lift): the pose holds a step at its ankle range limit up off the floor (its floor lift) and the follow
@@ -810,7 +809,7 @@ export function planFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
         const ball = ballOfFoot(plan, f, inp, here, c.toeZ * rollF);
         const feat = ball ? ball.w : feat0;
         const ankleAt = add(here, v3(0, inp.groundY - feat.y, 0));
-        if ((inp.debug?.noReachCheck || dist(ankleAt, inp.hips[s]) <= plan.reachM) && (!C || dist(here, followNext(plan, s, inp, false)) <= HANDOVER_M)) {
+        if (dist(ankleAt, inp.hips[s]) <= plan.reachM && (!C || dist(here, followNext(plan, s, inp, false)) <= HANDOVER_M)) {
           if (ball) proposeOnCorner(plan, f, inp, clip.headingRad, ball, c.toeZ);
           else {
             f.featureW = feat;

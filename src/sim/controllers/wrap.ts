@@ -453,10 +453,6 @@ export interface WrapDebug {
   rideHoldUnridden?: boolean;
   /** Polish 1.2, the come-down (simulation): the no-support guard off (no planted foot, contact or hold converts nothing). */
   noRideLoose?: boolean;
-  /** Polish 1.4, the bound-legs fall (simulation): the secure-hold test off (an arm touching him or the bodies meeting is a hold). */
-  bindAnyTouch?: boolean;
-  /** Polish 1.4, the bound-legs fall (simulation): clause (b) counts any swing as stranded (the guard's hold and the step's time not read). */
-  bindAnySwing?: boolean;
   /** Polish 1.4, the bound-legs fall (simulation): no forward lean request while a clause's clock runs. */
   bindNoLean?: boolean;
   /** Polish 2.3, the drag-down (simulation): the links' point test off (a hanging holder's link above his pelvis counts). */

@@ -587,7 +587,7 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
     // plan 08: the fitted idle stance opens as the travel stops (the same width as the ordinary request)
     const wide = inp.loco ? idleWidthAddM(inp.loco.profile, pl.body, s) * (s === 'left' ? -1 : 1) * idleStanceFade(inp.speed) : 0;
     // plan 13e: the home leaves out the idle sway's displacement (the feet stay where the body stood)
-    const sw = (!host.opts.debug?.foot?.swayInHome && pl.swayM) || v3();
+    const sw = pl.swayM || v3();
     home[s] = v3(hip.x + fwdH.x * st + rightW.x * wide - sw.x, gy + soleM, hip.z + fwdH.z * st + rightW.z * wide - sw.z);
     request[s] = toWorld(core, legRequestLocal(inp, s));
   }
@@ -777,8 +777,7 @@ export function poseClearanceOf(host: PoseHost, pl: PlayerRuntime, limbs?: Map<P
       ahead.push(a);
       if (meets(e)) {
         met.add(a);
-        // fault (PoseDebug.noLegStop): the met bodies are taken to keep moving as the prediction has them
-        if (!host.opts.debug?.pose?.noLegStop) stopped.push({ key: `${e.key}@stopped`, shape: e.shape, pose: { p: addScaled(e.pose.p, vc(self.velocityAtPoint(e.pose.p)), -LG!.aheadS), q: e.pose.q } });
+        stopped.push({ key: `${e.key}@stopped`, shape: e.shape, pose: { p: addScaled(e.pose.p, vc(self.velocityAtPoint(e.pose.p)), -LG!.aheadS), q: e.pose.q } });
       }
     }
     return ahead;

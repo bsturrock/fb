@@ -1753,9 +1753,7 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
       const shownPrev = rebased && last ? (last2 ? sub(scale(last, 2), last2) : last) : null;
       const dp0 = contPrev(mem, k, base, dt);
       if (rebased) setMemVec(mem, `${k}:b`, base);
-      const dp0r = shownPrev ? sub(shownPrev, base) : dp0;
-      // fault (PoseDebug.ownerChangeJumpM): a new owner's step starts off the shown path
-      const dp = rebased && dp0r && inp.debug?.ownerChangeJumpM ? add(dp0r, v3(0, inp.debug.ownerChangeJumpM, 0)) : dp0r;
+      const dp = shownPrev ? sub(shownPrev, base) : dp0;
       const pp = memVec(mem, `${k}:p`);
       const poleStep = pp && inp.loco ? dist(norm(pp), norm(pc)) : 0;
       const exactPlant = fr?.kind === 'plant' && primaryAt && !!dp && dist(dp, dc) <= (rebased ? CONT_L3_PLANT_MPS * (inp.dtS ?? 0) : CONT_PLANT_EXACT_M) && poleStep <= CONT_L3_RADPS * (inp.dtS ?? 0);
@@ -1772,9 +1770,8 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
         // meet can come into it (L3-F4-gripOwner R: 5.9 mm, on a knee pole); the first step after it (the swing's start)
         // pushed the whole depth out at once (the ankle 1.3 cm, the shoe 2.0 cm in one substep with the rate step). The
         // leg held so (`${k}:mh`) moves at most at the plant rate from where it stands, push-out included, until it is
-        // clear of the met bodies (PHYS_LEG_OK): it leaves the plant's own correction as a plant would make it. Fault:
-        // PoseDebug.noHeldMetExit
-        const heldMet = sweep && physMet && mem[`${k}:mh`] === 1 && !inp.debug?.noHeldMetExit && !exact;
+        // clear of the met bodies (PHYS_LEG_OK): it leaves the plant's own correction as a plant would make it.
+        const heldMet = sweep && physMet && mem[`${k}:mh`] === 1 && !exact;
         // the step toward a placement (its departure `dcT`, pole `pcT`, candidate `ch`, plant pivot `pv`) at blend `al`: the
         // chosen one, or (`legSweep`) another placement tried for a step that is not clear
         const atTo = (dcT: Vec3, pcT: Vec3, ch: LegC, pv: typeof pivot, al: number, deep = false): LegC & { good: boolean; rank: number } => {
