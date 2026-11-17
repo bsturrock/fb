@@ -2,6 +2,7 @@ import type { Controller } from './base';
 import { ScriptController } from './base';
 import { CoachedEntryController } from './coached';
 import { WrapAttemptController, type WrapDebug, type WrapProfile } from './wrap';
+import { BlockController } from './block';
 import type { ControllerSpec, PlayerSetup } from '../fixture';
 import type { MotorProfile } from '../profiles';
 import { dirFromHeading, rad } from '../vec';
@@ -14,5 +15,7 @@ export function makeController(spec: ControllerSpec, setup: PlayerSetup, motor: 
       return new CoachedEntryController(spec, motor, setup.body.massKg);
     case 'wrapAttempt':
       return new WrapAttemptController(spec, setup, motor, wrap, wrapDebug);
+    case 'block':
+      return new BlockController(spec, setup, motor);
   }
 }

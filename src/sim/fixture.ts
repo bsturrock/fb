@@ -10,9 +10,10 @@ import type { RunClipProfile } from './run-clip';
 import type { ScriptSpec } from './controllers/base';
 import type { CoachedEntrySpec } from './controllers/coached';
 import type { WrapProfile, WrapSpec } from './controllers/wrap';
+import type { BlockSpec } from './controllers/block';
 import type { Vec3 } from './vec';
 
-export type ControllerSpec = ScriptSpec | CoachedEntrySpec | WrapSpec;
+export type ControllerSpec = ScriptSpec | CoachedEntrySpec | WrapSpec | BlockSpec;
 
 export interface PlayerSetup {
   id: PlayerId;

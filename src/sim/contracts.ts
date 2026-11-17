@@ -1,6 +1,7 @@
 // Shared runtime contracts: identities, intents, snapshots, contacts, events.
 import type { Quat, Vec3 } from './vec';
 import type { ArmObs, WrapStatus } from './arms';
+import type { BlockProfile, BlockRequest, BlockState } from './controllers/block';
 
 export type PlayerId = string;
 export type ArmSide = 'left' | 'right';
@@ -112,8 +113,8 @@ export interface PostureIntent {
   leanDirWorld: Vec3;
   leanRad: number;
   /**
-   * Contact motion polish 1.1 (a fixture whose wrap profile has a strike, `WrapProfile.strike`; ignored otherwise): the
-   * hip hinge. The trunk pitches `rad` forward (about its own level lateral axis) beyond the legs' lean and the hips drop
+   * Contact motion polish 1.1 (a fixture whose wrap profile has a strike, `WrapProfile.strike`, or plan 16, a blocking
+   * player, `PlayerRuntime.block`, under his block's bounds; ignored otherwise): the hip hinge. The trunk pitches `rad` forward (about its own level lateral axis) beyond the legs' lean and the hips drop
    * `dropM`, each bounded and rate-limited by the strike's hinge limits (hinge.ts). The legs keep the balance: the
    * support and the loss envelope read the legs' frame, not the pitched trunk's.
    */
@@ -140,6 +141,11 @@ export interface PlayerIntent {
    * is from behind (`WrapBehind`, decided as the drive begins). The bound-legs fall's clause (c) (`WrapBindBehind`) reads it.
    */
   behind?: true;
+  /**
+   * Plan 16: he is blocking (controllers/block.ts): his request and his block's profile. The simulation keeps his engaged
+   * state from it (`PlayerRuntime.block`); absent, he has none.
+   */
+  block?: { request: BlockRequest; profile: BlockProfile };
   /** Controller-reported diagnostics (phase names, aim points). Never read by mechanics. */
   debug?: Record<string, unknown>;
 }
@@ -224,6 +230,8 @@ export interface Snapshot {
   wrap: Record<PlayerId, { status: WrapStatus; target: PlayerId | null }>;
   /** Gate 3 balance state per player (free-rotation stance; zeros under the locked legacy stance). */
   balance: Record<PlayerId, BalanceState>;
+  /** Plan 16: every blocking player's engaged state (absent while nobody blocks). */
+  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since'>>;
 }
 
 /**

@@ -33,6 +33,11 @@ export interface HingeState {
    * reach the full fold at its end rate (latched for the come-down); the weight-forward topple ends with it.
    */
   braking?: true;
+  /**
+   * Plan 16: the bounds of a hinge his own behaviour asked for (a block's, `BlockProfile.hinge`; set by the simulation),
+   * kept so it unwinds under them once the behaviour stops. Absent: the fixture's wrap strike's.
+   */
+  limits?: HingeLimits;
 }
 
 /**

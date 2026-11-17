@@ -43,6 +43,7 @@ import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { advanceHinge, legOmega, legRotation, type HingeState } from './hinge';
+import { advanceBlockState, type BlockState } from './controllers/block';
 import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
 import type { Part } from './free-ground';
@@ -159,6 +160,11 @@ export interface PlayerRuntime {
    * (advanceHinge, hinge.ts). Absent while he has none, for every other player and without the profile.
    */
   hinge?: HingeState;
+  /**
+   * Plan 16: a blocking player's engaged state (controllers/block.ts `BlockState`), kept each substep from his block
+   * request (`PlayerIntent.block`) and what holds between him and his man (advanceBlock). Absent while he is not blocking.
+   */
+  block?: BlockState;
   /**
    * Contact motion polish 1.2, the ride-down's come-down (`WrapRideDown`): since when (s) the riding tackler has had no
    * foot to stand on, no contact with the carrier and no hold of him, the carrier off his support (`rideUnsupported`).
@@ -292,6 +298,8 @@ export interface PlayerTraceRow {
   loco?: { m: string; why: string; p: number; c: number; s: number; d: number };
   /** Contact motion M2 (`FixtureDef.brace`, the carrier): brace weight w, threat th (null: none), its predicted contact tc (s). */
   br?: { w: number; th: PlayerId | null; tc: number | null };
+  /** Plan 16: a blocking player's engaged state: phase ph and his man t. */
+  blk?: { ph: string; t: PlayerId };
   /**
    * Plan 06a suspension support (last substep of the tick): probed root height h, target ht and its rate vt, stance
    * request req (before the range clamp), clip-derived running height run (null when no clip plays) and its bob scale s,
@@ -1043,8 +1051,11 @@ export class Simulation {
         const dir = len(hv) >= this.def.wrap.bind.pushMps ? norm(hv) : norm(horiz(forwardOf(b.rotation())), v3(0, 0, 1));
         pl.intent = { ...pl.intent, posture: { ...pl.intent.posture, leanDirWorld: dir, leanRad: rad(this.def.wrap.bind.leanDeg) } };
       }
-      // contact motion polish 1.1: a striking tackler's hip hinge from his posture request
-      if (this.def.wrap?.strike && (pl.hinge || pl.intent.posture?.hinge)) this.advanceHinge(pl);
+      // plan 16: a blocking player's engaged state from his request and what holds between him and his man
+      if (pl.intent.block || pl.block) this.advanceBlock(pl);
+      // contact motion polish 1.1: a striking tackler's hip hinge from his posture request (plan 16: or a blocking
+      // player's, under his block's bounds, which the hinge keeps while it unwinds after the block)
+      if ((this.def.wrap?.strike || pl.block || pl.hinge?.limits) && (pl.hinge || pl.intent.posture?.hinge)) this.advanceHinge(pl);
       // plan 10b: the ramp reads this substep's locomotion mode (decided from the last solve's contacts and motion, which
       // nothing changes before 4b), not the previous substep's
       if (this.suspension && !pl.rag && pl.sus) this.advanceLocoMode(pl, this.physics.dt);
@@ -1189,7 +1200,9 @@ export class Simulation {
     // polish 1.2, the ride-down's come-down: riding, the ride's own bounds (a hard trunk fold); with the carrier off his
     // support, his weight forward (the support under his body's own frame)
     const DN = pl.intent.ride ? this.def.wrap!.ride?.down : undefined;
-    const L = DN ? { ...this.def.wrap!.strike!.hinge, ...DN.hinge } : this.def.wrap!.strike!.hinge;
+    // (plan 16: a blocking player's hinge, his block's bounds, kept on the hinge while it unwinds after the block)
+    const own = pl.block?.hinge ?? pl.hinge?.limits;
+    const L = own ?? (DN ? { ...this.def.wrap!.strike!.hinge, ...DN.hinge } : this.def.wrap!.strike!.hinge);
     // (the come-down arriving, `WrapRideDown.arrive`: with the carrier off his support the fold brakes to its end)
     const AR = DN?.arrive;
     const downTgt = (): boolean => {
@@ -1204,8 +1217,32 @@ export class Simulation {
       if (downTgt() && !h.braking) h.bodyPivot = true;
       else delete h.bodyPivot;
     } else if (h) delete h.bodyPivot;
+    if (h && own) h.limits = own;
     if (h) pl.hinge = h;
     else delete pl.hinge;
+  }
+
+  /**
+   * Plan 16: a blocking player's engaged state (advanceBlockState, controllers/block.ts) from his request this substep
+   * and whether anything holds between him and his man after the last solve: a palm push either way, or their bodies
+   * touching. A falling player, or one who no longer asks to block, has none.
+   */
+  private advanceBlock(pl: PlayerRuntime): void {
+    const req = pl.controlMode === 'supported' && !pl.rag ? pl.intent.block : undefined;
+    const tid = req?.request.target;
+    let on = false;
+    if (tid) {
+      if (this.arms)
+        for (const s of ['left', 'right'] as ArmSide[]) {
+          if (this.arms.pushOf(pl.id, s)?.targetId === tid) on = true;
+          if (this.arms.pushOf(tid, s)?.targetId === pl.id) on = true;
+        }
+      if ((this.contactObs[pl.id] ?? []).some((o) => o.other === tid)) on = true;
+    }
+    const r = advanceBlockState(pl.block, req, on, this.t, this.opts.debug?.block);
+    if (r.st) pl.block = r.st;
+    else delete pl.block;
+    if (r.change) this.emit('blockPhase', pl.id, { from: r.change.from, to: r.change.to, target: r.st?.target ?? null });
   }
 
   private advanceBrace(pl: PlayerRuntime): void {
@@ -1294,8 +1331,12 @@ export class Simulation {
     pl.swayM = add(pl.swayM ?? v3(), scale(pl.sway, dt));
   }
 
-  /** A held grip, clamp, fall link or palm push on or by this player (owner or target). */
+  /**
+   * A held grip, clamp, fall link or palm push on or by this player (owner or target); plan 16: or he is engaged in a
+   * block, his own or another's on him (the engaged state, not this substep's holds).
+   */
   private retained(pl: PlayerRuntime): boolean {
+    if (!this.opts.debug?.block?.feetIgnore) for (const o of this.players) if (o.block?.phase === 'engaged' && (o === pl || o.block.target === pl.id)) return true;
     if (!this.arms) return false;
     for (const g of this.arms.grips.values()) if (g.ownerId === pl.id || g.targetId === pl.id) return true;
     for (const o of this.players)
@@ -1945,7 +1986,10 @@ export class Simulation {
       }
     const balance: Record<PlayerId, BalanceState> = {};
     for (const pl of this.players) balance[pl.id] = this.balanceState(pl);
-    return { tick: this.tick, substep, t: this.t, bodies, contacts, pairGap: { ...this.pairGap }, arms, wrap, balance };
+    // plan 16: the engaged states (absent while nobody blocks)
+    let block: Snapshot['block'];
+    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since };
+    return { tick: this.tick, substep, t: this.t, bodies, contacts, pairGap: { ...this.pairGap }, arms, wrap, balance, ...(block ? { block } : {}) };
   }
 
   balanceState(pl: PlayerRuntime): BalanceState {

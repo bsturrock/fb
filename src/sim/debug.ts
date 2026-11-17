@@ -5,6 +5,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import type { Vec3 } from './vec';
 import type { BraceDebug } from './brace';
 import type { WrapDebug } from './controllers/wrap';
+import type { BlockDebug } from './controllers/block';
 
 /** Foot plan switches (A/B probes and negative controls); each is off by default and changes behaviour when on. */
 export interface FootDebug {
@@ -177,6 +178,8 @@ export interface SimDebug {
   wrap?: WrapDebug;
   /** Plan 16: fault switches of the palm push (arms.ts). */
   arm?: ArmDebug;
+  /** Plan 16: fault switches of the engaged state (controllers/block.ts). */
+  block?: BlockDebug;
   /** Diagnostics only; not a switch, so not exported. */
   poseProbe?: PoseProbe;
   /** Diagnostics only (ladder 18): each born pair's separating force as it is applied. */
@@ -184,7 +187,7 @@ export interface SimDebug {
 }
 
 /** The switches that are on, for the export (null when every switch is off). */
-export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug; brace?: BraceDebug; wrap?: WrapDebug; arm?: ArmDebug } | null {
+export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug; brace?: BraceDebug; wrap?: WrapDebug; arm?: ArmDebug; block?: BlockDebug } | null {
   const on = <T extends object>(o: T | undefined): T | undefined => {
     const e = Object.entries(o ?? {}).filter(([, v]) => v);
     return e.length ? (Object.fromEntries(e) as T) : undefined;
@@ -195,5 +198,6 @@ export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?:
   const brace = on(d?.brace);
   const wrap = on(d?.wrap);
   const arm = on(d?.arm);
-  return foot || pose || conversion || brace || wrap || arm ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}), ...(brace ? { brace } : {}), ...(wrap ? { wrap } : {}), ...(arm ? { arm } : {}) } : null;
+  const block = on(d?.block);
+  return foot || pose || conversion || brace || wrap || arm || block ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}), ...(brace ? { brace } : {}), ...(wrap ? { wrap } : {}), ...(arm ? { arm } : {}), ...(block ? { block } : {}) } : null;
 }
