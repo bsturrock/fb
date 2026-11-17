@@ -62,13 +62,9 @@ export interface StepModelProfile {
   /** A foot whose least-deep place within reach stands deeper than this (m, `depthAt`) cannot follow the hips (bound). */
   boundM: number;
   /**
-   * Plan 15, the tackler going down late: what holds up a riding tackler whose carrier is off his support, read on the
-   * model (simulation.ts `rideUnsupported`; absent: a foot not bound, `standsNowhere`, any part of him touching the
-   * carrier, any hold of him). A foot to stand on is one that can get under his hips (`footUnder`: not bound and the
-   * hips' capture point within its short step); a contact is his body's on the carrier (trunk, head, arms: the legs the
-   * model shows where it asks for them lie against a fallen man and hold nothing up); a hold of the carrier holds him up
-   * until the carrier is down (core within the ride's `carrierDownM` of the ground, or the play ended: the come-down's
-   * own start; a man on the ground holds nobody up by an arm).
+   * Plan 15 step 4b: the come-down reads what holds a riding tackler up on the model (simulation.ts `rideUnsupported`,
+   * `footUnder`). Since step 5b that read is the only one and nothing reads the flag; it stays so the profile exports
+   * (every fixture trace) as before.
    */
   underHips?: true;
 }
@@ -84,16 +80,13 @@ export interface StepModelProfile {
  * A foot is bound when the least it can stand in another player is 8 cm: its leg 5 cm past the skin. A few centimetres of
  * contact is not that: a held carrier's thighs against the holder's (L3-F6-hold: his left foot's least depth is 2-6 cm
  * for 2.4 s of the hold, 6-8 cm for 0.7 s, deeper for 0.1 s).
+ *
+ * (Plan 15 step 4b, the id: the come-down reads what holds the riding tackler up on the model, simulation.ts
+ * `rideUnsupported` with `footUnder`. Under steps-v1, the model as registered at step 4 with these values, it read the
+ * reactive planner's terms, neither foot bound, any contact, any hold, and the tackler rode the come-down to its low exit
+ * or its 0.4 s bound; FootDebug.stepsRideAnyFoot gives that read back, a fault.)
  */
-export const STEPS_V1: StepModelProfile = { id: 'steps-v1', maxStepM: 0.4, coverM: 0.12, stepMps: 1.6, travelK: 2, minS: 0.16, maxS: 0.3, followMps: 2, liftM: 0.07, footR: 0.1, legSkinM: 0.03, boundM: 0.08 };
-
-/**
- * STEPS_V1 with the come-down's read of what holds the tackler up (`underHips`). Under STEPS_V1 the read was the reactive
- * planner's translated: neither foot bound, any contact, any hold; on the L3, L4 and HC rides the model's feet always
- * stand, the legs it shows touch the fallen carrier and the clamp stays on him, so the tackler rode the come-down to its
- * low exit or its 0.4 s bound (0.1-0.45 s after the reactive planner's tackler went down).
- */
-export const STEPS_V2: StepModelProfile = { ...STEPS_V1, id: 'steps-v2', underHips: true };
+export const STEPS_V2: StepModelProfile = { id: 'steps-v2', maxStepM: 0.4, coverM: 0.12, stepMps: 1.6, travelK: 2, minS: 0.16, maxS: 0.3, followMps: 2, liftM: 0.07, footR: 0.1, legSkinM: 0.03, boundM: 0.08, underHips: true };
 
 /**
  * The footwork profile with the contact stepping model (default the registered one, STEPS_V2 since plan 15 step 4b), under
@@ -103,12 +96,6 @@ export const STEPS_V2: StepModelProfile = { ...STEPS_V1, id: 'steps-v2', underHi
  * clip regime, the airborne feet and the shown sole stay the planner's own.
  */
 export const withSteps = (f: FootworkProfile, m: StepModelProfile = STEPS_V2): FootworkProfile => (f.steps ? f : { ...f, id: `${f.id}+${m.id}`, steps: m });
-/** The footwork profile without it. */
-export const withoutSteps = (f: FootworkProfile): FootworkProfile => {
-  if (!f.steps) return f;
-  const { steps: m, ...rest } = f;
-  return { ...rest, id: f.id.replace(`+${m.id}`, '') };
-};
 
 /** A foot's state under the model (`FootState.contact`, written only under it). */
 export interface ContactFoot {
@@ -147,7 +134,7 @@ export const legsBound = (plan: FootPlan): boolean => SIDES.some((s) => !!plan.f
 /** The player stands nowhere while neither foot can follow the hips (a flight is not that: a foot in the air with a free place to land is following). */
 export const standsNowhere = (plan: FootPlan): boolean => SIDES.every((s) => !!plan.feet[s].contact?.bound);
 /**
- * A foot can get under the hips (`StepModelProfile.underHips`, the come-down's read): it is not bound and the hips need it
+ * A foot can get under the hips (the come-down's read, simulation.ts `rideUnsupported`): it is not bound and the hips need it
  * within its step (their capture point no further from the hip than its short step: its want not cut short). A body
  * moving faster than a short step can catch has no foot under it, whatever its feet are doing.
  */

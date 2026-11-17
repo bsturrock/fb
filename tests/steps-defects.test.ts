@@ -99,7 +99,7 @@ async function comeDown(file: string, v2: boolean) {
   return out;
 }
 
-describe('plan 15, the come-down\'s read on the model (STEPS_V2 underHips)', () => {
+describe('plan 15, the come-down\'s read on the model (STEPS_V2)', () => {
   it.each([
     ['L3-F1-rising@50', 'the carrier\'s core within carrierDownM at 0.850 s'],
     ['L3-F1-phase6@47', 'the play ended at 0.804 s'],

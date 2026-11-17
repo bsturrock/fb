@@ -1386,7 +1386,7 @@ export class Simulation {
    * Contact motion polish 1.2, the ride-down's come-down (`WrapRideDown`): a riding tackler whose carrier (the focus) is
    * off his support, with no foot to stand on (under the stepping model, plan 15: neither foot can follow his hips,
    * `standsNowhere`; under the reactive planner: no planted foot; without the foot plan: no support), no solved contact
-   * with the carrier and no clamp or grip on him. Under a stepping model with `underHips` (while it owns the feet): no
+   * with the carrier and no clamp or grip on him. Under the stepping model (plan 15 step 4b, while it owns the feet): no
    * foot can get under his hips (`footUnder`), no contact of his body (not his legs) with the carrier, and no clamp or
    * grip on him unless the carrier is down (core within `carrierDownM`, or the play ended); FootDebug.stepsRideAnyFoot (a
    * fault) reads as without it.
@@ -1396,7 +1396,7 @@ export class Simulation {
     const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
     if (!tid || !tgt || tgt.controlMode === 'supported') return false;
     const F = pl.feet;
-    const UH = !!F?.stepsOwn && !!this.def.footwork?.steps?.underHips && !this.opts.debug?.foot?.stepsRideAnyFoot;
+    const UH = !!F?.stepsOwn && !this.opts.debug?.foot?.stepsRideAnyFoot;
     const stands = F ? (F.stepsOwn ? (UH ? footUnder(F) : !standsNowhere(F)) : (['left', 'right'] as ArmSide[]).some((s) => F.feet[s].mode === 'planted')) : pl.grounded;
     if (stands || (this.contactObs[pl.id] ?? []).some((c) => c.other === tid && !(UH && (c.ownRegion === 'thigh' || c.ownRegion === 'shin' || c.ownRegion === 'shoe')))) return false;
     if (UH && (this.coreBody(tgt).translation().y <= (this.def.wrap?.ride?.carrierDownM ?? -Infinity) || !!this.rules?.ending)) return true;

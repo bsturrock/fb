@@ -3,7 +3,7 @@ import { buildProxyPose, CONT_FAST_MPS, CONT_L3_PLANT_MPS, CONT_L3_RADPS, footFr
 import { initPhysics, RAPIER } from '../src/sim/physics';
 import { add, addScaled, dist, len, norm, qFromUnitVectors, qFromYaw, qRot, scale, sub, v3, vc, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
 import { FIX } from './helpers';
-import { plantAtShownFoot, STEPS_V1 } from '../src/sim/contact-steps';
+import { plantAtShownFoot, STEPS_V2 } from '../src/sim/contact-steps';
 import { groundOf, legHit, nearestFree, type FootQuery, type Part } from '../src/sim/free-ground';
 
 // Ladder rung 7: the planted primary pose, knee-pole first (`LegGuardProfile.sweep`, the pose input `legSweep`). On
@@ -178,7 +178,7 @@ describe('rung 7: the planted primary pose, knee-pole first (constructed poses, 
 describe('plan 15: a plant the model picks beside another player is kept by the leg guard (constructed pose)', () => {
   beforeAll(initPhysics);
   it('his knee reaching in front of the leg at the height of the shin top: the plant on free ground stands, primary and on its anchor; the twin (footprints only) is moved by the guard', () => {
-    const M = STEPS_V1;
+    const M = STEPS_V2;
     const balls = [{ c: v3(0.16, 0.5, 0.36), r: 0.07 }, { c: v3(0.16, 0.6, 0.46), r: 0.08 }];
     const ground = groundOf(balls.map((b): Part => ({ shape: { kind: 'ball', c: b.c, r: b.r }, v: v3(), key: 'B:knee' })), soleUp + R.lengths.shin);
     const hip = buildProxyPose(input({ memory: {}, dtS: DT })).jointLandmarksWorld.leftHip;

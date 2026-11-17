@@ -281,10 +281,10 @@ function hipTwistFlip(d: FixtureDef): FixtureDef {
 
 /**
  * Plan 15 step 4, the stepping flip: every L3, L4 and HC fixture with a composed foot planner steps by the contact
- * stepping model (STEPS_V1, contact-steps.ts: where a foot can stand, where it steps, when) in place of the reactive
+ * stepping model (steps-v1, contact-steps.ts: where a foot can stand, where it steps, when) in place of the reactive
  * planner's contact stepping, and the bound-legs fall and the come-down read it (`legsBound`, `standsNowhere`). L2 and RH
  * keep the reactive planner. Since step 4b the model is STEPS_V2 (`withSteps`' default): the come-down reads what holds
- * the tackler up on the model (`underHips`). Step 5b deleted the reactive planner's contact stepping, and the lab's and the
+ * the tackler up on the model (`footUnder`). Step 5b deleted the reactive planner's contact stepping, and the lab's and the
  * tests' views before both flips with it (FootDebug.stepsRideAnyFoot is the come-down's read before step 4b).
  */
 function stepsFlip(d: FixtureDef): FixtureDef {

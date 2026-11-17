@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ArmSide } from '../src/sim/contracts';
-import { footUnder, legsBound, standsNowhere, STEPS_V1, withSteps, type StepModelProfile } from '../src/sim/contact-steps';
+import { footUnder, legsBound, standsNowhere, STEPS_V2, withSteps, type StepModelProfile } from '../src/sim/contact-steps';
 import type { FootDebug } from '../src/sim/debug';
 import { initPhysics } from '../src/sim/physics';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
@@ -25,7 +25,7 @@ const TOE = R.shoe.forwardM + 0.5 * R.shoe.halfExtents.z;
 const CEIL = SOLE + R.lengths.shin;
 const DT = 1 / 240;
 const SIDES: ArmSide[] = ['left', 'right'];
-const M = STEPS_V1;
+const M = STEPS_V2;
 const ON = withSteps(FOOTWORK_L3);
 const REACH = plantReachM(R, ON.plantTolM);
 
@@ -567,7 +567,7 @@ describe('contact stepping model (plan 15)', () => {
     // a riding tackler's speed over a fallen carrier (3.5-3.9 m/s in the L3 phase scenes)
     const r = run({ vel: push(v3(0, 0, 1), 3.5), durS: 1.5 });
     expect(r.frames.filter((f) => f.t > 0.3 && f.under).map((f) => f.t)).toEqual([]);
-    // fault twin: STEPS_V1's read (he stands while a foot is not bound) stands him throughout
+    // fault twin: steps-v1's read (FootDebug.stepsRideAnyFoot: he stands while a foot is not bound) stands him throughout
     expect(r.frames.filter((f) => f.nowhere).length).toBe(0);
   });
 
