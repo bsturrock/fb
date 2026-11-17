@@ -10,6 +10,7 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
+import { blockingFixtures } from './blocking';
 import { FALL_L4, FALL_L4_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear, withShoulderTwistLimit, SHOULDER_TWIST_ANAT_V2 } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { withSteps } from '../contact-steps';
@@ -49,12 +50,19 @@ import { WRAP_V13 } from '../controllers/wrap';
  *   (FALL_L4_V2), its other responses (knee-only, zero-cap, low-work twins) stay as registered;
  * - JOINT_RANGE_V2 becomes JOINT_RANGE_V3 (ladder 11b, the supported thigh's rotation kept in the hip's twist range).
  *
+ * BL (plan 16, blocking; built from L3-F6-hold's package, fixtures/blocking.ts) takes the L3 layers, named: the
+ * ragdoll's visible flip, own legs, born overlap and separation and shoulder twist limit; the leg guard (LEG_GUARD_V3:
+ * swept leg step, planted pose, physical supported legs); the still feet of a hold and the contact stepping model; met
+ * arms keep their pose (self clearance); JOINT_RANGE_V3; and the falling man's reaction (FALL_REACT_V3). The model
+ * body, the idle cycle and the walk and run clips come with the package. The brace, the rules and the wrap do not apply
+ * (no runner, no rules, no tackler).
+ *
  * The lab's switches (src/lab/lab-params.ts) give the views before each layer; tests/runs.ts `BEFORE_FLIPS` gives the
  * definitions as before each flip, for state captures taken under them.
  */
 export const HIT_FIXTURES: readonly string[] = ['L3-F4-twoArm', 'L4-F10-wrap-on', 'L3-F1-low', 'HC-F3-lowRunner', 'HC-F3-phase0'];
-const OPT_IN = /^(L3|L4|HC)-/;
-const FALLS = /^(L3|HC)-/;
+const OPT_IN = /^(L3|L4|HC|BL)-/;
+const FALLS = /^(L3|HC|BL)-/;
 
 function registered(d: FixtureDef): FixtureDef {
   if (/^L2-/.test(d.id)) return d.footwork ? { ...d, footwork: withSteps(d.footwork) } : d;
@@ -110,6 +118,7 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
+    ...blockingFixtures(),
   ].map(registered));
   return registry.slice();
 }

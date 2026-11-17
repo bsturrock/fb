@@ -47,6 +47,8 @@ function mirrorController(c: ControllerSpec): ControllerSpec {
       ...(c.approachVelocityWorld ? { approachVelocityWorld: mz(c.approachVelocityWorld) } : {}),
       ...(c.finish ? { finish: { ...c.finish, dirWorld: mz(c.finish.dirWorld) } } : {}),
     };
+  // plan 16: the block is relative to its man, by sides of his own body: the same block mirrors itself
+  if (c.kind === 'block') return c;
   throw new Error(`mirrorZ: controller ${c.kind} has no mirror`);
 }
 

@@ -1,7 +1,7 @@
 // Shared helpers of the full check (scripts/check/README.md).
 
-/** Fixture families of the ladder's rules: G (G1-G4), L1, L2, RH, L3, L4, HC; anything else is `other`. */
-export const FAMILIES = ['G', 'L1', 'L2', 'RH', 'L3', 'L4', 'HC', 'other'] as const;
+/** Fixture families of the ladder's rules: G (G1-G4), L1, L2, RH, L3, L4, HC, BL (plan 16); anything else is `other`. */
+export const FAMILIES = ['G', 'L1', 'L2', 'RH', 'L3', 'L4', 'HC', 'BL', 'other'] as const;
 /** Families whose summaries must stay byte-identical on every rung (the ladder's rule 5). */
 export const FROZEN_FAMILIES = ['G', 'L1', 'L2', 'RH'];
 
@@ -25,7 +25,7 @@ export function round(x: number, d = 4): number | string {
 export const SHAPE_QUERY_BUDGET = 4000;
 
 /** Families the passive-energy matrix covers (every fixture of them with a ragdoll profile; scripts/check/energymx.ts). */
-export const ENERGY_FAMILIES = ['L3', 'L4', 'HC'];
+export const ENERGY_FAMILIES = ['L3', 'L4', 'HC', 'BL'];
 
 /** A visible-matrix row's worst event of a column: player, what, peak, peak time, start, end, severity (tests/visible.ts). */
 export type VisWorst = [string, string, number, number, number, number, number];

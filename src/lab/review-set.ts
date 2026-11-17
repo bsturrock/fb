@@ -63,4 +63,12 @@ export const REVIEW_SET: readonly ReviewGroup[] = [
       { id: 'HC-F1-low', name: 'Both go limp from a low stance' },
     ],
   },
+  {
+    label: 'Blocking',
+    entries: [
+      { id: 'BL-F1-even', name: 'Even block, standing' },
+      { id: 'BL-F2-walkIn', name: 'Even block, one man walks in' },
+      { id: 'BL-F3-blockerDrives', name: 'Stronger blocker drives the other back' },
+    ],
+  },
 ];
