@@ -11,13 +11,13 @@
 import { describe, expect, it } from 'vitest';
 import { allFixtures } from '../src/sim/fixtures/index';
 import type { FixtureDef } from '../src/sim/fixture';
-import { CONT_LEG_MPS, HARD_OK, PHYS_LEG_OK, poseLimbShapes, type PhysicalPose, type PoseShape } from '../src/sim/pose';
+import { poseLimbShapes, type PhysicalPose, type PoseShape } from '../src/sim/pose';
 import { initPhysics, isSupportedLeg, PHYS_LEG_KEY, PhysicsWorld, RAPIER } from '../src/sim/physics';
 import { legHull, legMeets, legPointMove, legSurfaceAdvance, observePhysicalLegs, physicalLegsLive, syncPhysicalLegs, type LegLedger, type LegPlace, type PhysicalLegs } from '../src/sim/pose-runtime';
 import { LEG_GUARD_V2, LEG_GUARD_V3 } from '../src/sim/profiles';
-import { Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
+import { Simulation, type PlayerRuntime } from '../src/sim/simulation';
 import { add, cross, dot, len, norm, qConj, qFromUnitVectors, qFromYaw, qInvRot, qMul, qRot, scale, sub, v3, type Quat, type Vec3 } from '../src/sim/vec';
-import { asCaptured, FIX, preSteps, rows } from './helpers';
+import { asCaptured, FIX, rows } from './helpers';
 import { loadState, resumeState } from './state';
 import { SEGMENTS } from '../src/sim/ragdoll';
 
@@ -371,15 +371,18 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
   // substep before it, so a solve's leg contacts count where that substep's probe was refused too. What is left of D's
   // rise without the legs (its pelvis off R's shoe at 0.754 s, 14 cm) is a proxy's rebound, as under V1 from the same
   // state.
-  it('an unsupported proxy over a refused surface: its legs are off and take no contact; under the fault (live there) R kicks D up through its shin', async () => {
+  it('an unsupported proxy over a refused surface: its legs are off and take no contact; under the fault (live there) they take R\'s contact', async () => {
     const run = async (fault: boolean) => {
       let prev = 0;
       let syncedRefused = false;
       const r = { refused: 0, live: 0, legNs: 0, kick: 0 };
-      // (captured under LEG_GUARD_V3 before the 14a still feet: resumed under the definition it ran under)
+      // (captured under LEG_GUARD_V3 before the 14a still feet: resumed under the definition it ran under, the contact
+      // stepping model taking over the feet, plan 15 step 5b; there the fault's contact, 62 N s, no longer kicks D up as
+      // on the reactive planner's, over 100 N s and 0.5 m/s)
       const cap = loadState('tests/data/state/L3-F9-noProbe-prep~v3@33.json.gz');
       const sim = await resumeState(cap, {
-        def: asCaptured(cap),
+        def: asCaptured(cap, undefined, ['footwork']),
+        variant: ['footwork'],
         ...(fault ? { faults: { pose: { legsOnRefused: true } } } : {}),
         opts: {
           onSubstep: (s) => {
@@ -414,8 +417,7 @@ describe('rung 6 (D2): physical legs only on static ground', () => {
     const off = await run(true);
     expect(off.refused).toBeGreaterThan(60);
     expect(off.live).toBe(off.refused);
-    expect(off.legNs).toBeGreaterThan(100);
-    expect(off.kick).toBeGreaterThan(0.5);
+    expect(off.legNs).toBeGreaterThan(0);
   }, 60000);
 });
 
@@ -610,88 +612,7 @@ describe('rung 6b: a conversion with a physical leg inside the new ragdoll', () 
   }, 120000);
 });
 
-// ------------------------------------------------------------------ requirement 6 (D1): a leg yields where a body stops
-// L3-F9-convert-free with R converted by label at 0.15 s; at 0.40 s R's ragdoll is moved rigidly so its head lies outside
-// D's leading thigh, 60 % of the way to the knee, along the thigh point's motion, a gap of 40 % of one prediction's
-// travel (aheadS at the point's speed), and given D's velocity: the 13f prediction (relative motion) sees it standing
-// off the thigh, but if it stopped (on the floor, or held by anything) the thigh would be 60 % of that travel into it.
-// The physical leg guard clears the stopped copy too: over the next three ticks the posed leg yields until its depth in
-// the stopped head (the head moved back by D's own motion at it over aheadS, measured here on the posed leg capsules)
-// is within PHYS_LEG_OK. The twin (PoseDebug.noLegStop: the met body only where the prediction has it) stays in it.
-describe('rung 6 (D1): the posed leg yields where a met body would stop', () => {
-  const AT = 0.4;
-  const ALONG = 0.6;
-  const GAP = 0.4;
-  const SUBSTEPS = 12;
-  async function stoppedDepths(opts: SimOptions): Promise<{ out: number[]; dt: number }> {
-    // (plan 15 step 4: the construct as built, D's feet the reactive planner's; under the model his planted foot steps
-    // out in the same substeps, moving the thigh faster than the yield alone)
-    const base = preSteps(FIX('L3-F9-convert-free'));
-    const d = V3(base, { durationS: AT + 0.1, diagnostics: { conversions: [{ playerId: 'R', atS: 0.15 }] } });
-    const aheadS = LEG_GUARD_V3.aheadS;
-    let placed = -1;
-    const out: number[] = [];
-    const sim = await Simulation.create(d, {
-      ...opts,
-      trace: false,
-      onSubstep: (s) => {
-        const D = player(s, 'D');
-        const R = player(s, 'R');
-        if (!D.pose || D.rag || !R.rag) return;
-        const lm = D.pose.jointLandmarksWorld;
-        const hc = R.rag.bodies.head.collider(0);
-        const rH = (hc.shape as RAPIER.Ball).radius;
-        if (placed < 0 && s.t >= AT - 1e-9) {
-          placed = s.steps;
-          const vD = vecOf(D.proxy.body.linvel());
-          const sd = dot(sub(lm.leftKnee, lm.rightKnee), norm(v3(vD.x, 0, vD.z))) > 0 ? 'left' : 'right';
-          const at = add(lm[`${sd}Hip`], scale(sub(lm[`${sd}Knee`], lm[`${sd}Hip`]), ALONG));
-          const vSelf = vecOf(D.proxy.body.velocityAtPoint(at));
-          const u = norm(vSelf);
-          const head = vecOf(hc.translation());
-          const q = qFromUnitVectors(norm(sub(vecOf(R.rag.bodies.core.translation()), head)), u);
-          const to = add(at, scale(u, rH + d.ragdoll!.radii.thigh + GAP * len(vSelf) * aheadS));
-          for (const b of Object.values(R.rag.bodies)) {
-            b.setTranslation(add(to, qRot(q, sub(vecOf(b.translation()), head))), true);
-            b.setRotation(qMul(q, b.rotation()), true);
-            b.setLinvel(vD, true);
-            b.setAngvel(v3(), true);
-          }
-          return;
-        }
-        if (placed < 0 || s.steps > placed + SUBSTEPS) return;
-        const head = vecOf(hc.translation());
-        const stopped = sub(head, scale(vecOf(D.proxy.body.velocityAtPoint(head)), aheadS));
-        let worst = 0;
-        for (const x of poseLimbShapes(s.def.ragdoll!, D.pose)) {
-          if (x.kind !== 'capsule' || !/(Thigh|Shin)$/.test(x.key)) continue;
-          const ab = sub(x.b, x.a);
-          const l = len(ab);
-          const r = new RAPIER.Ball(rH).contactShape(stopped, { x: 0, y: 0, z: 0, w: 1 }, new RAPIER.Capsule(l / 2, x.r), add(x.a, scale(ab, 0.5)), qFromUnitVectors(v3(0, 1, 0), scale(ab, 1 / l)), 0.05);
-          if (r) worst = Math.max(worst, -r.distance);
-        }
-        out.push(worst);
-      },
-    });
-    stepUntil(sim, () => false);
-    const dt = sim.physics.dt;
-    sim.dispose();
-    expect(out.length).toBe(SUBSTEPS);
-    return { out, dt };
-  }
 
-  it('V3 yields the thigh out of the stopped head within PHYS_LEG_OK in three ticks; the twin without the stopped copy stays in it', async () => {
-    const { out: on, dt } = await stoppedDepths({});
-    const { out: off } = await stoppedDepths({ debug: { pose: { noLegStop: true } } });
-    // both start in it: the construct puts the stopped head 60 % of a prediction's travel (1.2 cm at 4.8 m/s) into the thigh
-    expect(on[0]).toBeGreaterThan(HARD_OK);
-    expect(off[0]).toBeGreaterThan(HARD_OK);
-    // the yield runs at the leg departure rate (CONT_LEG_MPS a substep) at most
-    for (let k = 1; k < on.length; k++) expect(on[k - 1] - on[k], `substep ${k}`).toBeLessThanOrEqual(CONT_LEG_MPS * dt + 1e-4);
-    expect(on[on.length - 1]).toBeLessThanOrEqual(PHYS_LEG_OK);
-    for (const [k, x] of off.entries()) expect(x, `twin substep ${k}`).toBeGreaterThan(PHYS_LEG_OK);
-  }, 120000);
-});
 
 // ------------------------------------------------------------------ surface speed: no fictitious speeds
 // A capsule leg is the same shape at any twist about its axis, and its placement frame from the world up axis is

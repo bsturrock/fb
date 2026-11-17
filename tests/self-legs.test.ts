@@ -361,7 +361,8 @@ describe('own-leg contact: the rest pose', () => {
 describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the switch)', () => {
   // HC-F1-at0.9@53 (before the ladder 10 leg-guard flip: resumed under V1, `preV3`): both players convert at 0.904 s lying on each other. D's supported legs are crossed 12-14 cm deep
   // (the self shapes; its thighs, shins and shoes all), R's 1-2 cm. The capture is under the registered profile; the
-  // profile is the twin's variant (`ragdoll`), so the conversion builds the shapes
+  // profile is the twin's variant (`ragdoll`), so the conversion builds the shapes. Plan 15 step 5b: taken on the
+  // reactive planner, resumed with the contact stepping model taking over the feet (`asCaptured`'s footwork variant)
   const CAP = 'tests/data/state/HC-F1-at0.9@53.json.gz';
   const LEGS = ['leftThigh', 'leftShin', 'rightThigh', 'rightShin'] as const;
   /** 0.1 s after the switch. */
@@ -369,13 +370,13 @@ describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the
   /** The capture resumed with own-leg contact (the profile the twin's variant). */
   const resumeHeld = (): Promise<Simulation> => {
     const cap = loadState(CAP);
-    return resumeState(cap, { def: on(asCaptured(cap)), variant: ['ragdoll'] });
+    return resumeState(cap, { def: on(asCaptured(cap, undefined, ['footwork'])), variant: ['footwork', 'ragdoll'] });
   };
 
   it('no kick: the held groups leave the legs as without the profile; armed at the switch (the fault) they kick D\'s legs apart', async () => {
     const cap = loadState(CAP);
-    const base = asCaptured(cap);
-    const [off, held, fault] = [await resumeState(cap, { def: base }), await resumeState(cap, { def: on(base), variant: ['ragdoll'] }), await resumeState(cap, { def: on(base), variant: ['ragdoll'] })];
+    const base = asCaptured(cap, undefined, ['footwork']);
+    const [off, held, fault] = [await resumeState(cap, { def: base, variant: ['footwork'] }), await resumeState(cap, { def: on(base), variant: ['footwork', 'ragdoll'] }), await resumeState(cap, { def: on(base), variant: ['footwork', 'ragdoll'] })];
     const step = fault.physics.step;
     const armed = new Set<string>();
     fault.physics.step = function (this: typeof fault.physics) {
@@ -454,9 +455,13 @@ describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the
     kept.dispose();
   }, 60000);
 
-  it('energy: no solve of either ragdoll injects to the end; armed at the switch (the fault) R injects', async () => {
-    const run = async (fault: boolean) => {
-      const sim = await resumeHeld();
+  it('energy: own-leg contact adds no energy: no solve of either ragdoll gains more untouched than the same state gains without own-leg contact (its floor\'s passive gains); armed at the switch (the fault) R injects past it', async () => {
+    // (plan 15 step 5b: on the model's feet both runs have sub-joule to few-joule untouched gains off the floor, with no
+    // own-leg impulse in those solves: 0.87 J with the held groups, 2.6 J without the profile; the fault 23 J. On the
+    // reactive planner's feet the held run had none)
+    const run = async (profile: boolean, fault: boolean) => {
+      const cap = loadState(CAP);
+      const sim = profile ? await resumeHeld() : await resumeState(cap, { def: asCaptured(cap, undefined, ['footwork']), variant: ['footwork'] });
       if (fault) {
         const step = sim.physics.step;
         const armed = new Set<string>();
@@ -474,11 +479,12 @@ describe('own-leg contact: legs switched in crossed (HC-F1-at0.9 from before the
       meter.restore();
       const r = meter.runs();
       sim.dispose();
-      return r;
+      return Math.max(...['D', 'R'].map((pid) => r.get(pid)!.maxJ));
     };
-    const held = await run(false);
-    for (const pid of ['D', 'R']) expect(held.get(pid)!.injecting, pid).toBe(0);
-    const fault = await run(true);
-    expect(fault.get('R')!.maxJ).toBeGreaterThan(INJECTION_J);
+    const without = await run(false, false);
+    const held = await run(true, false);
+    expect(held).toBeLessThanOrEqual(Math.max(without, INJECTION_J));
+    const fault = await run(true, true);
+    expect(fault).toBeGreaterThan(Math.max(without, INJECTION_J));
   }, 60000);
 });
