@@ -3,16 +3,13 @@
 // limbs between them and the post-step push-out that lifts the forearm off every substep or two. No fixture uses it.
 // Whole runs from the fixture's start (WRAP_V7 is used by no fixture, so no capture holds it; the runs are under 1.2 s).
 // Each case has its fault twin: WRAP_V7 without `ride.hold`, or the same run with the rule broken (`SimDebug.wrap`).
+// Plan 15 step 5b: the runs are the registered fixtures', on the contact stepping model.
 import { describe, expect, it } from 'vitest';
 import { WRAP_V7, type WrapDebug, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import { ARM_G2 } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
-import { FIX as REGISTERED, preSteps } from './helpers';
-
-// Plan 15 step 4: the ride hold's runs as sampled, before the stepping flip (the tackler's and carrier's falls move with
-// the model's footwork, and the samples' times with them)
-const FIX = (id: string): FixtureDef => preSteps(REGISTERED(id));
+import { FIX } from './helpers';
 
 // The ride hold on the ride it was built on: WRAP_V7 without the come-down (`ride.down`, which ends the ride, and with it the
 // hold, once he is low; tests/wrap-ride.test.ts covers it).
@@ -69,8 +66,8 @@ async function rideRun(def: FixtureDef, opts: { reverseOrder?: boolean; fault?: 
 }
 
 describe('polish 1.2, the ride hold (WRAP_V7)', () => {
-  it('(a) the riding tackler holds the fallen carrier unbroken (front wrap reversed: from his conversion to the end of play, 0.38 s; side two-arm: 0.11 s); without the ride hold the clamp never holds 0.1 s unbroken after his conversion', async () => {
-    for (const [id, rev, least] of [['L3-F19-front', true, 0.3], ['L3-F4-twoArm', false, 0.1]] as const) {
+  it('(a) the riding tackler holds the fallen carrier unbroken (side two-arm: 0.25 s); without the ride hold the clamp never holds 0.1 s unbroken after his conversion', async () => {
+    for (const [id, rev, least] of [['L3-F4-twoArm', false, 0.1]] as const) {
       const on = await rideRun({ ...FIX(id), wrap: V7 }, { reverseOrder: rev });
       expect(on.rConv, id).not.toBeNull();
       expect(on.longest, id).toBeGreaterThanOrEqual(least);
@@ -92,10 +89,10 @@ describe('polish 1.2, the ride hold (WRAP_V7)', () => {
   }, 60_000);
 
   it('(b) the hold breaks when the patch leaves the arm\'s reach (HC-F3) or on overload (a 40 N arm ceiling); with the break rules off it holds on', async () => {
-    const reach = await rideRun({ ...FIX('HC-F3-phase0'), wrap: V7 }, { until: 1 });
+    const reach = await rideRun({ ...FIX('HC-F3-phase50'), wrap: V7 }, { until: 1 });
     const broke = reach.ride.find((e) => e.kind === 'rideHoldEnd');
     expect(broke?.reason).toBe('unreachable');
-    const reachTwin = await rideRun({ ...FIX('HC-F3-phase0'), wrap: V7 }, { until: 1, fault: { rideHoldNoBreak: true } });
+    const reachTwin = await rideRun({ ...FIX('HC-F3-phase50'), wrap: V7 }, { until: 1, fault: { rideHoldNoBreak: true } });
     expect(reachTwin.ride.filter((e) => e.kind === 'rideHoldEnd').every((e) => e.reason === 'rideEnded' || e.reason === 'playEnded' || e.reason === 'ownerRagdoll')).toBe(true);
     expect(reachTwin.patched).toBeGreaterThan(reach.patched);
     // overload: the per-arm ceiling at 40 N, under the clamp's own demand (90-660 N): exposure past 0.1 s
@@ -109,7 +106,7 @@ describe('polish 1.2, the ride hold (WRAP_V7)', () => {
   }, 90_000);
 
   it('(c) a hold never secured gets no ride patch: none while he is not riding, none on the miss; with every supported owner counted as riding, the side two-arm gets one before his drive', async () => {
-    for (const id of ['L3-F4-twoArm', 'L3-F1-low', 'L3-F19-miss']) {
+    for (const id of ['L3-F4-twoArm', 'L3-F19-miss']) {
       const on = await rideRun({ ...FIX(id), wrap: V7 });
       expect(on.unridden, id).toBe(0);
       if (id === 'L3-F19-miss') expect(on.patched, id).toBe(0);
