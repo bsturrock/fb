@@ -1388,14 +1388,15 @@ export class Simulation {
    * `standsNowhere`; under the reactive planner: no planted foot; without the foot plan: no support), no solved contact
    * with the carrier and no clamp or grip on him. Under a stepping model with `underHips` (while it owns the feet): no
    * foot can get under his hips (`footUnder`), no contact of his body (not his legs) with the carrier, and no clamp or
-   * grip on him unless the carrier is down (core within `carrierDownM`, or the play ended).
+   * grip on him unless the carrier is down (core within `carrierDownM`, or the play ended); FootDebug.stepsRideAnyFoot (a
+   * fault) reads as without it.
    */
   private rideUnsupported(pl: PlayerRuntime): boolean {
     const tid = this.def.focus?.[pl.id];
     const tgt = tid ? this.players.find((p) => p.id === tid) : undefined;
     if (!tid || !tgt || tgt.controlMode === 'supported') return false;
     const F = pl.feet;
-    const UH = !!F?.stepsOwn && !!this.def.footwork?.steps?.underHips;
+    const UH = !!F?.stepsOwn && !!this.def.footwork?.steps?.underHips && !this.opts.debug?.foot?.stepsRideAnyFoot;
     const stands = F ? (F.stepsOwn ? (UH ? footUnder(F) : !standsNowhere(F)) : (['left', 'right'] as ArmSide[]).some((s) => F.feet[s].mode === 'planted')) : pl.grounded;
     if (stands || (this.contactObs[pl.id] ?? []).some((c) => c.other === tid && !(UH && (c.ownRegion === 'thigh' || c.ownRegion === 'shin' || c.ownRegion === 'shoe')))) return false;
     if (UH && (this.coreBody(tgt).translation().y <= (this.def.wrap?.ride?.carrierDownM ?? -Infinity) || !!this.rules?.ending)) return true;

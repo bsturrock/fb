@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { standsNowhere, STEPS_V2, withSteps, withoutSteps } from '../src/sim/contact-steps';
-import type { FixtureDef } from '../src/sim/fixture';
+import { standsNowhere } from '../src/sim/contact-steps';
 import type { Simulation } from '../src/sim/simulation';
 import { asCaptured, FIX } from './runs';
 import { loadState, resumeState } from './state';
@@ -12,16 +11,20 @@ import { feetTogether } from './l3-pass';
 // read, and two of his conversions there go wrong. The twin with the reactive planner from the same state showed the
 // same defect (reached, not made by the model's feet) until step 5b deleted that planner. Since step 4b (STEPS_V2, the
 // come-down's read on the model, tested below) no L3, L4 or HC run reaches either; both are parked
-// (docs/open/15_Contact_Footwork.md, tracked item 1) and stay pinned here on the step-4 state. Each test fails once its
+// (docs/open/15_Contact_Footwork.md, tracked item 1) and stay pinned here on the step-4 state, resumed on the registered
+// model with STEPS_V1's read (FootDebug.stepsRideAnyFoot: the model's only difference from it). Each test fails once its
 // defect is gone from that state; it is then turned into the fix's test, with the fault twin.
 
 const len = (v: number[]): number => Math.hypot(...v);
 
-/** Resumes the capture to the end as captured: player `pid`'s conversion. */
+/** STEPS_V1's come-down read (a foot not bound, any contact, any hold holds him up) on the registered model. */
+const V1_READ = { foot: { stepsRideAnyFoot: true } };
+
+/** Resumes the capture to the end on the registered model with STEPS_V1's read, as it ran: player `pid`'s conversion. */
 async function conversion(file: string, pid: string) {
   const cap = loadState(`tests/data/state/${file}.json.gz`);
-  const def = asCaptured(cap);
-  const sim = await resumeState(cap, { def });
+  const def = asCaptured(cap, undefined, ['footwork']);
+  const sim = await resumeState(cap, { def, variant: ['footwork'], faults: V1_READ });
   while (!sim.done) sim.stepTick();
   const pl = sim.players.find((p) => p.id === pid)!;
   const h = pl.handoff;
@@ -43,7 +46,7 @@ async function conversion(file: string, pid: string) {
 }
 
 describe('plan 15 step 4: defects reached by the stepping flip (the tackler going down late under STEPS_V1)', () => {
-  it('TAKEDOWN_ENERGY_GAIN (L3-F1-phase2 reversed, from 1.067 s): the late tackler\'s takedown at 1.133 s gains over half his kinetic energy at the transfer (energyGain: transferFailed), his folded pose\'s centre of mass 15 cm off the proxy\'s, the ragdoll spun up over three times faster than the proxy turned; the reactive planner from the same state the same', async () => {
+  it('TAKEDOWN_ENERGY_GAIN (L3-F1-phase2 reversed, from 1.067 s): the late tackler\'s takedown at 1.133 s gains over half his kinetic energy at the transfer (energyGain: transferFailed), his folded pose\'s centre of mass 15 cm off the proxy\'s, the ragdoll spun up over three times faster than the proxy turned', async () => {
     const r = await conversion('L3-F1-phase2~rev@64', 'D');
     const said = JSON.stringify(r);
     expect(r.outcome, said).toBe('transferFailed');
@@ -54,7 +57,7 @@ describe('plan 15 step 4: defects reached by the stepping flip (the tackler goin
     expect(r.spin[1], said).toBeGreaterThan(3 * r.spin[0]);
   }, 120000);
 
-  it('ELBOW_PAST_RAGDOLL_RANGE (L4-F10-wrap-off, from 1.200 s): the late tackler\'s takedown at 1.242 s is refused, his supported right elbow folded past the ragdoll\'s 145 deg (hingeLimit), and he falls as the rigid proxy; the reactive planner from the same state the same', async () => {
+  it('ELBOW_PAST_RAGDOLL_RANGE (L4-F10-wrap-off, from 1.200 s): the late tackler\'s takedown at 1.242 s is refused, his supported right elbow folded past the ragdoll\'s 145 deg (hingeLimit), and he falls as the rigid proxy', async () => {
     const r = await conversion('L4-F10-wrap-off@72', 'D');
     const said = JSON.stringify(r);
     expect(r.outcome, said).toBe('rejected');
@@ -66,18 +69,17 @@ describe('plan 15 step 4: defects reached by the stepping flip (the tackler goin
   }, 120000);
 });
 
-/** `d` with the come-down's read on the model (STEPS_V2, `underHips`). */
-const underHips = (d: FixtureDef): FixtureDef => ({ ...d, footwork: withSteps(withoutSteps(d.footwork!), STEPS_V2) });
 const LEG = ['thigh', 'shin', 'shoe'];
 
 /**
- * Resumes the capture to the end as captured (STEPS_V1) or with STEPS_V2: when the carrier R is down (off his support,
- * his core within the ride's carrierDownM, or the play ended), the tackler D's conversion, and what held him up under
- * STEPS_V1's read at his last supported substep (a foot not bound, his legs' contacts with R, a clamp on R).
+ * Resumes the capture (taken under STEPS_V1) to the end on the registered model (STEPS_V2) or with STEPS_V1's read (the
+ * fault, FootDebug.stepsRideAnyFoot): when the carrier R is down (off his support, his core within the ride's carrierDownM,
+ * or the play ended), the tackler D's conversion, and what held him up under STEPS_V1's read at his last supported
+ * substep (a foot not bound, his legs' contacts with R, a clamp on R).
  */
 async function comeDown(file: string, v2: boolean) {
   const cap = loadState(`tests/data/state/${file}.json.gz`);
-  const def = v2 ? underHips(asCaptured(cap)) : asCaptured(cap);
+  const def = asCaptured(cap, undefined, ['footwork']);
   let downT = null as number | null;
   let last = null as { stands: boolean; legs: number; body: number; hold: boolean; mps: number } | null;
   const onSubstep = (sim: Simulation): void => {
@@ -89,7 +91,7 @@ async function comeDown(file: string, v2: boolean) {
     const v = sim.coreBody(D).linvel();
     last = { stands: !standsNowhere(D.feet!), legs: obs.filter((c) => LEG.includes(c.ownRegion)).length, body: obs.filter((c) => !LEG.includes(c.ownRegion)).length, hold: ['left', 'right'].some((sd) => s.arms.clampOf('D', sd)?.targetId === 'R'), mps: Math.hypot(v.x, v.z) };
   };
-  const sim = await resumeState(cap, { def, variant: ['footwork'], opts: { onSubstep } });
+  const sim = await resumeState(cap, { def, variant: ['footwork'], opts: { onSubstep }, ...(v2 ? {} : { faults: V1_READ }) });
   while (!sim.done) sim.stepTick();
   const D = sim.players.find((p) => p.id === 'D')!;
   const out = { downT, outcome: D.handoff?.outcome, reason: D.handoff?.reason, t: D.handoff?.t ?? NaN, representation: D.representation, last, graceS: def.wrap!.commit!.graceS };

@@ -84,6 +84,12 @@ export interface FootDebug {
   stepsPathBlind?: boolean;
   /** Fault (negative control of plan 15's swing height, `FootworkProfile.steps`): a foot in the air keeps the planned height, its shoe pitched toe down through the turf. */
   stepsTurfBlind?: boolean;
+  /**
+   * Fault (negative control of plan 15's come-down read, `StepModelProfile.underHips`; simulation.ts `rideUnsupported`): a
+   * foot that is not bound, any contact of the tackler with the carrier and any hold of him hold him up, as under STEPS_V1
+   * (he went down late).
+   */
+  stepsRideAnyFoot?: boolean;
 }
 
 /** Pose switches; off by default, each changes behaviour when on. */
