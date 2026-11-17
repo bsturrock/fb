@@ -51,8 +51,8 @@ function legFlip(d: FixtureDef): FixtureDef {
 
 /**
  * Ladder 14a, the still-feet flip (the rule of rung 13b): every L3, L4 and HC fixture with a foot planner keeps its feet planted in a
- * stationary hold (HOLD_STILL_V1). L2's planner is unchanged. The lab's `holdstill=off` is the view before it;
- * tests/runs.ts `preHoldStill` gives a definition as before it.
+ * stationary hold (HOLD_STILL_V1). L2's planner is unchanged. tests/runs.ts `preHoldStill` gives a definition as before
+ * it.
  */
 function holdStillFlip(d: FixtureDef): FixtureDef {
   return d.footwork && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withHoldStill(d.footwork) } : d;
@@ -283,9 +283,9 @@ function hipTwistFlip(d: FixtureDef): FixtureDef {
  * Plan 15 step 4, the stepping flip: every L3, L4 and HC fixture with a composed foot planner steps by the contact
  * stepping model (STEPS_V1, contact-steps.ts: where a foot can stand, where it steps, when) in place of the reactive
  * planner's contact stepping, and the bound-legs fall and the come-down read it (`legsBound`, `standsNowhere`). L2 and RH
- * keep the reactive planner. The lab's `steps=old` is the view before it; tests/runs.ts `preSteps` gives a definition as
- * before it. Since step 4b the model is STEPS_V2 (`withSteps`' default): the come-down reads what holds the tackler up on
- * the model (`underHips`); the lab's `steps=v1` is the view before it, tests/runs.ts `preStepsV2` a definition as before.
+ * keep the reactive planner. Since step 4b the model is STEPS_V2 (`withSteps`' default): the come-down reads what holds
+ * the tackler up on the model (`underHips`). Step 5b deleted the reactive planner's contact stepping, and the lab's and the
+ * tests' views before both flips with it (FootDebug.stepsRideAnyFoot is the come-down's read before step 4b).
  */
 function stepsFlip(d: FixtureDef): FixtureDef {
   return d.footwork?.compose && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withSteps(d.footwork) } : d;
@@ -295,7 +295,7 @@ function stepsFlip(d: FixtureDef): FixtureDef {
  * Plan 15 step 5a, the older families' stepping flip: every L2 fixture with a foot planner (plan 07's, FOOTWORK_L2) steps by
  * the contact stepping model (STEPS_V2) outside the clip regime in place of plan 07's reactive steps; its clip regime,
  * airborne feet and shown sole stay plan 07's. RH has no foot planner (its L2 copies carry one) and keeps its definitions;
- * G and L1 too. The lab's `steps=old` is the view before it; tests/runs.ts `preSteps` gives a definition as before it.
+ * G and L1 too.
  */
 const OLDER_STEPS = /^L2-/;
 function olderStepsFlip(d: FixtureDef): FixtureDef {

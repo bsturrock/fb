@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
-import { FOOTWORK_L2, HOLD_STILL_V1, LATE_LANDING_ID } from '../src/sim/footwork';
-import { STEPS_V1, STEPS_V2 } from '../src/sim/contact-steps';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, WRAP_V13_AUTO, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import {
@@ -11,9 +9,9 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withoutShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, FALL_L4, FALL_L4_V2, FORWARD_FALL_V1, withForwardFall,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preSteps, preStepsV2, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preShoulderTwist, preV3, preWrap, runSim } from './helpers';
+import { create, FIX, flip8i, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preMetArmStay, preOwnLegs, preShoulderTwist, preV3, preWrap, runSim } from './helpers';
 
-// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
+// Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
 // place of its own (the triage's V3 map).
 const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => {
@@ -24,7 +22,7 @@ const summaryOf = async (def: FixtureDef, opts: SimOptions): Promise<string> => 
   return out;
 };
 
-describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, born, bornsep, holdstill, upperarm, armswing, armstay and brace', () => {
+describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, armtwist, born, bornsep, upperarm, armswing, armstay and brace', () => {
   it('order=rev&legs=v1 runs the matrices\' reversed V1 row of the fixture (L3-F1-phase6, the guard before the ladder 10 flip), named in the label; without them the run differs', async () => {
     const id = 'L3-F1-phase6';
     const lab = labRun(FIX(id), new URLSearchParams('fixture=L3-F1-phase6&order=rev&legs=v1'));
@@ -256,100 +254,10 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('armtwist=maybe'))).toEqual({ def: d, opts: {}, label: 'armtwist=maybe ignored' });
   }, 120000);
 
-  // ladder rung 13b: holdstill=on|off on the fixture's footwork; registered on every L3/L4/HC footwork since rung 14a
-  it('on a fixture registered with the stationary hold keeping its feet (HOLD_STILL_V1 on its footwork, id and all: L3-F6-hold), holdstill=off is the view before it, id and all, and another run; holdstill=on is the registered run and puts it back; a fixture without footwork and unknown values change nothing', async () => {
-    const id = 'L3-F6-hold';
-    // (plan 15 step 4: the still feet are the reactive planner's rule, which the contact stepping model does not read:
-    // the switch on the fixture as before the stepping flip)
-    const d = preSteps(FIX(id));
-    expect(d.footwork!.holdStill).toBe(HOLD_STILL_V1);
-    expect(d.footwork!.id).toBe(`${preHoldStill(d).footwork!.id}+${HOLD_STILL_V1.id}`);
-    const off = labRun(d, new URLSearchParams(`fixture=${id}&holdstill=off`));
-    expect(off.label).toBe('hold still off');
-    expect(off.def).toEqual(preHoldStill(d));
-    expect(off.def.footwork!.holdStill).toBeUndefined();
-    // the twin: the still feet change the run
-    expect(await summaryOf(off.def, off.opts)).not.toBe(await summaryOf(d, {}));
-    const back = labRun(off.def, new URLSearchParams('holdstill=ON'));
-    expect(back.label).toBe('hold still on');
-    expect(back.def).toEqual(d);
-    expect(labRun(d, new URLSearchParams('holdstill=on'))).toEqual({ def: d, opts: {}, label: 'hold still on (registered)' });
-    expect(labRun(off.def, new URLSearchParams('holdstill=off'))).toEqual({ def: off.def, opts: {}, label: 'hold still off (registered)' });
-    const g = allFixtures().find((x) => !x.footwork)!;
-    expect(labRun(g, new URLSearchParams('holdstill=on'))).toEqual({ def: g, opts: {}, label: 'holdstill n/a (no footwork)' });
-    expect(labRun(d, new URLSearchParams('holdstill=maybe'))).toEqual({ def: d, opts: {}, label: 'holdstill=maybe ignored' });
-  }, 120000);
 
-  // contact motion polish 2: latestep=on|off on the fixture's composed footwork; no fixture registers it yet
-  it('latestep=on runs the fixture with the late-landing rules on its footwork (`compose.lateLanding`, id and all: L3-F7-loadRelease, another run); latestep=off takes them off again and on the registered fixture is the registered run; a fixture without composed footwork and unknown values change nothing', async () => {
-    const id = 'L3-F7-loadRelease';
-    const d = FIX(id);
-    expect(d.footwork!.compose!.lateLanding).toBeUndefined();
-    const on = labRun(d, new URLSearchParams(`fixture=${id}&latestep=on`));
-    expect(on.label).toBe('late step on');
-    expect(on.def.footwork!.compose!.lateLanding).toBe(true);
-    expect(on.def.footwork!.id).toBe(`${d.footwork!.id}+${LATE_LANDING_ID}`);
-    // the twin: the rules change the run
-    expect(await summaryOf(on.def, on.opts)).not.toBe(await summaryOf(d, {}));
-    const back = labRun(on.def, new URLSearchParams('latestep=OFF'));
-    expect(back.label).toBe('late step off');
-    expect(back.def).toEqual(d);
-    expect(labRun(d, new URLSearchParams('latestep=off'))).toEqual({ def: d, opts: {}, label: 'late step off (registered)' });
-    expect(labRun(on.def, new URLSearchParams('latestep=on'))).toEqual({ def: on.def, opts: {}, label: 'late step on (registered)' });
-    const g = allFixtures().find((x) => !x.footwork?.compose)!;
-    expect(labRun(g, new URLSearchParams('latestep=on'))).toEqual({ def: g, opts: {}, label: 'latestep n/a (no composed footwork)' });
-    expect(labRun(d, new URLSearchParams('latestep=maybe'))).toEqual({ def: d, opts: {}, label: 'latestep=maybe ignored' });
-  }, 120000);
 
-  // plan 15: steps=old|v1|new on the fixture's composed footwork; the contact stepping model registered on L3, L4 and HC since
-  // step 4, STEPS_V2 since step 4b
-  it('steps=old runs the fixture with the reactive planner, as before plan 15\'s stepping flip (`preSteps`, id and all: L3-F19-rear, registered with the model since step 4, another run); steps=new puts the model back and on the registered fixture is the registered run; a fixture without footwork and an unknown value are ignored', async () => {
-    const id = 'L3-F19-rear';
-    const d = FIX(id);
-    expect(d.footwork!.steps).toBe(STEPS_V2);
-    expect(d.footwork!.id).toBe(`${preSteps(d).footwork!.id}+${STEPS_V2.id}`);
-    const off = labRun(d, new URLSearchParams(`fixture=${id}&steps=old`));
-    expect(off.label).toBe('steps old');
-    expect(off.def).toEqual(preSteps(d));
-    expect(off.def.footwork!.steps).toBeUndefined();
-    // the twin: the model changes the run
-    expect(await summaryOf(off.def, off.opts)).not.toBe(await summaryOf(d, {}));
-    const back = labRun(off.def, new URLSearchParams('steps=NEW'));
-    expect(back.label).toBe('steps new');
-    expect(back.def).toEqual(d);
-    expect(labRun(d, new URLSearchParams('steps=new'))).toEqual({ def: d, opts: {}, label: 'steps new (registered)' });
-    expect(labRun(off.def, new URLSearchParams('steps=old'))).toEqual({ def: off.def, opts: {}, label: 'steps old (registered)' });
-    const g = allFixtures().find((x) => !x.footwork)!;
-    expect(labRun(g, new URLSearchParams('steps=old'))).toEqual({ def: g, opts: {}, label: 'steps n/a (no footwork)' });
-    expect(labRun(d, new URLSearchParams('steps=maybe'))).toEqual({ def: d, opts: {}, label: 'steps=maybe ignored' });
-  }, 120000);
 
-  it('steps=v1 runs the fixture with the model as at plan 15 step 4, the come-down reading as then (`preStepsV2`, id and all: L3-F1-phase6, whose tackler goes down 0.32 s later under it, another run); steps=new from it is the registered run, steps=old the reactive planner', async () => {
-    const id = 'L3-F1-phase6';
-    const d = FIX(id);
-    const v1 = labRun(d, new URLSearchParams(`fixture=${id}&steps=v1`));
-    expect(v1.label).toBe('steps v1');
-    expect(v1.def).toEqual(preStepsV2(d));
-    // the twin: the come-down's read changes the run
-    expect(await summaryOf(v1.def, v1.opts)).not.toBe(await summaryOf(d, {}));
-    expect(labRun(v1.def, new URLSearchParams('steps=v1')).label).toBe('steps v1 (registered)');
-    expect(labRun(v1.def, new URLSearchParams('steps=new'))).toEqual({ def: d, opts: {}, label: 'steps new' });
-    expect(labRun(v1.def, new URLSearchParams('steps=old')).def).toEqual(preSteps(d));
-  }, 120000);
 
-  // plan 15 step 5a: the model on plan 07's planner (L2), which has no composition of its own
-  it('on plan 07\'s planner (FOOTWORK_L2, L2-F7-shove as before plan 15 step 5a) steps=new runs the model, under an id that names it (another run), steps=v1 the model as at step 4, and steps=old gives plan 07\'s planner back as it was', async () => {
-    const old = preSteps(FIX('L2-F7-shove'));
-    expect(old.footwork).toEqual(FOOTWORK_L2);
-    const on = labRun(old, new URLSearchParams('steps=new'));
-    expect(on.label).toBe('steps new');
-    expect(on.def.footwork).toEqual({ ...FOOTWORK_L2, id: `${FOOTWORK_L2.id}+${STEPS_V2.id}`, steps: STEPS_V2 });
-    // the twin: the model changes the run
-    expect(await summaryOf(on.def, on.opts)).not.toBe(await summaryOf(old, {}));
-    expect(labRun(on.def, new URLSearchParams('steps=v1')).def.footwork).toEqual({ ...FOOTWORK_L2, id: `${FOOTWORK_L2.id}+${STEPS_V1.id}`, steps: STEPS_V1 });
-    expect(labRun(on.def, new URLSearchParams('steps=old'))).toEqual({ def: old, opts: {}, label: 'steps old' });
-    expect(labRun(old, new URLSearchParams('steps=old')).label).toBe('steps old (registered)');
-  }, 120000);
 
   // ladder rung 13c: upperarm=on|off on the fixture's self-clearance profile; no fixture registers the upper arm in it yet
   it('upperarm=on runs the fixture with the upper arm in the arms\' self-clearance (`upperArm` on its profile, id and all: L3-F16-contactStop, another run); upperarm=off takes it off again and on the registered fixture is the registered run; a fixture without self-clearance and unknown values change nothing', async () => {

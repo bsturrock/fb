@@ -20,16 +20,6 @@
 //   bornsep=on|off     the born overlap's held pairs pushed apart, capped (BORN_OVERLAP_V2, ladder 18: none deeper than
 //                      born, parted in about 0.15 s; registered on L3, L4 and HC since 18c), or left to part as the
 //                      bodies move (V1); a fixture without a born overlap (after `born`) is run as it is;
-//   holdstill=on|off   a stationary hold keeping its feet planted (the footwork's HOLD_STILL_V1, rung 13b), or stepping
-//                      home, settling and turning its feet as any stance; a fixture without footwork is run as it is;
-//   latestep=on|off    a new step keeping the time its acceleration needs and a step out of time landing at a point
-//                      fixed on the turf (the footwork's `compose.lateLanding`, polish 2, the leg gallop; no fixture
-//                      registers it yet), or as before; a fixture without composed footwork is run as it is;
-//   steps=new|v1|old   the contact stepping model (plan 15, STEPS_V2: free ground, where, when, and the come-down's read of
-//                      what holds a riding tackler up; contact-steps.ts) in place of the reactive planner once the clip
-//                      regime ends (registered on L3, L4 and HC since step 4, STEPS_V2 since step 4b), the model with
-//                      the come-down reading as at step 4 (STEPS_V1), or the reactive planner, the view before step 4.
-//                      On plan 07's planner (L2, FOOTWORK_L2) the same. A fixture without footwork is run as it is;
 //   upperarm=on|off    the supported arms keeping the upper arm and elbow out of their own trunk too (the self-clearance
 //                      profile's `upperArm`, rung 13c), or only the forearm and palm; a fixture without self-clearance is
 //                      run as it is;
@@ -109,8 +99,6 @@ import {
   withHipStops, withKneeStop, withBornOverlap, withoutBornOverlap, withBornSeparation, withoutBornSeparation, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withoutSelfLegs, withoutShoulderTwistLimit, withoutClipArmSwing, withoutMetArmStay, withoutUpperArmClearance, withSelfLegs, withShoulderTwistLimit,
   withClipArmSwing, withMetArmStay, withUpperArmClearance, withBalancedClear, withoutBalancedClear, type RagdollProfile,
 } from '../sim/profiles';
-import { HOLD_STILL_V1, withHoldStill, withLateLanding, withoutHoldStill, withoutLateLanding } from '../sim/footwork';
-import { STEPS_V1, STEPS_V2, withoutSteps, withSteps } from '../sim/contact-steps';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, WRAP_V13_AUTO } from '../sim/controllers/wrap';
 import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, withForwardFall } from '../sim/profiles';
@@ -124,9 +112,6 @@ const SELFLEG = ['on', 'off'];
 const ARMTWIST = ['on', 'v1', 'off'];
 const BORN = ['on', 'off'];
 const BORNSEP = ['on', 'off'];
-const HOLDSTILL = ['on', 'off'];
-const LATESTEP = ['on', 'off'];
-const STEPS = ['new', 'v1', 'old'];
 const UPPERARM = ['on', 'off'];
 const ARMSWING = ['on', 'off'];
 const ARMSTAY = ['on', 'off'];
@@ -160,7 +145,7 @@ function ragdollParam(out: FixtureDef, key: string, raw: string, valid: boolean,
   return out;
 }
 
-/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `latestep`, `steps`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`, `wrap`, `fall`); unknown values are named in the label and ignored. */
+/** The run the lab makes of `def` under the page's parameters (`order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `upperarm`, `armswing`, `armstay`, `brace`, `balclear`, `wrap`, `fall`); unknown values are named in the label and ignored. */
 export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
   const parts: string[] = [];
   const opts: SimOptions = {};
@@ -245,40 +230,6 @@ export function labRun(def: FixtureDef, params: URLSearchParams): LabRun {
     if (!BORNSEP.includes(v)) parts.push(`bornsep=${bornsep} ignored`);
     else if (!out.ragdoll?.bornOverlap) parts.push('bornsep n/a (no born overlap)');
     else out = ragdollParam(out, 'bornsep', bornsep, true, parts, `born separation ${v}`, (r) => (v === 'off' ? withoutBornSeparation(r) : withBornSeparation(r)));
-  }
-  const holdstill = params.get('holdstill');
-  if (holdstill !== null && holdstill !== '') {
-    const v = holdstill.toLowerCase();
-    if (!HOLDSTILL.includes(v)) parts.push(`holdstill=${holdstill} ignored`);
-    else if (!out.footwork) parts.push('holdstill n/a (no footwork)');
-    else {
-      const f = v === 'off' ? withoutHoldStill(out.footwork) : out.footwork.holdStill?.id === HOLD_STILL_V1.id ? out.footwork : withHoldStill(withoutHoldStill(out.footwork));
-      parts.push(`hold still ${v}${f === out.footwork ? ' (registered)' : ''}`);
-      if (f !== out.footwork) out = { ...out, footwork: f };
-    }
-  }
-  const latestep = params.get('latestep');
-  if (latestep !== null && latestep !== '') {
-    const v = latestep.toLowerCase();
-    if (!LATESTEP.includes(v)) parts.push(`latestep=${latestep} ignored`);
-    else if (!out.footwork?.compose) parts.push('latestep n/a (no composed footwork)');
-    else {
-      const f = v === 'off' ? withoutLateLanding(out.footwork) : withLateLanding(out.footwork);
-      parts.push(`late step ${v}${f === out.footwork ? ' (registered)' : ''}`);
-      if (f !== out.footwork) out = { ...out, footwork: f };
-    }
-  }
-  const steps = params.get('steps');
-  if (steps !== null && steps !== '') {
-    const v = steps.toLowerCase();
-    if (!STEPS.includes(v)) parts.push(`steps=${steps} ignored`);
-    else if (!out.footwork) parts.push('steps n/a (no footwork)');
-    else {
-      const m = v === 'v1' ? STEPS_V1 : STEPS_V2;
-      const f = v === 'old' ? withoutSteps(out.footwork) : out.footwork.steps === m ? out.footwork : withSteps(withoutSteps(out.footwork), m);
-      parts.push(`steps ${v}${f === out.footwork ? ' (registered)' : ''}`);
-      if (f !== out.footwork) out = { ...out, footwork: f };
-    }
   }
   const upperarm = params.get('upperarm');
   if (upperarm !== null && upperarm !== '') {
