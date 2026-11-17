@@ -74,6 +74,25 @@ facemasks, the crossed thighs and the hanging arms. So, in order:
    overpowered.
 6. **Milestone:** lab review by the user.
 
+**Item 1 done (2026-11-17, `581dec4`, `7b76123`; flag off, 584/584, all 414 fixtures, traces and matrices
+byte-identical to `.scratch/p28/final`).** `ArmIntent.action: 'push'` with `PushRequest { effort, lengthM }`
+(`ArmScriptSegment.push` in scripts), profile `ArmProfile.palmPush` = `PALM_PUSH_V1`, reads `ArmSystem.pushOf`,
+`ArmObs.pushId`, events `pushBegin`/`pushEnd`/`pushRejected`, faults under `SimDebug.arm`
+(`tests/palm-push.test.ts`, 8 cases with twins). The patch is held in the pushed man's frame and the arm is a strut
+from shoulder to patch (spring on compression, damped, never negative, capped by elbow torque over the shown elbow's
+lever, tapering to zero as the elbow folds 75-100 deg); it yields under overload rather than releasing; a push counts
+as retention, so the feet regime no longer flickers. Seen in the probe scenes (worktree `.scratch/p30/`): the men stay
+0.3-0.4 m apart, arms out onto the chest, force steady (62 N per hand at a 0.3 m/s request, 102 N at 0.5), 4-8 push
+events a scene against the clamp's thousands. Open from it:
+
+- **Both men tip over backwards at about 4 s once the request reaches 1 m/s.** A push at shoulder height is a moment
+  the balance torque (240 N m) cannot hold, and chest contact no longer carries it between them. A 10 deg forward
+  posture lean does not help. This is the force contest's rule arriving early: the moment a man can resist must come
+  from his base, the distance from his hips to his rear planted foot (weight times that distance), so a man with a
+  foot back leans into a push and a man with his feet together goes over. Legs stay posed; the planted feet are read.
+- Symmetric hands share a lane, so the two men's forearms pass through each other; arms avoid bodies, not other arms.
+- The drawn palm sits 2-3.4 cm off the drawn chest (the patch is on the proxy box, as grips are).
+
 Each is flag off first, then on, full-checked (`CLAUDE.md`). Roles: first slice uses two `defender`s; a blocker role
 and the rules (`progressStopped`) wait until blocking meets a ball carrier.
 
