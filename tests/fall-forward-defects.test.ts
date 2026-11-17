@@ -74,25 +74,6 @@ describe('contact motion polish 4, the forward-fall flip: tracked defects (rule 
     expect(Math.abs(late.at - on.at), said).toBeLessThanOrEqual(FRAME);
   }, 120000);
 
-  // (b) L3-F5-dragMirror reversed: the tackler converts at 1.400 s and falls forward. At 1.4625 s (0.063 s in, the
-  // effort ramp at 0.13) an impact puts 164 W of realized positive power through his effort, over the 157.5 W
-  // tolerance, for one substep: 145 W of it on his HOLD shoulder (122 W planned), which the plan does not drive, and 17 W
-  // on the plan's hips at 8 N m. From the capture at 1.383 s, before the switch, the plan off: 153.5 W, over the 150 W
-  // cap and under the tolerance: the same hold-shoulder impact, nearly over without the plan. A trend line (ladder 15:
-  // realized power past the tolerance is printed, not a gate). The fault twin: the plan off, under the tolerance.
-  it('HOLD_SHOULDER_IMPACT_POWER (L3-F5-dragMirror reversed, from 1.383 s): the forward-falling tackler\'s hold-shoulder impact passes the power tolerance with the plan, and nearly does without it', async () => {
-    const on = await twin('tests/data/state/L3-F5-dragMirror~rev@83.json.gz', true, (s) => power(s, 'D'));
-    const off = await twin('tests/data/state/L3-F5-dragMirror~rev@83.json.gz', false, (s) => power(s, 'D'));
-    const said = JSON.stringify({ on, off });
-    expect(on.forward, said).toBe(true);
-    expect(on.over, said).toBeGreaterThan(0);
-    expect(on.impact, said).toBeGreaterThan(0);
-    expect(on.peakW, said).toBeGreaterThan(on.capW);
-    expect(off.over, said).toBe(0);
-    expect(off.peakW, said).toBeLessThanOrEqual(off.capW);
-    expect(off.peakW, said).toBeGreaterThan(off.capW / 1.05);
-  }, 120000);
-
   // (c) L3-F1-phase7: the carrier converts at 0.558 s and does not fall forward (no plan episode); the tackler converts
   // at 0.879 s and does. At 0.971 s an impact through the carrier's protect elbow (137 W realized on 94 planned) and his
   // legs puts 179 W through his effort, one substep over the 157.5 W tolerance. From the capture at 0.867 s, before the

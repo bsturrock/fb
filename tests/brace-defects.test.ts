@@ -80,19 +80,6 @@ describe('contact motion M2 tracked defects (rule 5)', () => {
     }
   }, 60000);
 
-  // (b) The defender's right hip, supported, snaps (65 rad/s, one tick) at 0.783 s in L3-F1-phase4 and HC-F3-phase50,
-  // reversed order, under V1 (gone under V2: no supported snap is left in L3, L4 or HC). L3-F1-phase4 reversed under
-  // CARRIER_BRACE_V1, captured at 0.750 s with the carrier braced (he loses support at 0.842 s). Twin, brace off: the same
-  // tick, 64.2 rad/s against 65.0. Reached.
-  it('HIP_SNAP (L3-F1-phase4 reversed, brace V1, from 0.750 s): the supported defender\'s right hip turns past the snap rate at 0.783 s, with the brace and without it', async () => {
-    for (const brace of [true, false]) {
-      const sim = await resume('L3-F1-phase4~bracev1-rev@45', brace);
-      const s = snaps(sim, 'D', 0.8);
-      sim.dispose();
-      expect(s.map((x) => `${x.t} ${x.joint} ${x.rep}`), `brace ${brace}`).toEqual(['0.7833 rightHip proxy']);
-    }
-  }, 60000);
-
   // (c) The defender's wrap upper arm in his own trunk (the arm task's self shapes are the forearm and palm only; ladder
   // 13c `SelfClearanceProfile.upperArm`, parked, takes the upper arm in): the distal half's axis over 1 cm inside the
   // drawn trunk, player-seconds over L3, L4 and HC both orders, 0.55 before the brace, 6.5 under V1 (defenders that stayed

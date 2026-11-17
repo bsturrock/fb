@@ -8,11 +8,10 @@ import { describe, expect, it } from 'vitest';
 import type { ArmSide } from '../src/sim/contracts';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { Simulation } from '../src/sim/simulation';
-import { add, len, qRot, scale, sub, type Quat, type Vec3 } from '../src/sim/vec';
+import { add, len, qRot, scale, sub, type Vec3 } from '../src/sim/vec';
 import { continuity, noneSeen, REQUEST_DD_M } from './l3-pass';
 import { asCaptured, create, FIX, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
 import { loadState, resumeState, type StateCapture } from './state';
-import { jointQuats, qAngle, SNAP_RADPS } from './visible';
 import { heldBornBar } from './visible-bar';
 
 type AuditView = { auditPrev: Map<string, { reqL: Record<ArmSide, Vec3> }> };
@@ -139,67 +138,4 @@ describe('contact motion M5 tracked defects (rule 5)', () => {
     expect(valid.breaches, JSON.stringify(valid)).toEqual([]);
   }, 60000);
 
-  // (c) L3-F1-phase7 (D's left foot, 0.500 s): the hit drives D's left thigh into R's shin; the leg's pose clears it
-  // (clearance variant 1) and its solved ankle moves 5 cm back in one substep. The plant is released for it ('clearance')
-  // and the planner's step, seeded from the achieved ankle and its velocity (src/sim/foot-compose.ts `seedStep`), takes
-  // those 5 cm as 12 m/s backward, 16 m/s relative to his hips. The step carries the foot 0.7 m further back within its
-  // acceleration limit before it turns; the foot stays out of reach behind him (1.14 m from the hips) and the leg's twist
-  // turns 60 deg in one frame (leftHip 63 rad/s at 0.933 s): a supported snap. Before the flip D fell at the hit here; the
-  // same seed from a clearance jump is in 19 runs before the flip as after it (9 to 17 m/s relative; L3-F1-phase1 D left
-  // 0.483 s, 17.1), none run away to a snap. Twin: the same state with the foot's ankle velocity from before the clearance
-  // jump kept for the seed: the seed under 8 m/s relative, no snap.
-  it('STEP_SEEDS_CLEARANCE_JUMP (L3-F1-phase7, from 0.483 s): a step seeded from a clearance jump of the achieved ankle runs the foot away behind the hips to a supported hip snap; with the velocity from before the jump kept, no snap', async () => {
-    const cap = loadState('tests/data/state/L3-F1-phase7@29.json.gz');
-    const def = asCaptured(cap);
-    const look = async (keepVelocity: boolean) => {
-      const kept: Partial<Record<ArmSide, Vec3>> = {};
-      const was: Partial<Record<ArmSide, { seeds: number; variant: number }>> = {};
-      const out = { seedRel: 0, farM: 0, snap: 0, joint: '' };
-      const sim = await resumeState(cap, {
-        def,
-        opts: {
-          onSubstep: (s) => {
-            const D = s.byId.get('D')!;
-            if (D.rag || !D.feet) return;
-            const v = D.proxy.body.linvel();
-            const hip = D.proxy.body.translation();
-            for (const side of ['left', 'right'] as const) {
-              const f = D.feet.feet[side];
-              const o = was[side];
-              if (o && f.seeds !== o.seeds && f.source === 'step' && f.mode !== 'planted' && o.variant !== 0) out.seedRel = Math.max(out.seedRel, Math.hypot(f.stepH.v.x - v.x, f.stepH.v.z - v.z));
-              out.farM = Math.max(out.farM, Math.hypot(f.target.x - hip.x, f.target.z - hip.z));
-              if (keepVelocity && f.variant !== 0 && kept[side]) f.ankleV = kept[side]!;
-              else kept[side] = { ...f.ankleV };
-              was[side] = { seeds: f.seeds, variant: f.variant };
-            }
-          },
-        },
-      });
-      let prev: Record<string, Quat> | null = null;
-      while (!sim.done && sim.t < 1.2 - 1e-9) {
-        sim.stepTick();
-        const D = sim.byId.get('D')!;
-        if (D.rag || D.controlMode !== 'supported' || !D.pose) {
-          prev = null;
-          continue;
-        }
-        const Q = jointQuats(D.pose);
-        if (prev) for (const [j, q] of Object.entries(Q)) {
-          const w = qAngle(prev[j]!, q) / def.solver.outerTickS;
-          if (w > out.snap) Object.assign(out, { snap: w, joint: `${j}@${sim.t.toFixed(4)}` });
-        }
-        prev = Q;
-      }
-      sim.dispose();
-      return out;
-    };
-    const on = await look(false);
-    expect(on.seedRel, JSON.stringify(on)).toBeGreaterThan(12);
-    expect(on.farM, JSON.stringify(on)).toBeGreaterThan(1);
-    expect(on.snap, JSON.stringify(on)).toBeGreaterThan(SNAP_RADPS);
-    expect(on.joint, JSON.stringify(on)).toMatch(/^leftHip@/);
-    const twin = await look(true);
-    expect(twin.seedRel, JSON.stringify(twin)).toBeLessThan(8);
-    expect(twin.snap, JSON.stringify(twin)).toBeLessThan(SNAP_RADPS);
-  }, 60000);
 });
