@@ -639,7 +639,7 @@ The user's first review (2026-11-05) is answered in [Review round 1](#review-rou
 | Build | `npm run build` | ok; chunk-size warning only |
 | Evidence | `npm run fixtures` | 216 fixtures; 143 historical entries byte-identical to HEAD; 37 L2 entries |
 | Braking | `npx vite-node scripts/probe/p07-stop.ts [id regex]` | stop time, distance, peak deceleration, confirmed / sustained plants, failed proposals |
-| Plant confirmation | `npx vite-node scripts/probe/p07-confirm.ts [id regex] [--events]`, `p07-precheck.ts [id regex]` | closeout table; pre-check off vs on |
+| Plant confirmation | `npx vite-node scripts/probe/p07-confirm.ts [id regex] [--events]`, `scripts/probe-archive/p07-precheck.ts [id regex]` (archived 2026-11-17: its `noReachCheck` switch is deleted) | closeout table; pre-check off vs on |
 | Validation | `npx vite-node scripts/probe/p07-validate.ts` | the review's invalid values rejected (messages above) |
 | Heel lift | `npx vite-node scripts/probe/p07-heel.ts` | heel numbers above |
 | Snapping | `npx vite-node scripts/probe/p07-snap.ts [id regex] [--list]`, `p07-churn.ts`, `p07-legtrace.ts <id> <player:limb> <from> <to>` | continuity numbers above |
