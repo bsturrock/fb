@@ -738,7 +738,7 @@ describe('plan 08a authority and rules', () => {
 
   it('historical fixtures publish no carry data and keep their ball source; L4 inherits the carry on purpose', async () => {
     // plan 10d D1(e): every fixture of the historical milestones (gates 1-4, L1, L2, ride height, handoff contact)
-    const hist = allFixtures().filter((d) => !/^L[34]$/.test(d.milestone));
+    const hist = allFixtures().filter((d) => !/^(L[34]|BL)$/.test(d.milestone));
     expect(new Set(hist.map((d) => d.milestone.replace(/-.*$/, '').replace(/\d+$/, '')))).toEqual(new Set(['G', 'L', 'RH', 'HC']));
     expect(hist.length).toBeGreaterThan(200);
     for (const def of hist) {

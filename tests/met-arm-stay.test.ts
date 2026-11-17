@@ -41,9 +41,9 @@ async function stayCapture(id: string, tick: number, def = FIX(id)): Promise<Sta
 }
 
 describe('ladder 16b: a composed arm another body has met keeps its natural pose (metArmStay)', () => {
-  it('the profile: the id part, the round trip; registered with clipArmSwing on every L3, L4 and HC self-clearance (18e), on no other fixture', () => {
+  it('the profile: the id part, the round trip; registered with clipArmSwing on every L3, L4, HC and BL self-clearance (18e), on no other fixture', () => {
     for (const d of allFixtures()) {
-      const on = /^(L3|L4|HC)-/.test(d.id) && !!d.selfClearance;
+      const on = /^(L3|L4|HC|BL)-/.test(d.id) && !!d.selfClearance;
       expect(d.selfClearance?.metArmStay, d.id).toBe(on ? true : undefined);
       expect(d.selfClearance?.clipArmSwing, d.id).toBe(on ? true : undefined);
       if (on) expect(d.selfClearance!.id, d.id).toBe(`${preMetArmStay(d).selfClearance!.id}+${CLIP_ARM_SWING_ID}+${MET_ARM_STAY_ID}`);

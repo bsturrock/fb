@@ -62,12 +62,12 @@ describe('rung 7c: contact impulses read as solved', () => {
     expect(run.reduce((a, r) => a + r.every - r.applied, 0)).toBeGreaterThan(10);
   });
 
-  it('the solved reading is on for the L3, L4 and HC families only; the older families keep the reading their evidence was made with', () => {
+  it('the solved reading is on for the L3, L4, HC and BL families only; the older families keep the reading their evidence was made with', () => {
     const fams = new Map<string, boolean[]>();
     for (const d of allFixtures()) {
-      const f = /^(G\d|L\d|RH|HC)/.exec(d.milestone)![1];
+      const f = /^(G\d|L\d|RH|HC|BL)/.exec(d.milestone)![1];
       fams.set(f, [...(fams.get(f) ?? []), !!d.solver.solvedImpulses]);
     }
-    for (const [f, on] of fams) expect([f, new Set(on)], f).toEqual([f, new Set([['L3', 'L4', 'HC'].includes(f)])]);
+    for (const [f, on] of fams) expect([f, new Set(on)], f).toEqual([f, new Set([['L3', 'L4', 'HC', 'BL'].includes(f)])]);
   });
 });

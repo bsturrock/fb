@@ -337,15 +337,15 @@ const probe = async (def: FixtureDef): Promise<Probe> => (await watched(def)).ra
 
 // ------------------------------------------------------------------ plan 11: arm self-clearance
 describe('arm self-clearance: profile and geometry', () => {
-  it('the profile is on for exactly the L3, L4 and HC fixtures, over a measured trunk of seven convex slabs inside the padded proxy boxes', async () => {
+  it('the profile is on for exactly the L3, L4, HC and BL fixtures, over a measured trunk of seven convex slabs inside the padded proxy boxes', async () => {
     await checks([
       [
-        'is on for exactly the L3, L4 and HC fixtures',
+        'is on for exactly the L3, L4, HC and BL fixtures',
         () => {
           // (with the met-arm flip's parts since ladder 18e; before it, the profile itself)
           const stayed = withMetArmStay(withClipArmSwing(SELF_CLEARANCE_V1));
           for (const d of allFixtures()) {
-            const on = /^(L3|L4|HC)$/.test(d.milestone);
+            const on = /^(L3|L4|HC|BL)$/.test(d.milestone);
             expect(d.selfClearance, d.id).toEqual(on ? stayed : undefined);
             if (on) expect(preMetArmStay(d).selfClearance, d.id).toEqual(SELF_CLEARANCE_V1);
           }
@@ -1046,9 +1046,9 @@ describe('contact motion M1: upper-arm twist', () => {
   const v1 = (d: FixtureDef): FixtureDef => ({ ...d, id: `${d.id}-v1`, jointRange: JOINT_RANGE_V1 });
   const ext = (core: Quat, upper: Quat, sx: number): number => (externalTwistRad(E, swingTwistOf(qMul(qConj(core), upper)).twistRad, sx) * 180) / Math.PI;
 
-  it('the profile: on for exactly the L3, L4 and HC fixtures, plan 12 ranges kept, the twist measure the envelope\'s on both sides', () => {
+  it('the profile: on for exactly the L3, L4, HC and BL fixtures, plan 12 ranges kept, the twist measure the envelope\'s on both sides', () => {
     // since the 11b thigh-rotation flip the registered profile is JOINT_RANGE_V3: V2 with `hipTwist`, its arm the same
-    for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? JOINT_RANGE_V3 : undefined);
+    for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC|BL)$/.test(d.milestone) ? JOINT_RANGE_V3 : undefined);
     expect({ ...JOINT_RANGE_V3, id: J2.id, hipTwist: undefined }).toEqual({ ...J2, hipTwist: undefined });
     expect({ ...J2, id: JOINT_RANGE_V1.id, shoulderTwist: undefined }).toEqual({ ...JOINT_RANGE_V1, shoulderTwist: undefined });
     expect(E.twistDeg).toEqual([-100, 100]);

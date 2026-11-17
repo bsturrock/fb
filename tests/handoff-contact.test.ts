@@ -472,9 +472,9 @@ describe('HC variants: mirrored, phase, height, stance and clear space', () => {
         },
       ],
       [
-        'the convertible-pose guard is carried by the HC variants and (contact motion M1) the L3 and L4 fixtures only; the base cases keep their historical profiles',
+        'the convertible-pose guard is carried by the HC variants and (contact motion M1) the L3, L4 and (plan 16) BL fixtures only; the base cases keep their historical profiles',
         () => {
-          const ON = (d: FixtureDef) => d.milestone === 'HC' || d.milestone === 'L3' || d.milestone === 'L4';
+          const ON = (d: FixtureDef) => d.milestone === 'HC' || d.milestone === 'L3' || d.milestone === 'L4' || d.milestone === 'BL';
           const guarded = allFixtures().filter((d) => d.ragdoll?.poseGuard);
           expect(guarded.length).toBeGreaterThan(20);
           expect(guarded.filter((d) => !ON(d)).map((d) => d.id)).toEqual([]);

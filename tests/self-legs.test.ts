@@ -108,9 +108,9 @@ async function legRun(def: FixtureDef, each?: (sim: Simulation, rag: Ragdoll) =>
 }
 
 describe('own-leg contact: profile and shapes', () => {
-  it('every L3, L4 and HC ragdoll runs it (the own-leg flip), no other fixture', () => {
+  it('every L3, L4, HC and BL ragdoll runs it (the own-leg flip), no other fixture', () => {
     const ragdolls = allFixtures().filter((d) => d.ragdoll);
-    for (const d of ragdolls) expect(d.ragdoll!.selfLegs, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) ? SELF_LEGS_V1 : undefined);
+    for (const d of ragdolls) expect(d.ragdoll!.selfLegs, d.id).toBe(/^(L3|L4|HC|BL)-/.test(d.id) ? SELF_LEGS_V1 : undefined);
     expect(ragdolls.filter((d) => d.ragdoll!.selfLegs).length).toBeGreaterThan(100);
     expect(on(FIX('HC-F1-at0.9'))).toEqual(preBornOverlap(preShoulderTwist(REGISTERED('HC-F1-at0.9'))));
     expect(withoutSelfLegs(withSelfLegs(FIX('HC-F1-at0.9').ragdoll!))).toEqual(FIX('HC-F1-at0.9').ragdoll);

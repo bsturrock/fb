@@ -156,7 +156,7 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 08: only L3 (and, plan 13e, HC) fixtures take the composed planner and the locomotion profile; earlier ids keep their paths',
+    'plan 08: only L3 (and, plan 13e, HC; plan 16, BL) fixtures take the composed planner and the locomotion profile; earlier ids keep their paths',
     () => {
       expect(FOOTWORK_L2.compose).toBeUndefined();
       expect(FOOTWORK_L3.id).toBe('footwork-l3-v4');
@@ -164,7 +164,7 @@ const OPT_IN: Row[] = [
       expect(LOCOMOTION_L3_IDLE.id).toBe('locomotion-l3-v4');
       for (const d of allFixtures()) {
         if (d.id.startsWith('L4-')) continue; // later than L3: its falls start from L3 fixtures, with their profiles
-        if (d.id.startsWith('L3-') || d.id.startsWith('HC-')) {
+        if (d.id.startsWith('L3-') || d.id.startsWith('HC-') || d.id.startsWith('BL-')) {
           // the player model plays the idle cycle; the authored body keeps the static fitted idle (the planner with the
           // stationary hold's still feet since rung 14a: the row below; and the contact stepping model since plan 15 step 4)
           expect(d.footwork, d.id).toEqual(withSteps(withHoldStill(FOOTWORK_L3)));
@@ -177,10 +177,10 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'L4: only L4 fixtures carry an envelope; since contact motion M4 every L3 and HC fixture with a ragdoll carries the fall reaction (FALL_REACT_V2 since the palm-load flip, FALL_REACT_V3 since the forward-fall flip), and no other fixture outside L4 a response',
+    'L4: only L4 fixtures carry an envelope; since contact motion M4 every L3, HC and (plan 16) BL fixture with a ragdoll carries the fall reaction (FALL_REACT_V2 since the palm-load flip, FALL_REACT_V3 since the forward-fall flip), and no other fixture outside L4 a response',
     () => {
       for (const d of allFixtures().filter((x) => x.milestone !== 'L4')) {
-        if (d.ragdoll && /^(L3|HC)-/.test(d.id)) expect(d.fallResponse, d.id).toBe(FALL_REACT_V3);
+        if (d.ragdoll && /^(L3|HC|BL)-/.test(d.id)) expect(d.fallResponse, d.id).toBe(FALL_REACT_V3);
         else expect(d.fallResponse, d.id).toBeUndefined();
         expect(d.ragdoll?.envelope, d.id).toBeUndefined();
       }
@@ -218,10 +218,10 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'contact motion M2 follow-up: influence clears out of a regained balance on exactly the L3, L4 and HC football referees, and the export records it',
+    'contact motion M2 follow-up: influence clears out of a regained balance on exactly the L3, L4, HC and BL football referees, and the export records it',
     () => {
       for (const d of allFixtures()) {
-        const on = /^(L3|L4|HC)-/.test(d.id) && d.rules?.kind === 'footballTackleSubset';
+        const on = /^(L3|L4|HC|BL)-/.test(d.id) && d.rules?.kind === 'footballTackleSubset';
         expect(d.rules?.balancedClear, d.id).toBe(on ? true : undefined);
         if (d.rules) expect(d.rules.id.includes('+balancedClear'), d.id).toBe(on);
         if (d.rules) expect(ruleProfileExport(d.rules).balancedClear, d.id).toBe(on ? true : undefined);
@@ -229,12 +229,12 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 12: joint range is on for exactly the L3, L4 and HC fixtures, and the export records it',
+    'plan 12: joint range is on for exactly the L3, L4, HC and BL fixtures, and the export records it',
     async () => {
       // contact motion M1: joint-range-v2 (plan 12's ranges, with the upper-arm twist kept in range); since ladder 11b's
       // flip joint-range-v3 (V2 with the supported thigh's rotation kept in range)
       const J = JOINT_RANGE_V3;
-      for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? J : undefined);
+      for (const d of allFixtures()) expect(d.jointRange, d.id).toBe(/^(L3|L4|HC|BL)$/.test(d.milestone) ? J : undefined);
       for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
         const sim = await Simulation.create(d);
         const e = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
@@ -245,9 +245,9 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 13f, ladder 10: the leg guard is on for exactly the L3, L4 and HC fixtures, as V3 since the flip, and the export records it; V1 and the swept V2 are on for none',
+    'plan 13f, ladder 10: the leg guard is on for exactly the L3, L4, HC and BL fixtures, as V3 since the flip, and the export records it; V1 and the swept V2 are on for none',
     async () => {
-      for (const d of allFixtures()) expect(d.legGuard, d.id).toBe(/^(L3|L4|HC)$/.test(d.milestone) ? LEG_GUARD_V3 : undefined);
+      for (const d of allFixtures()) expect(d.legGuard, d.id).toBe(/^(L3|L4|HC|BL)$/.test(d.milestone) ? LEG_GUARD_V3 : undefined);
       expect(LEG_GUARD_V1).toEqual({ id: 'leg-guard-predictive-v1', aheadS: 1 / 240 });
       // rung 5: the swept step is a separate profile; rung 6 adds the physical legs (V3, the one registered: the line above)
       expect(LEG_GUARD_V2).toEqual({ id: 'leg-guard-sweep-v2', aheadS: 1 / 240, sweep: true });
@@ -262,11 +262,11 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'ladder 14a: the stationary hold keeps its feet (HOLD_STILL_V1) on exactly the L3, L4 and HC foot planners, and the export records it; L2\'s planner has none',
+    'ladder 14a: the stationary hold keeps its feet (HOLD_STILL_V1) on exactly the L3, L4, HC and BL foot planners, and the export records it; L2\'s planner has none',
     async () => {
       const planned = allFixtures().filter((d) => d.footwork);
-      expect(planned.some((d) => !/^(L3|L4|HC)-/.test(d.id))).toBe(true);
-      for (const d of planned) expect(d.footwork!.holdStill, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) ? HOLD_STILL_V1 : undefined);
+      expect(planned.some((d) => !/^(L3|L4|HC|BL)-/.test(d.id))).toBe(true);
+      for (const d of planned) expect(d.footwork!.holdStill, d.id).toBe(/^(L3|L4|HC|BL)-/.test(d.id) ? HOLD_STILL_V1 : undefined);
       for (const d of [FIX('L3-F16-sprint'), FIX('L2-F14-oneArmFeet')]) {
         const sim = await Simulation.create(d);
         const e = sim.exportFixture() as { profileIds: Record<string, unknown>; profiles: Record<string, unknown> };
@@ -277,13 +277,13 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 15 step 4: the contact stepping model (STEPS_V2 since step 4b, the come-down\'s read on the model; STEPS_V1 before it) on exactly the L3, L4 and HC composed foot planners and, since step 5a, every L2 foot planner (plan 07\'s, FOOTWORK_L2); RH has no foot planner',
+    'plan 15 step 4: the contact stepping model (STEPS_V2 since step 4b, the come-down\'s read on the model; STEPS_V1 before it) on exactly the L3, L4, HC and BL composed foot planners and, since step 5a, every L2 foot planner (plan 07\'s, FOOTWORK_L2); RH has no foot planner',
     () => {
       const planned = allFixtures().filter((d) => d.footwork);
       expect(planned.some((d) => /^L2-/.test(d.id) && d.footwork!.id === `${FOOTWORK_L2.id}+${STEPS_V2.id}`)).toBe(true);
       expect(allFixtures().some((d) => /^RH-/.test(d.id))).toBe(true);
       for (const d of allFixtures().filter((x) => /^RH-/.test(x.id))) expect(d.footwork, d.id).toBeUndefined();
-      for (const d of planned) expect(d.footwork!.steps, d.id).toBe((/^(L3|L4|HC)-/.test(d.id) && d.footwork!.compose) || /^L2-/.test(d.id) ? STEPS_V2 : undefined);
+      for (const d of planned) expect(d.footwork!.steps, d.id).toBe((/^(L3|L4|HC|BL)-/.test(d.id) && d.footwork!.compose) || /^L2-/.test(d.id) ? STEPS_V2 : undefined);
     },
   ],
 ];

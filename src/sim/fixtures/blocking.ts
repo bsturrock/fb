@@ -79,7 +79,7 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     milestone: 'BL',
     title: o.title,
     notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
-    armProfile: { ...base.armProfile!, palmPush: PALM_PUSH_BLOCK },
+    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block`, palmPush: PALM_PUSH_BLOCK },
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },
     focus: { A: 'B', B: 'A' },
