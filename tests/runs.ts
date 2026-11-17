@@ -294,7 +294,9 @@ export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preStep
  * `as` maps each one to the variant a capture was taken under (scripts/capture-state.ts `--v3`, `--flip8i`, `--hips`,
  * `--joints`): the definition returned is `as` of it. `variant`: paths the test resumes as a variant of the capture
  * (resumeState's `variant`), not compared; no flip in the chain may change one, so the chain cannot stop early on it.
- * Throws when no definition matches.
+ * Throws when no definition matches. Plan 15 step 5b: with `footwork` in `variant` the capture's footwork is taken over
+ * by the registered one (the contact stepping model, from the captured feet as at a crossing): the definition returned
+ * has the registered fixture's footwork, and the test resumes with `variant: ['footwork']`.
  */
 export function asCaptured(cap: { fixture: string; tick: number; profiles: Record<string, string> }, as: (d: FixtureDef) => FixtureDef = (d) => d, variant: string[] = []): FixtureDef {
   const skip = (p: string): boolean => variant.some((v) => p === v || p.startsWith(`${v}.`));
@@ -304,11 +306,11 @@ export function asCaptured(cap: { fixture: string; tick: number; profiles: Recor
   for (const f of BEFORE_FLIPS) chain.push(f(chain[chain.length - 1]));
   const defs = chain.map(as);
   const ids = defs.map((v) => profileIds(asBuilt(v)));
-  for (const p of new Set(ids.flatMap((x) => Object.keys(x)))) if (skip(p) && ids.some((x) => x[p] !== ids[0][p])) throw new Error(`asCaptured(${cap.fixture}@${cap.tick}): the flip chain changes ${p}, which the test resumes as a variant`);
+  for (const p of new Set(ids.flatMap((x) => Object.keys(x)))) if (skip(p) && !(p === 'footwork' || p.startsWith('footwork.')) && ids.some((x) => x[p] !== ids[0][p])) throw new Error(`asCaptured(${cap.fixture}@${cap.tick}): the flip chain changes ${p}, which the test resumes as a variant`);
   const tried: string[] = [];
   for (let i = 0; i < defs.length; i++) {
     const off = mismatch(ids[i]);
-    if (!off.length) return defs[i];
+    if (!off.length) return variant.includes('footwork') ? { ...defs[i], footwork: defs[0].footwork } : defs[i];
     tried.push(off.join(', '));
   }
   throw new Error(`asCaptured(${cap.fixture}@${cap.tick}): no definition in the flip chain ran the capture's profiles (differing, from the registered on: ${tried.map((t) => `[${t}]`).join(' ')})`);

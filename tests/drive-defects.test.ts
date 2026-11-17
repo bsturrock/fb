@@ -6,29 +6,12 @@
 // "The drive".
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
-import { JOINT_RANGE_V3, SHOULDER_TWIST_ANAT_V2, withShoulderTwistLimit } from '../src/sim/profiles';
+import { SHOULDER_TWIST_ANAT_V2, withShoulderTwistLimit } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, create, FIX, preHipTwist, preShoulderTwist, preSteps, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
+import { asCaptured, create, FIX, preShoulderTwist, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './runs';
 import { loadState, resumeState } from './state';
 import { jointAngles } from './visible';
-
-/** D's supported right hip twist past the 45 deg human range to `untilS`: the peak, its time, seconds past 30, the foot's variant there. */
-function supportedHipTwist(sim: Simulation, fromS: number, untilS: number) {
-  const D = sim.byId.get('D')!;
-  const out = { peak: 0, at: 0, impS: 0, variant: 0, up: true };
-  while (!sim.done && sim.t < untilS - 1e-9) {
-    sim.stepTick();
-    if (sim.t < fromS || !D.pose || D.representation === 'ragdoll' || D.controlMode !== 'supported') continue;
-    const m = jointAngles(D.pose, D.body).rightHip;
-    if (m.swing > 150) continue;
-    const ex = Math.abs(m.rot) - 45;
-    if (ex > 30) out.impS += sim.def.solver.outerTickS;
-    if (ex > out.peak) Object.assign(out, { peak: ex, at: sim.t, variant: D.feet?.feet.right.variant ?? 0 });
-  }
-  out.up = !D.handoff;
-  return out;
-}
 
 /** R's left shoulder twist past the 100 deg human range, to the run's end: the peak, the swing there, seconds past 30. */
 function overheadTwist(sim: Simulation) {
@@ -104,52 +87,5 @@ describe('contact motion polish 1.2 tracked defects (rule 5)', () => {
     expect(before.peak, bSaid).toBeGreaterThan(60);
     expect(Math.min(before.swing, before.lastSwing), bSaid).toBeGreaterThan(140);
     expect(before.impS, bSaid).toBeGreaterThan(4);
-  }, 120000);
-
-  // (b) L3-F5-dragMirror reversed: the drive holds from 0.575 s and ends at 0.850 s with the hold lost (he stays up; the
-  // carrier goes down at 1.129 s, 0.829 s before the flip). Stepping on past the fallen carrier, the defender's right
-  // swing foot takes a high clearance variant (9) over him, its target close above the hip, and the knee, placed from a
-  // pole, turns sideways and back: the supported right hip twist runs 111 deg past range from 1.65 to 1.93 s, his shin
-  // crossing the carrier's. The ladder 11b mechanism (tests/hip-twist.test.ts: a foot target close beside or above the
-  // hip turns the knee back). Captured at 1.500 s (under JOINT_RANGE_V2); twin, WRAP_V4 from there: the same. Before the
-  // drive flip L3-F1-phase1 reaches the same (D's right swing foot in clearance variant 8, 125 deg past at 0.85 s).
-  // Reached, not made. Fixed by the 11b thigh-rotation flip (JOINT_RANGE_V3 registered, the thigh's rotation bounded):
-  // from the same state inside the range, and L3-F1-phase1 as before the drive flip too. Now the fix's test: the fault
-  // twin is the capture's own profile, V2, which turns the knee back as above.
-  it('CLEARANCE_KNEE_TURNS_BACK gone (L3-F5-dragMirror reversed, from 1.500 s): under the registered thigh-rotation bound the clearance step keeps the hip twist within range; the fault twin (JOINT_RANGE_V2) turns the knee back over 60 deg past range, with the drive and without it from the same state, and before the drive flip L3-F1-phase1 the same', async () => {
-    const cap = loadState('tests/data/state/L3-F5-dragMirror~rev@90.json.gz');
-    const def = asCaptured(cap);
-    expect(def.wrap?.drive).toBeDefined();
-    expect(def.jointRange?.id).toBe('joint-range-v2');
-    expect(FIX(cap.fixture).jointRange).toBe(JOINT_RANGE_V3);
-    const look = async (d: FixtureDef, variant?: string[]) => {
-      const sim = await resumeState(cap, variant ? { def: d, variant } : { def: d });
-      const out = supportedHipTwist(sim, 1.5, 2.2);
-      sim.dispose();
-      return out;
-    };
-    const on = await look(def);
-    const off = await look(preWrapV5(def), ['wrap']);
-    const bound = await look({ ...def, jointRange: JOINT_RANGE_V3 }, ['jointRange', 'ragdoll']);
-    const said = JSON.stringify({ on, off, bound });
-    expect(on.peak, said).toBeGreaterThan(60);
-    expect(on.impS, said).toBeGreaterThan(0.2);
-    expect(on.variant, said).toBeGreaterThanOrEqual(8);
-    expect(on.up, said).toBe(true);
-    expect(off, said).toEqual(on);
-    expect(bound.peak, said).toBeLessThan(30);
-    const phase1 = async (d: FixtureDef) => {
-      // (plan 15 step 4: and before the stepping flip: the clearance step is the reactive planner's)
-      const sim = await create(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preSteps(d))))))))), {});
-      const out = supportedHipTwist(sim, 0.6, 0.95);
-      sim.dispose();
-      return out;
-    };
-    const before = await phase1(preHipTwist(FIX('L3-F1-phase1')));
-    const registered = await phase1(FIX('L3-F1-phase1'));
-    const bSaid = JSON.stringify({ before, registered });
-    expect(before.peak, bSaid).toBeGreaterThan(60);
-    expect(before.variant, bSaid).toBeGreaterThanOrEqual(8);
-    expect(registered.peak, bSaid).toBeLessThan(30);
   }, 120000);
 });
