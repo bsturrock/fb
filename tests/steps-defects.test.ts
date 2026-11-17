@@ -6,10 +6,12 @@ import { asCaptured, preSteps } from './runs';
 import { loadState, resumeState } from './state';
 
 // Plan 15 step 4, defects reached by the stepping flip's moved trajectories, each on a capture taken under the flip's
-// registration a little before the defect. With the model the tackler goes down later (a tracked limit,
-// docs/open/15_Contact_Footwork.md item 1), and two of his conversions there go wrong. The twin with the reactive
-// planner from the same state (`preSteps`) shows the same defect: reached, not made by the model's feet. Each test
-// fails once its defect is gone from that state; it is then turned into the fix's test, with the fault twin.
+// registration (STEPS_V1) a little before the defect. Under it the tackler went down late, held up by the come-down's
+// read, and two of his conversions there go wrong. The twin with the reactive planner from the same state (`preSteps`)
+// shows the same defect: reached, not made by the model's feet. Since step 4b (STEPS_V2, the come-down's read on the
+// model, tested below) no L3, L4 or HC run reaches either; both are parked (docs/open/15_Contact_Footwork.md, tracked
+// item 1) and stay pinned here on the step-4 state. Each test fails once its defect is gone from that state; it is then
+// turned into the fix's test, with the fault twin.
 
 const len = (v: number[]): number => Math.hypot(...v);
 
@@ -38,7 +40,7 @@ async function conversion(file: string, model: boolean, pid: string) {
   return out;
 }
 
-describe('plan 15 step 4: defects reached by the stepping flip (the tackler going down late)', () => {
+describe('plan 15 step 4: defects reached by the stepping flip (the tackler going down late under STEPS_V1)', () => {
   it('TAKEDOWN_ENERGY_GAIN (L3-F1-phase2 reversed, from 1.067 s): the late tackler\'s takedown at 1.133 s gains over half his kinetic energy at the transfer (energyGain: transferFailed), his folded pose\'s centre of mass 15 cm off the proxy\'s, the ragdoll spun up over three times faster than the proxy turned; the reactive planner from the same state the same', async () => {
     for (const model of [true, false]) {
       const r = await conversion('L3-F1-phase2~rev@64', model, 'D');

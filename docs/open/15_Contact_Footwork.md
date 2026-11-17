@@ -1,7 +1,7 @@
 # 15. Contact footwork: one stepping model
 
-Status: steps 1 to 4 done. The model is on for every L3, L4 and HC fixture with a composed foot planner (lab
-`&steps=old` shows the reactive planner for comparison). L2 and RH keep the reactive planner until step 5. Owner
+Status: steps 1 to 4 done, and 4b (the come-down's read on the model). The model is on for every L3, L4 and HC
+fixture with a composed foot planner (lab `&steps=old` shows the reactive planner, `&steps=v1` the model as at step 4). L2 and RH keep the reactive planner until step 5. Owner
 (2026-11-16): the round-4 scenes look fine with the model; the overlaps there are polish, not blockers.
 
 ## What a viewer should see (owner, 2026-11-15)
@@ -37,10 +37,18 @@ where it is shown, the shoe turned onto the heading, the plant at its lowest sol
 **Shown as asked.** The leg solve shows a model foot exactly where asked (`FootRequest.exact`). The leg guard may
 still turn a planted leg's knee to another pole (rung 7).
 
-**Falls.** The bound-legs fall reads `legsBound` (a foot cannot follow the hips), the ride-down's come-down
-`standsNowhere` (neither can), in place of "held off" and "past its time".
+**Falls.** The bound-legs fall reads `legsBound` (a foot cannot follow the hips) in place of "held off" and "past its
+time". The ride-down's come-down takes a riding tackler down with his man (off his support) once, for the grace,
+nothing holds him up (`underHips`, simulation.ts `rideUnsupported`): no foot can get under his hips (`footUnder`: not
+bound, and the hips' capture point within its short step), his body (trunk, head, arms; not the legs the model shows)
+is off the carrier, and he holds no carrier still on his feet (a hold counts until the carrier's core is within the
+ride's `carrierDownM` or the play has ended). Step 4 read the reactive planner's terms (`standsNowhere`, any contact,
+any hold); none of them ever let go on the model: the tackler drives on at 3.3-3.9 m/s, a foot stays planted or in a
+short step, his shown legs lie against the fallen carrier, his clamp stays on a man already down. He rode the come-down
+to its low exit, its bound or the scripted fall, 0.1-0.45 s after the reactive planner's tackler, whose feet were
+stranded in long swings.
 
-Constants (`STEPS_V1`): short step 0.4 m, gain 12 cm, step time length / (1.6 + 2 |v|) m/s within 0.16-0.30 s, aim
+Constants (`STEPS_V2`, `STEPS_V1` with `underHips`): short step 0.4 m, gain 12 cm, step time length / (1.6 + 2 |v|) m/s within 0.16-0.30 s, aim
 followed at 2 m/s, lift 7 cm, foot radius 10 cm, leg skin 3 cm, bound past 8 cm (a held carrier's thighs stand 2-8 cm
 in the holder's for most of a hold; the hit scenes' bound feet 10-30 cm).
 
@@ -48,13 +56,13 @@ in the holder's for most of a hold; the hit scenes' bound feet 10-30 cm).
 
 Each is reached with the model on (measured over the flip's runs); none blocks a gate, none has an exception.
 
-1. **The tackler goes down late.** He stands over the falling carrier (27 player-runs fall later, 13 takedowns become
-   diagnostic falls). Not traced: the ride-down's come-down waits until neither foot can stand (`standsNowhere`), and
-   the model's feet stand more often than the reactive planner's. Two conversions there go wrong, the reactive planner
-   from the same state the same (tests/steps-defects.test.ts): the folded tackler's transfer gains over half his energy
-   and spins him up (TAKEDOWN_ENERGY_GAIN: L3-F1-phase1, -phase2, L3-F4-oneArm, L4-F5-oneClamp-off, reversed), and one
-   takedown is refused for his supported right elbow folded past the ragdoll's 145 deg, so he falls as the rigid proxy
-   (ELBOW_PAST_RAGDOLL_RANGE: L4-F10-wrap-off D).
+1. **Two conversions of a tackler held up too long** (step 4's runs; none since 4b, parked: `.scratch/p25/parked/`),
+   pinned on step-4 captures with the reactive planner's twin (tests/steps-defects.test.ts): a folded tackler's
+   transfer, conserving momentum with a smaller inertia and his centre of mass 15 cm off the proxy's, gains over half
+   his energy and spins him up (TAKEDOWN_ENERGY_GAIN); a takedown is refused for a supported right elbow at 150 deg past
+   the ragdoll's 145, a rigid-proxy fall (ELBOW_PAST_RAGDOLL_RANGE: the clamp's achieved arm, arms.ts, is floored only by
+   the arm profile's 0.12 m reach, about 160 deg; the generated arms keep the ragdoll's range, plan 07). Since 4b no
+   supported elbow passes 145 deg in any L3, L4 or HC run, and no takedown gains over half (median 17 %, reactive 6 %).
 2. **A leg in the other man in the holds** (L3-F6-hold, -holdMirror, -saturated): with no free place the carrier's
    foot takes the least deep, his thigh 3-8 cm in the holder's.
 3. **A landing rolled on its edge**, 15-42 deg in hit scenes: the shoe has no ankle roll (needs a subtalar roll in the
@@ -64,7 +72,7 @@ Each is reached with the model on (measured over the flip's runs); none blocks a
 5. **A shoe in the turf** for up to 0.05 s, at most 5.6 cm, in 8 runs: the leg solve shows the ankle below its request
    as the hips drop (L3-F8-recontact D 0.92-0.95 s).
 
-Also: supported leg against ragdoll 20.9 s over all runs (reactive planner 1.9 s), mostly item 1; hip past its range
+Also: supported leg against ragdoll 16.3 s over all runs (reactive planner 1.9 s, step 4 20.9 s); hip past its range
 3.6 s (0.9 s); the leg guard's depth queries (`pose.ts`, external) past the 4,000-a-tick budget in 6 runs, at most
 4,335 (L3-F1-low, HC-F3-lowRunner 0.72 s, L3-F4-twoArm 0.8 s). Parked: the swing's path in 3D
 (`.scratch/p23/parked/s3-over/`), the knee carried in by the hips.
@@ -92,7 +100,8 @@ the model in one step, their summaries change once, and the old planner is delet
 ## Steps
 
 1. Free ground. 2. The model behind a profile. 3. One test of a place, feet shown as asked, places ordered by depth.
-4. The flip on L3, L4 and HC (summaries changed once; who falls to the owner). Done.
+4. The flip on L3, L4 and HC (summaries changed once; who falls to the owner). Done. 4b: the come-down's read on the
+   model (STEPS_V2), its own flip. Done.
 5. Older families, then delete the old planner and its tests.
 6. Polish what looks worst in the lab, in the order above.
 
