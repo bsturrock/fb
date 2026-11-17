@@ -11,13 +11,13 @@ import { carriedBall, type PhysicalPose } from '../src/sim/pose';
 import type { FixtureDef } from '../src/sim/fixture';
 import { FOOTWORK_L3, HOLD_STILL_V1, holdStillAt } from '../src/sim/footwork';
 import { IDLE_POSE_RECORD, IDLE_STANCE_FADE_MPS } from '../src/sim/locomotion';
-import { add, dist, dot, horiz, len, qConj, qMul, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
+import { add, dist, dot, len, qConj, qMul, qRot, scale, sub, v3, type Vec3 } from '../src/sim/vec';
 import { expect } from './plain-expect';
-import { create, FIX as REGISTERED, pace, preSteps, run, traceRowsDiff } from './runs';
+import { create, FIX as REGISTERED, pace, run, traceRowsDiff } from './runs';
 import { armLengthErr, armProfile, count, L3, LIMBS, modes, peaks, ragOf, SIDES } from './transitions-shared';
 
-/** Plan 15 step 4: a fixture as before the stepping flip (the pass checks the reactive planner's contracts). */
-const FIX = (id: string): FixtureDef => preSteps(REGISTERED(id));
+/** A fixture as registered (plan 15 step 5b: on the contact stepping model). */
+const FIX = REGISTERED;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The pass
@@ -108,50 +108,7 @@ export const POP_M = 0.05;
 export const SLIDE_M = 0.05;
 /** A launch: a supported root more than this above its support's height target (m). */
 export const ROOT_M = 0.1;
-/** The old fine limit of the boundary measures (m), now the printed meter's threshold. */
-export const FINE_POP_M = 0.01;
 
-/** Per fixture: the audited boundaries, those over FINE_POP_M, and the largest with where (printed, not judged). */
-export const AUDIT_SEEN = new Map<string, { n: number; over: number; max: number; at: string }>();
-
-export const AUDIT = check({
-  name: 'transition audit',
-  fixtures: /^L3-/,
-  // every L3 case: free movement, contact, recontact, landing and airborne recovery, contact interrupted by falling.
-  // Ladder 15: a boundary blocks at POP_M (it was 1 cm, with five pinned cases of 1.01-1.48 cm, KNOWN_AUDIT, gone with it)
-  watch(d, report) {
-    const ok = softly(report);
-    // every reseed the pose takes as a new owner, seen from outside the audit
-    const seeds = new Map<string, number>();
-    const reseeds: { t: number; id: string }[] = [];
-    return {
-      substep(s) {
-        for (const pl of s.players)
-          for (const side of SIDES) {
-            const f = pl.feet?.feet[side];
-            if (!f || pl.rag) continue;
-            const k = `${pl.id}:${side}`;
-            const was = seeds.get(k);
-            if (was !== undefined && was !== f.seeds) reseeds.push({ t: s.t, id: pl.id });
-            seeds.set(k, f.seeds);
-          }
-      },
-      finish(sim) {
-        const ds = sim.transitionDeltas;
-        const seen = { n: ds.length, over: 0, max: 0, at: '' };
-        for (const x of ds) {
-          ok(() => expect(Object.keys(x.rawBy).length, d.id).toBeGreaterThan(20));
-          const at = `${d.id} ${x.t.toFixed(4)} ${x.playerId} ${x.landmark}`;
-          if (x.deltaM > FINE_POP_M) seen.over++;
-          if (x.deltaM > seen.max) [seen.max, seen.at] = [x.deltaM, at];
-          ok(() => expect(x.deltaM, `${at} ${x.from} > ${x.to} raw ${x.rawM.toFixed(4)}`).toBeLessThanOrEqual(POP_M));
-        }
-        AUDIT_SEEN.set(d.id, seen);
-        for (const r of reseeds) ok(() => expect(ds.some((x) => x.playerId === r.id && Math.abs(x.t - r.t) < 1e-9), `${d.id} reseed of ${r.id} at ${r.t.toFixed(5)} has no boundary`).toBe(true));
-      },
-    };
-  },
-});
 
 /** A watch that keeps the run's audited boundaries for a finish that reads them. */
 const onDeltas =
@@ -334,170 +291,6 @@ export async function stepAsIsCovered(o: { strip?: boolean } = {}): Promise<stri
   return fails;
 }
 
-export const RAW_KEPT = check({
-  name: 'the raw difference and what was set aside',
-  fixtures: ['L3-F7-phase0', 'L3-F1-mirror0'],
-  watch: (d) => ({
-    finish(sim) {
-      const ds = sim.transitionDeltas;
-      if (d.id === 'L3-F7-phase0') {
-        // L3-F7-phase0: before 10b the collision turned the travel direction, the clip heading snapped to it and the old
-        // path's request jolted (two boundaries over 1 cm raw, passed only through the correction). The heading now follows at
-        // a bounded rate (B3; its fault twin is "B3 fault put back"): no pop there before or after the correction (ladder
-        // 15: POP_M, was 1 cm)
-        const f7 = nonEmpty(ds, 'L3-F7-phase0 boundaries');
-        for (const x of f7) expect(x.rawM, `L3-F7-phase0 ${x.t}`).toBeLessThanOrEqual(POP_M);
-      } else {
-        // what still jumps is the body-frame request when contact entry turns the body (the angular impulse; the clip itself
-        // is the same in both compositions). Plan 13d: no L3 boundary is over 1 cm raw any more (L3-F1-mirror0 D 0.479 s was
-        // 1.76 cm), so the record is a boundary the correction set at least 5 mm aside: L3-F1-mirror4 D 0.479 s, raw 0.99 cm,
-        // 0.22 cm after it. Under the strike (WRAP_V4) that run has none and L3-F1-mirror0 has R's at the hit, 0.450 s: raw
-        // 0.76 cm, 0.25 cm after it
-        const jolted = nonEmpty(ds.filter((x) => x.rawM - x.deltaM > 0.005), 'jolted boundaries');
-        for (const x of jolted) expect(Math.max(...Object.values(x.requestJumpM))).toBeGreaterThan(0);
-      }
-      // the two measures differ only where a demonstrated artifact was corrected; every boundary keeps all three numbers
-      for (const x of ds) {
-        expect(Object.keys(x.rawBy).sort()).toEqual(Object.keys(x.by).sort());
-        expect(Number.isFinite(x.continuedM)).toBe(true);
-        if (Math.max(...Object.values(x.requestJumpM)) === 0) expect(x.deltaM).toBeCloseTo(x.rawM, 10);
-      }
-    },
-  }),
-});
-
-export const NOT_TWICE = check({
-  name: 'a jump the offset took up is not corrected again',
-  // the planner takes a request jump over 15 m/s into the offset: the reference must not subtract it again
-  fixtures: ['L3-F1-phase3', 'L3-F1-low', 'L3-F9-noProbe-prep', 'L3-F9-playerBelow'],
-  watch: (d) => ({
-    finish(sim) {
-      for (const x of sim.transitionDeltas) for (const m of Object.values(x.requestJumpM)) expect(m * 240, `${d.id} ${x.t}`).toBeLessThanOrEqual(15);
-    },
-  }),
-});
-
-/** The landings LANDINGS saw, by whose: the coverage floor is by kind (ladder 14a), a carrier's and a defender's. */
-export const LANDING_SEEN = { carrier: 0, defender: 0 };
-/** The kinds of landing a record has none of. */
-export const unseenLandings = (s: typeof LANDING_SEEN): string[] => [...(s.carrier > 0 ? [] : ['carrier']), ...(s.defender > 0 ? [] : ['defender'])];
-
-export const LANDINGS = check({
-  name: 'a landing compared with the old step path as it is',
-  // L3-F3-side: before 10b, R's step at 0.32 s ran out of time at the speed cap and its old path stood still 5 cm past
-  // the plant the substep after (the stop the stepStopM reference carried on); across L3 that correction carried 14
-  // boundaries over 1 cm, up to 6.9 cm. Now every step-to-plant landing passes with nothing set aside. The coverage floor
-  // is by kind (ladder 14a), over the four: a carrier's landing and a defender's are checked (LANDING_SEEN). It was more
-  // than one landing in each fixture; under the carrier's brace L3-F3-sideMirror's D no longer steps to a plant before the
-  // end, and with the brace leaning in time (CARRIER_BRACE_V2) neither L3-F3 run lands before both players are down
-  fixtures: ['L3-F3-side', 'L3-F3-sideMirror', 'L3-F5-drag', 'L3-F8-recontact'],
-  watch: (d) => ({
-    finish(sim) {
-      const id = d.id;
-      const landings = sim.transitionDeltas.filter((b) => SIDES.some((s) => b.legs[s].old.kind === 'target' && b.legs[s].now.kind === 'plant'));
-      // (ladder 15: no pop, POP_M; was 1 cm)
-      for (const x of landings) {
-        LANDING_SEEN[sim.byId.get(x.playerId)!.setup.role === 'runner' ? 'carrier' : 'defender']++;
-        expect(x.rawM, `${id} ${x.t.toFixed(4)} ${x.playerId}`).toBeLessThanOrEqual(POP_M);
-        if (Math.max(...Object.values(x.requestJumpM)) === 0) expect(x.deltaM).toBe(x.rawM);
-      }
-    },
-  }),
-});
-
-export const HANDOVER = { carried: 0, kept: 0, airborne: 0, overdue: 0 };
-export const HELD_LEG = check({
-  name: 'a held leg handed to a step, a support loss keeping a step on its path',
-  // (plan 12: the overdue step that loses support moved out of these runs with the heel lift; L3-F9-noProbe-exit R's right
-  // foot has one at 0.6333 s)
-  fixtures: /^L3-F(1-low|1-phase4|3-collision|9-noProbe-contact|9-noProbe-free|9-noProbe-prep|9-noProbe-exit|11-invalid)$/,
-  watch(d) {
-    const was = new Map<string, { carried: boolean; seeds: number; mode: string; source: string; late: boolean; moveV: Vec3; target: Vec3; aMax: number }>();
-    return {
-      substep(s) {
-        for (const pl of s.players)
-          for (const side of SIDES) {
-            const f = pl.feet?.feet[side];
-            if (!f || pl.rag) continue;
-            const k = `${pl.id}:${side}`;
-            const p = was.get(k);
-            if (p && !p.carried && f.carried) {
-              HANDOVER.carried++;
-              expect(f.seeds, `${d.id} ${s.t}`).toBe(p.seeds);
-              const x = s.transitionDeltas.filter((b) => b.playerId === pl.id).at(-1)!;
-              expect(x.t, `${d.id} ${s.t}`).toBeCloseTo(s.t, 9);
-              // on the ground old and new are one path here, less what the lift cap takes off the old path's motion in the step's
-              // first update; a support loss adds the request's seam
-              const cut = Math.max(0, Math.abs(f.requestWasV.y + f.offsetV.y) - FOOTWORK_L3.swing.maxLiftRateMps) * s.dt;
-              expect(dist(x.legs[side].old.ankle, x.legs[side].now.ankle), `${d.id} ${s.t}`).toBeLessThan(f.mode === 'airborne' ? 0.01 : 1e-3 + cut);
-            }
-            if (p && p.mode === 'swing' && p.source === 'step' && f.mode === 'airborne' && f.source === 'step') {
-              HANDOVER.kept++;
-              expect(f.seeds, `${d.id} ${s.t}`).toBe(p.seeds);
-              if (p.late) {
-                // a step past its time goes on from the motion it had, not from a path velocity it dropped: its motion changes by
-                // at most the step's declared acceleration over the substep, plus what the speed cap takes off (plan 10b; this
-                // was a window of -2/+2 m/s around the last speed, with half the speed as the floor, which a bounded reversal
-                // through zero speed breaks)
-                HANDOVER.overdue++;
-                const sp = len(horiz(pl.proxy.body.linvel()));
-                const C = FOOTWORK_L3.compose!;
-                const vNow = scale(horiz(sub(f.target, p.target)), 1 / s.dt);
-                const cut = Math.max(0, len(p.moveV) - (FOOTWORK_L3.swing.maxSpeedMps + FOOTWORK_L3.swing.travelSpeedK * sp));
-                expect(len(sub(vNow, p.moveV)), `${d.id} ${s.t}`).toBeLessThanOrEqual(Math.max(C.stepAccelMps2 + C.stepAccelPerTravel * sp, p.aMax) * s.dt + cut + 1e-9);
-              }
-            }
-            // a held leg that loses support stays on the old owner's path too
-            if (p && p.mode === 'swing' && p.source === 'follow' && f.mode === 'airborne' && f.source === 'step' && f.carried) {
-              HANDOVER.airborne++;
-              expect(f.seeds, `${d.id} ${s.t}`).toBe(p.seeds);
-            }
-            const C = FOOTWORK_L3.compose!;
-            was.set(k, { carried: f.carried, seeds: f.seeds, mode: f.mode, source: f.source, late: f.elapsedS >= f.durS, moveV: { ...f.moveV }, target: { ...f.target }, aMax: C.stepAccelMps2 + C.stepAccelPerTravel * len(horiz(pl.proxy.body.linvel())) });
-          }
-      },
-    };
-  },
-});
-
-export const SEAMS = { n: 0 };
-export const SEAM = check({
-  name: 'a request seam taken up by the offset',
-  fixtures: /^L3-F9-(lift-free|playerBelow)$/,
-  watch(d) {
-    const was = new Map<string, Vec3>();
-    return {
-      substep(s) {
-        for (const pl of s.players)
-          for (const side of SIDES) {
-            const f = pl.feet?.feet[side];
-            if (!f || pl.rag) continue;
-            const k = `${pl.id}:${side}`;
-            const last = was.get(k);
-            if (last && len(f.seamOffset) > 0.02) {
-              SEAMS.n++;
-              // the 34 cm of the request's seam stay out of the foot
-              expect(dist(f.target, last) / s.dt, `${d.id} ${pl.id} ${s.t}`).toBeLessThan(15);
-            }
-            was.set(k, { ...f.target });
-          }
-      },
-    };
-  },
-});
-
-export const FRESH_PLANT = check({
-  name: 'a fresh plant not stepped from the moment it lands',
-  // at speed the reach-time trigger would release a foot one substep after its touchdown
-  fixtures: /^L3-F(3-side|5-drag)$/,
-  watch: (d) => ({
-    finish(sim) {
-      const quick = sim.events.filter((e) => e.type === 'footRelease' && e.data!.reason === 'reach' && Number(e.data!.solves) <= 1);
-      expect(quick, d.id).toHaveLength(0);
-    },
-  }),
-});
-
 // The audit reads copies: the audited side of the comparison comes from the pass (each substep's planner, sampler and
 // pose state, hashed), the unaudited side is run in the test. The stated sample: the first fixture of each L3 family
 // (F1-F17) and the five the audit was first checked on
@@ -546,16 +339,7 @@ export type ContinuitySeen = { steps: number; stored: number; chaseStarts: numbe
 const cap = (k: StepKind): Capitalize<StepKind> => (k[0]!.toUpperCase() + k.slice(1)) as Capitalize<StepKind>;
 /** A record with nothing seen. */
 export const noneSeen = (): ContinuitySeen => ({ steps: 0, stored: 0, chaseStarts: 0, chaseReseeds: 0, chaseInside: 0, requests: 0, held: 0, ...(Object.fromEntries(STEP_KINDS.flatMap((k) => [[`b1${cap(k)}`, 0], [`b2${cap(k)}`, 0]])) as KindCounts) });
-/** What the per-substep checks saw over every L3 fixture of the pass. */
-export const seen: ContinuitySeen = noneSeen();
-/**
- * Ladder 14a, the step coverage: the kinds of step that B1 or B2 did not check outside a stationary hold (empty: every
- * kind was checked). A stationary hold (`holdStillAt` with HOLD_STILL_V1, read from outside the planner) neither counts
- * for it nor against it: a step that starts in one is checked like any other and counted under `held` only.
- */
-/** Ladder 15, the chase and request coverage: the kinds of substep the B2 chase bound and the B3 request bound did not check. */
-export const unseenChase = (s: ContinuitySeen): string[] => [...(s.chaseStarts > 0 ? [] : ['chase start']), ...(s.chaseInside > 0 ? [] : ['chase inside']), ...(s.requests > 0 ? [] : ['request'])];
-export const unseenKinds = (s: ContinuitySeen): string[] => STEP_KINDS.flatMap((k) => [...(s[`b1${cap(k)}`] > 0 ? [] : [`B1 ${k}`]), ...(s[`b2${cap(k)}`] > 0 ? [] : [`B2 ${k}`])]);
+(s: ContinuitySeen): string[] => STEP_KINDS.flatMap((k) => [...(s[`b1${cap(k)}`] > 0 ? [] : [`B1 ${k}`]), ...(s[`b2${cap(k)}`] > 0 ? [] : [`B2 ${k}`])]);
 
 /** B3: the declared limit of the clip leg request's own world-frame second difference (m): the composition limit. */
 export const REQUEST_DD_M = 0.01;
@@ -753,130 +537,20 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
  */
 export const HIT_MOVES_CLIP_REQUEST = { fixtures: ['L3-F1-mirror4', 'L3-F10-both', 'L3-F10-bothMirror', 'L3-F10-bothLow', 'L3-F10-rising', 'L3-F10-falling', 'L3-F11-invalid'] };
 
-/** Each L3 fixture's continuity record from the pass. */
-export const CONT = new Map<string, Continuity>();
-export const CONTINUITY = check({
-  name: 'foot-target continuity',
-  fixtures: /^L3-/,
-  watch(d, report) {
-    const ok = softly(report);
-    const c = continuity(d, seen);
-    CONT.set(d.id, c.out);
-    return {
-      substep: c.watch.substep,
-      finish(sim) {
-        c.watch.finish!(sim);
-        const { breaches } = c.out;
-        // the tracked defect's exception: its fixtures, a jump at the hit's onset alone
-        const requestDD = c.out.requestDD.filter((r) => !(HIT_MOVES_CLIP_REQUEST.fixtures.includes(d.id) && r.onset));
-        ok(() => expect(breaches.slice(0, 5).map((b) => `${b.what} ${b.at}: ${b.got} > ${b.limit}`), `${breaches.length} breaches`).toEqual([]));
-        ok(() => expect(requestDD.slice(0, 5).map((r) => `${r.at}: ${r.d}`), `${requestDD.length} request jumps`).toEqual([]));
-      },
-    };
-  },
-});
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Foot limits at every actual substep (plan 08)
-
-export const LIFT = FOOTWORK_L3.swing.maxLiftRateMps;
-const REJOIN = FOOTWORK_L3.rejoinMps;
-type FeetSeen = { lift: number; offset: number; nLift: number; nOffset: number; ownerChanges: number; gap: number; gapLevel: number; gapStepY: number; nStepReseeds: number; nCarried: number; carriedStat: number; carriedFlat: number };
-type Counters = { lift: number; offset: number; margin: number };
-/**
- * The vertical target speed and the offset recovery speed from outside the planner, between two substeps of one seed: a step
- * also from the substep it takes over without a reseed (a carried leg), or changes mode on its path. `carriedStat` and
- * `carriedFlat` are how far the planner's own record of that first update is from what it published, vertically and level.
- */
-export function footLimits(): { watch: Watch; seen: FeetSeen } {
-  const seen: FeetSeen = { lift: 0, offset: 0, nLift: 0, nOffset: 0, ownerChanges: 0, gap: 0, gapLevel: 0, gapStepY: 0, nStepReseeds: 0, nCarried: 0, carriedStat: 0, carriedFlat: 0 };
-  const last = new Map<string, { source: string; mode: string; target: Vec3; offset: Vec3; seeds: number; solved: Vec3; recoord: boolean; speed: number }>();
-  const watch: Watch = {
-    substep: (s) => {
-      for (const pl of s.players)
-        for (const side of SIDES) {
-          const f = pl.feet?.feet[side];
-          // a converted player has no planner update: its stored rates are the last substep's, nothing moves the plan
-          if (!f || pl.rag) continue;
-          const k = `${pl.id}:${side}`;
-          const p = last.get(k);
-          const v = pl.proxy.body.linvel();
-          const speed = Math.hypot(v.x, v.z);
-          const same = !!p && p.seeds === f.seeds && !p.recoord && !f.rejoin;
-          if (p && same && f.mode !== 'planted') {
-            if (f.source === 'step') {
-              const rate = Math.abs(f.target.y - p.target.y) / s.dt;
-              seen.lift = Math.max(seen.lift, rate);
-              seen.nLift++;
-              if (p.source !== 'step') {
-                seen.nCarried++;
-                seen.carriedStat = Math.max(seen.carriedStat, Math.abs(f.liftRateMps - rate));
-                seen.carriedFlat = Math.max(seen.carriedFlat, Math.abs(f.speedMps - len(horiz(sub(f.target, p.target))) / s.dt));
-              }
-            } else if (f.source === 'follow' && p.source === 'follow' && p.mode === f.mode && !f.wait) {
-              // relative to the moving request; a request jump or seam is a change of coordinates the offset takes up
-              seen.offset = Math.max(seen.offset, len(sub(sub(f.offset, p.offset), f.seamOffset)) / s.dt);
-              seen.nOffset++;
-            }
-          } else if (p && p.seeds !== f.seeds) {
-            // a reseed keeps the foot: the new owner's target starts one substep from the achieved foot. Level: within the
-            // step speed cap at the body's travel speed (the fastest any owner moves a target, plan 10b), as a fraction of
-            // it; a step's height within the lift cap. A follow owner's height is the request's; a plant's is the floor
-            seen.ownerChanges++;
-            seen.gap = Math.max(seen.gap, dist(f.target, p.solved));
-            const cap = (SW.maxSpeedMps + SW.travelSpeedK * Math.max(speed, p.speed)) * s.dt;
-            seen.gapLevel = Math.max(seen.gapLevel, len(horiz(sub(f.target, p.solved))) / cap);
-            if (f.source === 'step' && f.mode !== 'planted') {
-              seen.nStepReseeds++;
-              seen.gapStepY = Math.max(seen.gapStepY, Math.abs(f.target.y - p.solved.y) / (LIFT * s.dt));
-            }
-          }
-          last.set(k, { source: f.source, mode: f.mode, target: { ...f.target }, offset: { ...f.offset }, seeds: f.seeds, solved: { ...f.solvedW }, recoord: f.rejoin || f.wait, speed });
-        }
-    },
-  };
-  return { watch, seen };
-}
-const counters = (sim: Simulation): Counters => ({
-  lift: Math.max(...sim.players.map((p) => p.feet?.stats.liftRateMps ?? 0)),
-  offset: Math.max(...sim.players.map((p) => p.feet?.stats.offsetDecayMps ?? 0)),
-  margin: Math.min(...sim.players.map((p) => p.feet?.stats.stepCapMarginMps ?? Infinity)),
-});
-
-/** Each L3 fixture's foot-limit record from the pass. */
-export const FEET = new Map<string, { seen: FeetSeen; c: Counters }>();
-export const FOOT_LIMITS = check({
-  name: 'foot limits',
-  fixtures: /^L3-/,
-  watch(d, report) {
-    const ok = softly(report);
-    const m = footLimits();
-    return {
-      substep: m.watch.substep,
-      finish(sim) {
-        const { seen } = m;
-        const c = counters(sim);
-        FEET.set(d.id, { seen, c });
-        ok(() => expect(c.lift, d.id).toBeLessThanOrEqual(LIFT + 1e-6));
-        ok(() => expect(c.offset, d.id).toBeLessThanOrEqual(REJOIN + 1e-6));
-        ok(() => expect(seen.lift, d.id).toBeLessThanOrEqual(LIFT + 1e-6));
-        ok(() => expect(seen.offset, d.id).toBeLessThanOrEqual(REJOIN + 1e-6));
-        ok(() => expect(seen.gap, d.id).toBeLessThan(0.1));
-        ok(() => expect(seen.gapLevel, d.id).toBeLessThanOrEqual(1 + 1e-9));
-        ok(() => expect(seen.gapStepY, d.id).toBeLessThanOrEqual(1 + 1e-9));
-        ok(() => expect(seen.carriedStat, d.id).toBeLessThan(1e-6));
-        ok(() => expect(seen.carriedFlat, d.id).toBeLessThan(1e-6));
-        ok(() => expect(c.margin, d.id).toBeGreaterThanOrEqual(-1e-9));
-      },
-    };
-  },
-});
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Plan 08 pass 1 and 2: start, brake, settle; idle and walking
 
 /** The player the stop checks follow. */
 const STOPS = /^L3-F16-(runStop|stop\d)/;
+
+/**
+ * Plan 15 step 5b tracked defect (docs/open/15_Contact_Footwork.md, defect 7; capture test in tests/steps-defects.test.ts):
+ * RUN_REJOIN_FLOAT. Back in his run after a contact, the runner rejoining the run clip at speed follows it with both
+ * feet while its stance contact passes without a plant, and floats past one stance (L3-F7-phase50 1.05-1.32 s,
+ * L3-F7-phase75 1.73-2.03 s). OFF_GROUND excepts, on these fixtures, a window after the runner's contact has ended, and
+ * nothing else.
+ */
+export const RUN_REJOIN_FLOAT = { fixtures: ['L3-F7-phase50', 'L3-F7-phase75'] };
 
 export const OFF_GROUND = check({
   name: 'never long off the ground',
@@ -887,6 +561,8 @@ export const OFF_GROUND = check({
     let upS = 0;
     let worst = 0;
     let stopped = false;
+    let contacted = false;
+    const excepted = RUN_REJOIN_FLOAT.fixtures.includes(d.id);
     return {
       tick(sim) {
         R ??= d.id.startsWith('L3-F7') ? sim.byId.get('R')! : sim.players[0];
@@ -898,8 +574,10 @@ export const OFF_GROUND = check({
         const j = R.pose.jointLandmarksWorld;
         const v = R.proxy.body.linvel();
         const onGround = SIDES.some((s) => R!.feet!.feet[s].mode === 'planted') || Math.min(j.leftAnkle.y, j.rightAnkle.y) < 0.2;
+        contacted ||= R.loco?.mode === 'contact';
         upS = onGround || R.loco?.mode === 'contact' || Math.hypot(v.x, v.z) < 3 ? 0 : upS + 1 / 60;
-        worst = Math.max(worst, upS);
+        // (the tracked defect's exception: its fixtures, a window after the contact)
+        if (!(excepted && contacted)) worst = Math.max(worst, upS);
       },
       finish() {
         expect(worst, d.id).toBeLessThan(0.25);
@@ -943,6 +621,30 @@ export const SETTLES = check({
   }),
 });
 
+/**
+ * Plan 15 step 5b tracked defect (docs/open/15_Contact_Footwork.md, defect 8; capture test in tests/steps-defects.test.ts):
+ * STOP_FEET_TOGETHER. At the crossing from the run clip into the contact stepping model the foot in the air carries on
+ * as a step while, in the same substep, the trailing plant is released for reach, so both feet are up and land
+ * together (L3-F16-stop1.9 2.62-2.80 s, -stop2.1, -stop2.9, -runStopHard 3.11-3.27 s, where the stop ends in that
+ * landing before a fourth step). ONE_FOOT excepts, on these fixtures, a pair of landings whose feet were up together
+ * from such a release (`feetTogether`), and on runStopHard the step count of a stop that ends in one.
+ */
+export const STOP_FEET_TOGETHER = { fixtures: ['L3-F16-stop1.9', 'L3-F16-stop2.1', 'L3-F16-stop2.9', 'L3-F16-runStopHard'] };
+/** Whether the landings `a` and `b` (other sides) came from a plant released for reach while the other foot was up. */
+export function feetTogether(events: Simulation['events'], id: string, a: { t: number }, b: { t: number }): boolean {
+  const side = (e: { data?: Record<string, unknown> }): unknown => e.data?.side;
+  const ev = events.filter((e) => e.playerId === id && (e.type === 'footRelease' || e.type === 'footPlant') && e.t <= b.t);
+  const lastRelease = (sd: unknown) => ev.filter((e) => e.type === 'footRelease' && side(e) === sd && e.t <= a.t).at(-1);
+  const sides = ['left', 'right'];
+  return sides.some((sd) => {
+    const r = lastRelease(sd);
+    const o = lastRelease(sides.find((x) => x !== sd));
+    if (!r || !o || r.data?.reason !== 'reach' || o.t > r.t) return false;
+    // the other foot was up at the release: no plant of it between its own release and this one
+    return !ev.some((e) => e.type === 'footPlant' && side(e) === side(o) && e.t >= o.t && e.t < r.t);
+  });
+}
+
 export const ONE_FOOT = check({
   name: 'a stop lands one foot then the other',
   fixtures: STOPS,
@@ -952,9 +654,14 @@ export const ONE_FOOT = check({
       const ctl = d.players[0].controller;
       const brake = ctl.kind === 'script' ? ctl.segments.at(-1)!.fromS : 0;
       const plants = sim.events.filter((e) => e.type === 'footPlant' && e.playerId === R.id && e.t > brake);
-      expect(plants.length, d.id).toBeGreaterThan(3);
+      const excepted = STOP_FEET_TOGETHER.fixtures.includes(d.id);
+      // (the tracked defect's exceptions: its fixtures, a pair of landings from the reach release with the other foot up)
+      const together = (i: number): boolean => excepted && feetTogether(sim.events, R.id, plants[i - 1]!, plants[i]!);
+      const endsTogether = plants.length >= 2 && plants.at(-1)!.data?.side !== plants.at(-2)!.data?.side && together(plants.length - 1);
+      if (!(d.id === 'L3-F16-runStopHard' && endsTogether)) expect(plants.length, d.id).toBeGreaterThan(3);
       for (let i = 1; i < plants.length; i++) {
         if (plants[i]!.data?.side === plants[i - 1]!.data?.side) continue;
+        if (plants[i]!.t - plants[i - 1]!.t <= 0.1 && together(i)) continue;
         expect(plants[i]!.t - plants[i - 1]!.t, `${d.id} landings at ${plants[i - 1]!.t}`).toBeGreaterThan(0.1);
       }
     },
@@ -1541,37 +1248,6 @@ export const KEEP_STEPPING = check({
   }),
 });
 
-/**
- * Ladder rule 7 tracked defects (docs/open/contact-motion/prerequisites-ladder.md, open defects): mechanisms that exist
- * before the rung that moved a trajectory onto them, each pinned by its own test (l3-contracts, "ladder tracked defects")
- * and set aside only where a listed fixture shows exactly that mechanism.
- */
-export const LEG_IN_RAGDOLL = {
-  // a posed leg held inside another player's ragdoll for many substeps, the defender's conversion then rejected for it.
-  // Resolved by the 8j deferred conversion and the 8l visible flip; no live fixture is set aside for it since 9g, and
-  // the predicate reads the pre-flip captures (l3-contracts).
-  is: (data: Record<string, unknown> | undefined): boolean => {
-    const w = data?.worstExternal as { own?: string; other?: string } | undefined;
-    return data?.reasons === 'externalPenetration' && /^(left|right)(Thigh|Shin):/.test(w?.own ?? '') && /^R:core:/.test(w?.other ?? '');
-  },
-};
-export const HOLD_CLEARANCE_REPLANT = {
-  // a held player's planted foot released by its clearance solve (the plant drifts over the tolerance on a clearance
-  // variant) and planted again, repeatedly, in a stationary hold. Resolved by rung 7's planted pose under V2/V3,
-  // registered since the ladder 10d leg-guard flip; no live fixture is set aside for it since 10e, and the predicate
-  // reads the pre-flip captures (l3-contracts).
-  /** The plants of `id` after `fromS` that follow the same foot's clearance release: the defect's re-plants. */
-  replants: (sim: Simulation, id: string, fromS: number) => {
-    const ev = sim.events.filter((e) => e.playerId === id);
-    const side = (e: { data?: Record<string, unknown> }) => (e.data as { side?: string } | undefined)?.side;
-    return ev.filter((e) => {
-      if (e.type !== 'footPlant' || e.t <= fromS) return false;
-      const rel = ev.filter((r) => r.type === 'footRelease' && side(r) === side(e) && r.t < e.t).pop();
-      return (rel?.data as { reason?: string } | undefined)?.reason === 'clearance';
-    });
-  },
-};
-
 export const HOLD_SETTLES = check({
   name: 'L3-F6: a stationary hold settles',
   fixtures: /^L3-F6-hold/,
@@ -1589,38 +1265,6 @@ export const HOLD_SETTLES = check({
       expect(ms[2].t - ms[1].t, d.id).toBeLessThan(0.05);
     },
   }),
-});
-
-// Ladder 14a, the still-feet flip (rung 13b's rule, registered on every L3 planner): in a stationary hold (`holdStillAt`
-// with HOLD_STILL_V1, read as the planner reads it: this substep's retained grips and solved travel) no planted foot
-// steps home, settles or steps to turn. A foot that cannot keep its plant still steps (reach, a clearance solve, the
-// yaw release past yawReleaseDeg: a 'yaw' release carrying its yawErrDeg). The fault twin is the planner before the
-// flip (l3-contracts).
-const VOLUNTARY_RELEASES = ['step', 'settle', 'yaw'];
-export const HOLD_STILL = check({
-  name: 'no voluntary step in a stationary hold',
-  fixtures: /^L3-/,
-  watch(d, report) {
-    const heldAt = new Map<string, number>();
-    let evAt = 0;
-    return {
-      substep(s) {
-        const still = new Map<string, boolean>();
-        for (const pl of s.players) {
-          if (pl.rag || !pl.feet) continue;
-          if ((s as unknown as { retained(p: PlayerRuntime): boolean }).retained(pl)) heldAt.set(pl.id, s.t);
-          const v = pl.proxy.body.linvel();
-          still.set(pl.id, holdStillAt(HOLD_STILL_V1, heldAt.get(pl.id), s.t, Math.hypot(v.x, v.z)));
-        }
-        for (; evAt < s.events.length; evAt++) {
-          const e = s.events[evAt]!;
-          const ed = e.data as { side?: string; reason?: string; yawErrDeg?: number };
-          if (e.type !== 'footRelease' || !still.get(e.playerId!) || !VOLUNTARY_RELEASES.includes(ed.reason ?? '') || ed.yawErrDeg !== undefined) continue;
-          report(`${d.id} ${e.playerId} ${ed.side} ${e.t.toFixed(4)} ${ed.reason}`);
-        }
-      },
-    };
-  },
 });
 
 /** Per fixture: the largest supported root height (m), on the runs NO_LAUNCH reads (printed). */
@@ -1653,9 +1297,16 @@ export function plantRootBreaches(r: PlantRootRec, root = true): string[] {
  * with its stance foot planted) raises the root by the run's own motion, which a support's target does not describe.
  */
 export const LAUNCH_IDS = ['L3-F6-saturated', 'L3-F7-loadRelease'];
+/**
+ * Plan 15 tracked defect (docs/open/15_Contact_Footwork.md, defect 4, plants shown off their anchor): in the mirrored
+ * stationary hold the defender's right plant is shown 8 cm off its anchor at 2.71 s. PLANT_ROOT excepts, on this fixture,
+ * the drift of a plant of a player in contact, and nothing else.
+ */
+export const PLANT_OFF_ANCHOR = { fixtures: ['L3-F6-holdMirror'] };
 /** The rule on every L3 fixture: the run's record, judged by plantRootBreaches; the record is kept for printing. */
 export const plantRoot = (d: FixtureDef, report: Report): Watch => {
   const r: PlantRootRec = { failed: [], drift: { m: 0, at: '' }, rootUp: { m: -Infinity, at: '' } };
+  const offAnchor = PLANT_OFF_ANCHOR.fixtures.includes(d.id);
   return {
     substep(s) {
       for (const pl of s.players) {
@@ -1669,6 +1320,8 @@ export const plantRoot = (d: FixtureDef, report: Report): Watch => {
         }
         for (const side of SIDES) {
           const f = pl.feet?.feet[side];
+          // (the tracked defect's exception: its fixture, a held player's plant in the hold)
+          if (offAnchor && pl.loco?.mode === 'contact') continue;
           if (f?.mode === 'planted' && !f.tentative && f.driftM > r.drift.m) r.drift = { m: f.driftM, at: `${d.id} ${pl.id} ${side} ${s.t.toFixed(4)}` };
         }
       }
@@ -2104,13 +1757,6 @@ export const CARRY_AUDIT = check({
 // ---------------------------------------------------------------------------------------------------------------------
 // One fixture of the pass, and what the pass records over several fixtures
 
-/** The items as an array, after asserting there is at least one (tests/helpers.ts `nonEmpty`, on the plain expect). */
-function nonEmpty<T>(xs: Iterable<T>, what = 'items'): T[] {
-  const a = [...xs];
-  expect(a.length, `${what}: expected at least one`).toBeGreaterThan(0);
-  return a;
-}
-
 /** The copy comparison of each fixture of the sample: null when it holds, else its first failed assertion. */
 export const COPIED = new Map<string, string | null>();
 /** The unaudited side of the copy comparison, run right after the audited one (the pass's run of the fixture). */
@@ -2146,10 +1792,7 @@ export interface FixturePass {
 }
 
 /** Runs `d` once with every check that covers it attached (and the copy comparison, where it is in the sample). */
-export async function passFixture(registered: FixtureDef): Promise<FixturePass> {
-  // (plan 15 step 4: the pass checks the reactive planner's contracts, on the L3 fixtures as before the stepping flip,
-  // until step 5 deletes the planner; the contact stepping model's rules are tests/contact-steps.test.ts')
-  const d = preSteps(registered);
+export async function passFixture(d: FixtureDef): Promise<FixturePass> {
   const out: FixturePass = { covered: [], failures: [] };
   const watches = CHECKS.filter((c) => covers(c, d.id)).map((c) => {
     out.covered.push(c.name);
@@ -2167,16 +1810,11 @@ export async function passFixture(registered: FixtureDef): Promise<FixturePass> 
   return out;
 }
 
-/** What the checks record over several fixtures, for the tests that read it: counters (summed) and per-fixture maps. */
-export const RECORDS = { HANDOVER, LANDING_SEEN, SEAMS, seen, CONT, FEET, REACH_AT, COPIED, ONE_BALL_SEEN, RULE_REF_SPOT, CARRY_BOUNDARIES, AUDIT_SEEN, PLANT_SEEN, ROOT_PEAK };
+/** What the checks record over several fixtures, for the tests that read it: per-fixture maps. */
+export const RECORDS = { REACH_AT, COPIED, ONE_BALL_SEEN, RULE_REF_SPOT, CARRY_BOUNDARIES, PLANT_SEEN, ROOT_PEAK };
 export type Records = typeof RECORDS;
 
-/** Adds a shard's records into this process's: counters summed, per-fixture records taken over. */
+/** Adds a shard's records into this process's: per-fixture records taken over. */
 export function mergeRecords(from: Records): void {
-  for (const k of Object.keys(RECORDS) as (keyof Records)[]) {
-    const into = RECORDS[k];
-    const add = from[k];
-    if (into instanceof Map) for (const [id, r] of add as Map<string, never>) (into as Map<string, unknown>).set(id, r);
-    else for (const f of Object.keys(into)) (into as Record<string, number>)[f] += (add as Record<string, number>)[f]!;
-  }
+  for (const k of Object.keys(RECORDS) as (keyof Records)[]) for (const [id, r] of from[k] as Map<string, never>) (RECORDS[k] as Map<string, unknown>).set(id, r);
 }

@@ -5,6 +5,7 @@ import type { Simulation } from '../src/sim/simulation';
 import { asCaptured, FIX, preSteps } from './runs';
 import { loadState, resumeState } from './state';
 import { idleBaseline, VisibleMeter } from './visible';
+import { feetTogether } from './l3-pass';
 
 // Plan 15 step 4, defects reached by the stepping flip's moved trajectories, each on a capture taken under the flip's
 // registration (STEPS_V1) a little before the defect. Under it the tackler went down late, held up by the come-down's
@@ -152,5 +153,81 @@ describe('plan 15 step 5a: defects reached by the stepping flip on L2', () => {
     // the twin: plan 07's planner from the same state
     const r = await legsCrossed('L2-F8-sideLoss@27', false, 0.7);
     expect((r.worst?.[2] as number | undefined) ?? 0, JSON.stringify(r)).toBeLessThan(2);
+  }, 120000);
+});
+
+/**
+ * Resumes the capture (taken after the runner's contact has ended) to the end as registered: his longest time off the
+ * ground while moving outside contact (tests/l3-pass.ts OFF_GROUND's measure), with his mode and run-clip weight over it.
+ */
+async function floatAfterContact(file: string) {
+  const cap = loadState(`tests/data/state/${file}.json.gz`);
+  const sim = await resumeState(cap, { def: asCaptured(cap) });
+  const R = sim.players.find((p) => p.id === 'R')!;
+  let upS = 0;
+  let worst = { s: 0, from: NaN, modes: new Set<string>(), runW: Infinity };
+  let cur = { from: NaN, modes: new Set<string>(), runW: Infinity };
+  while (!sim.done && !R.rag) {
+    sim.stepTick();
+    const j = R.pose!.jointLandmarksWorld;
+    const v = R.proxy.body.linvel();
+    const onGround = (['left', 'right'] as const).some((s) => R.feet!.feet[s].mode === 'planted') || Math.min(j.leftAnkle.y, j.rightAnkle.y) < 0.2;
+    const reset = onGround || R.loco?.mode === 'contact' || Math.hypot(v.x, v.z) < 3;
+    if (!reset && upS === 0) cur = { from: sim.t, modes: new Set(), runW: Infinity };
+    upS = reset ? 0 : upS + 1 / 60;
+    if (!reset) {
+      cur.modes.add(String(R.loco?.mode));
+      cur.runW = Math.min(cur.runW, R.run?.w ?? 0);
+    }
+    if (upS > worst.s) worst = { s: upS, ...cur };
+  }
+  sim.dispose();
+  return { s: worst.s, from: worst.from, modes: [...worst.modes], runW: worst.runW };
+}
+
+/** Resumes the capture to the end as registered: the stopping player's last two landings and whether `feetTogether` reads them. */
+async function lastLandings(file: string) {
+  const cap = loadState(`tests/data/state/${file}.json.gz`);
+  const def = asCaptured(cap);
+  const sim = await resumeState(cap, { def });
+  while (!sim.done) sim.stepTick();
+  const id = sim.players[0].id;
+  const plants = sim.events.filter((e) => e.type === 'footPlant' && e.playerId === id);
+  const [a, b] = plants.slice(-2);
+  const reach = sim.events.filter((e) => e.type === 'footRelease' && e.playerId === id && e.data?.reason === 'reach' && e.t < a!.t).at(-1)!;
+  const out = { sides: [a!.data?.side, b!.data?.side], gapS: b!.t - a!.t, together: feetTogether(sim.events, id, a!, b!), reachT: reach.t, continued: sim.events.some((e) => e.type === 'footSwing' && e.playerId === id && e.t === reach.t && e.data?.reason === 'continue') };
+  sim.dispose();
+  return out;
+}
+
+// Plan 15 step 5b, defects of the contact stepping model's registered runs that the L3 pass sets aside (tests/l3-pass.ts
+// RUN_REJOIN_FLOAT, STOP_FEET_TOGETHER; docs/open/15_Contact_Footwork.md, defects 7 and 8), each on a capture of the
+// registered run a little before it. The reactive planner that ran these fixtures before step 4 is gone, so no twin runs
+// the same state without the model; each test fails once its defect is gone from that state, and then becomes the fix's
+// test with a fault twin.
+describe('plan 15 step 5b: tracked defects of the model\'s registered runs', () => {
+  it.each([
+    ['L3-F7-phase75@96', 1.73],
+    ['L3-F7-phase50@54', 1.05],
+  ])('RUN_REJOIN_FLOAT (%s): back in his run after the contact, the runner follows the run clip with both feet and floats past a stance, over 0.25 s off the ground at speed from about %s s', async (file, from) => {
+    const r = await floatAfterContact(file);
+    const said = JSON.stringify(r);
+    expect(r.s, said).toBeGreaterThan(0.25);
+    expect(r.from, said).toBeCloseTo(from, 1);
+    expect(r.modes, said).toEqual(['free']);
+    expect(r.runW, said).toBe(1);
+  }, 120000);
+
+  it.each([
+    ['L3-F16-stop1.9@153', 2.621],
+    ['L3-F16-runStopHard@183', 3.112],
+  ])('STOP_FEET_TOGETHER (%s): at the crossing into the model the foot in the air carries on as a step while the trailing plant is released for reach in the same substep (%s s), and both feet land within 0.1 s', async (file, at) => {
+    const r = await lastLandings(file);
+    const said = JSON.stringify(r);
+    expect(r.reachT, said).toBeCloseTo(at, 3);
+    expect(r.continued, said).toBe(true);
+    expect(new Set(r.sides), said).toEqual(new Set(['left', 'right']));
+    expect(r.gapS, said).toBeLessThanOrEqual(0.1);
+    expect(r.together, said).toBe(true);
   }, 120000);
 });
