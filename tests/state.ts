@@ -217,7 +217,9 @@ const stale = (cap: StateCapture, why: string): never => {
 export async function resumeState(cap: StateCapture, o: ResumeOptions = {}): Promise<Simulation> {
   if (cap.format !== STATE_FORMAT) stale(cap, `format ${cap.format}, this tree reads ${STATE_FORMAT}`);
   const def = o.def ?? FIX(cap.fixture);
-  const variant = o.variant ?? [];
+  // plan 15 step 5b: the footwork is a standing variant (the reactive planner most captures ran is gone; tests/runs.ts
+  // `asCaptured` gives the registered footwork, and the model takes the captured feet over as at a crossing)
+  const variant = [...(o.variant ?? []), 'footwork'];
   const opts: SimOptions = { ...cap.opts, ...o.opts, ...(o.faults ? { debug: o.faults } : {}) };
   for (const [k, v] of Object.entries(stateOpts(o.opts ?? {}))) if (JSON.stringify(cap.opts[k]) !== JSON.stringify(v)) throw new Error(`state resume: option ${k} differs from the capture's (${JSON.stringify(cap.opts[k])})`);
   // tracked (tests/runs.ts), so a test's leftover is freed with the file's other simulations

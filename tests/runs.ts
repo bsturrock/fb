@@ -5,7 +5,6 @@ import { Simulation, type SimOptions, type TraceRow } from '../src/sim/simulatio
 import type { FixtureDef } from '../src/sim/fixture';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { withoutHoldStill } from '../src/sim/footwork';
-import { STEPS_V1, STEPS_V2, withoutSteps, withSteps } from '../src/sim/contact-steps';
 import { RAPIER } from '../src/sim/physics';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V13, type WrapProfile } from '../src/sim/controllers/wrap';
@@ -175,18 +174,6 @@ export const preWrapV13 = (d: FixtureDef): FixtureDef => (d.wrap?.id === WRAP_V1
  */
 export const preShoulderTwist = (d: FixtureDef): FixtureDef => (d.ragdoll?.shoulderTwistLimit ? { ...d, ragdoll: withoutShoulderTwistLimit(d.ragdoll) } : d);
 /**
- * Plan 15 step 4 (p24, the stepping flip): `d` with its footwork as before it, the reactive planner's contact stepping
- * (no `steps`, its id as then): what every state capture and natural sample taken before it ran under, and the
- * reactive planner's own tests until step 5 deletes it. Composes with the other `pre*` helpers.
- */
-export const preSteps = (d: FixtureDef): FixtureDef => (d.footwork?.steps ? { ...d, footwork: withoutSteps(d.footwork) } : d);
-/**
- * Plan 15 step 4b (p25, the come-down's read on the model): `d` with the stepping model as before it, STEPS_V1 where it
- * has STEPS_V2 (the come-down reading `standsNowhere`, any contact and any hold), its id as then: what every state capture
- * and natural sample taken from step 4 to it ran under. Composes with the other `pre*` helpers.
- */
-export const preStepsV2 = (d: FixtureDef): FixtureDef => (d.footwork?.steps === STEPS_V2 ? { ...d, footwork: withSteps(withoutSteps(d.footwork), STEPS_V1) } : d);
-/**
  * WRAP_V6 as it was from the bound-legs fall (`fc616d3`) to the drag-down (polish 2.3): the same low strike and low arms on
  * WRAP_V8 (no fall link, no drive from behind, no hanging holder), its id as then. No fixture registered it; the state
  * captures taken under the lab's `wrap=v6` then (scripts/capture-state.ts `--wrap=v6`, suffix `wrapv6`) ran under it.
@@ -282,11 +269,11 @@ const asBuilt = (d: FixtureDef): FixtureDef => (d.jointRange && d.ragdoll ? { ..
 
 /**
  * The flips registered on L3, L4 and HC since the first state capture, the latest first: each gives a definition as
- * before its flip (plan 15 the come-down's read on the model, plan 15 the stepping model, polish 4 the hit's aim, polish 4 the forward fall, polish 4 the hit, 2.4 staying on from behind, 2.2 the drive from behind, 2.1 the hold, 11b the thigh's rotation, polish 1.4 the bound-legs fall, 1.2 the ride-down and the drive, 1.1 the strike, M4 the landed palm, M4 the fall, M3 the hold, M3 the takedown, M3 the wrap, M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
+ * before its flip (polish 4 the hit's aim, polish 4 the forward fall, polish 4 the hit, 2.4 staying on from behind, 2.2 the drive from behind, 2.1 the hold, 11b the thigh's rotation, polish 1.4 the bound-legs fall, 1.2 the ride-down and the drive, 1.1 the strike, M4 the landed palm, M4 the fall, M3 the hold, M3 the takedown, M3 the wrap, M2 the lean, M2 the balanced clear, M2 the carrier's brace, 18e met arms, 18c born separation, 17b born overlap, 14a still feet, 10d physical legs, 9d own-leg contact, 8m the visible flip). A flip
  * adds its `pre*` helper at the head, and every capture taken before it then resumes under the definition it ran under
  * (`asCaptured`).
  */
-export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preStepsV2, preSteps, preShoulderTwist, preWrapV13, preForwardFall, preWrapV12, preWrapV11, preWrapV10, preWrapV9, preHipTwist, preWrapV8, preWrapV7, preWrapV5, preWrapV4, prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
+export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preShoulderTwist, preWrapV13, preForwardFall, preWrapV12, preWrapV11, preWrapV10, preWrapV9, preHipTwist, preWrapV8, preWrapV7, preWrapV5, preWrapV4, prePalmLoad, preFallReact, preWrapV3, preWrapV2, preWrap, preBraceV2, preBalancedClear, preBrace, preMetArmStay, preBornSeparation, preBornOverlap, preHoldStill, preV3, preOwnLegs, preFlip];
 
 /**
  * The definition a state capture (tests/state.ts) ran under: of the registered fixture and the definitions as before
@@ -294,12 +281,12 @@ export const BEFORE_FLIPS: readonly ((d: FixtureDef) => FixtureDef)[] = [preStep
  * `as` maps each one to the variant a capture was taken under (scripts/capture-state.ts `--v3`, `--flip8i`, `--hips`,
  * `--joints`): the definition returned is `as` of it. `variant`: paths the test resumes as a variant of the capture
  * (resumeState's `variant`), not compared; no flip in the chain may change one, so the chain cannot stop early on it.
- * Throws when no definition matches. Plan 15 step 5b: with `footwork` in `variant` the capture's footwork is taken over
- * by the registered one (the contact stepping model, from the captured feet as at a crossing): the definition returned
- * has the registered fixture's footwork, and the test resumes with `variant: ['footwork']`.
+ * Throws when no definition matches. Plan 15 step 5b: the footwork is a standing variant (resumeState): the capture's
+ * footwork, whichever planner it ran (the reactive planner's, deleted at step 5b, or the model's), is not compared and is
+ * taken over by the registered one (the contact stepping model, from the captured feet as at a crossing).
  */
 export function asCaptured(cap: { fixture: string; tick: number; profiles: Record<string, string> }, as: (d: FixtureDef) => FixtureDef = (d) => d, variant: string[] = []): FixtureDef {
-  const skip = (p: string): boolean => variant.some((v) => p === v || p.startsWith(`${v}.`));
+  const skip = (p: string): boolean => [...variant, 'footwork'].some((v) => p === v || p.startsWith(`${v}.`));
   const mismatch = (ids: Record<string, string>): string[] =>
     [...new Set([...Object.keys(ids), ...Object.keys(cap.profiles)])].filter((p) => !skip(p) && ids[p] !== cap.profiles[p]).map((p) => `${p} ${ids[p] ?? 'absent'}`);
   const chain = [FIX(cap.fixture)];
@@ -310,7 +297,7 @@ export function asCaptured(cap: { fixture: string; tick: number; profiles: Recor
   const tried: string[] = [];
   for (let i = 0; i < defs.length; i++) {
     const off = mismatch(ids[i]);
-    if (!off.length) return variant.includes('footwork') ? { ...defs[i], footwork: defs[0].footwork } : defs[i];
+    if (!off.length) return defs[i].footwork === defs[0].footwork ? defs[i] : { ...defs[i], footwork: defs[0].footwork };
     tried.push(off.join(', '));
   }
   throw new Error(`asCaptured(${cap.fixture}@${cap.tick}): no definition in the flip chain ran the capture's profiles (differing, from the registered on: ${tried.map((t) => `[${t}]`).join(' ')})`);

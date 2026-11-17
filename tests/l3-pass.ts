@@ -447,7 +447,7 @@ export function continuity(d: FixtureDef, into: ContinuitySeen): { watch: Watch;
         if (!pl.feet) continue;
         const v = pl.proxy.body.linvel();
         const sp = Math.hypot(v.x, v.z);
-        // a stationary hold as the hold-still rule reads it (tests/hold-still.test.ts), whether or not the profile has the rule
+        // a stationary hold as the hold-still rule reads it (`holdStillAt`), whether or not the profile has the rule
         const stillHold = holdStillAt(HOLD_STILL_V1, heldAt.get(pl.id), s.t, sp);
         for (const side of SIDES) {
           const f = pl.feet.feet[side];

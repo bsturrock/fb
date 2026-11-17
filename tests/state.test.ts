@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Simulation } from '../src/sim/simulation';
 import { readdirSync } from 'node:fs';
 import type { FixtureDef } from '../src/sim/fixture';
-import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preSteps, preStepsV2, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preForwardFall, preHipTwist, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, preShoulderTwist, runSim, WRAP_V6_PRE_V10 } from './helpers';
+import { asCaptured, BEFORE_FLIPS, create, FIX, flip8i, preBornOverlap, preBalancedClear, preBraceV2, preBornSeparation, preBrace, preFallReact, preFlip, preForwardFall, preHipTwist, preHoldStill, preMetArmStay, prePalmLoad, preV3, preWrap, preWrapV2, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, preShoulderTwist, runSim, WRAP_V6_PRE_V10 } from './helpers';
 import { captureState, loadState, resumeState, STATE_FORMAT, type StateCapture } from './state';
 import { ARM_G2, FALL_L4, FALL_L4_V2, FALL_REACT_V2, FALL_REACT_V3, HIP_STOPS_V2, JOINT_RANGE_V4, LEG_GUARD_V3, withForwardFall, withHipStops } from '../src/sim/profiles';
 import { WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, WRAP_V13_AUTO, WRAP_V7, WRAP_V8 } from '../src/sim/controllers/wrap';
@@ -171,46 +171,47 @@ describe('asCaptured: a capture\'s definition out of the flip chain', () => {
     }
     const S = (f: string): StateCapture => loadState(`tests/data/state/${f}.json.gz`);
     const same = (a: FixtureDef, b: FixtureDef): boolean => JSON.stringify(a) === JSON.stringify(b);
+    /** `d` with the registered footwork (plan 15 step 5b: a standing variant, tests/runs.ts `asCaptured`). */
+    const fw = (id: string, d: FixtureDef): FixtureDef => ({ ...d, footwork: FIX(id).footwork });
     // before the visible flip, own-leg contact, the leg-guard flip, the still feet, the born overlap, the met arms, the
     // brace, the wrap and the fall: all the helpers composed (`preFallReact` on L3 and HC alone; every capture here was
-    // taken before the shoulder twist flip and plan 15's stepping flip, `preSteps` innermost)
-    expect(same(asCaptured(S('L3-F4-oneArm@70')), preHoldStill(preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(preSteps(FIX('L3-F4-oneArm')))))))))))))))).toBe(true);
+    // taken before the shoulder twist flip; plan 15 step 5b: each with the registered footwork, `fw`)
+    expect(same(asCaptured(S('L3-F4-oneArm@70')), fw('L3-F4-oneArm', preHoldStill(preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(FIX('L3-F4-oneArm')))))))))))))))).toBe(true);
     // a variant taken before the flips
-    expect(same(asCaptured(S('L3-F1-phase4~flip8i-rev@72'), flip8i), flip8i(preV3(preHoldStill(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(preSteps(FIX('L3-F1-phase4')))))))))))))))).toBe(true);
-    expect(same(asCaptured(S('L4-F3-run-on~v3@66'), (d) => ({ ...d, legGuard: LEG_GUARD_V3 })), { ...preHoldStill(preFlip(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preHipTwist(preForwardFall(preShoulderTwist(preSteps(FIX('L4-F3-run-on'))))))))))))), legGuard: LEG_GUARD_V3 })).toBe(true);
+    expect(same(asCaptured(S('L3-F1-phase4~flip8i-rev@72'), flip8i), fw('L3-F1-phase4', flip8i(preV3(preHoldStill(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(FIX('L3-F1-phase4')))))))))))))))).toBe(true);
+    expect(same(asCaptured(S('L4-F3-run-on~v3@66'), (d) => ({ ...d, legGuard: LEG_GUARD_V3 })), fw('L4-F3-run-on', { ...preHoldStill(preFlip(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preHipTwist(preForwardFall(preShoulderTwist(FIX('L4-F3-run-on')))))))))))), legGuard: LEG_GUARD_V3 }))).toBe(true);
     // after the leg-guard flip, before the still feet: the helpers up to the still feet's; after the still feet, before
     // the born overlap: those up to the born overlap's
-    expect(same(asCaptured(S('L3-F6-hold@126')), preHoldStill(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(preSteps(FIX('L3-F6-hold')))))))))))))).toBe(true);
-    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(preSteps(FIX('L3-F16-contactStop'))))))))))));
+    expect(same(asCaptured(S('L3-F6-hold@126')), fw('L3-F6-hold', preHoldStill(preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(FIX('L3-F6-hold')))))))))))))).toBe(true);
+    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(fw('L3-F16-contactStop', preBornOverlap(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(FIX('L3-F16-contactStop'))))))))))));
     // (`preBornOverlap` takes the born overlap off whichever it is: before the born separation, the same definition)
-    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(preBornOverlap(preBornSeparation(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(preSteps(FIX('L3-F16-contactStop')))))))))))));
-    // a capture taken under plan 15's stepping flip, before the come-down's read on the model (step 4b): its own flip alone
-    expect(asCaptured(S('L3-F1-phase2~rev@64'))).toEqual(preStepsV2(FIX('L3-F1-phase2')));
-    expect(BEFORE_FLIPS[0]).toBe(preStepsV2);
-    expect(BEFORE_FLIPS[1]).toBe(preSteps);
-    expect(BEFORE_FLIPS[2]).toBe(preShoulderTwist);
-    expect(BEFORE_FLIPS[3]).toBe(preWrapV13);
-    expect(BEFORE_FLIPS[4]).toBe(preForwardFall);
-    expect(BEFORE_FLIPS[5]).toBe(preWrapV12);
-    expect(BEFORE_FLIPS[6]).toBe(preWrapV11);
-    expect(BEFORE_FLIPS[7]).toBe(preWrapV10);
-    expect(BEFORE_FLIPS[8]).toBe(preWrapV9);
-    expect(BEFORE_FLIPS[9]).toBe(preHipTwist);
-    expect(BEFORE_FLIPS[10]).toBe(preWrapV8);
-    expect(BEFORE_FLIPS[11]).toBe(preWrapV7);
-    expect(BEFORE_FLIPS[12]).toBe(preWrapV5);
-    expect(BEFORE_FLIPS[13]).toBe(preWrapV4);
-    expect(BEFORE_FLIPS[14]).toBe(prePalmLoad);
-    expect(BEFORE_FLIPS[15]).toBe(preFallReact);
-    expect(BEFORE_FLIPS[16]).toBe(preWrapV3);
-    expect(BEFORE_FLIPS[17]).toBe(preWrapV2);
-    expect(BEFORE_FLIPS[18]).toBe(preWrap);
-    expect(BEFORE_FLIPS[19]).toBe(preBraceV2);
-    expect(BEFORE_FLIPS[20]).toBe(preBalancedClear);
-    expect(BEFORE_FLIPS[21]).toBe(preBrace);
-    expect(BEFORE_FLIPS[22]).toBe(preMetArmStay);
-    expect(BEFORE_FLIPS[23]).toBe(preBornSeparation);
-    expect(BEFORE_FLIPS[24]).toBe(preBornOverlap);
+    expect(asCaptured(S('L3-F16-contactStop@18'))).toEqual(fw('L3-F16-contactStop', preBornOverlap(preBornSeparation(preMetArmStay(preBrace(preBraceV2(preBalancedClear(preWrap(preFallReact(preHipTwist(preShoulderTwist(FIX('L3-F16-contactStop')))))))))))));
+    // a capture taken under plan 15's stepping flip, before the come-down's read on the model (step 4b): the footwork alone
+    // differs, a standing variant: the registered definition
+    expect(asCaptured(S('L3-F1-phase2~rev@64'))).toEqual(FIX('L3-F1-phase2'));
+    expect(BEFORE_FLIPS[0]).toBe(preShoulderTwist);
+    expect(BEFORE_FLIPS[1]).toBe(preWrapV13);
+    expect(BEFORE_FLIPS[2]).toBe(preForwardFall);
+    expect(BEFORE_FLIPS[3]).toBe(preWrapV12);
+    expect(BEFORE_FLIPS[4]).toBe(preWrapV11);
+    expect(BEFORE_FLIPS[5]).toBe(preWrapV10);
+    expect(BEFORE_FLIPS[6]).toBe(preWrapV9);
+    expect(BEFORE_FLIPS[7]).toBe(preHipTwist);
+    expect(BEFORE_FLIPS[8]).toBe(preWrapV8);
+    expect(BEFORE_FLIPS[9]).toBe(preWrapV7);
+    expect(BEFORE_FLIPS[10]).toBe(preWrapV5);
+    expect(BEFORE_FLIPS[11]).toBe(preWrapV4);
+    expect(BEFORE_FLIPS[12]).toBe(prePalmLoad);
+    expect(BEFORE_FLIPS[13]).toBe(preFallReact);
+    expect(BEFORE_FLIPS[14]).toBe(preWrapV3);
+    expect(BEFORE_FLIPS[15]).toBe(preWrapV2);
+    expect(BEFORE_FLIPS[16]).toBe(preWrap);
+    expect(BEFORE_FLIPS[17]).toBe(preBraceV2);
+    expect(BEFORE_FLIPS[18]).toBe(preBalancedClear);
+    expect(BEFORE_FLIPS[19]).toBe(preBrace);
+    expect(BEFORE_FLIPS[20]).toBe(preMetArmStay);
+    expect(BEFORE_FLIPS[21]).toBe(preBornSeparation);
+    expect(BEFORE_FLIPS[22]).toBe(preBornOverlap);
   });
 
   it('fault twins: a capture no definition of the chain ran (a flip not added to it) is refused, naming the differing paths; a variant path the chain changes is refused', () => {
