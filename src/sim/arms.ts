@@ -12,6 +12,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
 import type { ArmProfile, ArmSetup, BodyProfile, FallLinkProfile, JointRangeProfile, RagdollProfile, RetentionMode, RideHoldProfile, SelfClearanceProfile } from './profiles';
+import type { ArmDebug } from './debug';
 import { landmarkWorld, poseOfRb, type BornPair, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
@@ -19,10 +20,10 @@ import { armAnatomicalTwistRad, armTwistRad, fitElbowTwist, swingExcess, twistWi
 import { cullGeom, geomNear, isSupportedLeg, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
   add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
-  relPose, round, rv, scale, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
+  rad, relPose, round, rv, scale, smooth, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
 } from './vec';
 
-export type ArmPhase = 'rest' | 'reach' | 'close' | 'hold' | 'recover' | 'physical';
+export type ArmPhase = 'rest' | 'reach' | 'close' | 'hold' | 'recover' | 'physical' | 'push';
 export type ReleaseReason = 'voluntary' | 'unreachable' | 'invalidPose' | 'lostTarget' | 'overload' | 'invalidSurface' | 'separation' | 'playEnded';
 export type WrapStatus = 'noHold' | 'oneArmHold' | 'twoArmHold' | 'wrapped';
 
@@ -70,6 +71,8 @@ export interface ArmObs {
   wantedWorld: Vec3;
   gripId: string | null;
   clampContactId: string | null;
+  /** Plan 16: the palm push this arm holds (absent: none). */
+  pushId?: string;
   clampNormalN: number;
   armedForFreshContact: boolean;
   touchingTarget: PlayerId | null;
@@ -84,10 +87,10 @@ export interface ForceLedgerEntry {
   step: number;
   owner: PlayerId;
   arm: ArmSide;
-  kind: 'hold' | 'clamp' | 'passive' | 'link';
+  kind: 'hold' | 'clamp' | 'passive' | 'link' | 'push';
   id: string;
   target: PlayerId;
-  /** Hold: raw tension; clamp: magnitude of the requested (cone-limited) force vector. */
+  /** Hold: raw tension; clamp: magnitude of the requested (cone-limited) force vector; push: the strut's force after its elbow and taper limits. */
   raw: number;
   demand: number;
   actual: number;
@@ -247,6 +250,8 @@ interface ArmRt {
   rideLast?: { c: NonNullable<ArmRt['clamp']>; t: number } | null;
   /** Contact motion polish 2.1, the fall link (`ArmSystem.fallLink`): the forearm clamp carried as a link (absent or null: none). */
   link?: FallLink | null;
+  /** Plan 16, the palm push (`ArmProfile.palmPush`): the patch the palm holds and pushes on (absent or null: none). */
+  push?: PushPatch | null;
   /**
    * Polish 2.1, the hold through the whistle (`FallLinkProfile.throughEnding`): the referee's ending kept this arm's clamp
    * and ride patch (its owner riding the carrier down then), until his own switch or the ride's end (absent: not kept).
@@ -275,6 +280,22 @@ interface FallLink {
   restM?: number;
   /** `FallLinkProfile.bornYield`: how much of the rest length the born separation let out, not yet taken back in (m; absent: none). */
   letOutM?: number;
+}
+
+/**
+ * Plan 16, the palm push: the patch on the pushed player's body part (point and outward normal in that part's frame), the
+ * arm's rest length now and at the push's birth (m), when it began and its largest force so far.
+ */
+interface PushPatch {
+  id: string;
+  targetId: PlayerId;
+  part: BodyPartId;
+  pointLocal: Vec3;
+  normalLocal: Vec3;
+  restM: number;
+  bornM: number;
+  since: number;
+  peakN: number;
 }
 
 interface RidePatch {
@@ -337,6 +358,8 @@ export class ArmSystem {
    * with the other, whenever born, its rest length not let out).
    */
   declare fallLink?: FallLinkProfile & { noBreak?: boolean; bornDead?: boolean };
+  /** Plan 16: the palm push's fault switches (`SimDebug.arm`; absent: none). */
+  declare debug?: ArmDebug;
 
   constructor(
     readonly host: ArmHost,
@@ -638,7 +661,7 @@ export class ArmSystem {
       if (!rec && !effort) continue;
       const ownerPose = this.prePose(pl.rb);
       const obstacles = this.opponents(pl.id);
-      type Demand = { a: ArmRt; kind: 'hold' | 'clamp' | 'passive' | 'link'; vec: Vec3; raw: number; normalReq: number; ftWanted: Vec3; ftCone: Vec3; frictionSat: boolean; grip?: Grip; link?: FallLink; n?: Vec3; p: Vec3; s?: Vec3; target: PlayerId; id: string; rbT: RAPIER.RigidBody; rbO: RAPIER.RigidBody };
+      type Demand = { a: ArmRt; kind: 'hold' | 'clamp' | 'passive' | 'link' | 'push'; vec: Vec3; raw: number; normalReq: number; ftWanted: Vec3; ftCone: Vec3; frictionSat: boolean; grip?: Grip; link?: FallLink; n?: Vec3; p: Vec3; s?: Vec3; target: PlayerId; id: string; rbT: RAPIER.RigidBody; rbO: RAPIER.RigidBody };
       const demands: Demand[] = [];
       const falling = !!pl.falling;
       if (rec) for (const side of sides) {
@@ -790,6 +813,14 @@ export class ArmSystem {
             continue;
           }
         }
+        // ---------------- plan 16, the palm push: a held patch, validated before any force
+        if (a.push) {
+          const f = this.pushStep(pl, a, intent, ownerPose, obstacles, falling);
+          if (f) {
+            demands.push({ a, kind: 'push', vec: scale(f.n, f.F), raw: Math.abs(f.F), normalReq: 0, ftWanted: v3(), ftCone: v3(), frictionSat: false, n: f.F < 0 ? scale(f.n, -1) : f.n, p: f.p, target: f.target, id: f.id, rbT: f.rbT, rbO: pl.rb });
+            continue;
+          }
+        }
         // ---------------- free arm: collision-aware reach in the owner frame
         // (polish 1.2, the ride hold: a patch still held carries the wanted palm with the part it holds, and the palm
         // follows at the arm's top speed)
@@ -807,7 +838,7 @@ export class ArmSystem {
         // phase
         if (!a.armed) a.phase = 'recover';
         else if (intent.action === 'rest' || intent.action === 'release') a.phase = 'rest';
-        else if (intent.action === 'reach') a.phase = 'reach';
+        else if (intent.action === 'reach' || intent.action === 'push') a.phase = 'reach';
         else a.phase = 'close';
         // withdrawal / rearm
         if (!a.armed && a.withdrawFrom) {
@@ -870,6 +901,8 @@ export class ArmSystem {
             host.emit('gripRejected', pl.id, { arm: side, target: tgt.id, reasons: why.join(','), point: rv(anchor) });
           }
         }
+        // ---------------- plan 16, the palm push's birth (a `push` request, an arm profile with `palmPush`)
+        if (P.palmPush && !frozen && !this.ended && intent.action === 'push' && a.armed && !a.push && sol.valid && sol.palmHit && sol.palmHit.distance <= tol) this.pushBirth(pl, a, sol, ownerPose, prevAction !== intent.action);
         // ---------------- forearm clamp (forearmClamp mode, closing, actual contact)
         const effort = (pl.arms?.closeEffortScale ?? 1) * clamp(falling ? 1 : intent.closeEffort ?? 1, 0, 1);
         let fh = sol.forearmHit;
@@ -1071,6 +1104,17 @@ export class ArmSystem {
           const excess = allocated > 1e-9 ? Math.max(0, d.raw / allocated - 1) : d.raw > 1e-9 ? Infinity : 0;
           if (excess === 0) g.overloadExposureS = Math.max(0, g.overloadExposureS - P.hold.overloadRecoveryPerS * this.host.dt);
           else g.overloadExposureS += Math.min(excess, 1e6) * this.host.dt;
+        } else if (d.kind === 'push') {
+          // plan 16, the palm push: it yields under overload (the ceilings scale it; no exposure, no release), the pair at
+          // the patch along the strut's line (`n`: from the shoulder to the patch, reversed for a pull)
+          const free = !!this.debug?.pushNoBudget;
+          actual = free ? d.raw : Math.min(d.raw, ceilOf(d)) * shared;
+          allocated = actual;
+          normalActual = actual;
+          forceOnTarget = scale(d.n!, actual);
+          pointOwner = d.p;
+          const c = d.a.push!;
+          c.peakN = Math.max(c.peakN, actual);
         } else {
           forceOnTarget = scale(d.vec, f);
           pointOwner = d.p;
@@ -1250,6 +1294,7 @@ export class ArmSystem {
         }
         if (a.ride && !a.kept) this.endRide(pl, a, 'playEnded');
         if (a.gripId) this.release(pl, a, 'playEnded', ownerPose);
+        if (a.push) this.endPush(pl, a, 'playEnded', ownerPose);
         if (a.clamp && !a.kept) {
           this.host.emit('clampEnd', pl.id, { arm: side, clamp: a.clamp.id, reason: 'playEnded', gap: null });
           a.clamp = null;
@@ -1335,6 +1380,8 @@ export class ArmSystem {
             }
           }
         }
+        // plan 16, the palm push: the held palm on its patch against the solved bodies (no push-out: the patch is held)
+        if (a.push && this.pushPost(pl, a, ownerPost, obstacles)) continue;
         // Free arm: replay the opponents' motion relative to the owner against the palm (no query tunnelling).
         const poses = new Map<Obstacle, Pose>();
         const relPre = new Map<Obstacle, Pose>();
@@ -1651,6 +1698,8 @@ export class ArmSystem {
         if (a.link && switched.includes(a.link.targetId)) this.linkRemap(pl, a, captured.get(a.link.id));
         // polish 1.2: the ride hold ends with the owner's switch (the clamp is carried below) or its target's
         if (a.ride && (switched.includes(pl.id) || switched.includes(a.ride.targetId))) this.endRide(pl, a, switched.includes(pl.id) ? 'ownerRagdoll' : 'targetSwitched');
+        // plan 16: the palm push ends with either player's switch
+        if (a.push && (switched.includes(pl.id) || switched.includes(a.push.targetId))) this.endPush(pl, a, switched.includes(pl.id) ? 'ownerRagdoll' : 'targetSwitched', poseOfRb(pl.rb));
         // (and a riding owner's clamp on the carrier that lapsed within the ride's contact memory is the hold his
         // conversion carries, when its point is on his new body)
         const last = a.rideLast;
@@ -1960,6 +2009,7 @@ export class ArmSystem {
         clampNormalN: a.clamp?.normalForceN ?? 0,
         armedForFreshContact: a.armed,
         touchingTarget: a.touching,
+        ...(a.push ? { pushId: a.push.id } : {}),
         obstructed: a.obstructed,
         poseValid: s.valid,
         poseErrorM: a.poseErrorM,
@@ -1997,6 +2047,177 @@ export class ArmSystem {
     return { point: toWorld(tp, c.pointLocal), into: scale(qRot(tp.q, c.normalLocal), -1), u: c.u };
   }
 
+  /** Plan 16: the palm push this arm holds, its patch on the pushed player as that body is now (null: none). */
+  pushOf(id: PlayerId, side: ArmSide): { id: string; targetId: PlayerId; pointWorld: Vec3; normalWorld: Vec3; restM: number; since: number } | null {
+    const c = this.arms.get(id)?.[side].push;
+    const tgt = c ? this.player(c.targetId) : undefined;
+    if (!c || !tgt) return null;
+    const tp = poseOfRb(this.partBody(tgt, c.part));
+    return { id: c.id, targetId: c.targetId, pointWorld: toWorld(tp, c.pointLocal), normalWorld: qRot(tp.q, c.normalLocal), restM: c.restM, since: c.since };
+  }
+
+  // ---------------------------------------------------------------- plan 16: the palm push
+  /**
+   * A palm push's birth where the free palm touches (`sol.palmHit`): its band (region, height in the touched player's
+   * frame, a front face), the arm line facing into the surface, reach, the near side, the elbow not collapsed. The patch is
+   * the surface point under the palm-contact landmark, the rest length the shoulder's distance from it. A refusal is an
+   * event (`pushRejected`) when the request is new and every 30 substeps.
+   */
+  private pushBirth(pl: ArmHostPlayer, a: ArmRt, sol: ArmPoseSolve, ownerPose: Pose, changed: boolean): void {
+    const P = this.profile;
+    const PP = P.palmPush!;
+    const h = sol.palmHit!;
+    const tgt = this.player(h.obstacle.playerId);
+    if (!tgt) return;
+    const tp = this.prePose(tgt.rb);
+    const tpPart = this.prePose(h.obstacle.rb);
+    const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
+    const proj = h.obstacle.collider.projectPoint(sol.palm, false);
+    const anchor = proj ? vc(proj.point) : h.pointTarget;
+    const L = len(sub(anchor, sW));
+    const facing = dot(norm(sub(anchor, sW), v3(0, 0, 1)), scale(h.normal, -1));
+    const yLocal = toLocal(tp, anchor).y;
+    const front = qInvRot(tp.q, h.normal).z;
+    const el = elbowOf(sW, sol.elbow, sol.palm);
+    const B = PP.band;
+    const why: string[] = [];
+    if (tgt.ragdoll) why.push('ragdoll');
+    if (!B.regions.includes(h.obstacle.region)) why.push('region');
+    if (yLocal < B.lowM || yLocal > B.highM) why.push('outsideBand');
+    if (front < B.frontMinDot) why.push('notFront');
+    if (facing < PP.bornFacingDot) why.push('notFacing');
+    if (L > P.maxReachM + P.hold.reachTolM) why.push('unreachable');
+    if (dot(h.normal, sub(sW, anchor)) <= 0) why.push('farSide');
+    if (el.flexRad >= rad(PP.collapseFlexDeg)) why.push('collapsed');
+    if (why.length) {
+      if (changed || this.host.steps % 30 === 0) this.host.emit('pushRejected', pl.id, { arm: a.side, target: tgt.id, region: h.obstacle.region, reasons: why.join(','), point: rv(anchor), yLocal: round(yLocal, 3), facing: round(facing, 3) });
+      return;
+    }
+    const id = `${pl.id}:${a.side}:p${this.host.steps}`;
+    a.push = { id, targetId: tgt.id, part: h.obstacle.part, pointLocal: toLocal(tpPart, anchor), normalLocal: qInvRot(tpPart.q, h.normal), restM: L, bornM: L, since: this.host.t, peakN: 0 };
+    a.phase = 'push';
+    a.palmLocal = toLocal(ownerPose, anchor);
+    a.wantedLocal = { ...a.palmLocal };
+    this.host.emit('pushBegin', pl.id, { arm: a.side, push: id, target: tgt.id, region: h.obstacle.region, point: rv(anchor), lengthM: round(L, 4), facing: round(facing, 3), yLocal: round(yLocal, 3), flexDeg: round((el.flexRad * 180) / Math.PI, 2), palmGap: round(h.distance, 4) });
+  }
+
+  /**
+   * A held palm push at the substep's start: its end rules, then the strut's force (`PalmPushProfile`) with the palm
+   * shown on the patch. Returns the force (N, + pushes the target away along `n`, the unit line from the shoulder to the
+   * patch) or null when it ended (the arm is then a free arm this substep).
+   */
+  private pushStep(pl: ArmHostPlayer, a: ArmRt, intent: ArmIntent, ownerPose: Pose, obstacles: Obstacle[], falling: boolean): { F: number; n: Vec3; p: Vec3; target: PlayerId; id: string; rbT: RAPIER.RigidBody } | null {
+    const P = this.profile;
+    const PP = P.palmPush!;
+    const K = this.debug;
+    const c = a.push!;
+    const dt = this.host.dt;
+    const tgt = this.player(c.targetId);
+    const why = !tgt || tgt.ragdoll ? 'lostTarget' : falling ? 'falling' : intent.action !== 'push' ? 'voluntary' : null;
+    if (why || !tgt) {
+      this.endPush(pl, a, why ?? 'lostTarget', ownerPose);
+      return null;
+    }
+    const rbT = this.partBody(tgt, c.part);
+    const tp = this.prePose(rbT);
+    const pW = toWorld(tp, c.pointLocal);
+    const nW = qRot(tp.q, c.normalLocal);
+    const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
+    const L = len(sub(pW, sW));
+    const n = norm(sub(pW, sW), v3(0, 0, 1));
+    const facing = -dot(n, nW);
+    // the rest length moves toward the request's
+    const want = clamp(intent.push?.lengthM ?? P.maxReachM, P.minReachM, P.maxReachM);
+    c.restM += clamp(want - c.restM, -PP.extendMps * dt, PP.extendMps * dt);
+    let end: string | null = null;
+    if (L > P.maxReachM + P.hold.reachTolM) end = 'unreachable';
+    else if (dot(nW, sub(sW, pW)) <= 0) end = 'invalidSurface';
+    else if (facing < PP.keepFacingDot) end = 'slipped';
+    if (end) {
+      this.endPush(pl, a, end, ownerPose);
+      return null;
+    }
+    const shown = K?.pushPalmAtRest ? addScaled(sW, n, Math.min(c.restM, P.maxReachM)) : pW;
+    const sol = this.solveArm(pl, a, ownerPose, a.palmLocal, obstacles, undefined, shown);
+    const el = elbowOf(sW, sol.elbow, sol.palm);
+    if (!sol.valid && !K?.pushPalmAtRest) end = 'invalidPose';
+    else if (el.flexRad >= rad(PP.collapseFlexDeg)) end = 'collapsed';
+    if (end) {
+      this.endPush(pl, a, end, ownerPose);
+      return null;
+    }
+    a.solve = sol;
+    // the strut: compression less the separating speed's damping, never pulling (the fault: from its length at birth)
+    const sep = dot(sub(vc(rbT.velocityAtPoint(pW)), vc(pl.rb.velocityAtPoint(sW))), n);
+    let raw = K?.pushConstant ? PP.stiffness * (c.restM - c.bornM) : PP.stiffness * (c.restM - L) - PP.damping * sep;
+    if (!K?.pushPulls) raw = Math.max(0, raw);
+    // the shown arm's limit: the elbow's extension torque over its lever about the strut's line; the tapers at collapse and slip
+    const cap = (clamp(intent.push?.effort ?? 1, 0, 1) * PP.elbowTorqueNm) / Math.max(el.leverM, 1e-3);
+    const taper = smooth((el.flexRad - rad(PP.collapseFlexDeg)) / (rad(PP.giveFlexDeg) - rad(PP.collapseFlexDeg))) * smooth((facing - PP.keepFacingDot) / (PP.bornFacingDot - PP.keepFacingDot));
+    const engage = clamp((this.host.t - c.since) / PP.engageS, 0, 1);
+    const F = engage * taper * Math.min(cap, raw);
+    a.palmLocal = toLocal(ownerPose, shown);
+    a.wantedLocal = { ...a.palmLocal };
+    a.phase = 'push';
+    a.touching = tgt.id;
+    a.obstructed = false;
+    a.poseErrorM = 0;
+    return { F, n, p: pW, target: tgt.id, id: c.id, rbT };
+  }
+
+  /** A held palm push after the solve: the palm on its patch against the solved bodies, or its end. True: it holds. */
+  private pushPost(pl: ArmHostPlayer, a: ArmRt, ownerPost: Pose, obstacles: Obstacle[]): boolean {
+    const P = this.profile;
+    const K = this.debug;
+    const c = a.push!;
+    const tgt = this.player(c.targetId);
+    if (!tgt || tgt.ragdoll) {
+      this.endPush(pl, a, 'lostTarget', ownerPost);
+      return false;
+    }
+    const tp = poseOfRb(this.partBody(tgt, c.part));
+    const pW = toWorld(tp, c.pointLocal);
+    const sW = toWorld(ownerPost, shoulderLocal(pl.body, a.side));
+    let end: string | null = null;
+    let sol: ArmPoseSolve | null = null;
+    let shown = pW;
+    if (len(sub(pW, sW)) > P.maxReachM + P.hold.reachTolM) end = 'unreachable';
+    else if (dot(qRot(tp.q, c.normalLocal), sub(sW, pW)) <= 0) end = 'invalidSurface';
+    else {
+      if (K?.pushPalmAtRest) shown = addScaled(sW, norm(sub(pW, sW), v3(0, 0, 1)), Math.min(c.restM, P.maxReachM));
+      sol = this.solveArm(pl, a, ownerPost, a.palmLocal, obstacles, undefined, shown);
+      if (!sol.valid && !K?.pushPalmAtRest) end = 'invalidPose';
+    }
+    if (end || !sol) {
+      this.endPush(pl, a, end ?? 'invalidPose', ownerPost);
+      return false;
+    }
+    a.solve = sol;
+    a.poleLocal = sol.pole;
+    a.palmLocal = toLocal(ownerPost, shown);
+    a.touching = tgt.id;
+    a.poseErrorM = 0;
+    this.storePrevLocal(a, ownerPost);
+    // (the fault: no held patch, the next substep's palm contact makes it again)
+    if (K?.pushUnheld) this.endPush(pl, a, 'unheld', ownerPost, false);
+    return true;
+  }
+
+  /** Ends an arm's palm push; the arm must then leave the body it pushed by `hold.withdrawM` before it pushes again (`disarm`). */
+  private endPush(pl: ArmHostPlayer, a: ArmRt, reason: string, ownerPose: Pose, disarm = true): void {
+    const c = a.push;
+    if (!c) return;
+    a.push = null;
+    if (disarm) {
+      a.armed = false;
+      a.withdrawFrom = c.targetId;
+      a.phase = 'recover';
+    }
+    if (a.solve) a.palmLocal = this.clampShell(pl, a.side, toLocal(ownerPose, a.solve.palm));
+    a.wantedLocal = { ...a.palmLocal };
+    this.host.emit('pushEnd', pl.id, { arm: a.side, push: c.id, target: c.targetId, reason, heldS: round(this.host.t - c.since, 4), peakN: round(c.peakN, 1), restM: round(c.restM, 4) });
+  }
+
   clampOf(id: PlayerId, side: ArmSide): ClampContact | null {
     return this.arms.get(id)?.[side].clamp ?? null;
   }
@@ -2004,6 +2225,19 @@ export class ArmSystem {
   hasArms(id: PlayerId): boolean {
     return this.arms.has(id);
   }
+}
+
+/**
+ * Plan 16: an arm's elbow flexion (rad, 0 straight) from its shoulder, elbow and palm, and the elbow's distance from the
+ * shoulder-to-palm line (m): the lever a force along that line has about the elbow.
+ */
+function elbowOf(s: Vec3, e: Vec3, p: Vec3): { flexRad: number; leverM: number } {
+  const u = sub(s, e);
+  const w = sub(p, e);
+  const flexRad = Math.PI - Math.acos(clamp(dot(u, w) / Math.max(1e-12, len(u) * len(w)), -1, 1));
+  const sp = sub(p, s);
+  const l = len(sp);
+  return { flexRad, leverM: l > 1e-9 ? len(cross(sub(e, s), sp)) / l : 0 };
 }
 
 /** Distance from a point to the segment a-b. */

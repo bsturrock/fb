@@ -151,7 +151,7 @@ export function recordTrace(host: EvidenceHost): void {
         const f = host.arms!.lastForce.get(`${pl.id}:${side}`);
         arm[side] = {
           ph: o.phase,
-          id: o.gripId ?? o.clampContactId,
+          id: o.gripId ?? o.clampContactId ?? o.pushId ?? null,
           F: round(f?.actual ?? 0, 2),
           N: round(f?.normalActual ?? 0, 2),
           Ft: round(f?.tangentActual ?? 0, 2),

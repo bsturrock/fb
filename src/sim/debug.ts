@@ -141,6 +141,20 @@ export interface ConversionDebug {
   bornSeparationUncapped?: boolean;
 }
 
+/** Plan 16: fault switches of the palm push (`PalmPushProfile`, arms.ts); each off by default. */
+export interface ArmDebug {
+  /** Fault (the held patch): a push ends after every solve and is born again from the next substep's palm contact, as a forearm clamp is. */
+  pushUnheld?: boolean;
+  /** Fault (never pulls): the strut's force is not held at zero or above: a palm whose arm is stretched pulls. */
+  pushPulls?: boolean;
+  /** Fault (the force from the arm's compression): the strut pushes with the rest length's excess over its length at the push's birth, however the arm's length changes since. */
+  pushConstant?: boolean;
+  /** Fault (the budgets): a push's force is applied as demanded, past the per-arm ceiling and the owner budget. */
+  pushNoBudget?: boolean;
+  /** Fault (the palm on the surface): the held palm is shown at the rest length along the arm line (inside the chest by the compression), its pose's validity unread. */
+  pushPalmAtRest?: boolean;
+}
+
 /** Ladder 18: one separating force of a born pair (`BornOverlapProfile.separation`), before the solve. */
 export interface BornForce {
   /** The pair's keys (`player:segment:region~player:key`, the lower first). */
@@ -161,6 +175,8 @@ export interface SimDebug {
   brace?: BraceDebug;
   /** Contact motion polish 1.1: fault switches of the tackler's strike (controllers/wrap.ts). */
   wrap?: WrapDebug;
+  /** Plan 16: fault switches of the palm push (arms.ts). */
+  arm?: ArmDebug;
   /** Diagnostics only; not a switch, so not exported. */
   poseProbe?: PoseProbe;
   /** Diagnostics only (ladder 18): each born pair's separating force as it is applied. */
@@ -168,7 +184,7 @@ export interface SimDebug {
 }
 
 /** The switches that are on, for the export (null when every switch is off). */
-export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug; brace?: BraceDebug; wrap?: WrapDebug } | null {
+export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?: PoseDebug; conversion?: ConversionDebug; brace?: BraceDebug; wrap?: WrapDebug; arm?: ArmDebug } | null {
   const on = <T extends object>(o: T | undefined): T | undefined => {
     const e = Object.entries(o ?? {}).filter(([, v]) => v);
     return e.length ? (Object.fromEntries(e) as T) : undefined;
@@ -178,5 +194,6 @@ export function debugExport(d: SimDebug | undefined): { foot?: FootDebug; pose?:
   const conversion = on(d?.conversion);
   const brace = on(d?.brace);
   const wrap = on(d?.wrap);
-  return foot || pose || conversion || brace || wrap ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}), ...(brace ? { brace } : {}), ...(wrap ? { wrap } : {}) } : null;
+  const arm = on(d?.arm);
+  return foot || pose || conversion || brace || wrap || arm ? { ...(foot ? { foot } : {}), ...(pose ? { pose } : {}), ...(conversion ? { conversion } : {}), ...(brace ? { brace } : {}), ...(wrap ? { wrap } : {}), ...(arm ? { arm } : {}) } : null;
 }

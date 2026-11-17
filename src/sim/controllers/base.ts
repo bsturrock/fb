@@ -2,7 +2,7 @@
 import type { BodyProfile } from '../profiles';
 import type { ArmIntent, ArmSide, PlayerId, PlayerIntent, Snapshot } from '../contracts';
 import { norm, horiz, v3, type Vec3, dirFromHeading, rad, toWorld } from '../vec';
-import type { PostureIntent, StanceRequest } from '../contracts';
+import type { PostureIntent, PushRequest, StanceRequest } from '../contracts';
 
 export interface ControllerContext {
   self: PlayerId;
@@ -57,6 +57,8 @@ export interface ArmScriptSegment {
   action: ArmIntent['action'];
   target?: { frame: 'focus' | 'self' | 'world'; point: Vec3 };
   closeEffort?: number;
+  /** Plan 16: the palm push's request (action `push`). */
+  push?: PushRequest;
 }
 
 export interface ScriptSpec {
@@ -82,7 +84,7 @@ export function scriptedArms(ctx: ControllerContext, segs: ArmScriptSegment[] | 
     let seg: ArmScriptSegment | null = null;
     for (const s of segs) if (s.side === side && ctx.t + 1e-9 >= s.fromS) seg = s;
     if (!seg) continue;
-    out[side] = { action: seg.action, targetWorld: resolveArmTarget(ctx, seg.target), closeEffort: seg.closeEffort };
+    out[side] = { action: seg.action, targetWorld: resolveArmTarget(ctx, seg.target), closeEffort: seg.closeEffort, ...(seg.push ? { push: { ...seg.push } } : {}) };
   }
   return out;
 }

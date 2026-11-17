@@ -1,4 +1,5 @@
 // Versioned physical/control profiles. All numbers are authored engineering starting values, not athlete measurements.
+import type { ColliderRegion } from './contracts';
 import { v3, type Vec3 } from './vec';
 
 export const SCHEMA_VERSION = 'tackling-v1.1';
@@ -695,7 +696,61 @@ export interface ArmProfile {
     patchJumpM: number;
   };
   wrap: { azimuthMinDeg: number; bandLowM: number; bandHighM: number; minClampNormalN: number };
+  /** Plan 16, the palm push (absent: an arm asked to push only reaches; no registered fixture has it). */
+  palmPush?: PalmPushProfile;
 }
+
+/**
+ * Plan 16, the palm push (`ArmProfile.palmPush`; an arm whose request is `push`, `ArmIntent.push`): a palm on another
+ * player's chest or the fronts of his shoulders that pushes along the arm. Born where the free palm touches a surface of
+ * his in the band (`band`: one of `regions`, between `lowM` and `highM` above his origin in his frame, its outward normal
+ * at least `frontMinDot` forward) with the arm line facing into it (`bornFacingDot`, the cosine between the line from the
+ * shoulder and the surface's inward normal), the arm not collapsed, within reach. It is then a patch held on that
+ * player's body (the palm shown on it), not a contact re-found each substep, so its force is a smooth function of the two
+ * bodies' state: the arm is a strut, `stiffness` x (rest length - shoulder-to-patch length) less `damping` x their
+ * separating speed, never pulling, along the line from the shoulder to the patch, the pair at the patch (one line of
+ * action). The rest length starts at the length the palm met him at and moves toward the request's (`ArmIntent.push`,
+ * at most the arm's reach) at `extendMps`; the force ramps in over `engageS` from the patch's birth. The shown arm limits
+ * it: the elbow's extension torque (`elbowTorqueNm` x the request's effort) over the elbow's distance from the strut's
+ * line, so a straight arm braces and a bent one gives; and from `giveFlexDeg` to `collapseFlexDeg` of elbow flexion, and
+ * as the arm line turns from `bornFacingDot` to `keepFacingDot`, it tapers to nothing. Under overload it yields (the
+ * shared allocator's ceilings and owner budget; no release: the elbow gives instead). It ends, at no force but the last
+ * two: the arm collapsed (flexion past `collapseFlexDeg`), slipped (facing below `keepFacingDot`), out of reach, the
+ * shoulder behind the surface, a pose the arm cannot show, the request ended, the owner falling, either player's switch,
+ * the referee's ending; and the arm must then leave the body by `hold.withdrawM` before it can push again.
+ */
+export interface PalmPushProfile {
+  stiffness: number;
+  damping: number;
+  extendMps: number;
+  engageS: number;
+  elbowTorqueNm: number;
+  giveFlexDeg: number;
+  collapseFlexDeg: number;
+  bornFacingDot: number;
+  keepFacingDot: number;
+  band: { regions: ColliderRegion[]; lowM: number; highM: number; frontMinDot: number };
+}
+
+/**
+ * Plan 16's first palm push (design item 1). Band on the model body (torso box 0.18-0.69 m above the origin, shoulders 0.56, neck
+ * 0.62): the chest and the fronts of the shoulders, from 0.30 (the lower ribs) to 0.58 (below the neck), the torso's front
+ * face only. Four palms between two men in parallel: 24 kN/m on a 50 kg reduced mass (3.5 Hz) at 0.75 of critical
+ * damping with 300 N s/m each. Elbow extension 120 N m: past the 700 N per-arm ceiling near straight, about 670 N at 60
+ * deg of flexion, 470 N at 90.
+ */
+export const PALM_PUSH_V1: PalmPushProfile = {
+  stiffness: 6000,
+  damping: 300,
+  extendMps: 1.5,
+  engageS: 0.08,
+  elbowTorqueNm: 120,
+  giveFlexDeg: 75,
+  collapseFlexDeg: 100,
+  bornFacingDot: 0.8,
+  keepFacingDot: 0.65,
+  band: { regions: ['torso'], lowM: 0.3, highM: 0.58, frontMinDot: 0.7 },
+};
 
 export const ARM_G2: ArmProfile = {
   id: 'arm-g2-v1',

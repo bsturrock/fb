@@ -67,7 +67,12 @@ export interface StanceRequest {
 }
 
 export interface ArmIntent {
-  action: 'rest' | 'reach' | 'close' | 'pull' | 'release';
+  /**
+   * Plan 16, `push` (an arm profile with `palmPush`; without one it reaches as `reach` does): the palm reaches for
+   * `targetWorld` and, on the chest or the front of a shoulder of the player it meets there, pushes him (the palm push,
+   * `PalmPushProfile`) for as long as the request lasts and the push holds.
+   */
+  action: 'rest' | 'reach' | 'close' | 'pull' | 'release' | 'push';
   targetWorld: Vec3;
   /** 0..1 closing effort for forearm clamps (default 1). */
   closeEffort?: number;
@@ -76,6 +81,17 @@ export interface ArmIntent {
    * own alternatives and unsorted (the twist window still bounds how fast the elbow turns toward it). Absent: as before.
    */
   poleLocal?: Vec3;
+  /** Plan 16, the palm push's request (action `push`; absent: effort 1 at the arm's full reach). */
+  push?: PushRequest;
+}
+
+/**
+ * Plan 16, the palm push: `effort` 0..1 (default 1) scales the elbow's extension torque, the most the arm can push;
+ * `lengthM` is the arm's held length, shoulder to palm (default and at most the arm's reach, at least its minimum).
+ */
+export interface PushRequest {
+  effort?: number;
+  lengthM?: number;
 }
 
 /** Gate 3 balance observation (radians; displayed degrees are derived separately). */

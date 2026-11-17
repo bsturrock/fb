@@ -736,6 +736,8 @@ export class Simulation {
       // contact motion polish 2.1, the fall link (`WrapProfile.fallLink`): a tackler's clamps carried through his switch
       const FL = def.wrap?.fallLink;
       if (FL) this.arms.fallLink = { ...FL, ...(this.opts.debug?.wrap?.fallLinkNoBreak ? { noBreak: true } : {}) };
+      // plan 16: the palm push's fault switches
+      if (this.opts.debug?.arm) this.arms.debug = { ...this.opts.debug.arm };
     }
     // contact motion M3 (WRAP_V3's `commit.hold`): on a fixture without a fall response, the one a takedown starts
     const hold = takedownHold(def);
@@ -1292,7 +1294,7 @@ export class Simulation {
     pl.swayM = add(pl.swayM ?? v3(), scale(pl.sway, dt));
   }
 
-  /** A held grip or clamp on or by this player (owner or target). */
+  /** A held grip, clamp, fall link or palm push on or by this player (owner or target). */
   private retained(pl: PlayerRuntime): boolean {
     if (!this.arms) return false;
     for (const g of this.arms.grips.values()) if (g.ownerId === pl.id || g.targetId === pl.id) return true;
@@ -1303,6 +1305,9 @@ export class Simulation {
         // polish 2.1: a fall link is the clamp carried on
         const l = this.arms.fallLink ? this.arms.linkOf(o.id, s) : null;
         if (l && (o === pl || l === pl.id)) return true;
+        // plan 16: a palm push, by him or on him
+        const pu = this.arms.pushOf(o.id, s);
+        if (pu && (o === pl || pu.targetId === pl.id)) return true;
       }
     return false;
   }
