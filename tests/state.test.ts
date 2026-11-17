@@ -72,14 +72,15 @@ describe('full-state capture and resume', () => {
   }, 60000);
 
   it('a run under physical legs (LEG_GUARD_V3: leg colliders on the proxies, round convex hulls) resumes byte for byte', async () => {
-    // L3-F4-oneArm at 1.167 s under the rung 6 profile: both players' physical legs made and reshaped every substep (their
+    // L3-F4-oneArm at 1.000 s under the rung 6 profile: both players' physical legs made and reshaped every substep (their
     // shapes cached on the colliders), R's removed with its proxy at its conversion; D's in the solve beside R's ragdoll
     // (a natural sample, with the carrier's brace as before the M2 follow-up's lean flip: under V2 D is a ragdoll by then;
-    // and the wrap as before the drive flip, under which D goes down with his carrier before it)
-    // (plan 15 step 4: and before the stepping flip)
-    const def = { ...preBraceV2(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preSteps(FIX('L3-F4-oneArm'))))))))))), legGuard: LEG_GUARD_V3 };
+    // and the wrap as before the drive flip, under which D goes down with his carrier before it). Plan 15 step 5b: on the
+    // contact stepping model, whose D leaves his feet at 1.08 s (the sample was at 1.167 s before it)
+    const def = { ...preBraceV2(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(FIX('L3-F4-oneArm')))))))))), legGuard: LEG_GUARD_V3 };
     const sim = await create(def);
-    await runSim(sim, 70);
+    await runSim(sim, 60);
+    expect(sim.players.find((p) => p.id === 'R')!.rag, 'R a ragdoll at the capture').toBeDefined();
     expect(sim.players.find((p) => p.id === 'D')!.legs?.enabled, 'D\'s legs physical at the capture').toBe(true);
     const cap = copy(captureState(sim));
     await runSim(sim);
