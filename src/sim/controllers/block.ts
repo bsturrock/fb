@@ -90,8 +90,12 @@ export interface BlockProfile {
   ready: { forwardM: number; x: number; y: number };
   /** The palms' aims by placement, and the default placement. */
   hands: Record<BlockHands, HandAim> & { default: BlockHands };
-  /** A palm come off pulls back this far in front of the man's chest (m) to re-arm before it punches again. */
-  recoverM: number;
+  /**
+   * A palm not on him goes back to the ready point and punches from there once within `tolM` of it (a punch from below,
+   * from a hanging arm, meets his chest too steep to be born); a palm come off goes back at once, and a punch not on him
+   * `retryS` after it left goes back.
+   */
+  rearm: { tolM: number; retryS: number };
   stance: BlockStance;
   /** The hip hinge's bounds under the block (the stance's hinge request). */
   hinge: HingeLimits;
@@ -116,15 +120,17 @@ export const BLOCK_V1_HANDS: BlockProfile['hands'] = {
 };
 
 /**
- * The first block (plan 16, 2026-11-17): closes at a walk (1.5 m/s), punches from a 0.45 m chest gap, pushes at 0.62 m
- * of arm (of 0.70 reach: the elbows a little bent, about 0.35 m chest to chest). Engaged at effort 1 he presses at 0.4
- * m/s (a stalled man: 160 N), drives at 0.8 (320 N), and holding pushes back 2 m/s per metre he has given up to 0.8.
- * The stance: 8 deg of lean, 12 more of trunk pitch on the hinge with 4 cm of hip drop, the root at 0.84 m (of 0.89
- * standing), the right foot 0.24 m behind the left. Hands: `BLOCK_V1_HANDS` (`lengthM` is the default for a placement without one). Lost 0.4 s after the last hold.
+ * The first block (plan 16, 2026-11-17): closes at a walk (1.5 m/s, braked at 2.5 m/s2) to 0.62 m between the torso
+ * boxes' fronts, punches from 0.80 (from his ready point; palms are born 0.60-0.71 m from the shoulder, near the 0.70 m
+ * reach, and refused closer in: the arm line too steep on a pitched chest), and stands at about 0.66-0.70 with the palms
+ * on. Engaged at effort 1 he presses at 0.4 m/s (a stalled man: 160 N), drives at 0.8 (320 N), and holding pushes back
+ * 2 m/s per metre he has given up to 0.8. The stance: 8 deg of lean, 12 more of trunk pitch on the hinge with 4 cm of
+ * hip drop, the root at 0.84 m (of 0.89 standing), the right foot 0.24 m behind the left. Hands: `BLOCK_V1_HANDS`
+ * (`lengthM` is the default for a placement without one). Lost 0.4 s after the last hold.
  */
 export const BLOCK_V1: BlockProfile = {
   id: 'block-v1',
-  approach: { mps: 1.5, gainPerS: 3, holdGapM: 0.65, brakeMps2: 2.5, backMps: 0.5 },
+  approach: { mps: 1.5, gainPerS: 3, holdGapM: 0.62, brakeMps2: 2.5, backMps: 0.5 },
   punchGapM: 0.8,
   lengthM: 0.62,
   pressMps: 0.4,
@@ -132,7 +138,7 @@ export const BLOCK_V1: BlockProfile = {
   hold: { gainPerS: 2, maxMps: 0.8 },
   ready: { forwardM: 0.22, x: 0.14, y: 0.42 },
   hands: BLOCK_V1_HANDS,
-  recoverM: 0.12,
+  rearm: { tolM: 0.1, retryS: 0.6 },
   stance: { leanDeg: 8, hingeDeg: 12, dropM: 0.04, heightM: 0.84, staggerM: 0.24 },
   hinge: { maxDeg: 20, rateDegPerS: 60, accelDegPerS2: 300, maxDropM: 0.06, dropRateMps: 0.2 },
   engage: { lostS: 0.4 },
@@ -220,6 +226,10 @@ export class BlockController implements Controller {
   private lastFacing: Vec3;
   /** Holding: where he engaged (world), moved on with him as he gains ground (null while not engaged). */
   private anchor: Vec3 | null = null;
+  /** Per arm: when its punch left the ready point (null: not punching). */
+  private punchedAt: Record<ArmSide, number | null> = { left: null, right: null };
+  /** Per arm: its palm was on him at the last decision. */
+  private wasOn: Record<ArmSide, boolean> = { left: false, right: false };
 
   constructor(
     readonly spec: BlockSpec,
@@ -281,21 +291,25 @@ export class BlockController implements Controller {
     const arms: Partial<Record<ArmSide, ArmIntent>> = {};
     for (const side of SIDES) {
       const out = sideSignX(myBody, side);
-      if (!punch) {
-        // ready: in front of his own chest
-        const local = v3(out * P.ready.x, P.ready.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + P.ready.forwardM);
-        arms[side] = { action: 'reach', targetWorld: add(me.position, qRot(me.rotation, local)) };
+      const o = obs?.[side];
+      // ready: in front of his own chest
+      const readyLocal = v3(out * P.ready.x, P.ready.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + P.ready.forwardM);
+      const readyWorld = add(me.position, qRot(me.rotation, readyLocal));
+      // a palm come off goes back to ready at once; a punch not on him by `retryS` too
+      if (o?.pushId) this.punchedAt[side] = ctx.t;
+      else if (this.wasOn[side] || (this.punchedAt[side] !== null && ctx.t - this.punchedAt[side]! > P.rearm.retryS)) this.punchedAt[side] = null;
+      this.wasOn[side] = !!o?.pushId;
+      if (punch && this.punchedAt[side] === null && o && o.action === 'reach' && o.armedForFreshContact && len(sub(o.palmContactWorld, readyWorld)) <= P.rearm.tolM) this.punchedAt[side] = ctx.t;
+      if (!punch || this.punchedAt[side] === null) {
+        arms[side] = { action: 'reach', targetWorld: readyWorld };
         continue;
       }
       // my right hand on his left side (his frame): the side across from it
       const hx = sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x;
       const front = frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1));
-      const o = obs?.[side];
-      const rearm = !!o && !o.pushId && !o.armedForFreshContact;
-      const z = rearm ? front + P.recoverM : front - aim.depthM;
-      const targetWorld = add(him.position, qRot(him.rotation, v3(hx, aim.y, z)));
+      const targetWorld = add(him.position, qRot(him.rotation, v3(hx, aim.y, front - aim.depthM)));
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
-      arms[side] = rearm ? { action: 'reach', targetWorld } : { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
+      arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
     const S = P.stance;
     const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM };
