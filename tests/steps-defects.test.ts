@@ -2,26 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { standsNowhere, STEPS_V2, withSteps, withoutSteps } from '../src/sim/contact-steps';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, FIX, preSteps } from './runs';
+import { asCaptured, FIX } from './runs';
 import { loadState, resumeState } from './state';
 import { idleBaseline, VisibleMeter } from './visible';
 import { feetTogether } from './l3-pass';
 
 // Plan 15 step 4, defects reached by the stepping flip's moved trajectories, each on a capture taken under the flip's
 // registration (STEPS_V1) a little before the defect. Under it the tackler went down late, held up by the come-down's
-// read, and two of his conversions there go wrong. The twin with the reactive planner from the same state (`preSteps`)
-// shows the same defect: reached, not made by the model's feet. Since step 4b (STEPS_V2, the come-down's read on the
-// model, tested below) no L3, L4 or HC run reaches either; both are parked (docs/open/15_Contact_Footwork.md, tracked
-// item 1) and stay pinned here on the step-4 state. Each test fails once its defect is gone from that state; it is then
-// turned into the fix's test, with the fault twin.
+// read, and two of his conversions there go wrong. The twin with the reactive planner from the same state showed the
+// same defect (reached, not made by the model's feet) until step 5b deleted that planner. Since step 4b (STEPS_V2, the
+// come-down's read on the model, tested below) no L3, L4 or HC run reaches either; both are parked
+// (docs/open/15_Contact_Footwork.md, tracked item 1) and stay pinned here on the step-4 state. Each test fails once its
+// defect is gone from that state; it is then turned into the fix's test, with the fault twin.
 
 const len = (v: number[]): number => Math.hypot(...v);
 
-/** Resumes the capture to the end as registered (the model on) or with the reactive planner from there: player `pid`'s conversion. */
-async function conversion(file: string, model: boolean, pid: string) {
+/** Resumes the capture to the end as captured: player `pid`'s conversion. */
+async function conversion(file: string, pid: string) {
   const cap = loadState(`tests/data/state/${file}.json.gz`);
   const def = asCaptured(cap);
-  const sim = await resumeState(cap, model ? { def } : { def: preSteps(def), variant: ['footwork'] });
+  const sim = await resumeState(cap, { def });
   while (!sim.done) sim.stepTick();
   const pl = sim.players.find((p) => p.id === pid)!;
   const h = pl.handoff;
@@ -44,29 +44,25 @@ async function conversion(file: string, model: boolean, pid: string) {
 
 describe('plan 15 step 4: defects reached by the stepping flip (the tackler going down late under STEPS_V1)', () => {
   it('TAKEDOWN_ENERGY_GAIN (L3-F1-phase2 reversed, from 1.067 s): the late tackler\'s takedown at 1.133 s gains over half his kinetic energy at the transfer (energyGain: transferFailed), his folded pose\'s centre of mass 15 cm off the proxy\'s, the ragdoll spun up over three times faster than the proxy turned; the reactive planner from the same state the same', async () => {
-    for (const model of [true, false]) {
-      const r = await conversion('L3-F1-phase2~rev@64', model, 'D');
-      const said = `${model ? 'model' : 'reactive'} ${JSON.stringify(r)}`;
-      expect(r.outcome, said).toBe('transferFailed');
-      expect(r.reason, said).toBe('takedown');
-      expect(r.t!, said).toBeCloseTo(1.133, 2);
-      expect(r.audit, said).toEqual(['energyGain']);
-      expect(r.gain, said).toBeGreaterThan(0.5);
-      expect(r.spin[1], said).toBeGreaterThan(3 * r.spin[0]);
-    }
+    const r = await conversion('L3-F1-phase2~rev@64', 'D');
+    const said = JSON.stringify(r);
+    expect(r.outcome, said).toBe('transferFailed');
+    expect(r.reason, said).toBe('takedown');
+    expect(r.t!, said).toBeCloseTo(1.133, 2);
+    expect(r.audit, said).toEqual(['energyGain']);
+    expect(r.gain, said).toBeGreaterThan(0.5);
+    expect(r.spin[1], said).toBeGreaterThan(3 * r.spin[0]);
   }, 120000);
 
   it('ELBOW_PAST_RAGDOLL_RANGE (L4-F10-wrap-off, from 1.200 s): the late tackler\'s takedown at 1.242 s is refused, his supported right elbow folded past the ragdoll\'s 145 deg (hingeLimit), and he falls as the rigid proxy; the reactive planner from the same state the same', async () => {
-    for (const model of [true, false]) {
-      const r = await conversion('L4-F10-wrap-off@72', model, 'D');
-      const said = `${model ? 'model' : 'reactive'} ${JSON.stringify(r)}`;
-      expect(r.outcome, said).toBe('rejected');
-      expect(r.reason, said).toBe('takedown');
-      expect(r.t!, said).toBeCloseTo(1.242, 2);
-      expect(r.rejected, said).toMatchObject({ reasons: 'hingeLimit' });
-      expect(r.rejected!.rightElbowDeg, said).toBeGreaterThan(r.elbowLimitDeg);
-      expect(r.representation, said).toBe('proxy');
-    }
+    const r = await conversion('L4-F10-wrap-off@72', 'D');
+    const said = JSON.stringify(r);
+    expect(r.outcome, said).toBe('rejected');
+    expect(r.reason, said).toBe('takedown');
+    expect(r.t!, said).toBeCloseTo(1.242, 2);
+    expect(r.rejected, said).toMatchObject({ reasons: 'hingeLimit' });
+    expect(r.rejected!.rightElbowDeg, said).toBeGreaterThan(r.elbowLimitDeg);
+    expect(r.representation, said).toBe('proxy');
   }, 120000);
 });
 
@@ -123,14 +119,11 @@ describe('plan 15, the come-down\'s read on the model (STEPS_V2 underHips)', () 
   }, 120000);
 });
 
-/**
- * Resumes the capture to `untilS` as registered (the model on) or with plan 07's planner from there (`preSteps`): the
- * deepest leg-through-leg between two supported players the visible meter sees, and when.
- */
-async function legsCrossed(file: string, model: boolean, untilS: number) {
+/** Resumes the capture to `untilS` as registered: the deepest leg-through-leg between two supported players the visible meter sees, and when. */
+async function legsCrossed(file: string, untilS: number) {
   const cap = loadState(`tests/data/state/${file}.json.gz`);
   const def = asCaptured(cap);
-  const sim = await resumeState(cap, model ? { def } : { def: preSteps(def), variant: ['footwork'] });
+  const sim = await resumeState(cap, { def });
   const meter = new VisibleMeter(sim, await idleBaseline(FIX('L3-F13-free')));
   while (!sim.done && sim.t < untilS) {
     sim.stepTick();
@@ -144,15 +137,12 @@ async function legsCrossed(file: string, model: boolean, untilS: number) {
 }
 
 describe('plan 15 step 5a: defects reached by the stepping flip on L2', () => {
-  it('LEG_IN_MAN_SIDE_HIT (L2-F8-sideLoss, from 0.450 s): the tackler hitting the runner side-on at 6 m/s finds no free place for his left foot (the least deep 4-16 cm in the runner) and the model steps it there, under his hips: his left thigh 10+ cm in the runner\'s for about 0.1 s while both are supported (tracked defect 2, a leg in the other man, reached in a hit); plan 07\'s planner from the same state leaves the foot trailing, under 2 cm', async () => {
-    const m = await legsCrossed('L2-F8-sideLoss@27', true, 0.7);
+  it('LEG_IN_MAN_SIDE_HIT (L2-F8-sideLoss, from 0.450 s): the tackler hitting the runner side-on at 6 m/s finds no free place for his left foot (the least deep 4-16 cm in the runner) and the model steps it there, under his hips: his left thigh 10+ cm in the runner\'s for about 0.1 s while both are supported (tracked defect 2, a leg in the other man, reached in a hit)', async () => {
+    const m = await legsCrossed('L2-F8-sideLoss@27', 0.7);
     const said = JSON.stringify(m);
     expect(m.worst?.[1], said).toBe('supSup:D.leftThigh~R.leftThigh');
     expect(m.worst![2] as number, said).toBeGreaterThan(10);
     expect(m.supSupS, said).toBeGreaterThan(0.08);
-    // the twin: plan 07's planner from the same state
-    const r = await legsCrossed('L2-F8-sideLoss@27', false, 0.7);
-    expect((r.worst?.[2] as number | undefined) ?? 0, JSON.stringify(r)).toBeLessThan(2);
   }, 120000);
 });
 

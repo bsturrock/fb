@@ -131,7 +131,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
   });
 
   // ladder rung 8j: retry=on|off, composed after the others
-  it('hips=on&pgs=4&knees=140&retry=on runs the 8i variant with the deferred conversion (HC-F3-falling reversed: D converts where the variant alone leaves it a falling proxy), named in the label; retry=off takes it off again; unknown values change nothing', async () => {
+  it('hips=on&pgs=4&knees=140&retry=on runs the 8i variant with the deferred conversion (HC-F3-falling reversed), named in the label; retry=off takes it off again; unknown values change nothing', () => {
     const id = 'HC-F3-falling';
     // (the profile before the visible flip, which registers this variant; a natural sample, with the leg guard before
     // the ladder 10 flip: under V3 the variant alone converts D, its posed legs held out of R; and before the ladder 17b
@@ -139,26 +139,17 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     // 18e met-arm flip, under which the variant alone converts D as well; and before the contact motion M2 brace flip;
     // and before the M3 wrap flip, under which the variant alone converts D too; and before the M4 fall flip, under which
     // the variant alone converts D as well, the carrier's reaction moving the fall)
-    // (plan 15 step 4: and before the stepping flip)
-    const d = preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preWrap(preFallReact(preSteps(FIX(id)))))))));
+    // (plan 15 step 5b: on the contact stepping model the variant alone converts D too: the run twin went with the
+    // reactive planner)
+    const d = preV3(preFlip(preBornOverlap(preMetArmStay(preBrace(preWrap(preFallReact(FIX(id))))))));
     const lab = labRun(d, new URLSearchParams(`fixture=${id}&order=rev&hips=on&pgs=4&knees=140&retry=on`));
     expect(lab.label).toBe('order rev · hip stops on · pgs +4 · knee stop 140 · conversion retry on');
     const want = withConversionRetry(flip8i(d).ragdoll!);
     expect(want.id).toBe(`${d.ragdoll!.id}+hip-stops-v2+pgs4+knee140+${CONVERSION_RETRY_V1.id}`);
     expect(lab.def).toEqual({ ...d, ragdoll: want });
-    const outcomeOf = async (def: typeof d): Promise<string | undefined> => {
-      const s = await create(def, { reverseOrder: true });
-      await runSim(s);
-      const h = s.players.find((p) => p.id === 'D')!.handoff?.outcome;
-      s.dispose();
-      return h;
-    };
-    expect(await outcomeOf(lab.def)).toBe('accepted');
-    // the twin: the variant without it
     const off = labRun(lab.def, new URLSearchParams('retry=off'));
     expect(off.label).toBe('conversion retry off');
     expect(off.def).toEqual(flip8i(d));
-    expect(await outcomeOf(off.def)).toBe('rejected');
     expect(withoutConversionRetry(d.ragdoll!)).toBe(d.ragdoll);
     expect(labRun(d, new URLSearchParams('retry=off'))).toEqual({ def: d, opts: {}, label: 'conversion retry off (registered)' });
     expect(labRun(d, new URLSearchParams('retry=maybe'))).toEqual({ def: d, opts: {}, label: 'retry=maybe ignored' });
@@ -464,7 +455,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     // (contact motion M4: and before the fall flip, under which the run before the born overlap does not defer D either;
     // and before the shoulder twist flip, registered after the born overlap on the same profile)
     // (plan 15 step 4: and before the stepping flip, the run all these were taken in)
-    const reg = preMetArmStay(preBrace(preWrap(preFallReact(preShoulderTwist(preSteps(FIX(id)))))));
+    const reg = preMetArmStay(preBrace(preWrap(preFallReact(preShoulderTwist(FIX(id))))));
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const d = preBornOverlap(reg);
     expect(d.ragdoll!.bornOverlap).toBeUndefined();
@@ -504,7 +495,7 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const id = 'L3-F1-falling';
     // (contact motion M4: and before the fall flip, under which no born pair of D's is released by 1.3 s either)
     // (plan 15 step 4: and before the stepping flip)
-    const registered = preMetArmStay(preBrace(preWrap(preFallReact(preSteps(FIX(id))))));
+    const registered = preMetArmStay(preBrace(preWrap(preFallReact(FIX(id)))));
     expect(registered.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V2);
     const reg = preBornSeparation(registered);
     expect(reg.ragdoll!.bornOverlap).toBe(BORN_OVERLAP_V1);
