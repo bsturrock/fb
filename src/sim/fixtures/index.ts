@@ -10,296 +10,76 @@ import { footworkFixtures } from './footwork';
 import { transitionFixtures } from './transitions';
 import { fallFixtures } from './falls';
 import { handoffContactFixtures } from './handoff-contact';
-import { FALL_L4, FALL_L4_V2, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear, withShoulderTwistLimit, SHOULDER_TWIST_ANAT_V2 } from '../profiles';
+import { FALL_L4, FALL_L4_V2, FALL_REACT_V3, hipStopsFor, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_V3, withAdditionalPgsIterations, withBornOverlap, withBornSeparation, withClipArmSwing, withConversionRetry, withHipStops, withKneeStop, withMetArmStay, withSelfLegs, withBalancedClear, withShoulderTwistLimit, SHOULDER_TWIST_ANAT_V2 } from '../profiles';
 import { withHoldStill } from '../footwork';
 import { withSteps } from '../contact-steps';
 import { CARRIER_BRACE_V2 } from '../brace';
-import { WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V7, WRAP_V8, WRAP_V9, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V13 } from '../controllers/wrap';
+import { WRAP_V13 } from '../controllers/wrap';
 
 /**
- * Ladder 8l, the visible flip: every L3, L4 and HC ragdoll runs the hip stops `hipStopsFor` gives (the 8d box with the
- * approach zone, HIP_STOPS_V2; on L4 too since rung 8k), 4 additional PGS iterations, the knee flexion stop at 140 deg
- * and the deferred conversion (rung 8j). G, L1, L2 and RH keep their profiles. The lab's
- * `hips=on&pgs=4&knees=140&retry=on` is the same profile on a fixture registered without it; tests/runs.ts `preFlip`
- * gives a definition as before the flip.
- */
-const VISIBLE_FLIP = /^(L3|L4|HC)-/;
-function visibleFlip(d: FixtureDef): FixtureDef {
-  if (!d.ragdoll || !VISIBLE_FLIP.test(d.id)) return d;
-  return { ...d, ragdoll: withConversionRetry(withKneeStop(withAdditionalPgsIterations(withHipStops(d.ragdoll, hipStopsFor(d.ragdoll)), 4), 140)) };
-}
-
-/**
- * Ladder 9, own-leg contact: every L3, L4 and HC ragdoll's legs meet each other, and its shins and shoes its own trunk
- * (SELF_LEGS_V1, rung 9a), on top of the visible flip. G, L1, L2 and RH keep their profiles. The lab's `selfleg=off` is
- * the view before it; tests/runs.ts `preOwnLegs` gives a definition as before it, `preFlip` as before both flips.
- */
-function ownLegFlip(d: FixtureDef): FixtureDef {
-  if (!d.ragdoll || !VISIBLE_FLIP.test(d.id)) return d;
-  return { ...d, ragdoll: withSelfLegs(d.ragdoll) };
-}
-
-/**
- * Ladder 10, the leg-guard flip: every fixture with a leg guard (every L3, L4 and HC fixture; plan 13f's predictive
- * LEG_GUARD_V1 until then) runs LEG_GUARD_V3: the swept leg step and planted pose (V2, rungs 5 and 7) and physical
- * supported legs (rung 6). G, L1, L2 and RH have no leg guard. The lab's `legs=v1` is the view before it;
- * tests/runs.ts `preV3` gives a definition as before it.
- */
-function legFlip(d: FixtureDef): FixtureDef {
-  return d.legGuard ? { ...d, legGuard: LEG_GUARD_V3 } : d;
-}
-
-/**
- * Ladder 14a, the still-feet flip (the rule of rung 13b): every L3, L4 and HC fixture with a foot planner keeps its feet planted in a
- * stationary hold (HOLD_STILL_V1). L2's planner is unchanged. tests/runs.ts `preHoldStill` gives a definition as before
- * it.
- */
-function holdStillFlip(d: FixtureDef): FixtureDef {
-  return d.footwork && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withHoldStill(d.footwork) } : d;
-}
-
-/**
- * Ladder 17b, the born-overlap flip: every L3, L4 and HC ragdoll converts a candidate born inside another player, its
- * born pairs out of the solve until they separate (BORN_OVERLAP_V1, rung 17a), rather than leave a rigid falling figure.
- * G, L1, L2 and RH keep their profiles. The lab's `born=off` is the view before it; tests/runs.ts `preBornOverlap` gives a
- * definition as before it.
- */
-function bornFlip(d: FixtureDef): FixtureDef {
-  return d.ragdoll && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withBornOverlap(d.ragdoll) } : d;
-}
-
-/**
- * Ladder 18c, the born-separation flip: every L3, L4 and HC ragdoll's held born pairs are pushed apart, capped
- * (BORN_OVERLAP_V2 in V1's place, rung 18b), rather than left to part as the bodies move: none goes deeper than it was
- * born. G, L1, L2 and RH keep their profiles. The lab's `bornsep=off` is the view before it; tests/runs.ts
- * `preBornSeparation` gives a definition as before it.
- */
-function bornSepFlip(d: FixtureDef): FixtureDef {
-  return d.ragdoll?.bornOverlap && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withBornSeparation(d.ragdoll) } : d;
-}
-
-/**
- * Ladder 18e (16c's and 17c's parked flip), the met-arm flip: every L3, L4 and HC fixture's supported arms keep their
- * natural pose when another body meets them (`metArmStay`, rung 16b, with 14b's `clipArmSwing`, which it makes inert):
- * pressing a little into the other body, at most hanging at the side, never a raised or forward alternative. A met arm
- * pressed into the other player when he converts is a born pair (17b), pushed apart (18c). G, L1, L2 and RH keep their
- * profiles. The lab's `armstay=off&armswing=off` is the view before it; tests/runs.ts `preMetArmStay` gives a definition
- * as before it.
- */
-function metArmStayFlip(d: FixtureDef): FixtureDef {
-  return d.selfClearance && VISIBLE_FLIP.test(d.id) ? { ...d, selfClearance: withMetArmStay(withClipArmSwing(d.selfClearance)) } : d;
-}
-
-/**
- * Contact motion M2, the brace flip: on every L3, L4 and HC fixture with a composed ball carrier, the carrier braces for
- * a hit he sees coming (CARRIER_BRACE_V1: hips lower, chest forward, the ball held high and tight under the free hand;
- * since the M2 follow-up CARRIER_BRACE_V2, the same pose with the chest's lean formed in time for the hit).
- * G, L1, L2 and RH keep their definitions. The lab's `brace=off` is the view before it; tests/runs.ts `preBrace` gives a
- * definition as before it.
- */
-function braceFlip(d: FixtureDef): FixtureDef {
-  return d.locomotion && VISIBLE_FLIP.test(d.id) && d.players.some((p) => p.role === 'runner') ? { ...d, brace: CARRIER_BRACE_V2 } : d;
-}
-
-/**
- * Contact motion M2 follow-up, the balanced-clear flip: on every L3, L4 and HC fixture refereed by the football rules,
- * the defensive influence clears only once the runner has regained his balance (`balancedClear`): a carrier hit off
- * balance who topples a moment later is down by contact. G, L1, L2 and RH keep their profiles. The lab's `balclear=off`
- * is the view before it; tests/runs.ts `preBalancedClear` gives a definition as before it.
- */
-function balancedClearFlip(d: FixtureDef): FixtureDef {
-  return d.rules?.kind === 'footballTackleSubset' && VISIBLE_FLIP.test(d.id) ? { ...d, rules: withBalancedClear(d.rules) } : d;
-}
-
-/**
- * Contact motion M3, the wrap flip: on every L3, L4 and HC fixture with a tackling defender (a `wrapAttempt`
- * controller that pursues to the end), his arms ride ahead of his chest, open into a cradle wider than the carrier ahead
- * of contact and close on the first valid touch; then, on a defender with a supported finish, a secure two-arm hold
- * lowers him and takes him down with the carrier, his arms keeping their hold on the carrier while he goes down (WRAP_V3;
- * WRAP_V2 before the hold flip, the lab's `wrap=v2`; WRAP_V1 before the takedown flip, `wrap=v1`). A defender who stops
- * pursuing to stand in a hold
- * (`standAfterS`: the L3-F6 stationary holds, which register the hold's still feet) keeps the Gate 2 hands: the cradle
- * is the tackle's, and under it the hold's wrap is retained at the touch, after the carrier's prep has unwound
- * (docs/handoff/contact-motion-m3.md). G, L1, L2 and RH keep their definitions. The lab's `wrap=off` is the view before
- * it; tests/runs.ts `preWrap` gives a definition as before it.
- */
-function wrapFlip(d: FixtureDef): FixtureDef {
-  const tackles = d.players.some((p) => p.controller.kind === 'wrapAttempt' && p.controller.standAfterS === undefined);
-  return VISIBLE_FLIP.test(d.id) && tackles ? { ...d, wrap: WRAP_V3 } : d;
-}
-
-/**
- * Contact motion polish 1.1, the strike flip: every fixture the wrap flip gave WRAP_V3 runs WRAP_V4 (the tackler's strike:
- * hips lower, trunk pitched in on a hip hinge, the near shoulder leading with the head to the carrier's side, arms wide
- * from the shoulders). The lab's `wrap=v3` is the view before it; tests/runs.ts `preWrapV4` gives a definition as before
- * it.
- */
-function strikeFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V3 ? { ...d, wrap: WRAP_V4 } : d;
-}
-
-/**
- * Contact motion polish 1.2, the drive flip: every fixture the strike flip gave WRAP_V4 runs WRAP_V5 (with a hold the
- * tackler stays on his feet and drives through the carrier, and goes down with him: the carrier down or going over, his
- * own loss with his holds carried, or a stall). The lab's `wrap=v4` is the view before it; tests/runs.ts `preWrapV5`
- * gives a definition as before it.
- */
-function driveFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V4 ? { ...d, wrap: WRAP_V5 } : d;
-}
-
-/**
- * Contact motion polish 1.2, the ride-down flip: every fixture the drive flip gave WRAP_V5 runs WRAP_V7 (with a secure
- * hold the tackler stays supported through the takedown, keeps driving, folds and comes down with the carrier, and
- * becomes a ragdoll only low and slow). WRAP_V6, the low strike, stays unregistered. The lab's `wrap=v5` is the view
- * before it; tests/runs.ts `preWrapV7` gives a definition as before it.
- */
-function rideFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V5 ? { ...d, wrap: WRAP_V7 } : d;
-}
-
-/**
- * Contact motion polish 1.4, the bound-legs flip: every fixture the ride-down flip gave WRAP_V7 runs WRAP_V8 (a carrier
- * held securely whose legs cannot run, both holds below his pelvis or a foot stranded with no new plant while he still
- * leans or moves, goes down after 0.2 s, forward if physics allows). WRAP_V6, the low strike, stays unregistered. The
- * lab's `wrap=v7` is the view before it; tests/runs.ts `preWrapV8` gives a definition as before it.
- */
-function bindFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V7 ? { ...d, wrap: WRAP_V8 } : d;
-}
-
-/**
- * Contact motion polish 2.1, the hold flip: every fixture the bound-legs flip gave WRAP_V8 runs WRAP_V9 (the fall link:
- * a tackler's clamps, carried through the referee's ending while he rides the carrier down, become at his own switch
- * breakable tension-only links from his ragdoll arm to the patch he held, until overload, stretch, reach or the target
- * goes). WRAP_V6, the low strike on WRAP_V8, stays unregistered. The lab's `wrap=v8` is the view before it;
- * tests/runs.ts `preWrapV9` gives a definition as before it.
- */
-function linkFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V8 ? { ...d, wrap: WRAP_V9 } : d;
-}
-
-/**
- * Contact motion polish 2.2, the behind flip: every fixture the hold flip gave WRAP_V9 runs WRAP_V10 (the drive from
- * behind: holding a carrier running away from him, the tackler never asks for more than the carrier's speed along his
- * travel and commits his weight to the hold as the drive begins, the fall link carrying it). The front, side and drag
- * drives are as under V9. The lab's `wrap=v9` is the view before it; tests/runs.ts `preWrapV10` gives a definition as
- * before it.
- */
-function behindFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V9 ? { ...d, wrap: WRAP_V10 } : d;
-}
-
-/**
- * Contact motion polish 2.4, the stay-on flip: every fixture the behind flip gave WRAP_V10 runs WRAP_V11 (staying on
- * from behind: the tackler neither brakes nor commits his weight, he stays posed in the strike on the carrier at the
- * carrier's velocity, and a carrier held so for 0.25 s goes down by the bound-legs fall's clause (c), the ride-down
- * bringing the tackler after him). The front, side and drag drives are as under V10. The lab's `wrap=v10` is the view
- * before it; tests/runs.ts `preWrapV11` gives a definition as before it.
- */
-function stayOnFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V10 ? { ...d, wrap: WRAP_V11 } : d;
-}
-
-/**
- * Contact motion polish 4, the hit flip: every fixture the stay-on flip gave WRAP_V11 runs WRAP_V12 (the hit, a request
- * only: no speed rule), and the five full-sprint crossing tackles the user called hits (`HIT_FIXTURES`, each by its id,
- * not by its family) ask their tackler for one (`WrapSpec.tackle`): the shoulder through the man, the head behind his
- * travel, the arms tucked, no wrap, the tackler running on. Every other tackle asks for nothing and is a wrap exactly as
- * under V11. The choice is a request until game context makes it. The lab's `wrap=v11` is the view before it;
- * tests/runs.ts `preWrapV12` gives a definition as before it.
+ * What a registered id gets on top of what its fixture file registers. Each fixture file registers its family's base
+ * profiles (L3, L4 and HC: JOINT_RANGE_V2, LEG_GUARD_V1, SELF_CLEARANCE_V1, L4's FALL_L4 responses); the layers below
+ * were each turned on for fixtures in a step of its own (a "flip") after landing flag off, and `registered` puts them all
+ * on in the order they were turned on, which the ragdoll's composed id and the definitions' key order record.
+ *
+ * G, L1 and RH get nothing here; L2 gets the contact stepping model alone. L3, L4 and HC get every layer below. A new
+ * family gets nothing unless it is added here: a new layer is opt-in per family (CLAUDE.md).
+ *
+ * Every L3, L4 and HC fixture:
+ * - ragdoll (if any): the visible flip (ladder 8l: hip stops `hipStopsFor`, 4 additional PGS iterations, the knee
+ *   flexion stop at 140 deg, the deferred conversion), own-leg contact (ladder 9, SELF_LEGS_V1), the born overlap
+ *   (ladder 17b: a candidate born inside another player converts with its born pairs out of the solve) and its capped
+ *   separation (ladder 18c, BORN_OVERLAP_V2), and the anatomical shoulder twist limit stepped on the arm's inertia
+ *   (ladder 13a-iii, SHOULDER_TWIST_ANAT_V2; G, L1, L2 and RH have no envelope);
+ * - leg guard (if any): LEG_GUARD_V3 (ladder 10: swept leg step, planted pose, physical supported legs);
+ * - foot planner (if any): the still feet of a stationary hold (ladder 14a, HOLD_STILL_V1), then, if it composes, the
+ *   contact stepping model (plan 15 step 4, STEPS_V2);
+ * - self clearance (if any): met arms keep their natural pose (ladder 18e, `metArmStay`, with 14b's `clipArmSwing`,
+ *   which it makes inert);
+ * - a composed ball carrier (`locomotion` and a runner): the brace for a hit he sees coming (contact motion M2,
+ *   CARRIER_BRACE_V2);
+ * - the football rules: the defensive influence clears only once the runner has regained his balance (M2 follow-up,
+ *   `balancedClear`);
+ * - a tackling defender (a `wrapAttempt` that pursues to the end; a `standAfterS` hold keeps the Gate 2 hands): the wrap
+ *   (contact motion M3 and polish 1 to 4: cradle, strike, drive, ride-down, bound legs, fall link, the drive from behind,
+ *   staying on, the hit's aim), WRAP_V13; the five full-sprint crossing tackles the user called hits (`HIT_FIXTURES`, by
+ *   id) ask their tackler for a hit (`WrapSpec.tackle`), every other tackle for nothing;
+ * - L3 and HC with a ragdoll: every player who converts reacts as he falls, with the landed palm bearing load and the
+ *   forward-fall body plan (contact motion M4 and polish 4, FALL_REACT_V3); L4's FALL_L4 responses take the forward fall
+ *   (FALL_L4_V2), its other responses (knee-only, zero-cap, low-work twins) stay as registered;
+ * - JOINT_RANGE_V2 becomes JOINT_RANGE_V3 (ladder 11b, the supported thigh's rotation kept in the hip's twist range).
+ *
+ * The lab's switches (src/lab/lab-params.ts) give the views before each layer; tests/runs.ts `BEFORE_FLIPS` gives the
+ * definitions as before each flip, for state captures taken under them.
  */
 export const HIT_FIXTURES: readonly string[] = ['L3-F4-twoArm', 'L4-F10-wrap-on', 'L3-F1-low', 'HC-F3-lowRunner', 'HC-F3-phase0'];
-function hitFlip(d: FixtureDef): FixtureDef {
-  if (d.wrap !== WRAP_V11) return d;
-  if (!HIT_FIXTURES.includes(d.id)) return { ...d, wrap: WRAP_V12 };
-  return { ...d, wrap: WRAP_V12, players: d.players.map((p) => (p.controller.kind === 'wrapAttempt' ? { ...p, controller: { ...p.controller, tackle: 'hit' as const } } : p)) };
-}
+const OPT_IN = /^(L3|L4|HC)-/;
+const FALLS = /^(L3|HC)-/;
 
-/**
- * Contact motion polish 4 (p17), the forward-fall flip: every fixture with FALL_REACT_V2 (L3, HC) runs FALL_REACT_V3 and
- * every fixture with FALL_L4 (L4) FALL_L4_V2, the forward-fall body plan (FORWARD_FALL_V1) on the same response: a man
- * falling forward lays his legs out, lands bent on his free arm and gives, and at speed folds the ball arm in to his
- * chest. A backward or sideways fall runs as before. L4's other responses (the knee-only, zero-cap and low-work twins)
- * stay as they are. The lab's `fwd=off` is the view before it; tests/runs.ts `preForwardFall` gives a definition as
- * before it.
- */
-function forwardFallFlip(d: FixtureDef): FixtureDef {
-  return d.fallResponse === FALL_REACT_V2 ? { ...d, fallResponse: FALL_REACT_V3 } : d.fallResponse === FALL_L4 ? { ...d, fallResponse: FALL_L4_V2 } : d;
-}
-
-/**
- * Contact motion polish 4 (p18), the aim flip: every fixture the hit flip gave WRAP_V12 runs WRAP_V13, the hit's aim: on
- * a crossing runner the striking shoulder meets the front of his near shoulder or chest instead of the back of it. Still
- * no speed rule: only the five `HIT_FIXTURES` ask for a hit, and every other tackle is a wrap exactly as under V12. The
- * lab's `wrap=v12` is the view before it; tests/runs.ts `preWrapV13` gives a definition as before it.
- */
-function aimFlip(d: FixtureDef): FixtureDef {
-  return d.wrap === WRAP_V12 ? { ...d, wrap: WRAP_V13 } : d;
-}
-
-/**
- * Ladder 13a-iii (p19), the shoulder twist flip: every L3, L4 and HC ragdoll's shoulder twist limit reads the anatomical
- * twist and is stepped on the arm's own inertia (SHOULDER_TWIST_ANAT_V2): a fallen arm raised overhead is held inside
- * its range, and an arm twisted to its stop is stopped there instead of thrown back. G, L1, L2 and RH keep plan 09's.
- * The lab's `armtwist=off` is the view before it; tests/runs.ts `preShoulderTwist` gives a definition as before it.
- */
-function shoulderTwistFlip(d: FixtureDef): FixtureDef {
-  return d.ragdoll && VISIBLE_FLIP.test(d.id) ? { ...d, ragdoll: withShoulderTwistLimit(d.ragdoll, SHOULDER_TWIST_ANAT_V2) } : d;
-}
-
-/**
- * Contact motion M4, the fall flip: on every L3 and HC fixture with a ragdoll, every player who converts reacts as he
- * falls (FALL_REACT_V1, plan 09's response with the M3 hold): his knees and hips flex before he lands, a free arm
- * reaches for the floor, the carry arm keeps the ball tucked, and an arm still holding at the switch keeps its hold, then
- * braces when it lapses. L4 keeps its own responses and motor-off twins; G, L1, L2 and RH keep their definitions. The
- * lab's `fall=off` is the view before it; tests/runs.ts `preFallReact` gives a definition as before it.
- */
-const FALL_FLIP = /^(L3|HC)-/;
-function fallFlip(d: FixtureDef): FixtureDef {
-  return d.ragdoll && FALL_FLIP.test(d.id) ? { ...d, fallResponse: FALL_REACT_V1 } : d;
-}
-
-/**
- * Contact motion M4, step 2: on every fixture the fall flip gave FALL_REACT_V1, FALL_REACT_V2 (a landed palm bears
- * load: from its floor contact the arm only damps its motion and lets go once unloaded). Lab `fall=v1` is the view
- * before; tests/runs.ts `prePalmLoad` gives the definition before it.
- */
-function palmLoadFlip(d: FixtureDef): FixtureDef {
-  return d.fallResponse === FALL_REACT_V1 ? { ...d, fallResponse: FALL_REACT_V2 } : d;
-}
-
-/**
- * Ladder 11b (parked at 11b and 12a, taken up for the hold through the whistle), the thigh-rotation flip: every L3, L4
- * and HC fixture (each registers JOINT_RANGE_V2) runs JOINT_RANGE_V3, the supported thigh's rotation kept in the hip's
- * twist range and continuous (`hipTwist`): a swing foot lifted in a clearance variant no longer turns the knee sideways
- * and back. G, L1, L2 and RH have no joint-range profile. tests/runs.ts `preHipTwist` gives a definition as before it.
- */
-function hipTwistFlip(d: FixtureDef): FixtureDef {
-  return VISIBLE_FLIP.test(d.id) && d.jointRange === JOINT_RANGE_V2 ? { ...d, jointRange: JOINT_RANGE_V3 } : d;
-}
-
-/**
- * Plan 15 step 4, the stepping flip: every L3, L4 and HC fixture with a composed foot planner steps by the contact
- * stepping model (steps-v1, contact-steps.ts: where a foot can stand, where it steps, when) in place of the reactive
- * planner's contact stepping, and the bound-legs fall and the come-down read it (`legsBound`, `standsNowhere`). L2 and RH
- * keep the reactive planner. Since step 4b the model is STEPS_V2 (`withSteps`' default): the come-down reads what holds
- * the tackler up on the model (`footUnder`). Step 5b deleted the reactive planner's contact stepping, and the lab's and the
- * tests' views before both flips with it (FootDebug.stepsRideAnyFoot is the come-down's read before step 4b).
- */
-function stepsFlip(d: FixtureDef): FixtureDef {
-  return d.footwork?.compose && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withSteps(d.footwork) } : d;
-}
-
-/**
- * Plan 15 step 5a, the older families' stepping flip: every L2 fixture with a foot planner (plan 07's, FOOTWORK_L2) steps by
- * the contact stepping model (STEPS_V2) outside the clip regime in place of plan 07's reactive steps; its clip regime,
- * airborne feet and shown sole stay plan 07's. RH has no foot planner (its L2 copies carry one) and keeps its definitions;
- * G and L1 too.
- */
-const OLDER_STEPS = /^L2-/;
-function olderStepsFlip(d: FixtureDef): FixtureDef {
-  return d.footwork && OLDER_STEPS.test(d.id) ? { ...d, footwork: withSteps(d.footwork) } : d;
+function registered(d: FixtureDef): FixtureDef {
+  if (/^L2-/.test(d.id)) return d.footwork ? { ...d, footwork: withSteps(d.footwork) } : d;
+  if (!OPT_IN.test(d.id)) return d;
+  const r = d.ragdoll;
+  const ragdoll = r && withShoulderTwistLimit(withBornSeparation(withBornOverlap(withSelfLegs(withConversionRetry(withKneeStop(withAdditionalPgsIterations(withHipStops(r, hipStopsFor(r)), 4), 140))))), SHOULDER_TWIST_ANAT_V2);
+  const still = d.footwork && withHoldStill(d.footwork);
+  const footwork = still?.compose ? withSteps(still) : still;
+  const tackles = d.players.some((p) => p.controller.kind === 'wrapAttempt' && p.controller.standAfterS === undefined);
+  const hit = tackles && HIT_FIXTURES.includes(d.id);
+  const fallResponse = r && FALLS.test(d.id) ? FALL_REACT_V3 : d.fallResponse === FALL_L4 ? FALL_L4_V2 : d.fallResponse;
+  // (keys absent from the file's definition are added in the order the flips added them: brace, wrap, fallResponse)
+  return {
+    ...d,
+    ...(ragdoll ? { ragdoll } : {}),
+    ...(d.legGuard ? { legGuard: LEG_GUARD_V3 } : {}),
+    ...(footwork ? { footwork } : {}),
+    ...(d.selfClearance ? { selfClearance: withMetArmStay(withClipArmSwing(d.selfClearance)) } : {}),
+    ...(d.locomotion && d.players.some((p) => p.role === 'runner') ? { brace: CARRIER_BRACE_V2 } : {}),
+    ...(d.rules?.kind === 'footballTackleSubset' ? { rules: withBalancedClear(d.rules) } : {}),
+    ...(tackles ? { wrap: WRAP_V13 } : {}),
+    ...(fallResponse !== d.fallResponse ? { fallResponse } : {}),
+    ...(d.jointRange === JOINT_RANGE_V2 ? { jointRange: JOINT_RANGE_V3 } : {}),
+    ...(hit ? { players: d.players.map((p) => (p.controller.kind === 'wrapAttempt' ? { ...p, controller: { ...p.controller, tackle: 'hit' as const } } : p)) } : {}),
+  };
 }
 
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
@@ -330,6 +110,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip).map(shoulderTwistFlip).map(stepsFlip).map(olderStepsFlip));
+  ].map(registered));
   return registry.slice();
 }

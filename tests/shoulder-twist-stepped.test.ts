@@ -12,7 +12,7 @@ import { HUMAN_RANGES, jointQuats, qAngle, shoulderRotationDeg, SNAP_RADPS, Visi
 // `steppedLimitPush`), in place of plan 09's explicit spring-damper (400 N m/rad with 2 N m s: about 0.3 of critical
 // for a bent arm, and for a straight one so light that one substep's push overshoots). Under V1 an arm lifted past its
 // stop stored the impact and gave it back (`SHOULDER_TWIST_REBOUND`). Registered on every L3, L4 and HC ragdoll since the
-// shoulder twist flip (src/sim/fixtures/index.ts `shoulderTwistFlip`).
+// shoulder twist flip (src/sim/fixtures/index.ts `registered`).
 const E: JointEnvelope = JOINT_RANGE_V2.shoulder;
 const ROT = HUMAN_RANGES.find((r) => r.joint === 'Shoulder' && r.dof === 'rotation')!;
 const D = 180 / Math.PI;

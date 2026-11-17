@@ -938,7 +938,7 @@ export interface ShoulderTwistLimitProfile {
 export const SHOULDER_TWIST_ANAT_V1: ShoulderTwistLimitProfile = { id: 'shoulder-twist-anat-v1', measure: 'anatomical' };
 /**
  * Ladder 13a-iii: V1 with its stops stepped and critically damped: a firm stop that absorbs a twist instead of returning it.
- * Registered on every L3, L4 and HC ragdoll (the shoulder twist flip, src/sim/fixtures/index.ts).
+ * Registered on every L3, L4 and HC ragdoll (src/sim/fixtures/index.ts `registered`).
  */
 export const SHOULDER_TWIST_ANAT_V2: ShoulderTwistLimitProfile = { id: 'shoulder-twist-anat-v2', measure: 'anatomical', stepped: { dampingRatio: 1 } };
 
@@ -1377,7 +1377,7 @@ export const LEG_GUARD_V1: LegGuardProfile = { id: 'leg-guard-predictive-v1', ah
 export const LEG_GUARD_V2: LegGuardProfile = { ...LEG_GUARD_V1, id: 'leg-guard-sweep-v2', sweep: true };
 /**
  * Contact motion prerequisite: `LEG_GUARD_V2` with physical supported legs (`physicalLegs`). Registered on every fixture
- * with a leg guard since the ladder 10 flip (fixtures/index.ts `legFlip`).
+ * with a leg guard since the ladder 10 flip (fixtures/index.ts `registered`).
  */
 export const LEG_GUARD_V3: LegGuardProfile = { ...LEG_GUARD_V2, id: 'leg-guard-physical-v3', physicalLegs: true };
 
