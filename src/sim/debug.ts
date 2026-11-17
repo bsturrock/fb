@@ -23,16 +23,6 @@ export interface FootDebug {
    */
   releasePlantAt?: { t: number; side: 'left' | 'right' };
   /**
-   * Fault (negative control of polish 2's step floor, `FootComposeProfile.lateLanding`): a new step is fitted to its
-   * stance window before its destination is set, as before: the fit has no acceleration floor.
-   */
-  squeezeStart?: boolean;
-  /**
-   * Fault (negative control of polish 2's late landing): a step out of time re-picks its destination against the moving
-   * hip every arrival stretch, as before (its arrival is still judged against the pose's target).
-   */
-  lateRepick?: boolean;
-  /**
    * Fault (negative control of plan 15's turns, `FootworkProfile.steps`): with both feet down the foot that gains more by
    * stepping steps, also when it stepped last (as in the step 2 model, where the farther foot stepped).
    */
