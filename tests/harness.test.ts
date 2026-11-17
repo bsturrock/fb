@@ -41,7 +41,7 @@ import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
 import { FALL_L4_V2, FALL_REACT_V3, JOINT_RANGE_V3, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1, withClipArmSwing, withMetArmStay } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
-import { asCaptured, breathe, create, FIX, pace, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
+import { asCaptured, breathe, create, FIX, pace, preSteps, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 import { loadState, resumeState } from './state';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -822,8 +822,14 @@ describe('plan 13a: contact-time shape queries', () => {
 });
 
 // ------------------------------------------------------------------------------------------- plan 10f debug switches
+/**
+ * The definition a switch row runs: plan 07's foot switches (`legacyEntry`, `noQuick`) act on its reactive planner, so
+ * L2-F3-runStop runs as before plan 15 step 5a (`preSteps`) until step 5 deletes them.
+ */
+const SWITCH_DEF = (id: string): FixtureDef => (id === 'L2-F3-runStop' ? preSteps(FIX(id)) : FIX(id));
+
 async function solo(id: string, debug?: SimDebug): Promise<Simulation> {
-  const sim = await Simulation.create(FIX(id), debug ? { debug } : {});
+  const sim = await Simulation.create(SWITCH_DEF(id), debug ? { debug } : {});
   sim.runToEnd();
   return sim;
 }
@@ -851,8 +857,8 @@ describe('plan 10f: per-simulation debug switches', () => {
       const refOn = await solo(id, debug);
       // the switch has an effect, so a leak either way shows
       expect(traceRowsDiff(ref.trace, refOn.trace)).not.toBeNull();
-      const on = await Simulation.create(FIX(id), { debug });
-      const off = await Simulation.create(FIX(id));
+      const on = await Simulation.create(SWITCH_DEF(id), { debug });
+      const off = await Simulation.create(SWITCH_DEF(id));
       while (!on.done || !off.done) {
         on.stepTick();
         off.stepTick();

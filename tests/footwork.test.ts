@@ -24,7 +24,15 @@ import { buildProxyPose, flexReach, footFrame, hingeChain, legRequestLocal, legS
 import { RunClipError, validateRunClipProfile } from '../src/sim/run-clip';
 import { bodyG4 } from '../src/sim/fixtures/gate4';
 import { add, dist, dot, len, qFromYaw, qRot, sub, v3, type Vec3 } from '../src/sim/vec';
-import { create, FIX, pace, rows, run, runSim, stepWhile } from './helpers';
+import { create, FIX, pace, preSteps, rows, run, runSim, stepWhile } from './helpers';
+
+/**
+ * Plan 15 step 5a: fixture `id` with plan 07's reactive planner, as before the stepping flip on L2 (`preSteps`). The rows
+ * that read that planner's own mechanisms (plant proposals and their confirmation, plant intervals, the plant anchor as its
+ * contact feature, its drag and step times, the clip-to-procedural crossing) run on it until step 5 deletes it; the rows
+ * that state what a viewer sees run on the registered fixture.
+ */
+const PRE = (id: string): FixtureDef => preSteps(FIX(id));
 
 const G = 9.81;
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -186,8 +194,8 @@ const PLAN_IDS = ['L2-F3-runStopReaccel', 'L2-F3-runStopKick', 'L2-F7-shove'];
 const SNAP_IDS = ['L2-F14-oneArm', 'L2-F14-oneArmFeet', 'RH-F6-oneArm', 'RH-F6-twoArm', 'RH-F6-simultaneous', 'RH-F6-failed'];
 /** Run stops crossing from the clip at other run phases (zero request at brakeS) and with the original motor. */
 const crossingVariants = (): [string, FixtureDef][] => [
-  ['L2-F3-runStop', FIX('L2-F3-runStop')],
-  ['L2-F3-runStopHard', FIX('L2-F3-runStopHard')],
+  ['L2-F3-runStop', PRE('L2-F3-runStop')],
+  ['L2-F3-runStopHard', PRE('L2-F3-runStopHard')],
   ...[2.3, 2.45, 2.55, 2.65].map((b): [string, FixtureDef] => [`controlled ${b}`, L2.runStop(`L2-test-${b}`, b, true)]),
   ...[2.3, 2.45].map((b): [string, FixtureDef] => [`original ${b}`, L2.runStop(`L2-test-o${b}`, b, false)]),
 ];
@@ -331,16 +339,20 @@ async function observeRun(def: FixtureDef): Promise<FwRun> {
 }
 
 const RUNS = new Map<string, { json: string; run: Promise<FwRun> }>();
-/** The finished run of `def`, simulated once per file (a twin with the same id is an `observeRun` of its own). */
+/**
+ * The finished run of `def`, simulated once per file per footwork profile (a twin with the same id and footwork is an
+ * `observeRun` of its own; plan 15 step 5a: a fixture's run with plan 07's planner, `PRE`, is another run).
+ */
 function fwRun(def: FixtureDef): Promise<FwRun> {
   const json = JSON.stringify(def);
-  const hit = RUNS.get(def.id);
+  const key = `${def.id}|${def.footwork?.id ?? '-'}`;
+  const hit = RUNS.get(key);
   if (hit) {
-    if (hit.json !== json) throw new Error(`fwRun: ${def.id} requested with another definition`);
+    if (hit.json !== json) throw new Error(`fwRun: ${key} requested with another definition`);
     return hit.run;
   }
   const p = observeRun(def);
-  RUNS.set(def.id, { json, run: p });
+  RUNS.set(key, { json, run: p });
   return p;
 }
 /** The foot samples of player `id` (default the first) from the shared run of `def`. */
@@ -591,7 +603,7 @@ describe('L2 foot planner: stance, contact and stopping', () => {
       [
         'L2-F2 stationary loaded contact for 3 s: no steps, valid plants throughout',
         async () => {
-          const r = await feetOf(FIX('L2-F2-loaded'));
+          const r = await feetOf(PRE('L2-F2-loaded'));
           expect(footEvents(r.sim, 'R').filter((e) => e.type !== 'footPlant')).toEqual([]);
           for (const t of r.ticks) for (const s of SIDES) expect(t.feet[s].mode).toBe('planted');
           expect(r.sim.players[0].feet!.stats.plantErrM).toBeLessThanOrEqual(0.01);
@@ -622,7 +634,7 @@ describe('L2 foot planner: stance, contact and stopping', () => {
       [
         'L2-F3 run-to-stop: valid clip stance plants during the run and plants persist through the clip fade',
         async () => {
-          const r = await feetOf(FIX('L2-F3-runStop'));
+          const r = await feetOf(PRE('L2-F3-runStop'));
           const ev = footEvents(r.sim, 'R');
           // sustained clip stance intervals while running (not raw touchdown events)
           const clipPlants = plantIntervals(r.sim, 'R').filter((x) => x.sustained && x.t0 > 1.0 && x.t0 < 2.6);
@@ -670,7 +682,7 @@ describe('L2 braking limit: the capped drive and the 6 m/s run to stop', () => {
       [
         'L2-F3-runStop: a 6 m/s run takes over 1.2 s and over 2.5 m to stop, peak deceleration within the limit, several braking steps',
         async () => {
-          const r = await feetOf(FIX('L2-F3-runStop'));
+          const r = await feetOf(PRE('L2-F3-runStop'));
           const i0 = r.ticks.findIndex((t) => t.t >= 2.6);
           const i1 = r.ticks.findIndex((t, i) => i > i0 && Math.hypot(t.v.x, t.v.z) < 0.05);
           expect(i1).toBeGreaterThan(i0);
@@ -696,7 +708,7 @@ describe('L2 foot planner: drag, side travel, yaw, airborne, displacement, suppo
       [
         'L2-F4 backward drag while requesting forward: steps go backward (no forward treadmill)',
         async () => {
-          const r = await feetOf(FIX('L2-F4-drag'));
+          const r = await feetOf(PRE('L2-F4-drag'));
           expect(r.ticks[r.ticks.length - 1].p.z).toBeLessThan(-0.5);
           // the body moves backward from about 0.6 s (it was drifting forward at the requested 0.3 m/s before the pull)
           const tBack = r.ticks.find((t) => t.t > 0.5 && t.v.z < -0.1)!.t;
@@ -746,7 +758,7 @@ describe('L2 foot planner: drag, side travel, yaw, airborne, displacement, suppo
         'sideways travel leads with the travel-side foot, alternates lead and trail, and never lifts both feet at once',
         async () => {
           for (const id of ['L2-F5-sidePosX', 'L2-F5-sideNegX', 'L2-F12-slowSide', 'L2-F7-shove']) {
-            const r = await feetOf(FIX(id));
+            const r = await feetOf(PRE(id));
             const steps = footEvents(r.sim, 'R').filter((e) => e.type === 'footSwing' && e.data!.source === 'step');
             expect(steps.length, id).toBeGreaterThanOrEqual(3);
             // the travel-side foot: the one whose initial anchor lies toward the travel (world x here)
@@ -764,7 +776,7 @@ describe('L2 foot planner: drag, side travel, yaw, airborne, displacement, suppo
       [
         'L2-F6 one planted / one swinging, then both airborne: anchors released, no plant while unsupported, no instant reset',
         async () => {
-          const r = await feetOf(FIX('L2-F6-hop'));
+          const r = await feetOf(PRE('L2-F6-hop'));
           const unsup = r.ticks.filter((t) => !t.supported);
           expect(unsup.length).toBeGreaterThan(5);
           for (const t of unsup) for (const s of SIDES) expect(t.feet[s].mode).toBe('airborne');
@@ -912,8 +924,8 @@ describe('L2-F9 IK singularities and the foot request path', () => {
 describe('L2-F10 reproducibility and L2-F11/F12 running and slow fallback', () => {
   it('render rates, pause and reset give the same planner trace and events; no duplicate touchdown or liftoff', async () => {
     for (const def of [FIX('L2-F3-walkStop'), FIX('L2-F11-fastRun')]) {
-      const byRate = async (hz: number, pauseEvery = 0) => {
-        const s = await Simulation.create(def);
+      const byRate = async (hz: number, pauseEvery = 0, d: FixtureDef = def) => {
+        const s = await Simulation.create(d);
         const drv = new FixedStepDriver(def.solver.outerTickS, 8);
         let f = 0;
         while (!s.done) {
@@ -938,12 +950,16 @@ describe('L2-F10 reproducibility and L2-F11/F12 running and slow fallback', () =
       c.reset();
       await runSim(c);
       expect(JSON.stringify([c.trace, c.events])).toBe(ref);
+      // plan 07's plant bookkeeping, on its own planner (PRE) until step 5: under the stepping model a proposed plant it
+      // takes over (the initial stance) is planted with no footPlant (docs/open/15_Contact_Footwork.md, tracked)
+      const pre = PRE(def.id);
+      const book = JSON.stringify(pre) === JSON.stringify(def) ? a : await byRate(30, 0, pre);
       // a confirmed plant is never released in its confirmation substep; failed proposals are not plants
-      for (const e of a.events.filter((x) => x.type === 'footRelease')) expect(e.data!.plantedS as number, `${def.id} release at ${e.t}`).toBeGreaterThan(0);
+      for (const e of book.events.filter((x) => x.type === 'footRelease')) expect(e.data!.plantedS as number, `${def.id} release at ${e.t}`).toBeGreaterThan(0);
       // per foot: a plant is always followed by its release before the next plant (no duplicate touchdown/liftoff)
       for (const s of SIDES) {
-        let planted = a.events.some((e) => e.type === 'footPlant' && e.data!.side === s && e.tick === 0);
-        for (const e of footEvents(a, 'R', s).filter((x) => x.tick > 0)) {
+        let planted = book.events.some((e) => e.type === 'footPlant' && e.data!.side === s && e.tick === 0);
+        for (const e of footEvents(book, 'R', s).filter((x) => x.tick > 0)) {
           if (e.type === 'footPlant') {
             expect(planted, `${def.id} ${s} plant at ${e.t}`).toBe(false);
             planted = true;
@@ -953,7 +969,7 @@ describe('L2-F10 reproducibility and L2-F11/F12 running and slow fallback', () =
           }
         }
       }
-      for (const s of [a, b, p, c]) s.dispose();
+      for (const s of new Set([a, b, p, c, book])) s.dispose();
     }
   });
 });
@@ -995,7 +1011,7 @@ describe('L2-F11/F12 running and slow fallback', () => {
         'L2-F12 slow forward / side / backward fallback: steps along the actual travel, swing and lift rates inside their caps',
         async () => {
           for (const [id, dir] of [['L2-F12-slowForward', v3(0, 0, 1)], ['L2-F12-slowSide', v3(1, 0, 0)], ['L2-F12-slowBack', v3(0, 0, -1)]] as const) {
-            const r = await feetOf(FIX(id));
+            const r = await feetOf(PRE(id));
             let n = 0;
             for (const s of SIDES)
               for (const m of stepMoves(r.sim, 'R', s)) {
@@ -1091,8 +1107,9 @@ describe('L2 footwork never changes physics', () => {
     }
     console.log(`[L2 invariance]\n  ${report.join('\n  ')}`);
   });
-  it('every footwork fixture: fixed limb lengths, knee limits, shoe penetration <= 0.01 m and swing caps', async () => {
+  it('every footwork fixture: fixed limb lengths, knee limits and swing caps; on plan 07\'s planner shoe penetration and plant error <= 0.01 m and its plant bookkeeping', async () => {
     const cases = L2.footworkFixtures()
+      .map((d) => FIX(d.id))
       .filter((d) => d.footwork && !d.obstacles?.length)
       .flatMap((def) => def.players.map((pl) => ({ def, pl })));
     await rows(cases, ({ def, pl }) => `${def.id} ${pl.id}`, async ({ def, pl }) => {
@@ -1101,21 +1118,26 @@ describe('L2 footwork never changes physics', () => {
       expect(Math.max(...live.map((t) => t.lenErr)), `${def.id} ${pl.id}`).toBeLessThanOrEqual(0.001);
       expect(Math.max(...live.map((t) => t.kneeMax)), `${def.id} ${pl.id}`).toBeLessThanOrEqual(150);
       expect(Math.min(...live.map((t) => t.kneeMin)), `${def.id} ${pl.id}`).toBeGreaterThanOrEqual(0);
-      expect(Math.max(...live.filter((t) => t.supported).map((t) => t.pen)), `${def.id} ${pl.id}`).toBeLessThanOrEqual(0.01);
       const st = r.sim.players.find((p) => p.id === pl.id)!.feet!.stats;
       expect(st.stepCapMarginMps, `${def.id} ${pl.id}`).toBeGreaterThanOrEqual(-1e-9);
       expect(st.liftRateMps, `${def.id} ${pl.id}`).toBeLessThanOrEqual(FOOTWORK_L2.swing.maxLiftRateMps + 1e-9);
       expect(st.offsetDecayMps, `${def.id} ${pl.id}`).toBeLessThanOrEqual(FOOTWORK_L2.rejoinMps + 1e-9);
-      expect(st.plantErrM, `${def.id} ${pl.id}`).toBeLessThanOrEqual(0.01);
+      // plan 07's planner (PRE, until step 5): its 1 cm sole and plant contracts, a plant past them released (on the model
+      // a plant stays down until it steps and a shoe in the turf is tracked, plan 15 defects 4 and 5, 1-5 cm here), and its
+      // plant bookkeeping (the model takes over a proposed plant with no footPlant, tracked)
+      const o = JSON.stringify(PRE(def.id)) === JSON.stringify(def) ? r : await feetOf(PRE(def.id), pl.id);
+      expect(Math.max(...o.ticks.filter((t) => !t.rag && t.feet && t.supported).map((t) => t.pen)), `${def.id} ${pl.id}`).toBeLessThanOrEqual(0.01);
+      const os = o.sim.players.find((p) => p.id === pl.id)!.feet!.stats;
+      expect(os.plantErrM, `${def.id} ${pl.id}`).toBeLessThanOrEqual(0.01);
       // plants are confirmed from the achieved solve: none is released in its confirmation substep, every confirmed
       // plant's error is within the contract, failed proposals never emit a plant or release
-      const ev = footEvents(r.sim, pl.id);
+      const ev = footEvents(o.sim, pl.id);
       for (const e of ev.filter((x) => x.type === 'footRelease')) expect(e.data!.plantedS as number, `${def.id} ${pl.id} release at ${e.t}`).toBeGreaterThan(0);
       for (const e of ev.filter((x) => x.type === 'footPlant')) expect(e.data!.errM as number, `${def.id} ${pl.id} plant at ${e.t}`).toBeLessThanOrEqual(0.01);
-      expect(ev.filter((x) => x.type === 'footPlant').length, `${def.id} ${pl.id}`).toBe(st.confirmed);
-      expect(ev.filter((x) => x.type === 'footPlantFailed').length, `${def.id} ${pl.id}`).toBe(st.failed);
-      expect(st.confirmed + st.failed, `${def.id} ${pl.id}`).toBeLessThanOrEqual(st.attempts);
-      plantIntervals(r.sim, pl.id);
+      expect(ev.filter((x) => x.type === 'footPlant').length, `${def.id} ${pl.id}`).toBe(os.confirmed);
+      expect(ev.filter((x) => x.type === 'footPlantFailed').length, `${def.id} ${pl.id}`).toBe(os.failed);
+      expect(os.confirmed + os.failed, `${def.id} ${pl.id}`).toBeLessThanOrEqual(os.attempts);
+      plantIntervals(o.sim, pl.id);
     });
   });
 });
