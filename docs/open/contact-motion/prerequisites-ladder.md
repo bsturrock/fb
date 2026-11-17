@@ -35,6 +35,8 @@ user").
 | 10d left it (through 13c) | `&holdstill=off&born=off&armstay=off&armswing=off` |
 | 14a left it (through 17a) | `&born=off&armstay=off&armswing=off` |
 | 17b left it (through 18b) | `&bornsep=off&armstay=off&armswing=off` |
+
+Plan 15 step 5b removed `holdstill=` with the reactive planner: leave it out of these links.
 | 18c left it (through 18e-i) | `&armstay=off&armswing=off` |
 | now (the tip, 18e) | nothing |
 

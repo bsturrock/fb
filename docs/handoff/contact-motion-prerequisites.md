@@ -218,7 +218,7 @@ owner-change jump, a shoulder held 100 deg behind on L4-F8-passive (`holdArmBehi
   registered since 18e), `born=on|off` (registered since 17b) and `bornsep=on|off` (registered since 18c).
   `upperarm=on` shows a parked flip. Before-views (each equals the earlier registration on all
   195 L3/L4/HC fixtures, `r18-e-flip/lab-views.txt`; `born=off`, `bornsep=off`, `armswing=off` and `armstay=off` are
-  also tested in `lab-params.test.ts`):
+  also tested in `lab-params.test.ts`). (Plan 15 step 5b removed `holdstill=` with the reactive planner: leave it out of these links.)
 
   | as it was | add |
   | --- | --- |
@@ -355,7 +355,7 @@ These are handled under CLAUDE.md rule 5. Captures are in `tests/data/state/`, a
   3.90 s; under V4 the foot steps out at 4.02 s and plants again at 4.33 s (`own-legs.test.ts` on `L3-F6-hold@231`).
   `HOLD_STILL_V1` removes the voluntary steps. What it leaves is forced: the clearance solve releases the runner's plant
   when the defender's swaying leg meets it, and the held-off step chases a lifted clearance variant
-  (`hold-still.test.ts` on `L3-F6-hold@126`). Fix the release in a still hold, or the stance width.
+  (`hold-still.test.ts` on `L3-F6-hold@126`, deleted at plan 15 step 5b). Fix the release in a still hold, or the stance width.
 - **A palm target inside the arm's minimum reach** (21.9 cm) turns the reach direction 62 deg in a frame (L3-F1-phase7
   D, V4). Plan 07a's `stableReach` fixes it. It is not landed, because under V5 only one frame reaches it
   (`r12b-twist-fit/mechanism/`).

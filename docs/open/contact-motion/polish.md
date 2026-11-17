@@ -35,7 +35,7 @@ the leg guard in the pose fixes a leg afterwards. Known faults:
   test compares the last pose's ankle with the new target (`1474-1494`). The foot skims for 0.5 to 1.2 s while the
   other foot does every stance alone, with drag steps: the carrier under the brace (`L3-F3-collision` 0.45-1.35 s),
   the carrier after a hit he survives (`L3-F7-loadRelease` 0.45-0.9 s), the tackler's drive (`L3-F19-rear`
-  1.09-1.84 s). `compose.lateLanding` (`dea9d82`, flag off, lab `latestep=on`) fixes the squeezed step only (a late
+  1.09-1.84 s). `compose.lateLanding` (`dea9d82`, flag off, never registered; deleted at plan 15 step 5b) fixes the squeezed step only (a late
   step lands at a point fixed on the turf, and the destination is set before `fitStance`, `1152-1164`, so the
   acceleration floor applies); flipped as it is, the braced carrier's trailing hip over-extends 39 deg for 0.6 s and
   two snaps appear.
