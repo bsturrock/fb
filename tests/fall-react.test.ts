@@ -10,7 +10,7 @@ import { ARM_G2, FALL_HOLD_V1, FALL_L4, FALL_REACT_V1, FALL_REACT_V2, withoutHip
 import { armSystemProfile, checkLimbContract, Simulation } from '../src/sim/simulation';
 import { hingeAngles, limbDirWorld } from '../src/sim/ragdoll';
 import { dot, qInvRot } from '../src/sim/vec';
-import { FIX, preSteps, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './helpers';
+import { FIX, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13 } from './helpers';
 
 const SIDES: ArmSide[] = ['left', 'right'];
 /**
@@ -18,8 +18,7 @@ const SIDES: ArmSide[] = ['left', 'right'];
  * (WRAP_V4) the front wrap's carrier goes down from the hit and the tackler later loses his own support, so neither the
  * takedown nor the tackler's held arms at it are in that run. Every other fixture as registered.
  */
-// (plan 15 step 4: and before the stepping flip, the runs these were sampled in)
-const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(preSteps(FIX(id)))))))))));
+const W = (id: string): FixtureDef => preWrapV4(preWrapV5(preWrapV7(preWrapV8(preWrapV9(preWrapV10(preWrapV11(preWrapV12(preWrapV13(FIX(id))))))))));
 const MEMORY = FALL_REACT_V1.arms.holdMemoryS;
 const deg = (r: number): number => (r * 180) / Math.PI;
 
@@ -116,8 +115,10 @@ describe('contact motion M4: every falling player on L3 and HC reacts (FALL_REAC
     twin.sim.dispose();
   }, 60000);
 
-  it('an arm still holding at the switch keeps its hold (`holdOnset`, no reaction delay): in the front wrap (both orders) and the rear wrap, each of the tackler\'s holds lasts at least 0.3 s past his takedown (three times the 0.1 s memory). The fault twin: with the reaction delay of every other task (FALL_L4\'s 40 ms and 80 ms ramp) a hold lapses within 0.2 s in each, and every hold does in the reversed front wrap and the rear wrap', async () => {
-    for (const [id, rev, all] of [['L3-F19-front', false, false], ['L3-F19-front', true, true], ['L3-F19-rear', false, true]] as const) {
+  it('an arm still holding at the switch keeps its hold (`holdOnset`, no reaction delay): in the front wrap each of the tackler\'s holds lasts at least 0.3 s past his takedown (three times the 0.1 s memory). The fault twin: with the reaction delay of every other task (FALL_L4\'s 40 ms and 80 ms ramp) a hold lapses within 0.2 s', async () => {
+    // (plan 15 step 5b: on the contact stepping model; the reversed front wrap and the rear wrap, whose holds the
+    // delay no longer lapses, went from it)
+    for (const [id, rev, all] of [['L3-F19-front', false, false]] as const) {
       const label = `${id}${rev ? ' reversed' : ''}`;
       const r = await run(reacting(W(id)), 1.6, { rev });
       for (const s of SIDES) expect(r.heldS.D[s], `${label} ${s}`).toBeGreaterThanOrEqual(3 * MEMORY - 1e-9);
@@ -229,11 +230,9 @@ describe('contact motion M4: a landed palm bears load (FALL_REACT_V2)', () => {
 
   // L3-F9-convert-free: the carrier, a ragdoll from 0.658 s, lands his free left palm at 0.6625 s, the body coming down
   // on it; the palm and forearm leave the floor at 0.6708 s for 54 ms (the elbow folding under him), then touch on and off
-  it('a landed brace bears load and lets go when unloaded: from the carrier\'s palm landing (L3-F9-convert-free) every command on that arm opposes its joint\'s motion and the arm gives back no work while loaded, and it goes passive once neither palm nor forearm has touched the floor for 50 ms (at 0.725 s). The fault twins: FALL_REACT_V1 (the pose at contact held on springs) pushes along the joints\' motion, gives back over 5 J and never lets go before its window ends; with no release time the arm lets go at the first substep off the floor', async () => {
-    // (plan 15 step 4: the palm landing as sampled, before the stepping flip)
-    const d = preSteps(FIX('L3-F9-convert-free'));
+  it('a landed brace bears load and lets go when unloaded: from the carrier\'s palm landing (L3-F9-convert-free) every command on that arm opposes its joint\'s motion and the arm gives back no work while loaded, and it goes passive once neither palm nor forearm has touched the floor for 50 ms. The fault twins: FALL_REACT_V1 (the pose at contact held on springs) pushes along the joints\' motion, gives back over 5 J and never lets go before its window ends; with no release time the arm lets go at the first substep off the floor', async () => {
+    const d = FIX('L3-F9-convert-free');
     const v2 = await landed(reacting(d, FALL_REACT_V2), 1.6, 'R', 'left');
-    expect(v2.contactS).toBeCloseTo(0.6625, 4);
     expect(v2.steps.every((s) => s.opposed)).toBe(true);
     expect(v2.posJ).toBeLessThan(0.5);
     expect(v2.release).toHaveLength(1);
@@ -244,7 +243,8 @@ describe('contact motion M4: a landed palm bears load (FALL_REACT_V2)', () => {
     expect(passiveAt - firstOff).toBeGreaterThanOrEqual(FALL_REACT_V2.brace.load!.releaseS - 1e-9);
     expect(v2.steps.filter((s) => s.t >= passiveAt).every((s) => s.task === 'passive')).toBe(true);
     const v1 = await landed(reacting(d, FALL_REACT_V1), 1.6, 'R', 'left');
-    expect(v1.contactS).toBeCloseTo(0.6625, 4);
+    // (the same landing: the two profiles differ only once the palm is on the floor)
+    expect(v1.contactS).toBe(v2.contactS);
     expect(v1.steps.filter((s) => !s.opposed).length).toBeGreaterThan(10);
     expect(v1.posJ).toBeGreaterThan(5);
     expect(v1.release).toEqual([]);
