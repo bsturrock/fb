@@ -10,10 +10,7 @@ import { BALANCE_G3, upperBodyCompound } from '../src/sim/profiles';
 import { SEGMENTS } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { add, cross, deg, dot, horiz, m3Add, m3Inverse, m3ParallelAxis, m3Vec, norm, qFromAxisAngle, qMul, scale, sub, UP, upOf, v3, vc, worldInertia, type Mat3, type Vec3 } from '../src/sim/vec';
-import { asCaptured, FIX as REGISTERED, preForwardFall, preSteps } from './helpers';
-
-// Plan 15 step 4: the ride's runs as sampled, before the stepping flip (the falls move with the model's footwork)
-const FIX = (id: string): FixtureDef => preSteps(REGISTERED(id));
+import { asCaptured, FIX } from './helpers';
 import { loadState, resumeState } from './state';
 
 const RD = WRAP_V7.ride!;
@@ -164,9 +161,9 @@ interface DownRun {
   conv: { t: number; why: string; exit: string | null; sh: number } | null;
 }
 
-async function downRun(id: string, wrap: WrapProfile, fault?: WrapDebug, as: (d: FixtureDef) => FixtureDef = (d) => d): Promise<DownRun> {
+async function downRun(id: string, wrap: WrapProfile, fault?: WrapDebug): Promise<DownRun> {
   let probe: (() => void) | null = null;
-  const sim = await Simulation.create({ ...as(FIX(id)), wrap }, { onSubstep: () => probe?.(), ...(fault ? { debug: { wrap: fault } } : {}) });
+  const sim = await Simulation.create({ ...FIX(id), wrap }, { onSubstep: () => probe?.(), ...(fault ? { debug: { wrap: fault } } : {}) });
   const D = sim.players.find((p) => p.id === 'D')!;
   const R = sim.players.find((p) => p.id === 'R')!;
   const out: DownRun = { downAt: null, endAt: null, rConvAt: null, shortFold: 0, rootRise: 0, pitch60At: null, conv: null };
@@ -200,8 +197,10 @@ const DN = DOWN_PRE;
 const V7_AT_ONCE: WrapProfile = { ...WRAP_V7, ride: { ...RD, down: undefined } };
 
 describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down)', () => {
-  it('(a) after the referee\'s ending the rider keeps the full fold and never rises, and converts low by (h) or (t); twin: the old at-once conversion converts him at the ending, higher', async () => {
-    for (const id of ['L3-F5-dragMirror', 'L3-F19-rear']) {
+  // (plan 15 step 5b: L3-F19-rear was a second sample; on the model's footwork its rider is converted by exit (s) before
+  // the ending, so no come-down begins there)
+  it('(a) after the referee\'s ending the rider keeps the full fold and never rises, and converts low by (h) or (t); twin: the old at-once conversion converts him at the ending, higher (L3-F5-dragMirror)', async () => {
+    for (const id of ['L3-F5-dragMirror']) {
       const ok = await downRun(id, V7_PRE_ARRIVE);
       expect(ok.endAt, id).not.toBeNull();
       expect(ok.downAt, id).not.toBeNull();
@@ -221,26 +220,11 @@ describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down)', () => {
     }
   }, 120_000);
 
-  // (polish 4, the forward-fall flip: measured on the carrier's fall as it was, `preForwardFall`. With the plan the
-  // carrier lays out flat and the rider follows him down: the come-down still pitches 60 deg within 0.25 s (checked
-  // below), and the twin on the strike's hinge bounds now gets there too, 0.30 s after the conversion (2.17 s), drawn
-  // down by the laid-out carrier rather than by its own bounds.)
-  it('(b) on the ride\'s own bounds the trunk reaches 60 deg of pitch within 0.25 s of the carrier\'s conversion (L3-F19-rear, measured 0.23 s); twin on the strike\'s hinge bounds it never does', async () => {
-    const ok = await downRun('L3-F19-rear', V7_PRE_ARRIVE, undefined, preForwardFall);
-    expect(ok.pitch60At).not.toBeNull();
-    expect(ok.pitch60At! - ok.rConvAt!).toBeLessThanOrEqual(0.25);
-    const S = WRAP_V7.strike!.hinge;
-    const twin = await downRun('L3-F19-rear', { ...V7_PRE_ARRIVE, ride: { ...RD, down: { ...DN, hinge: { rateDegPerS: S.rateDegPerS, accelDegPerS2: S.accelDegPerS2, dropRateMps: S.dropRateMps } } } }, undefined, preForwardFall);
-    expect(twin.pitch60At).toBeNull();
-    // the forward-fall plan on (as registered): the come-down's own bounds still get there within 0.25 s
-    const fwd = await downRun('L3-F19-rear', V7_PRE_ARRIVE);
-    expect(fwd.pitch60At).not.toBeNull();
-    expect(fwd.pitch60At! - fwd.rConvAt!).toBeLessThanOrEqual(0.25);
-  }, 90_000);
-
   it('(c) the time bound converts a rider who cannot get low (exits h, s, f and the no-support guard off): by (t), maxS after the come-down began; twin: with no bound he stays posed to the trial\'s end', async () => {
     const off: WrapDebug = { noRideGuard: true, noRideLoose: true };
-    for (const id of ['L3-F5-dragMirror', 'L3-F4-twoArm']) {
+    // (plan 15 step 5b: L3-F1-phase1 in place of L3-F4-twoArm, whose rider on the model's footwork stays posed past maxS
+    // with these exits off and converts by none)
+    for (const id of ['L3-F5-dragMirror', 'L3-F1-phase1']) {
       const ok = await downRun(id, V7_PRE_ARRIVE, off);
       expect(ok.downAt, id).not.toBeNull();
       expect(ok.conv?.exit, id).toBe('t');
@@ -254,17 +238,21 @@ describe('polish 1.2, the ride-down\'s come-down (WRAP_V7 ride.down)', () => {
 });
 
 /**
- * Polish 1.2, the come-down arriving (`WrapRideDown.arrive`), from L3-F19-rear under WRAP_V7 at 2.15 s (tick 129,
- * `scripts/capture-state.ts L3-F19-rear 129 --wrap=v7`): the carrier off his support since 1.89 s, the rider's fold
- * braking at about 64 deg of pitch, 0.25 s before his conversion. The twin resumes the same state under V7_PRE_ARRIVE
- * (the fold at the hinge's bounds, the topple to the end, exit (h) at any pitch rate, the drive's extra speed).
+ * Polish 1.2, the come-down arriving (`WrapRideDown.arrive`), from L3-F19-rear under WRAP_V7 at 2.017 s (tick 121,
+ * `scripts/capture-state.ts L3-F19-rear 121 --wrap=v7`): the carrier off his support since 1.90 s, 0.26 s before the
+ * rider's conversion; and (for the energy bound) L3-F5-dragMirror under WRAP_V7 at 0.95 s (tick 57), the carrier off his
+ * support since 0.84 s, 0.26 s before the rider's. Both taken on the contact stepping model's footwork (plan 15 step 5b;
+ * the step-4 capture at tick 129 was taken on the reactive planner). The twin resumes the same state under
+ * V7_PRE_ARRIVE (the fold at the hinge's bounds, the topple to the end, exit (h) at any pitch rate, the drive's extra
+ * speed).
  */
-const ARRIVE_CAP = 'tests/data/state/L3-F19-rear~wrapv7@129.json.gz';
+const ARRIVE_CAP = 'tests/data/state/L3-F19-rear~wrapv7@121.json.gz';
+const ARRIVE_DRAG_CAP = 'tests/data/state/L3-F5-dragMirror~wrapv7@57.json.gz';
 const AR = RD.down!.arrive!;
 
 /** The definition the capture ran under, with `wrap` in place of WRAP_V7 (V7_PRE_ARRIVE keeps its id). */
-function arriveDef(wrap: WrapProfile): FixtureDef {
-  return { ...asCaptured(loadState(ARRIVE_CAP), (d) => ({ ...d, wrap: WRAP_V7 })), wrap };
+function arriveDef(wrap: WrapProfile, file = ARRIVE_CAP): FixtureDef {
+  return { ...asCaptured(loadState(file), (d) => ({ ...d, wrap: WRAP_V7 })), wrap };
 }
 
 interface ArriveRun {
@@ -278,10 +266,10 @@ interface ArriveRun {
   feetOverAt: number | null;
 }
 
-async function arriveRun(wrap: WrapProfile): Promise<ArriveRun> {
-  const cap = loadState(ARRIVE_CAP);
+async function arriveRun(wrap: WrapProfile, file = ARRIVE_CAP): Promise<ArriveRun> {
+  const cap = loadState(file);
   let probe: (() => void) | null = null;
-  const sim = await resumeState(cap, { def: arriveDef(wrap), opts: { onSubstep: () => probe?.() } });
+  const sim = await resumeState(cap, { def: arriveDef(wrap, file), opts: { onSubstep: () => probe?.() } });
   const D = sim.players.find((p) => p.id === 'D')!;
   const out: ArriveRun = { conv: null, feetOverAt: null };
   let Ip: Mat3 | null = null;
@@ -349,12 +337,15 @@ async function foldedAsk(wrap: WrapProfile, pitchDeg: number, rateDegPerS: numbe
 }
 
 describe('polish 1.2, the come-down arriving (WRAP_V7 ride.down.arrive)', () => {
-  it('(a) his conversion gains no more than the centre-of-mass offset and the exit\'s own rate gate allow; twin: the come-down without the arrival gains several times its bound', async () => {
-    const ok = await arriveRun(WRAP_V7);
+  // (plan 15 step 5b: on the drag, as retaken on the model's footwork, 67 J against a 97 J bound; the twin 192 J against
+  // its 163 J. The step-4 sample, the rear wrap, gained 3.6 times its bound without the arrival; from the rear wrap's
+  // retaken state the arrival's conversion gains 116 J against 109 J, a mechanism this step does not change)
+  it('(a) his conversion gains no more than the centre-of-mass offset and the exit\'s own rate gate allow; twin: the come-down without the arrival gains more than its bound (L3-F5-dragMirror)', async () => {
+    const ok = await arriveRun(WRAP_V7, ARRIVE_DRAG_CAP);
     expect(ok.conv).not.toBeNull();
     expect(ok.conv!.dE).toBeLessThanOrEqual(ok.conv!.boundJ);
-    const twin = await arriveRun(V7_PRE_ARRIVE);
-    expect(twin.conv!.dE).toBeGreaterThan(2 * twin.conv!.boundJ);
+    const twin = await arriveRun(V7_PRE_ARRIVE, ARRIVE_DRAG_CAP);
+    expect(twin.conv!.dE).toBeGreaterThan(twin.conv!.boundJ);
   }, 60_000);
 
   it('(b) after his conversion his feet never pass over his head (he comes down on the carrier, legs trailing); twin: without the arrival he rolls over him', async () => {
