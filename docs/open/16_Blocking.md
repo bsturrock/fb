@@ -30,20 +30,52 @@ palm grip is tension-only, only the forearm clamp pushes, and the palm band stop
 ground resistance is the drive motor's cap; `Role` is `runner | defender` and `runner` implies the ball; there are no
 stance, punch, shuffle or backpedal clips, and `../football-sim-6` is empty.
 
-## Steps
+## Step 1, the probe (done 2026-11-17, no source change)
 
-1. **Probe (no committed source).** Two supported model-body players, existing pieces only (`ScriptController`,
-   ready hands, reach/close at a focus-frame chest point, forearm clamp), pushing for several seconds. Answers, with
-   numbers and a lab look: do they hold each other up or does one tip at once (chest-height force against the balance
-   cap and the drive cap); is the forearm clamp an acceptable hands-on-chest look and force; do contact stepping, the
-   leg guard and physical legs stay calm at about 0.5 m for many seconds; does anything convert a player without a
-   wrap profile.
-2. **Design from the probe**, recorded here: the push (palm or clamp), the stance pose, the role, the fixture family
-   (a new prefix gets no flips; `L3-` ids get all of them and enter the matrices), which simulation rules move off
-   `def.wrap`.
-3. **Flag off first, then on**, one step each (`CLAUDE.md`): the push task; the block controller; the stance and
-   punch pose; the fixtures (even match, blocker stronger, defender stronger, off-centre, mirrored).
-4. **Milestone:** lab review by the user.
+23 untracked scenes built from `L3-F6-hold` with every L3 flip, no `wrap`, no `rules`, two model-body script players
+(worktree `.scratch/p29/`: `scenes.ts`, `probe.ts`, `out/*.json`, `stills/`; lab view of unregistered scenes through
+`vite.probe.config.ts`). What two men do today with existing pieces only:
+
+- **Chest to chest they hold each other up easily, and look wrong.** The torso boxes carry the whole push (400 N at a
+  1 m/s request, 1200 N at 3 m/s), lean 0.1-1.6 deg, balance torque 6-9 N m of 240. They stand upright as an A-frame,
+  facemasks meshed, arms hanging or swept back to the hips, thighs 16-21 cm through each other for 0.5-1.0 s (the leg
+  guard leaves 0.18-0.22 m unresolved), then freeze to the millimetre.
+- **The forearm clamp is not a push.** Elbows tucked about 85 deg, the two men's hands meet between the chests; contact
+  on the torso box's side edges; force chatters (about 3000 clamp events in 8 s, mean 95-230 N); the flickering contact
+  flips the feet between the clip and contact steps several times a second; any asymmetry twists the pair until both
+  fall (2.7-5.5 s). The palm grip is rejected `outsideBand` (chest at local y 0.42, band ends 0.40) and only pulls.
+- **No force contest.** The drive is a velocity servo: whoever requests more speed wins. The weaker man is pushed back
+  steadily (3.0 m, or 7.6 m out of bounds with his drive saturated 4.3 s), upright at 1.8 deg with no foot under his
+  hips for 4.1 s, and nothing ever makes him fall. Men driven back gallop (14-16); a still pair re-steps 2-4 mm about
+  40 times.
+- **Nothing ends it wrongly** without wrap and rules. With the L3 rules on, `progressStopped` ends the play 0.7 s after
+  contact. A `runner` braces (reads well) and keeps his carry arm. Prep mode's same-role filter was not reached.
+- Legs stay posed: nothing here needs load-bearing legs; what fails is where the legs are put and what the hands do.
+
+## Design (orchestrator, 2026-11-17, from the probe)
+
+The men must be held apart **at arm's length by the hands**, not chest to chest: that one change removes the meshed
+facemasks, the crossed thighs and the hanging arms. So, in order:
+
+1. **Palm push** (`arms.ts`): a compressive palm contact on the other man's chest or shoulder, a steady patch like the
+   torso contact rather than the clamp's on/off force, inside the existing arm budgets, with its own target band that
+   reaches the chest and shoulders. Flag off.
+2. **Block controller and engaged state**: a new `ControllerSpec` kind that steers at its man, keeps arm's length,
+   punches the hands on and holds them, and asks for push by effort. "Engaged" is a persistent state owned by the
+   player (the feet regime must not follow a flickering contact); the hip hinge and whatever else it needs read that
+   state, not `WrapProfile.strike`. No fixture uses it.
+3. **Fixtures on**: a new family `BL` (its own prefix, so nothing existing changes; it names the profile layers it
+   takes explicitly) with even, blocker stronger, defender stronger, walk-in, off-centre and mirrored scenes; in the
+   lab list. First rough look.
+4. **Stance and punch pose** from the user's blocking animations (promised 2026-11-17; reference for the look, and
+   source poses if on the model skeleton): hips back, trunk pitched, knees clear of the other man.
+5. **Force contest** (only as far as the lab shows the need): push strength from effort, push-back capacity read from
+   the planted feet (a rule; legs stay posed), choppy steps while giving ground, and lean building to a real fall when
+   overpowered.
+6. **Milestone:** lab review by the user.
+
+Each is flag off first, then on, full-checked (`CLAUDE.md`). Roles: first slice uses two `defender`s; a blocker role
+and the rules (`progressStopped`) wait until blocking meets a ball carrier.
 
 ## Acceptance (viewer rules)
 
