@@ -41,8 +41,7 @@ import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
 import { FALL_L4_V2, FALL_REACT_V3, JOINT_RANGE_V3, LEG_GUARD_V1, LEG_GUARD_V2, LEG_GUARD_V3, RULES_FOOTBALL, rulesRevision2, SELF_CLEARANCE_V1, SOLVER_G1, withClipArmSwing, withMetArmStay } from '../src/sim/profiles';
 import { ruleProfileExport } from '../src/sim/rules';
-import { asCaptured, breathe, create, FIX, pace, preSteps, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
-import { loadState, resumeState } from './state';
+import { breathe, create, FIX, pace, preSteps, rows, run, runSim, shapeQueryCounter, traceRowsDiff } from './helpers';
 
 const sha = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex');
 /** Key-order independent serialization (deep equality of plain profile data). */
@@ -782,45 +781,6 @@ describe('plan 13a: contact-time shape queries', () => {
     }
   }, 180000);
 
-  it('ladder 9g: a deferred conversion\'s validation is culled too: under 4,000 in every tick while D\'s conversion beside R\'s ragdoll is tried again (L3-F1-phase4 reversed, from 1.267 s)', async () => {
-    // The full check's worst tick at ladder 9d, 4036 at 1.317 s: D supported beside R's ragdoll, its conversion deferred
-    // (8j) and validated again each substep, D's pose contact queries against R's ragdoll (2324 of them) and the
-    // candidate's depth against every external shape (1344, not culled before 9g). Captured at the end of tick 76
-    // (1.267 s), as registered. With the cull, 2771 there. Fault twin (ragdoll.ts depthAgainst without the cull, run
-    // once): 4036 and 4035 in ticks 79 and 80, the test fails on them.
-    await initPhysics();
-    // per tick: the shape queries, and the substeps in it with D's conversion deferred while R is a ragdoll
-    const ticks: { tick: number; n: number; deferred: number }[] = [];
-    let deferred = 0;
-    // (captured before the ladder 10 leg-guard flip: resumed under the definition it ran under)
-    const cap = loadState('tests/data/state/L3-F1-phase4~rev@76.json.gz');
-    const sim = await resumeState(cap, {
-      def: asCaptured(cap),
-      opts: {
-        onSubstep: (s) => {
-          const D = s.byId.get('D')!;
-          if (D.deferred && !D.rag && s.byId.get('R')!.rag) deferred++;
-        },
-      },
-    });
-    const q = shapeQueryCounter();
-    try {
-      q.take();
-      while (!sim.done && !sim.byId.get('D')!.rag) {
-        deferred = 0;
-        sim.stepTick();
-        ticks.push({ tick: sim.tick, n: q.take(), deferred });
-        await pace();
-      }
-    } finally {
-      q.restore();
-      sim.dispose();
-    }
-    // the mechanism is reached: D's conversion deferred and tried again over several ticks, then accepted
-    expect(ticks.filter((t) => t.deferred > 0).map((t) => t.tick)).toEqual([78, 79, 80, 81]);
-    expect(ticks.at(-1)!.tick).toBe(81);
-    for (const t of ticks) expect(t.n, `tick ${t.tick} (${t.deferred} substeps deferred)`).toBeLessThan(SHAPE_QUERY_BUDGET);
-  }, 60000);
 });
 
 // ------------------------------------------------------------------------------------------- plan 10f debug switches

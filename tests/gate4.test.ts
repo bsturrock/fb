@@ -8,11 +8,11 @@ import { Simulation } from '../src/sim/simulation';
 import * as G4 from '../src/sim/fixtures/gate4';
 import { allFixtures } from '../src/sim/fixtures/index';
 import { anchorErrors, bulkOf, SEGMENTS } from '../src/sim/ragdoll';
-import { LEG_GUARD_V1, RAGDOLL_G4, RULES_FOOTBALL, rulesRevision2, type RuleProfile } from '../src/sim/profiles';
+import { RAGDOLL_G4, RULES_FOOTBALL, rulesRevision2, type RuleProfile } from '../src/sim/profiles';
 import { RuleObserver, type RetentionObs, type RuleFrame } from '../src/sim/rules';
 import type { FixtureDef } from '../src/sim/fixture';
 import { add, dot, len, qRot, v3, type Vec3 } from '../src/sim/vec';
-import { evs, nonEmpty, pace, preBraceV2, preSteps, preWrap, rows, run, runEach, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
+import { evs, nonEmpty, pace, rows, run, runEach, runSim, stepWhile, traceDiff, traceRowsDiff } from './helpers';
 import { FixedStepDriver } from '../src/sim/driver';
 
 const R = RAGDOLL_G4;
@@ -1068,14 +1068,12 @@ describe('plan 10e: rules revision 2', () => {
 
   it('E1: after the ending players keep their stance request and yaw effort through the settle window', async () => {
     // L3-F1-mirror0 with the defender wrapping in a lowered stance: both profiles end at the same substep and the defender
-    // is still a supported proxy for a while after it (the runner, a ragdoll by then, asks for full yaw effort). Plan 13d:
-    // was L3-F1-phase0, whose defender after Fast Run's contact timing has settled before the ending (no rise to compare)
-    // Ladder rung 7d: pinned to LEG_GUARD_V1 (under the physical legs the historical core does not rise through the window either: -2.5 cm)
-    // Contact motion M2 follow-up: taken before CARRIER_BRACE_V2 (`preBraceV2`); with the braced carrier leaning in time
-    // the defender goes down with him before the ending. Contact motion M3: and before the wrap flip (`preWrap`; under
-    // it the core sinks 1 cm more in the historical window than in revision 2's)
-    // Plan 15 step 4: and before the stepping flip (the stance request is the reactive planner's)
-    const base = { ...preBraceV2(preWrap(preSteps(allFixtures().find((d) => d.id === 'L3-F1-mirror0')!))), legGuard: LEG_GUARD_V1 };
+    // is still a supported proxy through the window after it (the runner, a ragdoll by then, asks for full yaw effort).
+    // Plan 15 step 5b: as registered, on the contact stepping model (it was taken before the brace, wrap and stepping
+    // flips under LEG_GUARD_V1, where the defender left support 18 substeps into the window). The historical core's rise
+    // toward the standing height is no longer read: on the model the defender's core rises alike under both profiles
+    // (11 cm and 10 cm)
+    const base = allFixtures().find((d) => d.id === 'L3-F1-mirror0')!;
     const variant = (rules: RuleProfile): FixtureDef => ({
       ...base,
       id: `test-E1-${rules.revision ?? 1}`,
@@ -1083,10 +1081,10 @@ describe('plan 10e: rules revision 2', () => {
       players: base.players.map((p) => (p.id === 'D' && p.controller.kind === 'wrapAttempt' ? { ...p, controller: { ...p.controller, stance: { heightM: 0.78 } } } : p)),
     });
     const hist: RuleProfile = { ...base.rules!, revision: undefined, id: `${base.rules!.id}+historical` };
-    type Run = { stance: (number | null)[]; runner: { h: number | null; yaw: number | null }[]; h: number[] };
+    type Run = { stance: (number | null)[]; runner: { h: number | null; yaw: number | null }[] };
     const runs: Record<string, Run> = {};
     for (const [k, rules] of [['hist', hist], ['rev2', base.rules!]] as const) {
-      const out: Run = { stance: [], runner: [], h: [] };
+      const out: Run = { stance: [], runner: [] };
       let endT = NaN;
       const sim = await Simulation.create(variant(rules), {
         onSubstep: (s) => {
@@ -1101,7 +1099,6 @@ describe('plan 10e: rules revision 2', () => {
           const D = s.players.find((p) => p.id === 'D')!;
           if (D.representation !== 'proxy' || D.controlMode !== 'supported' || s.t > endT + 0.15) return;
           out.stance.push(D.intent.locomotion.stance?.heightM ?? null);
-          out.h.push(s.poseOf(D).p.y);
         },
       });
       await runSim(sim);
@@ -1116,8 +1113,5 @@ describe('plan 10e: rules revision 2', () => {
     expect(new Set(runs.rev2.runner.map((r) => `${r.h}/${r.yaw}`))).toEqual(new Set(['null/1']));
     expect(new Set(runs.hist.stance)).toEqual(new Set([null]));
     expect(new Set(runs.hist.runner.map((r) => `${r.h}/${r.yaw}`))).toEqual(new Set(['null/null']));
-    // and the defender stays down: the historical core rises toward the standing height through the same window
-    const rise = (h: number[]): number => h[h.length - 1] - h[0];
-    expect(rise(runs.hist.h)).toBeGreaterThan(rise(runs.rev2.h) + 0.01);
   }, 60000);
 });

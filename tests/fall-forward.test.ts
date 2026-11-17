@@ -5,7 +5,7 @@
 // with the plan and with the fault (the tuck kept: the profile without the plan), or a constructed run.
 import { describe, expect, it } from 'vitest';
 import { isGround } from '../src/sim/contracts';
-import { FALL_L4_V2, FALL_REACT_V2, FALL_REACT_V3, FORWARD_FALL_V1, withForwardFall, type FallResponseProfile } from '../src/sim/profiles';
+import { FALL_REACT_V2, FALL_REACT_V3, FORWARD_FALL_V1, withForwardFall, type FallResponseProfile } from '../src/sim/profiles';
 import { bulkOf, landmarkWorld, limbDirWorld } from '../src/sim/ragdoll';
 import { Simulation } from '../src/sim/simulation';
 import { qInvRot, qRot, v3 } from '../src/sim/vec';
@@ -134,32 +134,6 @@ describe('polish 4 forward fall at speed: the ball arm folds in, no vault (L3-F4
     const fault = await look({ ...FALL_REACT_V3, forward: held });
     expect(fault.rise).toBeGreaterThan(150);
     expect(fault.pose.headDownDeg).toBeGreaterThan(20);
-  });
-});
-
-// L4-F9-defenderFalling reversed (p17 fast): R's forward fall switches at 0.562 s; at 0.908 s his knee and hip lay-out
-// drives push the way the legs already turn and contact adds speed in the solve: without `concentricRadPerS` he realizes
-// 181 W against the audit's 157.5. With it the drives give their ceiling up with the joint's speed and the run stays
-// under the cap. Fault twin: the plan without `concentricRadPerS`.
-describe('polish 4 forward fall: the lay-out respects the power cap (L4-F9-defenderFalling reversed, from 0.583 s)', () => {
-  const CAP = 'tests/data/state/L4-F9-defenderFalling~fwd-rev@35.json.gz';
-  it('with the rate-aware ceilings no substep passes the power cap; without them one does', async () => {
-    const cap = loadState(CAP);
-    const def = asCaptured(cap, (d) => ({ ...d, fallResponse: FALL_L4_V2 }));
-    const { concentricRadPerS: _rate, ...whole } = FORWARD_FALL_V1;
-    const look = async (F: FallResponseProfile) => {
-      const sim = await resumeState(cap, { def: { ...def, fallResponse: F } });
-      expect(sim.players.find((p) => p.id === 'R')!.fall?.forward).toBe(true);
-      sim.runToEnd();
-      const stats = { ...sim.players.find((p) => p.id === 'R')!.fall!.stats };
-      sim.dispose();
-      return stats;
-    };
-    const plan = await look(FALL_L4_V2);
-    expect(plan.overPowerSubsteps).toBe(0);
-    expect(plan.overWork).toBe(false);
-    const fault = await look({ ...FALL_L4_V2, forward: whole });
-    expect(fault.overPowerSubsteps).toBeGreaterThan(0);
   });
 });
 

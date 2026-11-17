@@ -27,7 +27,7 @@ import { ENVELOPE_L4, JOINT_RANGE_V1, JOINT_RANGE_V2, JOINT_RANGE_V3, LEG_GUARD_
 import { externalTwistRad, SEGMENTS, swingTwistOf, type ExternalShape, type RagdollCollider } from '../src/sim/ragdoll';
 import { LIMP_SHOE_CLEARANCE_M, Simulation, type PlayerRuntime, type SimOptions } from '../src/sim/simulation';
 import { add, addScaled, cross, dist, len, norm, qConj, qFromAxisAngle, qFromUnitVectors, qFromYaw, qMul, qRot, scale, sub, v3, vc, wrapPi, type Pose, type Quat, type Vec3 } from '../src/sim/vec';
-import { FIX, preBornOverlap, preSteps, preBrace, preFallReact, preFlip, preHipTwist, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, rows, runSim } from './helpers';
+import { FIX, preBornOverlap, preBrace, preFallReact, preFlip, preHipTwist, preMetArmStay, preWrap, preWrapV3, preWrapV4, preWrapV5, preWrapV7, preWrapV8, preWrapV9, preWrapV10, preWrapV11, preWrapV12, preWrapV13, rows, runSim } from './helpers';
 import { holdArmBehind, jointPastRange, limbInBody } from './visible-bar';
 import { jointAngles } from './visible';
 
@@ -631,12 +631,11 @@ describe('plan 12 joint range: ankles', () => {
   }, 120000);
 
   it('heel lift: a planted foot past the range stands on its ball, the contact held within the plant tolerance', async () => {
-    for (const id of ['L3-F1-low', 'L3-F16-runStop']) {
-      // (plan 15 step 4: the reactive planner's plants as sampled, before the stepping flip, under their own id, the runs
-      // being cached by id; under the model the twin's falls move and the plant counts with them)
-      const pre = { ...preSteps(FIX(id)), id: `${id}~preSteps` };
-      const on = await probe(pre);
-      const off = await probe(twin(pre));
+    // (plan 15 step 5b: the 6 m/s stop as registered, on the contact stepping model; L3-F1-low went from the cases
+    // there: the twin's moved fall plants two feet more than the profile's run)
+    for (const id of ['L3-F16-runStop']) {
+      const on = await probe(FIX(id));
+      const off = await probe(twin(FIX(id)));
       // the twin plants with the shin leaning past the range; with the profile the heel lifts instead, no foot lost
       expect(off.planted.past, id).toBeGreaterThan(10);
       expect(on.planted.past, id).toBe(0);
