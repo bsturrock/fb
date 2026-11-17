@@ -35,7 +35,7 @@ import { SHAPE_QUERY_BUDGET } from '../scripts/check/lib';
 import { g1f4, g1f8Cases, g1f9Fit } from '../src/sim/fixtures/gate1';
 import { asL3 } from '../src/sim/fixtures/transitions';
 import { FOOTWORK_L2, FOOTWORK_L3, HOLD_STILL_V1, withHoldStill } from '../src/sim/footwork';
-import { STEPS_V1, withSteps } from '../src/sim/contact-steps';
+import { STEPS_V2, withSteps } from '../src/sim/contact-steps';
 import { LOCOMOTION_L3, LOCOMOTION_L3_IDLE } from '../src/sim/locomotion';
 import { onModel } from '../src/sim/fixtures/with-locomotion';
 import { suppliedRunClips } from '../src/sim/model/run-clips';
@@ -278,11 +278,11 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 15 step 4: the contact stepping model (STEPS_V1) on exactly the L3, L4 and HC composed foot planners; L2\'s and RH\'s planners have none',
+    'plan 15 step 4: the contact stepping model on exactly the L3, L4 and HC composed foot planners (STEPS_V2 since step 4b, the come-down\'s read on the model; STEPS_V1 before it); L2\'s and RH\'s planners have none',
     () => {
       const planned = allFixtures().filter((d) => d.footwork);
       expect(planned.some((d) => !/^(L3|L4|HC)-/.test(d.id))).toBe(true);
-      for (const d of planned) expect(d.footwork!.steps, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) && d.footwork!.compose ? STEPS_V1 : undefined);
+      for (const d of planned) expect(d.footwork!.steps, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) && d.footwork!.compose ? STEPS_V2 : undefined);
     },
   ],
 ];

@@ -3,7 +3,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions } from '../src/sim/simulation';
 import { labRun } from '../src/lab/lab-params';
 import { HOLD_STILL_V1, LATE_LANDING_ID } from '../src/sim/footwork';
-import { STEPS_V1 } from '../src/sim/contact-steps';
+import { STEPS_V2 } from '../src/sim/contact-steps';
 import { CARRIER_BRACE_V1, CARRIER_BRACE_V2 } from '../src/sim/brace';
 import { WRAP_V1, WRAP_V10, WRAP_V11, WRAP_V12, WRAP_V12_AUTO, WRAP_V13, WRAP_V13_AUTO, WRAP_V2, WRAP_V3, WRAP_V4, WRAP_V5, WRAP_V6, WRAP_V7, WRAP_V8, WRAP_V9 } from '../src/sim/controllers/wrap';
 import {
@@ -11,7 +11,7 @@ import {
   withKneeStop, withoutConversionRetry, withoutHipStops, withoutKneeStop, withoutPgsIterations, withSelfLegs, withShoulderTwistLimit, withoutShoulderTwistLimit, withUpperArmClearance, withClipArmSwing, withMetArmStay, withBornOverlap, withBornSeparation, withoutBornSeparation, withBalancedClear, withoutBalancedClear, FALL_REACT_V1, FALL_REACT_V2, FALL_REACT_V3, FALL_L4, FALL_L4_V2, FORWARD_FALL_V1, withForwardFall,
 } from '../src/sim/profiles';
 import { allFixtures } from '../src/sim/fixtures';
-import { create, FIX, flip8i, preSteps, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preShoulderTwist, preV3, preWrap, runSim } from './helpers';
+import { create, FIX, flip8i, preSteps, preStepsV2, preBornOverlap, preBornSeparation, preBrace, preBraceV2, preFallReact, preFlip, preHoldStill, preMetArmStay, preOwnLegs, preShoulderTwist, preV3, preWrap, runSim } from './helpers';
 
 // Ladder: the lab's `order`, `legs`, `hips`, `pgs`, `knees`, `retry`, `selfleg`, `armtwist`, `born`, `bornsep`, `holdstill`, `upperarm`, `armswing`, `armstay` and `brace` URL parameters (src/lab/lab-params.ts) make the run the full check's matrices make:
 // reversed is SimOptions.reverseOrder (scripts/check/legmx.ts, l4mx.ts), a leg guard is the fixture with that profile in
@@ -310,12 +310,13 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     expect(labRun(d, new URLSearchParams('latestep=maybe'))).toEqual({ def: d, opts: {}, label: 'latestep=maybe ignored' });
   }, 120000);
 
-  // plan 15: steps=old|new on the fixture's composed footwork; the contact stepping model registered on L3, L4 and HC since step 4
+  // plan 15: steps=old|v1|new on the fixture's composed footwork; the contact stepping model registered on L3, L4 and HC since
+  // step 4, STEPS_V2 since step 4b
   it('steps=old runs the fixture with the reactive planner, as before plan 15\'s stepping flip (`preSteps`, id and all: L3-F19-rear, registered with the model since step 4, another run); steps=new puts the model back and on the registered fixture is the registered run; a fixture without composed footwork and an unknown value are ignored', async () => {
     const id = 'L3-F19-rear';
     const d = FIX(id);
-    expect(d.footwork!.steps).toBe(STEPS_V1);
-    expect(d.footwork!.id).toBe(`${preSteps(d).footwork!.id}+${STEPS_V1.id}`);
+    expect(d.footwork!.steps).toBe(STEPS_V2);
+    expect(d.footwork!.id).toBe(`${preSteps(d).footwork!.id}+${STEPS_V2.id}`);
     const off = labRun(d, new URLSearchParams(`fixture=${id}&steps=old`));
     expect(off.label).toBe('steps old');
     expect(off.def).toEqual(preSteps(d));
@@ -330,6 +331,19 @@ describe('lab URL parameters: order, legs, hips, pgs, knees, retry, selfleg, arm
     const g = allFixtures().find((x) => !x.footwork?.compose)!;
     expect(labRun(g, new URLSearchParams('steps=old'))).toEqual({ def: g, opts: {}, label: 'steps n/a (no composed footwork)' });
     expect(labRun(d, new URLSearchParams('steps=maybe'))).toEqual({ def: d, opts: {}, label: 'steps=maybe ignored' });
+  }, 120000);
+
+  it('steps=v1 runs the fixture with the model as at plan 15 step 4, the come-down reading as then (`preStepsV2`, id and all: L3-F1-phase6, whose tackler goes down 0.32 s later under it, another run); steps=new from it is the registered run, steps=old the reactive planner', async () => {
+    const id = 'L3-F1-phase6';
+    const d = FIX(id);
+    const v1 = labRun(d, new URLSearchParams(`fixture=${id}&steps=v1`));
+    expect(v1.label).toBe('steps v1');
+    expect(v1.def).toEqual(preStepsV2(d));
+    // the twin: the come-down's read changes the run
+    expect(await summaryOf(v1.def, v1.opts)).not.toBe(await summaryOf(d, {}));
+    expect(labRun(v1.def, new URLSearchParams('steps=v1')).label).toBe('steps v1 (registered)');
+    expect(labRun(v1.def, new URLSearchParams('steps=new'))).toEqual({ def: d, opts: {}, label: 'steps new' });
+    expect(labRun(v1.def, new URLSearchParams('steps=old')).def).toEqual(preSteps(d));
   }, 120000);
 
   // ladder rung 13c: upperarm=on|off on the fixture's self-clearance profile; no fixture registers the upper arm in it yet

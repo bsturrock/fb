@@ -95,8 +95,11 @@ export const STEPS_V1: StepModelProfile = { id: 'steps-v1', maxStepM: 0.4, cover
  */
 export const STEPS_V2: StepModelProfile = { ...STEPS_V1, id: 'steps-v2', underHips: true };
 
-/** The footwork profile with the contact stepping model, under an id that names it (a profile without compose is returned as it is). */
-export const withSteps = (f: FootworkProfile, m: StepModelProfile = STEPS_V1): FootworkProfile => (!f.compose || f.steps ? f : { ...f, id: `${f.id}+${m.id}`, steps: m });
+/**
+ * The footwork profile with the contact stepping model (default the registered one, STEPS_V2 since plan 15 step 4b), under
+ * an id that names it (a profile without compose, or with a model already, is returned as it is).
+ */
+export const withSteps = (f: FootworkProfile, m: StepModelProfile = STEPS_V2): FootworkProfile => (!f.compose || f.steps ? f : { ...f, id: `${f.id}+${m.id}`, steps: m });
 /** The footwork profile without it. */
 export const withoutSteps = (f: FootworkProfile): FootworkProfile => {
   if (!f.steps) return f;

@@ -284,7 +284,8 @@ function hipTwistFlip(d: FixtureDef): FixtureDef {
  * stepping model (STEPS_V1, contact-steps.ts: where a foot can stand, where it steps, when) in place of the reactive
  * planner's contact stepping, and the bound-legs fall and the come-down read it (`legsBound`, `standsNowhere`). L2 and RH
  * keep the reactive planner. The lab's `steps=old` is the view before it; tests/runs.ts `preSteps` gives a definition as
- * before it.
+ * before it. Since step 4b the model is STEPS_V2 (`withSteps`' default): the come-down reads what holds the tackler up on
+ * the model (`underHips`); the lab's `steps=v1` is the view before it, tests/runs.ts `preStepsV2` a definition as before.
  */
 function stepsFlip(d: FixtureDef): FixtureDef {
   return d.footwork?.compose && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withSteps(d.footwork) } : d;
