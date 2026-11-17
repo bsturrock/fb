@@ -16,7 +16,9 @@ import { loadState, resumeState } from './state';
 // same from the same state (ladder 8i). Unguarded, D's posed legs then sink 2-9 cm into R's legs and come out again; a
 // candidate built from them would be valid 5-22 substeps after the rejection (21-92 ms), and stays so.
 // Captured under the 8i variant (scripts/capture-state.ts --flip8i; the leg guard before the ladder 10 flip, `preV3`),
-// each a few ticks before D's conversion:
+// each a few ticks before D's conversion, on the reactive planner; plan 15 step 5b: resumed with the contact stepping
+// model taking over the feet (`asCaptured`'s footwork variant). L3-F1-phase4 reversed went from the cases there: on the
+// model D's conversion at 1.300 s is not rejected.
 const CASES: { cap: string; rejectedAt: number; outcome: 'accepted' | 'transferFailed' }[] = [
   // D's diagnostic conversion at 1.171 s: right thigh 1.57 cm in R's left palm; deferred: converts at the next try
   { cap: 'HC-F3-falling~flip8i-rev@69', rejectedAt: 1.1708, outcome: 'accepted' },
@@ -27,11 +29,14 @@ const CASES: { cap: string; rejectedAt: number; outcome: 'accepted' | 'transferF
   // 4 tries, the same
   { cap: 'HC-F5-strictTransfer~flip8i@75', rejectedAt: 1.2875, outcome: 'transferFailed' },
   { cap: 'HC-F5-strictTransfer~flip8i-rev@70', rejectedAt: 1.2458, outcome: 'transferFailed' },
-  // right thigh 2.71 cm in R's pelvis at 1.300 s (6 substeps held); 11 tries
-  { cap: 'L3-F1-phase4~flip8i-rev@72', rejectedAt: 1.3, outcome: 'accepted' },
 ];
+/**
+ * The cases whose conversion forced at the first try (the depth twin) starts past the tolerance: HC-F5-strictTransfer
+ * reversed, on the model, converts clear of R even forced.
+ */
+const STARTS = CASES.filter((c) => c.cap !== 'HC-F5-strictTransfer~flip8i-rev@70');
 /** The definition the capture ran under (the 8i variant of the registration then). */
-const baseOf = (cap: string): FixtureDef => asCaptured(loadState(`tests/data/state/${cap}.json.gz`), flip8i);
+const baseOf = (cap: string): FixtureDef => asCaptured(loadState(`tests/data/state/${cap}.json.gz`), flip8i, ['footwork']);
 /** Solves read after the switch: 0.1 s. */
 const AFTER = 24;
 /** The energy fault's addition (J). */
@@ -125,12 +130,12 @@ async function start(cap: string, def: FixtureDef, variant: string[], addAt?: nu
 }
 
 describe('ladder rung 8j: the deferred conversion', () => {
-  it('as captured D is rejected for a posed leg in R and left a rigid falling proxy to the end; deferred, D converts within the window from a candidate inside the tolerance, with the outcome the fixture registers (HC-F3-falling, HC-F5-strictTransfer both orders, L3-F1-phase4, under the 8i variant)', async () => {
+  it('as captured D is rejected for a posed leg in R and left a rigid falling proxy to the end; deferred, D converts within the window from a candidate inside the tolerance, with the outcome the fixture registers (HC-F3-falling, HC-F5-strictTransfer both orders, under the 8i variant)', async () => {
     await rows(CASES, (c) => c.cap, async (c) => {
       const base = baseOf(c.cap);
       const tol = base.ragdoll!.validation.penetrationTolM;
       // the twin: as captured (no deferral), the rejection is final
-      const off = await runSim(await resumeState(loadState(`tests/data/state/${c.cap}.json.gz`), { def: base }));
+      const off = await runSim(await resumeState(loadState(`tests/data/state/${c.cap}.json.gz`), { def: base, variant: ['footwork'] }));
       const rej = evs(off, 'handoffRejected', 'D');
       expect(rej.map((e) => e.t)).toEqual([expect.closeTo(c.rejectedAt, 4)]);
       expect(rej[0].data.reasons).toBe('externalPenetration');
@@ -141,7 +146,7 @@ describe('ladder rung 8j: the deferred conversion', () => {
       expect(evs(off, 'handoffDeferred')).toEqual([]);
       off.dispose();
 
-      const sim = await runSim(await resumeState(loadState(`tests/data/state/${c.cap}.json.gz`), { def: withRetry(base), variant: ['ragdoll'] }));
+      const sim = await runSim(await resumeState(loadState(`tests/data/state/${c.cap}.json.gz`), { def: withRetry(base), variant: ['footwork', 'ragdoll'] }));
       expect(evs(sim, 'handoffRejected')).toEqual([]);
       const def = evs(sim, 'handoffDeferred', 'D');
       expect(def.map((e) => e.t)).toEqual([expect.closeTo(c.rejectedAt, 4)]);
@@ -162,28 +167,29 @@ describe('ladder rung 8j: the deferred conversion', () => {
   }, 120000);
 
   it('the deferred conversion starts clear of R and without an energy spike: over 0.1 s no segment deeper in R than the tolerance, no solve gaining over the injection threshold (untouched, or D and R together); twins: converted at the first try regardless of depth it starts past the tolerance; 2 J added in D\'s first untouched solve reads as an injection', async () => {
-    await rows(CASES, (c) => c.cap, async (c) => {
+    await rows(STARTS, (c) => c.cap, async (c) => {
       const base = baseOf(c.cap);
       const tol = base.ragdoll!.validation.penetrationTolM;
-      const on = await start(c.cap, withRetry(base), ['ragdoll']);
+      const on = await start(c.cap, withRetry(base), ['footwork', 'ragdoll']);
       on.sim.dispose();
       expect(on.switchStep).toBeGreaterThan(0);
       expect(on.solves.size).toBe(AFTER);
-      // measured: 1.11, 0.53, 1.30, 0.96 cm deepest; the largest untouched gain -0.02 J; D and R together at most -0.03 J
+      // (measured as captured, before the model: 1.11 and 0.53 cm deepest; the largest untouched gain -0.02 J; D and R
+      // together at most -0.03 J)
       expect(on.depth.depth, on.depth.pair).toBeLessThanOrEqual(tol);
       expect(untouchedMaxJ(on)).toBeLessThan(INJECTION_J);
       expect(pairMaxJ(on)).toBeLessThan(INJECTION_J);
       // the depth twin: the same state with the tolerance at 10 cm (a profile of the twin's own), D converting where it
-      // was rejected; measured 1.56, 3.27, 3.41, 2.66 cm
+      // was rejected (measured as captured: 1.56 and 3.27 cm)
       const R = base.ragdoll!;
       const loose: FixtureDef = { ...base, ragdoll: { ...R, id: `${R.id}+tol0.1`, validation: { ...R.validation, penetrationTolM: 0.1 } } };
-      const forced = await start(c.cap, loose, ['ragdoll']);
+      const forced = await start(c.cap, loose, ['footwork', 'ragdoll']);
       expect(forced.sim.players.find((p) => p.id === 'D')!.handoff!.t).toBeCloseTo(c.rejectedAt, 4);
       forced.sim.dispose();
       expect(forced.depth.depth, forced.depth.pair).toBeGreaterThan(tol);
       // the energy twin: the same deferred run with 2 J added inside D's first untouched solve after the switch
       const at = [...on.solves.entries()].find(([, r]) => !r.touched)![0];
-      const twin = await start(c.cap, withRetry(base), ['ragdoll'], at);
+      const twin = await start(c.cap, withRetry(base), ['footwork', 'ragdoll'], at);
       twin.sim.dispose();
       // (it reads 2 J more there, D and R together too; R's own loss in that solve can hide it from the pair's maximum)
       expect(twin.solves.get(at)!.D - on.solves.get(at)!.D).toBeCloseTo(ADD_J, 3);
@@ -196,7 +202,7 @@ describe('ladder rung 8j: the deferred conversion', () => {
     const cap = 'HC-F5-strictTransfer~flip8i@75';
     const base = baseOf(cap);
     const dt = base.solver.outerTickS / base.solver.substeps;
-    const short = await runSim(await resumeState(loadState(`tests/data/state/${cap}.json.gz`), { def: withRetry(base, { ...CONVERSION_RETRY_V1, id: 'retry-2substeps', windowS: 2 * dt }), variant: ['ragdoll'] }));
+    const short = await runSim(await resumeState(loadState(`tests/data/state/${cap}.json.gz`), { def: withRetry(base, { ...CONVERSION_RETRY_V1, id: 'retry-2substeps', windowS: 2 * dt }), variant: ['footwork', 'ragdoll'] }));
     const D = short.players.find((p) => p.id === 'D')!;
     expect(evs(short, 'handoffDeferred', 'D').map((e) => e.t)).toEqual([expect.closeTo(1.2875, 4)]);
     const rej = evs(short, 'handoffRejected', 'D');
