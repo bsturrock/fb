@@ -291,6 +291,17 @@ function stepsFlip(d: FixtureDef): FixtureDef {
   return d.footwork?.compose && VISIBLE_FLIP.test(d.id) ? { ...d, footwork: withSteps(d.footwork) } : d;
 }
 
+/**
+ * Plan 15 step 5a, the older families' stepping flip: every L2 fixture with a foot planner (plan 07's, FOOTWORK_L2) steps by
+ * the contact stepping model (STEPS_V2) outside the clip regime in place of plan 07's reactive steps; its clip regime,
+ * airborne feet and shown sole stay plan 07's. RH has no foot planner (its L2 copies carry one) and keeps its definitions;
+ * G and L1 too. The lab's `steps=old` is the view before it; tests/runs.ts `preSteps` gives a definition as before it.
+ */
+const OLDER_STEPS = /^L2-/;
+function olderStepsFlip(d: FixtureDef): FixtureDef {
+  return d.footwork && OLDER_STEPS.test(d.id) ? { ...d, footwork: withSteps(d.footwork) } : d;
+}
+
 /** Freeze an object graph in place (typed arrays are left as they are: they cannot be frozen). */
 function deepFreeze<T>(o: T, seen = new Set<unknown>()): T {
   if (o === null || typeof o !== 'object' || seen.has(o) || ArrayBuffer.isView(o)) return o;
@@ -319,6 +330,6 @@ export function allFixtures(): FixtureDef[] {
     ...handoffContactFixtures(),
     ...transitionFixtures(),
     ...fallFixtures(),
-  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip).map(shoulderTwistFlip).map(stepsFlip));
+  ].map(visibleFlip).map(ownLegFlip).map(legFlip).map(holdStillFlip).map(bornFlip).map(bornSepFlip).map(metArmStayFlip).map(braceFlip).map(balancedClearFlip).map(wrapFlip).map(fallFlip).map(palmLoadFlip).map(strikeFlip).map(driveFlip).map(rideFlip).map(bindFlip).map(hipTwistFlip).map(linkFlip).map(behindFlip).map(stayOnFlip).map(hitFlip).map(forwardFallFlip).map(aimFlip).map(shoulderTwistFlip).map(stepsFlip).map(olderStepsFlip));
   return registry.slice();
 }

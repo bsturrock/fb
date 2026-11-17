@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { standsNowhere, STEPS_V2, withSteps, withoutSteps } from '../src/sim/contact-steps';
 import type { FixtureDef } from '../src/sim/fixture';
 import type { Simulation } from '../src/sim/simulation';
-import { asCaptured, preSteps } from './runs';
+import { asCaptured, FIX, preSteps } from './runs';
 import { loadState, resumeState } from './state';
+import { idleBaseline, VisibleMeter } from './visible';
 
 // Plan 15 step 4, defects reached by the stepping flip's moved trajectories, each on a capture taken under the flip's
 // registration (STEPS_V1) a little before the defect. Under it the tackler went down late, held up by the come-down's
@@ -118,5 +119,38 @@ describe('plan 15, the come-down\'s read on the model (STEPS_V2 underHips)', () 
     // fault twin: under STEPS_V1's read he stays up over his man (measured 0.096 s and 0.371 s after he was down)
     const w = await comeDown(file, false);
     expect(w.t - w.downT!, JSON.stringify(w)).toBeGreaterThan(0.09);
+  }, 120000);
+});
+
+/**
+ * Resumes the capture to `untilS` as registered (the model on) or with plan 07's planner from there (`preSteps`): the
+ * deepest leg-through-leg between two supported players the visible meter sees, and when.
+ */
+async function legsCrossed(file: string, model: boolean, untilS: number) {
+  const cap = loadState(`tests/data/state/${file}.json.gz`);
+  const def = asCaptured(cap);
+  const sim = await resumeState(cap, model ? { def } : { def: preSteps(def), variant: ['footwork'] });
+  const meter = new VisibleMeter(sim, await idleBaseline(FIX('L3-F13-free')));
+  while (!sim.done && sim.t < untilS) {
+    sim.stepTick();
+    meter.frame();
+  }
+  const v = meter.finish();
+  const D = sim.players.find((p) => p.id === 'D')!;
+  const out = { supSupS: v.cross.supSup, worst: v.worst.crossLeg ?? null, aimDepthM: D.feet!.feet.left.contact?.depthM ?? null };
+  sim.dispose();
+  return out;
+}
+
+describe('plan 15 step 5a: defects reached by the stepping flip on L2', () => {
+  it('LEG_IN_MAN_SIDE_HIT (L2-F8-sideLoss, from 0.450 s): the tackler hitting the runner side-on at 6 m/s finds no free place for his left foot (the least deep 4-16 cm in the runner) and the model steps it there, under his hips: his left thigh 10+ cm in the runner\'s for about 0.1 s while both are supported (tracked defect 2, a leg in the other man, reached in a hit); plan 07\'s planner from the same state leaves the foot trailing, under 2 cm', async () => {
+    const m = await legsCrossed('L2-F8-sideLoss@27', true, 0.7);
+    const said = JSON.stringify(m);
+    expect(m.worst?.[1], said).toBe('supSup:D.leftThigh~R.leftThigh');
+    expect(m.worst![2] as number, said).toBeGreaterThan(10);
+    expect(m.supSupS, said).toBeGreaterThan(0.08);
+    // the twin: plan 07's planner from the same state
+    const r = await legsCrossed('L2-F8-sideLoss@27', false, 0.7);
+    expect((r.worst?.[2] as number | undefined) ?? 0, JSON.stringify(r)).toBeLessThan(2);
   }, 120000);
 });

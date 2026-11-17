@@ -278,11 +278,13 @@ const OPT_IN: Row[] = [
     },
   ],
   [
-    'plan 15 step 4: the contact stepping model on exactly the L3, L4 and HC composed foot planners (STEPS_V2 since step 4b, the come-down\'s read on the model; STEPS_V1 before it); L2\'s and RH\'s planners have none',
+    'plan 15 step 4: the contact stepping model (STEPS_V2 since step 4b, the come-down\'s read on the model; STEPS_V1 before it) on exactly the L3, L4 and HC composed foot planners and, since step 5a, every L2 foot planner (plan 07\'s, FOOTWORK_L2); RH has no foot planner',
     () => {
       const planned = allFixtures().filter((d) => d.footwork);
-      expect(planned.some((d) => !/^(L3|L4|HC)-/.test(d.id))).toBe(true);
-      for (const d of planned) expect(d.footwork!.steps, d.id).toBe(/^(L3|L4|HC)-/.test(d.id) && d.footwork!.compose ? STEPS_V2 : undefined);
+      expect(planned.some((d) => /^L2-/.test(d.id) && d.footwork!.id === `${FOOTWORK_L2.id}+${STEPS_V2.id}`)).toBe(true);
+      expect(allFixtures().some((d) => /^RH-/.test(d.id))).toBe(true);
+      for (const d of allFixtures().filter((x) => /^RH-/.test(x.id))) expect(d.footwork, d.id).toBeUndefined();
+      for (const d of planned) expect(d.footwork!.steps, d.id).toBe((/^(L3|L4|HC)-/.test(d.id) && d.footwork!.compose) || /^L2-/.test(d.id) ? STEPS_V2 : undefined);
     },
   ],
 ];
