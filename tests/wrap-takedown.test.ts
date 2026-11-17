@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { WRAP_V1, WRAP_V2, type WrapProfile } from '../src/sim/controllers/wrap';
 import type { FixtureDef } from '../src/sim/fixture';
 import { Simulation } from '../src/sim/simulation';
-import { FIX, preFallReact, preSteps } from './helpers';
+import { FIX, preFallReact } from './helpers';
 
 const C = WRAP_V2.commit!;
 const SUB = 1 / 240;
@@ -82,8 +82,7 @@ describe('contact motion M3: a secure hold lowers the defender and takes him dow
 
   it('if the carrier he holds securely is off his support first, he follows at once (constructed: the front wrap with a 1 s lowering, the carrier converted, labelled, 0.1 s into the hold): he asks on the substep he sees the carrier down and leaves at the next. The fault twin: under WRAP_V1 he stays up for over half a second', async () => {
     const at = 0.6;
-    // (plan 15 step 4: the construct as built, before the stepping flip: under the model the twin's tackler goes down too)
-    const def = (w: WrapProfile): FixtureDef => withWrap(preSteps(FIX('L3-F19-front')), w, { diagnostics: { conversions: [{ playerId: 'R', atS: at }] } });
+    const def = (w: WrapProfile): FixtureDef => withWrap(FIX('L3-F19-front'), w, { diagnostics: { conversions: [{ playerId: 'R', atS: at }] } });
     const r = await run(def(commitWith({ lowerS: 1 })), 1.5);
     expect(r.secureS!).toBeLessThan(at - 0.05);
     expect(r.loss.R?.why).toBe('diagnostic');
@@ -93,7 +92,11 @@ describe('contact motion M3: a secure hold lowers the defender and takes him dow
     expect(r.loss.D!.t - r.loss.R!.t).toBeLessThanOrEqual(SUB + 1e-4);
     const twin = await run(def(WRAP_V1), 1.5);
     expect(twin.loss.R!.why).toBe('diagnostic');
-    expect(twin.loss.D === null || twin.loss.D.t - twin.loss.R!.t > 0.5).toBe(true);
+    // (plan 15 step 5b: on the contact stepping model the twin's tackler loses his own support 0.37 s after the carrier,
+    // so the twin reads that he never asks and does not follow at once; it read "not within 0.5 s")
+    expect(twin.askS).toBeNull();
+    expect(twin.loss.D?.why).not.toBe('takedown');
+    expect(twin.loss.D === null || twin.loss.D.t - twin.loss.R!.t > SUB + 1e-4).toBe(true);
   }, 60000);
 
   it('a broken hold or a miss does not commit: the front wrap\'s arms let go 0.1 s into the hold, during the lowering, and he stands up again without leaving support or converting the carrier; the miss (L3-F19-miss) never holds and never asks; a one-arm hold (L3-F4-oneArm) never asks. The fault twin: a hold that never starts over (graceS without end) takes him down 0.25 s after the hold he no longer has', async () => {

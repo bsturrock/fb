@@ -11,7 +11,7 @@ import { WRAP_V10, WRAP_V6, type WrapBindLinked, type WrapDebug, type WrapProfil
 import type { FixtureDef } from '../src/sim/fixture';
 import type { SimOptions, Simulation } from '../src/sim/simulation';
 import { dot, horiz, norm, vc, type Vec3 } from '../src/sim/vec';
-import { create, FIX, preSteps } from './helpers';
+import { create, FIX } from './helpers';
 
 const LK = WRAP_V6.bind!.linked!;
 
@@ -76,10 +76,9 @@ async function dragRun(make: Make, checkAt?: number, untilS = Infinity): Promise
   return out;
 }
 
-/** L3-F19-rear (the registered rear wrap: the tackler from behind) under `wrap`, with fault switches (plan 15 step 4: as
- * sampled, before the stepping flip). */
+/** L3-F19-rear (the registered rear wrap: the tackler from behind) under `wrap`, with fault switches. */
 function rear(wrap: WrapProfile, faults?: WrapDebug): Make {
-  return (opts) => create({ ...preSteps(FIX('L3-F19-rear')), wrap }, { ...opts, ...(faults ? { debug: { wrap: faults } } : {}) });
+  return (opts) => create({ ...FIX('L3-F19-rear'), wrap }, { ...opts, ...(faults ? { debug: { wrap: faults } } : {}) });
 }
 
 /** L3-F19-rear with the wrapping defender starting `m` further back along his line (the long rear approach), reversed order. */
@@ -131,16 +130,17 @@ describe('contact motion polish 2.3, the drag-down (WRAP_V6, WrapBind.linked)', 
   }, 120_000);
 
   it('(iii) a link that has ended never binds (the rear wrap under WRAP_V6, the confirm time made longer than the links last together): the left link breaks on overload before the clock reaches it and no boundLegs comes, then or later. The fault twin: with the link\'s break rules off (fallLinkNoBreak) both hold and he is bound once held that long', async () => {
-    const long = withLinked(WRAP_V6, { confirmS: 0.5, minLinks: 2 }, 'confirm05');
+    // (plan 15 step 5b: 0.8 s, was 0.5: on the contact stepping model both links outlast 0.5 s together)
+    const long = withLinked(WRAP_V6, { confirmS: 0.8, minLinks: 2 }, 'confirm08');
     const on = await dragRun(rear(long), undefined, 2.5);
     expect(on.links).toBe(2);
-    expect(on.ends.some((e) => e.reason === 'overload' && e.t < on.dSwitch! + 0.5), JSON.stringify(on.ends)).toBe(true);
+    expect(on.ends.some((e) => e.reason === 'overload' && e.t < on.dSwitch! + 0.8), JSON.stringify(on.ends)).toBe(true);
     expect(on.bound).toBeNull();
     const twin = await dragRun(rear(long, { fallLinkNoBreak: true }), undefined, 2.5);
     expect(twin.ends).toEqual([]);
     expect(twin.bound).not.toBeNull();
     expect(twin.bound!).toMatchObject({ clause: 'a', linked: 2 });
-    expect(twin.bound!.t - twin.dSwitch!).toBeGreaterThanOrEqual(0.5 - 1e-6);
+    expect(twin.bound!.t - twin.dSwitch!).toBeGreaterThanOrEqual(0.8 - 1e-6);
   }, 120_000);
 
   it('(iv) a touch that is not a hold never binds: on the long rear approach (2 m further back, reversed order) the tackler commits with one arm clamped and the other only touching, so one link begins and the carrier is not bound (still up 0.5 s after); the miss under WRAP_V6 makes no link and no loss. The twin: with one link enough (minLinks 1) the long approach binds him by it', async () => {
