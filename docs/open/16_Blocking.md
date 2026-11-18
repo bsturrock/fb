@@ -20,7 +20,7 @@ outstanding is the user's lab look, then item 3.
   feet under them to support, particularly the 'losing' man; in real life no way they would be standing"). His
   drawing: each man's line runs from the helmet down the back to the hips, then away from the other man to feet
   planted behind the hips; the two men make an A, heads and hands meeting, feet far apart. Not hips back with the
-  feet out in front. **This is the next step**, ahead of item 3.
+  feet out in front. Built (`LEAN_IN_V1`), but shallow and tall: see the handoff.
 - **Feet flat on the ground, an athletic base** (second look, 2026-11-18: "a real problem"). No standing on the toes
   with the heels up, no tiptoe foot behind. Helmets touching is fine. Forearms through each other: better, still a
   problem.
@@ -95,8 +95,19 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    also the answer to forearm through forearm: one man's hands inside, the other's outside. The contest's advantage
    comes from inside hands and being lower; push strength from effort rather than requested speed; the loser gives
    ground in choppy steps and, overpowered, leans to a real fall.
-4. **Entries:** a three-point stance start (very low to high) and a run-in (less pronounced load, more upright), as
-   scenes.
+4. **Entries** (the three-point start comes **before item 3**, at the user's request: "from three point stance into
+   load => explode, really getting that low to high action into the chest"): a three-point stance start (very low
+   to high) and a run-in (less pronounced load, more upright), as scenes. "Stances are different for offense vs
+   defense" (user): stance is a per-player request with a side. Offense three-point: wide flat base, small stagger,
+   knees about 90 deg out over the toes, hips about level with the shoulders, back flat, head up, straight down arm
+   with fingertips under the facemask and a light hand, off forearm across the thigh. Defense three-point:
+   sprinter-like, hips above the shoulders, weight forward on the hand (front knee about 90 deg, not past: he must
+   be able to lift the hand), heel-to-toe stagger, narrower, heels up, off hand cocked. Set two-point (offense):
+   wide, flat, knees out over the toes, hips sunk, chest and head up, hands ready in front. Fire-out: stay low,
+   hands straight to the chest plate inside the shoulders, a short first step (overstriding stands him up), hips
+   roll forward and up at contact, then short choppy steps with the feet kept under and behind him. References:
+   the handoff's "To resume" 3. These poses need the knee well over the toe on a flat foot, more than the ankle's
+   25 deg: the same limit that keeps the lean-in tall.
 5. **Polish** in the handoff's defect order, with the footwork and tackle queues.
 6. **Milestone:** lab review by the user after 1 and 2, again after 3 and 4.
 

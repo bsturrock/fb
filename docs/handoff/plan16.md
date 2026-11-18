@@ -26,7 +26,22 @@ baseline: main checkout `.scratch/p33/on`.
    steps); `-F2` the walk-in's momentum knocks the set man 0.43 m in 0.5 s in three flat steps, then he anchors;
    `-F7` is a stalemate (equal men cancel until leverage exists); nobody falls in any BL scene (`-F8` both stood up
    again). Strike contact unchanged (elbow 63-80 deg, 54-66 % through, 273-965 N peak).
-3. Next: the user's lab look (scenes below), then item 3. One builder at a time in the worktree
+   **The lean-in** (`9073f58`, `6721d91`; user's third look: feet behind him, leaning in). BL now stands on
+   `LEAN_IN_V1` (`LeanInStance`, `withLeanIn` in `controllers/block.ts`) in place of `ATHLETIC_V2`: hips 1-10 cm
+   ahead of the feet's mid-point (before 10-25 cm behind), the whole man inclined 8-13 deg, rear foot on its ball
+   (limit for the ball 14 deg / 7.4 cm heel; the flat rule's 10 deg / 3 cm unchanged), feet further apart than hips
+   between the two men, the loser's hips ahead of his feet for all of the knock-back (before: none of it), every
+   step back landing behind his hips. Outcomes unchanged, nobody falls. **Its cost: the men stand tall (hips 0.90 m
+   against 0.82) and the load sinks only 0.5 cm**, because with the ankle at 25 deg feet behind the hips force the
+   hips near standing height; a low lean-in needs about 35 deg or more of ankle. 632 tests; baseline main checkout
+   `.scratch/p38/leanin-flip`. Other defects from it: the winner's trailing heel and the load-time heel pass the
+   ball limit (8.1 cm, 15.5 deg); `-F2`'s strike barely moves the set man now (0.07 m/s, was 0.54); the set pose
+   before the load has no stance input of its own (it is the engaged stance); `-F8` run-back 4.8 m.
+3. Reference for stances (untracked, press photos, never commit): worktree `.scratch/refs/` `two-point/`,
+   `three-point-offense/`, `three-point-defense/` (user's photos; offense and defense differ), and
+   `/Users/brandon/Projects/football-player-creator/anims/3pt Stance Offense.fbx`, `3pt Stance Defense.fbx`.
+   Next: the ankle-range question to the user (a low stance), then the three-point entry (plan item 4, moved ahead
+   of item 3 at the user's request), then item 3. One builder at a time in the worktree
    `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main checkout's `.scratch/p38/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
