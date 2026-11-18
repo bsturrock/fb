@@ -279,6 +279,34 @@ describe('plan 16, the punch as a strike (BLOCK_STRIKE_V1)', () => {
     }
   }, 180_000);
 
+  it('(f) loaded, he closes at most 0.6 m/s (`load.closeMps`): walking in at 1.5 m/s onto a man who set standing, from the load until the drive his asked closing speed (his asked speed toward the man less the man\'s own toward him, before the walk\'s rate limit) is never past 0.6 m/s, and he is slower as the strike is thrown than a load that closes at the approach\'s speed (closeMps 3), which asks past 1 m/s', async () => {
+    const fast = variant('test-strike-close-fast', { load: { closeMps: 3 } });
+    const out: Record<string, { asked: number; loadedS: number; atStrike: number }> = {};
+    for (const Kx of [BLOCK_STRIKE_V1, fast]) {
+      const o = { asked: -Infinity, loadedS: 0, atStrike: NaN };
+      await run(scene({ durationS: 2.2, sepM: 3, A: striker(Kx, { walkInMps: 1.5 }), B: striker(Kx, { hands: 'over', fromS: 1 }) }), (sim) => {
+        const [a, b] = ['A', 'B'].map((id) => sim.players.find((p) => p.id === id)!);
+        const ph = a.block?.punch?.phase;
+        if (a.rag || b.rag || !ph || ph === 'drive') return;
+        const pa = a.proxy.body.translation();
+        const pb = b.proxy.body.translation();
+        const dir = norm(v3(pb.x - pa.x, 0, pb.z - pa.z));
+        const along = (p: PlayerRuntime) => dot(v3(p.proxy.body.linvel().x, 0, p.proxy.body.linvel().z), dir);
+        // (what his controller asks, before the walk's rate limit shapes it: `walkWant`)
+        o.asked = Math.max(o.asked, dot(a.walkWant ?? a.intent.locomotion.desiredVelocityWorld, dir) - along(b));
+        o.loadedS += sim.physics.dt;
+        if (ph === 'strike' && Number.isNaN(o.atStrike)) o.atStrike = along(a);
+      });
+      expect(o.loadedS, `${Kx.id}: a load before the drive (s)`).toBeGreaterThan(0.2);
+      out[Kx.id] = o;
+    }
+    const on = out[BLOCK_STRIKE_V1.id];
+    const off = out[fast.id];
+    expect(on.asked, 'his asked closing speed, loaded (m/s)').toBeLessThanOrEqual(BLOCK_STRIKE_V1.load.closeMps + 1e-6);
+    expect(off.asked, 'his asked closing speed, the load uncapped (m/s)').toBeGreaterThan(1);
+    expect(on.atStrike, 'his speed toward the man as the strike is thrown, against the uncapped load (m/s)').toBeLessThan(off.atStrike - 0.05);
+  }, 180_000);
+
   it('(e) the phases: loaded, thrown only from range (reach 0.55 m, not closer than 0.5: at 0.45 he waits); a strike landed whose palms come off goes to the drive (the block\'s hands re-arm), one that never landed and straightened loads again; with no floor (minReachM 0) the too-close strike is thrown', () => {
     const K = BLOCK_STRIKE_V1;
     const cues = (o: Partial<PunchCues>): PunchCues => ({ t: 1, serial: 0, gap: 0.6, closingMps: 0, engaged: false, reachM: 0.55, loaded: true, anyOn: false, straight: false, speedMps: 0, ...o });
