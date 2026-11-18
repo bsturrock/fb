@@ -113,6 +113,189 @@ export function advanceGive(st: GiveState, G: GiveGround, demandNm: number, back
 }
 
 /**
+ * Plan 16 (p37), the contest (`BlockProfile.contest`): who is moved in a block, how far and how fast, is decided by what
+ * each man can push and hold with, not by a tipping moment about his feet. A man engaged in a block stands on the
+ * supported model's ordinary balance (its fixed ceiling, the one every supported player has: no base clamp), so a hit
+ * moves him rather than tips him; the along-line part of his ground force (the drive) is his contest force in place of
+ * the velocity servo's, the servo keeping only what is across the line:
+ * - his push (`contestForce`): his effort's force toward his man on a force-velocity line, all of it standing or moved
+ *   back, none at the speed his request asks along the line (over at least `spanMps`), braking past it; never more than
+ *   his drive's own bound (the motor's force at his effort, lean and traction), so it adds nothing the drive could not;
+ * - his hold: while he is moved away from his man (and asks to go toward him), a damper on that speed, reaching his hold
+ *   capacity at `holdMps` and `ecc.x` times it at `ecc.mps` (legs braking a motion are stronger than legs making one, as
+ *   muscle lengthening is): what his planted stance resists with. It only opposes his motion, so it only ever takes energy.
+ * Both are his capacity (`contestCapacity`): the push `pushN` times his effort (while he strikes, from the throw to
+ * `burst.s` into the drive after it, up to `burst.pushN` times it but no more than his palms put on his man: he explodes
+ * out of his stance through his hands, his legs behind them; braking, never more than `pushN`'s), the hold `holdN` times
+ * (`holdFloor` + the rest times his effort); both times how low he is against his man (lower wins: 1 + `low.perM` x his man's
+ * hips' height less his, within `low.min`..`low.max`), his feet (`contestFeet`: both planted within the flat limit `set`
+ * all of it, one planted and one in a step `oneFoot`, a planted foot past the limit half a foot's), how far he is stood
+ * up, and his `leverage` (1: the input inside hands will set).
+ * His hold needs him anchored: a planted foot within the limit and his legs' lean within `anchorLeanDeg`.
+ *
+ * Stood up (`ContestState.level`, 0..1): followed from how hard he is knocked back (his centre of mass's acceleration
+ * away from his man, `stood.knockMps2`: 0 at the first, 1 at the second), rising within `attackS` and falling within
+ * `releaseS`. At level 1 his hold is cut by `holdCut` and his push by `pushCut`; his controller stands him up (hips `riseM`
+ * higher, trunk `trunkDeg` more upright). A hit that outdoes what he holds knocks him back, stands him up and so moves him
+ * further; once it is through, he slows, the level falls, and he re-anchors. A steady drive accelerates nobody, so it
+ * stands nobody up.
+ *
+ * He goes down (`ContestState.down`, read by the balance's loss) when: his centre of mass is more than `fall.behindM`
+ * behind his feet along the line for `fall.outrunS` (his steps cannot keep them under him); stood up past
+ * `fall.overLevel` and moved away faster than `fall.overMps`, his man's push more than `fall.overMargin` past what he
+ * pushes and holds with, for `fall.overS` (overpowered); or his legs' lean past `anchorLeanDeg` for `fall.leanS` (no
+ * rigid lean beyond the envelope he is anchored in).
+ */
+export interface BlockContest {
+  id: string;
+  pushN: number;
+  burst: { pushN: number; s: number };
+  holdN: number;
+  holdFloor: number;
+  spanMps: number;
+  holdMps: number;
+  ecc: { x: number; mps: number };
+  low: { perM: number; min: number; max: number };
+  set: { heelM: number; pitchDeg: number };
+  oneFoot: number;
+  anchorLeanDeg: number;
+  stood: { knockMps2: [number, number]; attackS: number; releaseS: number; holdCut: number; pushCut: number; riseM: number; trunkDeg: number };
+  fall: { behindM: number; outrunS: number; overLevel: number; overMps: number; overMargin: number; overS: number; leanS: number };
+}
+
+/** Why the contest took a man down (`ContestState.down`). */
+export type ContestDown = 'outrun' | 'overpowered' | 'pastAnchor';
+
+/**
+ * A man's contest (`BlockState.contest`, a profile with `contest`), kept by the motor step while he is engaged: how far he
+ * is stood up, whether he is anchored, this substep's capacity and force along the line (N, + toward his man) and its
+ * parts, his speed along it last substep (m/s), the fall clauses' clocks (s; null: not holding) and, once one trips, why.
+ */
+export interface ContestState {
+  level: number;
+  anchored: boolean;
+  /** Inside hands and leverage (plan 16 item 3): a factor on his capacity, 1 until something sets it. */
+  leverage: number;
+  pushN: number;
+  holdN: number;
+  forceN: number;
+  pushF: number;
+  holdF: number;
+  vPrev: number | null;
+  outrunT: number | null;
+  overT: number | null;
+  leanT: number | null;
+  down?: ContestDown;
+}
+
+/** A fresh contest state. */
+export const newContest = (): ContestState => ({ level: 0, anchored: false, leverage: 1, pushN: 0, holdN: 0, forceN: 0, pushF: 0, holdF: 0, vPrev: null, outrunT: null, overT: null, leanT: null });
+
+/** Plan 16 (p37): the first contest (no registered fixture has it yet). */
+export const CONTEST_V1: BlockContest = {
+  id: 'contest-v1',
+  pushN: 300,
+  burst: { pushN: 1000, s: 0.25 },
+  holdN: 250,
+  holdFloor: 0.3,
+  spanMps: 0.2,
+  holdMps: 0.05,
+  ecc: { x: 2.5, mps: 0.3 },
+  low: { perM: 2, min: 0.8, max: 1.25 },
+  set: { heelM: 0.03, pitchDeg: 10 },
+  oneFoot: 0.7,
+  anchorLeanDeg: 20,
+  stood: { knockMps2: [0.5, 2.5], attackS: 0.03, releaseS: 0.3, holdCut: 0.9, pushCut: 0.8, riseM: 0.08, trunkDeg: 10 },
+  fall: { behindM: 0.25, outrunS: 0.3, overLevel: 0.3, overMps: 0.5, overMargin: 1, overS: 0.3, leanS: 0.1 },
+};
+
+/**
+ * How much of his feet a man in a block stands on (0..1, `BlockContest`): each foot planted with its heel within
+ * `set.heelM` of the ground and its sole pitched no more than `set.pitchDeg` counts 1, planted past that a half, in a step
+ * nothing; the better foot carries `oneFoot` of it, the other the rest (a man stepping drives off his stance foot).
+ * `setFeet`: how many planted feet are within the limit. The heel as `soleContacts` reads it (its middle above the
+ * sole's lowest corner).
+ */
+export function contestFeet(plan: FootPlan, K: BlockContest): { share: number; setFeet: number } {
+  const { he, centerFoot } = plan.shoe;
+  const w: Record<ArmSide, number> = { left: 0, right: 0 };
+  let setFeet = 0;
+  for (const s of SIDES) {
+    const f = plan.feet[s];
+    if (f.mode !== 'planted') continue;
+    const cs: Vec3[] = [];
+    for (const x of [-he.x, he.x]) for (const z of [centerFoot.z - he.z, centerFoot.z + he.z]) cs.push(add(f.ankleW, qRot(f.footQ, v3(x, centerFoot.y - he.y, z))));
+    const low = Math.min(...cs.map((c) => c.y));
+    const pitch = Math.asin(clamp(qRot(f.footQ, v3(0, 0, 1)).y, -1, 1));
+    const set = Math.abs(pitch) <= (K.set.pitchDeg * Math.PI) / 180 && (cs[0].y + cs[2].y) / 2 - low <= K.set.heelM;
+    w[s] = set ? 1 : 0.5;
+    if (set) setFeet++;
+  }
+  return { share: Math.max(w.left, w.right) * K.oneFoot + Math.min(w.left, w.right) * (1 - K.oneFoot), setFeet };
+}
+
+/**
+ * A man's contest capacity (N): his push and his hold (`BlockContest`). `lowM`: his man's hips' height less his (m, +:
+ * he is lower); `feet` his feet's share (`contestFeet`); `level` how far he is stood up; `anchored` (no hold without);
+ * `leverage` (1: none); `driveCapN` his drive's own bound (the push never past it); `burstN` while he strikes, the force
+ * his palms put on his man (N; 0 otherwise). `brakeN`: his push braking (his ordinary push, never the burst).
+ */
+export function contestCapacity(K: BlockContest, inp: { effort: number; lowM: number; feet: number; level: number; anchored: boolean; leverage: number; driveCapN: number; burstN: number }): { pushN: number; brakeN: number; holdN: number } {
+  const e = clamp(inp.effort, 0, 1);
+  const k = clamp(1 + K.low.perM * inp.lowM, K.low.min, K.low.max) * clamp(inp.feet, 0, 1) * Math.max(0, inp.leverage);
+  const L = clamp(inp.level, 0, 1);
+  const own = 1 - K.stood.pushCut * L;
+  const brakeN = Math.min(K.pushN * e * k * own, Math.max(0, inp.driveCapN));
+  const pushN = Math.min(Math.max(K.pushN * e * k * own, Math.min(K.burst.pushN * e * k * own, inp.burstN)), Math.max(0, inp.driveCapN));
+  const holdN = inp.anchored ? K.holdN * (K.holdFloor + (1 - K.holdFloor) * e) * k * (1 - K.stood.holdCut * L) : 0;
+  return { pushN: Math.max(0, pushN), brakeN: Math.max(0, brakeN), holdN: Math.max(0, holdN) };
+}
+
+/**
+ * The contest's force along the line to his man (N, + toward him) at his speed `v` along it (m/s, + toward him) and the
+ * speed his request asks `vWant` (m/s): his push on its force-velocity line plus his hold while he is moved away (his
+ * request toward his man). `holdPushes` (a fault, `SimDebug.block.contestHoldPushes`): the hold pushes him toward his man
+ * whatever his motion.
+ */
+export function contestForce(K: BlockContest, cap: { pushN: number; brakeN: number; holdN: number }, v: number, vWant: number, holdPushes = false): { F: number; push: number; hold: number } {
+  const span = Math.max(Math.abs(vWant), K.spanMps);
+  const x = clamp((vWant - v) / span, -1, 1);
+  const push = x * (x >= 0 ? cap.pushN : cap.brakeN);
+  // (moved away faster than he asks: his request's own speed away from his man is his, not the hold's)
+  const back = Math.max(0, Math.min(0, vWant) - v);
+  const ecc = back <= K.holdMps ? back / K.holdMps : 1 + (K.ecc.x - 1) * clamp((back - K.holdMps) / Math.max(1e-6, K.ecc.mps - K.holdMps), 0, 1);
+  const hold = holdPushes ? cap.holdN : cap.holdN * ecc;
+  return { F: push + hold, push, hold };
+}
+
+/**
+ * One substep of a man's contest state after the solve before it: `v` his speed along the line (m/s, + toward his man),
+ * `behindM` how far his centre of mass is behind his feet along it (m, + behind), `margin` his man's push over what he
+ * pushes and holds with, less 1, `leanRad` his legs' lean, at time `t`. The level follows his knock-back (his acceleration
+ * away from his man since the last substep); the fall clauses run their clocks and, once one has held its time, `down`
+ * says which (and stays).
+ */
+export function advanceContest(st: ContestState, K: BlockContest, inp: { v: number; behindM: number; margin: number; leanRad: number }, t: number, dt: number): void {
+  // (only his speed away from his man growing: a man stopped in his charge is not knocked back)
+  const knock = st.vPrev === null ? 0 : Math.max(0, (Math.max(0, -inp.v) - Math.max(0, -st.vPrev)) / dt);
+  st.vPrev = inp.v;
+  const [k0, k1] = K.stood.knockMps2;
+  const want = clamp((knock - k0) / (k1 - k0), 0, 1);
+  const tau = want > st.level ? K.stood.attackS : K.stood.releaseS;
+  st.level += (want - st.level) * (1 - Math.exp(-dt / tau));
+  if (st.down) return;
+  const F = K.fall;
+  const clock = (on: boolean, since: number | null): number | null => (on ? (since ?? t) : null);
+  st.outrunT = clock(inp.behindM > F.behindM, st.outrunT);
+  st.overT = clock(st.level >= F.overLevel && -inp.v > F.overMps && inp.margin > F.overMargin, st.overT);
+  st.leanT = clock(inp.leanRad > (K.anchorLeanDeg * Math.PI) / 180, st.leanT);
+  const held = (since: number | null, s: number): boolean => since !== null && t - since >= s - 1e-9;
+  if (held(st.leanT, F.leanS)) st.down = 'pastAnchor';
+  else if (held(st.overT, F.overS)) st.down = 'overpowered';
+  else if (held(st.outrunT, F.outrunS)) st.down = 'outrun';
+}
+
+/**
  * The centre of pressure (world, on the ground) the balance torque `tau` asks for: the support's ground point `pivot`
  * moved by cross(up, tau) / weight (a torque about the push line's level normal moves it along the line, one about the
  * line moves it across). Horizontal only; `weightN` > 0.

@@ -299,7 +299,7 @@ export interface PlayerTraceRow {
   /** Contact motion M2 (`FixtureDef.brace`, the carrier): brace weight w, threat th (null: none), its predicted contact tc (s). */
   br?: { w: number; th: PlayerId | null; tc: number | null };
   /** Plan 16: a blocking player's engaged state: phase ph and his man t; his punch's phase pu and number pn (a strike). */
-  blk?: { ph: string; t: PlayerId; pu?: string; pn?: number };
+  blk?: { ph: string; t: PlayerId; pu?: string; pn?: number; /** Plan 16 (p37): the contest's level, force along the line (N) and anchored. */ lv?: number; F?: number; an?: number };
   /**
    * Plan 06a suspension support (last substep of the tick): probed root height h, target ht and its rate vt, stance
    * request req (before the range clamp), clip-derived running height run (null when no clip plays) and its bob scale s,
@@ -1577,7 +1577,9 @@ export class Simulation {
       if (v.loss && v.reason === 'recoveryEnvelope' && this.rideSupported(pl, m.theta, m.bodyUp)) continue;
       // contact motion polish 1.4, the bound-legs fall: a carrier whose legs a holder has bound cannot support himself
       const bound = this.def.wrap?.bind ? this.boundLegs(pl, m.theta) : null;
-      if (v.loss || bound) {
+      // plan 16 (p37): a blocker the contest takes down (overpowered, outrun, or leaned past where he is anchored)
+      const beaten = !this.opts.debug?.block?.contestNoFall ? pl.block?.contest?.down : undefined;
+      if (v.loss || bound || beaten) {
         bal.pendingLoss = true;
         bal.lossT = this.t;
         const ids: string[] = [];
@@ -1588,7 +1590,7 @@ export class Simulation {
         }
         for (const o of this.contactObs[pl.id] ?? []) ids.push(`contact:${pl.id}>${o.other}:${o.ownClass}>${o.otherClass}`);
         this.emit('lossOfSupport', pl.id, {
-          reason: v.loss ? v.reason : 'boundLegs',
+          reason: v.loss ? v.reason : bound ? 'boundLegs' : `contest:${beaten}`,
           ...(!v.loss && bound ? { bind: bound } : {}),
           leanAngleRad: round(m.theta, 5),
           leanDeg: round(deg(m.theta), 3),
@@ -1990,7 +1992,7 @@ export class Simulation {
     for (const pl of this.players) balance[pl.id] = this.balanceState(pl);
     // plan 16: the engaged states (absent while nobody blocks)
     let block: Snapshot['block'];
-    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}) };
+    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}), ...(pl.block.contest ? { stood: pl.block.contest.level } : {}) };
     return { tick: this.tick, substep, t: this.t, bodies, contacts, pairGap: { ...this.pairGap }, arms, wrap, balance, ...(block ? { block } : {}) };
   }
 

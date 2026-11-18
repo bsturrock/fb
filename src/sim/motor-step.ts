@@ -4,22 +4,25 @@
 import type { Snapshot } from './contracts';
 import { computeDrive, computeYaw } from './motors';
 import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, desiredUpFrom, leanScale, postureGravityHold } from './balance';
-import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, UP } from './vec';
+import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, scale, sub, UP } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
 import { hingeBalanceTorque } from './hinge';
-import { advanceGive, baseCeiling, baseMoments, copBounds, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
+import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
   Simulation,
+  | 'arms'
   | 'balanceProfile'
   | 'balanced'
   | 'coreBody'
   | 'def'
+  | 'opts'
   | 'physics'
   | 'players'
   | 'suspension'
+  | 't'
 >;
 
 export const EMPTY_APPLIED = (): AppliedRecord => ({
@@ -71,6 +74,8 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
     // plan 13e: the idle sway joins the drive's request only
     const loco = pl.sway ? { ...pl.intent.locomotion, desiredVelocityWorld: add(pl.intent.locomotion.desiredVelocityWorld, pl.sway) } : pl.intent.locomotion;
     const drive = computeDrive(loco, b.linearVelocity, b.massKg, pl.motor, supported, ls * auth);
+    // plan 16 (p37, the contest): an engaged blocker's drive along the line to his man is his push and hold
+    if (pl.block?.contest) contestDrive(host, pl, drive, b, supported);
     const yaw = computeYaw(pl.intent.locomotion, b.rotation, b.angularVelocity.y, pl.motor, supported, auth);
     if (drive.cap > 0) pl.proxy.body.addForce(drive.force, true);
     let balReq = v3();
@@ -135,6 +140,65 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
       leanScale: ls,
     };
   }
+}
+
+/**
+ * Plan 16 (p37, block-base.ts `BlockContest`): the contest of a supported man engaged in a block, from the solved state
+ * before this substep. His state first (stood up, the fall clauses: his speed along the line to his man, his centre of
+ * mass against his feet's rearmost sole corner, his man's push against what he pushes and holds with, his legs' lean);
+ * then his capacity and his contest force, which takes the place of the drive's part along the line (the servo keeps
+ * the part across it). Not engaged (closing, or lost), the level only releases and nothing is changed.
+ */
+function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: ReturnType<typeof computeDrive>, b: Snapshot['bodies'][string], supported: boolean): void {
+  const blk = pl.block!;
+  const st = blk.contest!;
+  const K = st.profile;
+  const him = host.players.find((o) => o.id === blk.target);
+  const dt = host.physics.dt;
+  if (blk.phase !== 'engaged' || !supported || !pl.sus?.active || !pl.feet || !him || him.rag) {
+    st.level *= Math.exp(-dt / K.stood.releaseS);
+    st.vPrev = null;
+    st.outrunT = st.overT = st.leanT = null;
+    st.forceN = st.pushF = st.holdF = 0;
+    return;
+  }
+  const me = pl.proxy.body.translation();
+  const to = host.coreBody(him).translation();
+  const d = v3(to.x - me.x, 0, to.z - me.z);
+  const u = len(d) > 1e-9 ? norm(d) : v3(0, 0, 1);
+  const v = dot(b.linearVelocity, u);
+  // his centre of mass behind his feet: their rearmost sole corner along the line, as shown
+  const com = b.centerOfMassWorld;
+  const { he, centerFoot } = pl.feet.shoe;
+  let rear = Infinity;
+  for (const s of ['left', 'right'] as const) {
+    const f = pl.feet.feet[s];
+    for (const z of [centerFoot.z - he.z, centerFoot.z + he.z]) for (const x of [-he.x, he.x]) rear = Math.min(rear, dot(add(f.ankleW, qRot(f.footQ, v3(x, 0, z))), u));
+  }
+  const H = him.block?.contest;
+  const margin = H ? H.pushN / Math.max(1e-6, st.pushN + st.holdN) - 1 : -1;
+  advanceContest(st, K, { v, behindM: rear - dot(com, u), margin, leanRad: pl.balance.theta }, host.t, dt);
+  // his capacity: effort (the fault: 1 for every man), how low he is against his man (the posed hips), his feet, stood up
+  const hipY = (p: typeof pl): number => (p.pose ? (p.pose.jointLandmarksWorld.leftHip.y + p.pose.jointLandmarksWorld.rightHip.y) / 2 : p.proxy.body.translation().y);
+  const feet = contestFeet(pl.feet, K);
+  st.anchored = feet.setFeet > 0 && pl.balance.theta <= (K.anchorLeanDeg * Math.PI) / 180;
+  const dbg = host.opts.debug?.block;
+  // (striking, from the throw to `burst.s` into the drive after it: what his palms put on his man last substep)
+  const pu = blk.punch;
+  const striking = !!pu && (pu.phase === 'strike' || (pu.phase === 'drive' && host.t - pu.since < K.burst.s));
+  let burstN = 0;
+  if (striking && host.arms) for (const side of ['left', 'right'] as const) {
+    const e = host.arms.lastForce.get(`${pl.id}:${side}`);
+    if (e && e.kind === 'push' && e.target === him.id) burstN += e.actual;
+  }
+  const cap = contestCapacity(K, { effort: dbg?.contestEffortBlind ? 1 : (pl.intent.block?.request.effort ?? pl.intent.locomotion.effort), lowM: hipY(him) - hipY(pl), feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN });
+  st.pushN = cap.pushN;
+  st.holdN = cap.holdN;
+  const f = contestForce(K, cap, v, dot(drive.requestedVelocity, u), !!dbg?.contestHoldPushes);
+  st.forceN = f.F;
+  st.pushF = f.push;
+  st.holdF = f.hold;
+  drive.force = add(sub(drive.force, scale(u, dot(drive.force, u))), scale(u, f.F));
 }
 
 /**

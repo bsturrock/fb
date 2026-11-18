@@ -268,7 +268,7 @@ export interface Snapshot {
   /** Gate 3 balance state per player (free-rotation stance; zeros under the locked legacy stance). */
   balance: Record<PlayerId, BalanceState>;
   /** Plan 16: every blocking player's engaged state (absent while nobody blocks). */
-  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since' | 'punch'> & { /** Plan 16 (p36): his giving ground's level (a profile with `give`). */ give?: number }>;
+  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since' | 'punch'> & { /** Plan 16 (p36): his giving ground's level (a profile with `give`). */ give?: number; /** Plan 16 (p37): how far the contest has him stood up (a profile with `contest`). */ stood?: number }>;
 }
 
 /**

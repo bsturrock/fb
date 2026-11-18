@@ -4,8 +4,8 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type StanceGeometry } from '../controllers/block';
-import { BASE_V2 } from '../block-base';
+import { BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type StanceGeometry } from '../controllers/block';
+import { BASE_V2, CONTEST_V1 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
@@ -137,6 +137,12 @@ export const BLOCK_V1_HARD_NO_HINGE: BlockProfile = { ...BLOCK_V1_HARD, id: 'blo
  * wider, not super wide").
  */
 export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, BASE_V2, 0.03);
+/**
+ * Plan 16 (p37): a BL man's block on the contest (CONTEST_V1: his push and hold decide who moves; no base, so his balance
+ * is the supported model's own), punching with the strike, the stance 3 cm wider per foot as on the base (no fixture
+ * has it yet).
+ */
+export const contested = (p: BlockProfile = BLOCK_V1): BlockProfile => withContest(withStrike({ ...p, stance: { ...p.stance, widthAddM: 0.03 } }, BLOCK_STRIKE_V1), CONTEST_V1);
 /** A BL man's block (p33): on his base (`based`), punching with the strike (BLOCK_STRIKE_V1: load, strike, drive). */
 const struck = (p?: BlockProfile): BlockProfile => withStrike(based(p), BLOCK_STRIKE_V1);
 const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: struck(profile) });
