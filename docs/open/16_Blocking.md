@@ -54,14 +54,19 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    displaced, then committed steps of real length. `FLAT_V1` is in, flag off (feet placed so the shin stays inside
    the ankle's range, a block-scoped step trigger with a dead zone); its flip for `BL` is **parked** (worktree
    `.scratch/p34/parked/`) for two reasons, which are the two steps left here:
-   a. **The base reads nothing behind a flat foot.** `BASE_V2` measures from the support pivot, which the legs-frame
-      lean puts 8-14 cm behind the hips; every flat sole is ahead of it, so the back base is 0 and `-F7` falls (it
-      stood before only on a toe brace 35 cm back). The pivot belongs within the soles, or the base is measured from
-      them.
-   b. **The posture reads as sitting in a chair**: hips too low for a flat foot, so the feet go 20 cm ahead of the
-      hips, shins vertical, thighs level, trunk upright, the two men's knees meeting. An athletic stance is higher
-      and hinged: hips back and up, trunk well forward, shoulders over the toes, shins leaning within range, feet
-      about under the hips, the men's hips further apart.
+   a. **Done, flag off** (`e3720a7`): `BASE_V3` holds the centre of pressure inside the touching soles plus the
+      ground point under his centre of mass (a heel up to 3 cm and 10 deg counts as bearing), and `ATHLETIC_V1` is a
+      stance derived from the leg geometry (load thigh 45 deg, shin 23 deg, trunk 30 deg, hips 0.82 m, hips 1.23 m
+      apart). In the probe the even scenes stand flat 98-100 % of the time with 0-1 steps in 9 s.
+   b. **Left: giving ground.** The flip of flat + athletic + `BASE_V3` is parked (worktree `.scratch/p35/parked/`):
+      a flat base gives 70-140 N m behind him, a hard push asks 650-1200, and a man whose weight goes behind his rear
+      heel has no backward step (the flat rule keeps the foot's home ahead of where it stands), so he leans back
+      40 deg like a plank for 0.7 s and falls (`-F7` A, `-F2` A, `-F3` both, `-F4` A). The rule is right: he cannot
+      hold that from where he stands; he must give ground. So: when the needed pressure leaves his soles backward he
+      is stood up (hips rise) and takes committed steps back, pushing off and landing on the ball then settling
+      flat, until his feet are under him again, then anchors. He falls only when the steps cannot catch him.
+      **Decision:** `-F7`'s bar changes from "stands where he is" to "is driven back on his feet and stays up";
+      standing still against a push four times his base was only ever possible on the old toe brace.
 3. **Inside hands and the contest.** The winner gets under and stands the loser up: the loser's posture rises and
    what he can resist drops, so he is driven up and back. The big move happens at the first collision (user): the
    loser is knocked up and back in a burst, then anchors and fights back; later pushing is usually slower and
