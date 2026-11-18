@@ -1,17 +1,18 @@
 # Plan 16 handoff: blocking, the rough first slice (in progress)
 
 Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `model-integration`, both pushed.
-State on 2026-11-17: the palm push, the block controller with its engaged state and the `BL` scenes are in; the user's
-first lab look is outstanding; the base (standing against a hard push) and the stance from the user's animations are
-next. 590/590 tests; the 414 earlier fixtures' summaries and traces are byte-identical to before the plan. Current
-full-check baseline: main checkout `.scratch/p31/final`.
+State on 2026-11-17: the palm push, the block controller with its engaged state, the `BL` scenes and the base
+(standing against a hard push from the planted feet) are in; the user has had a first lab look ("as a start this looks
+ok"; the picture of a block that came from it is at the top of the plan). The punch as a strike is next. 596/596
+tests; the 414 earlier fixtures' summaries and traces are byte-identical to before the plan. Current full-check
+baseline: main checkout `.scratch/p32/resist`.
 
 ## To resume
 
-1. Get the user's verdict on the lab scenes below, and the path of the blocking animations the user is preparing.
-2. Build the base (plan, "Left", item 1), flag off then on for `BL`, full check against `.scratch/p31/final`.
+1. Build the punch (plan, "Left", item 2), flag off then on for `BL`, full check against `.scratch/p32/resist`.
+2. Then the user's lab look at base and punch together; ask for the path of the blocking animations being prepared.
 3. One builder at a time in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main
-   checkout's `.scratch/p32/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
+   checkout's `.scratch/p33/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
 
@@ -19,7 +20,9 @@ Lab (`cam=front` is the profile view of two men facing each other; `cam=side` sh
 - `?fixture=BL-F2-walkIn&cam=front&speed=0.25&t=1.2` walk in and engage
 - `?fixture=BL-F3-blockerDrives&cam=front&speed=0.25&t=4` the drive
 - `?fixture=BL-F5-offCentre&cam=front&speed=0.25&t=4` off centre
-- `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=2.4` the known failure: both tip backwards and fall
+- `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.6` the pushed man steps a foot back and braces, then holds (`t=3`)
+- `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=1.5` the pushed man is overpowered in his step back and falls;
+  the other now stays up (before the base both fell)
 
 ## Owner rulings (2026-11-17)
 
@@ -67,6 +70,22 @@ mirror, `-F7-hard`, `-F8-hardNoHinge`. The layers the family takes are named in 
 (`src/sim/fixtures/index.ts`): the L3 layers, with its own arm profile `+palm-push-block`. BL is in the leg and L4
 matrices because it carries the leg guard and the fall response. The opt-in families' rule tests now name BL.
 
+**The base** (`ae02599`..`35ce717`; `src/sim/block-base.ts`). Two profiles, both on for `BL` only and only for a man
+engaged in a block. `BASE_V1`, the stance: feet about under the hips, 3 cm wider per side (user: "slightly wider, not
+super wide"); the point where his pressure must be is the support's ground point moved by balance torque over weight,
+and a foot's home moves until its heel is 8 cm past that point, so a step back happens only when a push needs
+pressure behind his heel (and the home is more than a 12 cm step away). `BASE_V2`, the resistance: what he can resist
+is his weight times how far his touching soles reach from the support's ground point, behind, ahead and to each side;
+a foot mid-step gives nothing, a lifted heel gives only the toe. It replaces the fixed 240 N m balance cap, only ever
+limits, and is exact for this model (torque on the support point is a shift of the centre of pressure). Lean target
+and envelope are unchanged. At the default stance a man holds about 125 N m of tipping moment from his lean alone;
+past that the rear foot goes back. Tests `tests/block-base.test.ts` (6 with twins). Seen: light and even scenes
+unchanged, nobody steps; `-F7-hard` steps 0.3 m back at 0.75-0.9 s and stands all 9 s on a long base; `-F8` A falls
+at 1.90 s (was 2.65), B stays up (was down at 2.76). Pushed harder than `-F7` (probe scenes, 2.4-4.4 m/s asked), the
+pushed man goes at about 0.95 s in his step back and the pusher lurches forward into the gap at 1.2-1.3 s. The rule
+would work for any supported man but is not applied outside blocking: heel lift in a crouch leaves no base behind, so
+it would weaken many L3 and HC players; an opt-in trial (the carrier's brace) would be its own step.
+
 **What a viewer sees.** Hands on in about 0.5 s; the men square, hips back, knees bent, chests 0.66-0.70 m apart, for
 the whole scene; the stronger man drives the other back about 2 m at 0.24 m/s in short steps with no gallop; the man
 walking in brakes and engages without a chest bump.
@@ -76,11 +95,13 @@ walking in brakes and engages without a chest bump.
 1. Forearm through forearm, 8-9 cm, sustained in every scene. Under/over hands cut it from 12 cm; arms avoid bodies,
    not other arms. Named on `BLOCK_V1_HANDS`.
 2. The crouch is deep and A-framed. Waits for the user's animations.
-3. No base. The rear foot does not go behind the hips (even scene: front foot +0.14 m, rear +0.03 m along the push
-   line; the requested 0.24 m stagger is not kept). Balance torque 123-129 N m in the even scene; 180 steady in
-   `-F7-hard` with a 0.17 s peak of 454-518 over the 240 cap; in `-F8` the hands come off at about 2 s and both men
-   are ragdolls by 2.76 s. Without the hinge, any request of 1 m/s or more tips both backwards in about 4 s.
-4. The driven man has both feet off the ground for 0.18-0.23 s (`-F3`, `-F4`).
+3. The brace: the rear foot lands on its toe with the heel about 22 cm up, and the step back is the weak moment (no
+   base behind him while the foot is in the air; `-F7` dips and gives a little ground, harder pushes fell him there).
+   Placing the foot by its toe would give a longer base. A quicker or earlier step is the other lever.
+4. `-F8`: the man left standing steps onto the fallen one, foot up to 3.4 cm inside him for about 0.5 s, left foot
+   stepping twice. The stepping model's existing exception for a foot planted in another player; his block has ended
+   by then. (The old "both feet off the ground 0.18-0.23 s" in `-F3`, `-F4` measured drawn ankle height, which the
+   crouch's heel lift inflates; with both soles more than 2 cm up it is 0 s.)
 5. `-F8`: the fallen man's upper arm 11.4 cm in his own trunk from 2.65 s, and one substep each way over the power
    ceiling in his fall (165 W against 135 W predicted): the two new L4 matrix entries (12 over the ceiling, 10 before).
 6. A starting stance with a stagger (`initial.stance.staggerM`) slides the planted foot 5.8 cm at scene start. The BL
@@ -105,7 +126,9 @@ the L2 traces.
 ## Evidence
 
 - Full checks (main checkout): `.scratch/p28/final` (cleanup), `.scratch/p30/final` (palm push),
-  `.scratch/p31/final` with `final.compare.txt` (controller and BL).
+  `.scratch/p31/final` with `final.compare.txt` (controller and BL), `.scratch/p32/stance` and `.scratch/p32/resist`
+  with their `.compare.txt` (the base).
 - Probes and stills (worktree): `.scratch/p29/` (before), `.scratch/p30/` (palm push in the probe scenes),
-  `.scratch/p31/` (BL). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
+  `.scratch/p31/` (BL), `.scratch/p32/` (the base; `stills/`, and `lab/vite.probe.config.ts` for the harder-push and
+  feet-together scenes). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
 - Main checkout `.scratch` is 219 MB after pruning plan 15's check results; what is left is from plans before 15.

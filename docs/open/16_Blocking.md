@@ -1,8 +1,8 @@
 # 16. Blocking
 
 Status (2026-11-17): the rough first slice is in the lab (palm push, block controller with its engaged state, the `BL`
-scenes); what was built, the owner's rulings, the tracked defects and the lab links are in the
-[handoff](../handoff/plan16.md). Outstanding: the user's first lab look. Left: the list below.
+scenes) and the base is built; what was built, the owner's rulings, the tracked defects and the lab links are in the
+[handoff](../handoff/plan16.md). Next: the punch, then the user's lab look at base and punch together.
 
 ## What a viewer should see (user, 2026-11-17, after the first lab look: "as a start this looks ok")
 
@@ -10,7 +10,9 @@ scenes); what was built, the owner's rulings, the tracked defects and the lab li
   explode out together, low to high, aimed at the centre of the chest (the chest pads), and drive in and up. The punch
   is the main weapon of the block.
 - **Inside control wins.** Whoever gets the centre, inside hand position has the leverage and generally wins.
-- **A wide, strong base.** Close legs with bent knees right under the hips cannot withstand a block.
+- **A stronger base, not a wide one.** Close legs with bent knees right under the hips cannot withstand a block; but
+  feet under the hips is good, "maybe slightly wider, not super wide". A foot goes back to brace when the push calls
+  for it, not as the standing pose.
 - **Two entries.** From a three-point stance (very low to high); and from running (the play developing, next-level
   blocks): still load low with the legs and explode low to high, less pronounced, since he is already moving and more
   upright.
@@ -33,12 +35,8 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
 
 ## Left
 
-1. **The base.** A push at shoulder height is a moment the balance torque (240 N m) cannot hold, so at hard pushes
-   both men tip backwards. The moment a man can resist comes from his base: weight times the distance from his hips to
-   his rear planted foot along the push line, read from the posed feet. With it, the stance must keep a foot back
-   (today the rear foot sits at +0.03 m and the requested stagger is not kept), so a man with a foot back leans in and
-   holds and a man with his feet together goes over. Flag off, then on for `BL`; `BL-F8-hardNoHinge` is the scene.
-   The base is wide and staggered, not feet under the hips (user).
+1. **The base: done** (`BASE_V1`, `BASE_V2` on `BL`; see the handoff). A man resists what his planted feet give and
+   steps a foot back when the push needs it.
 2. **The punch as a strike.** Today the hands drift on and hold. A block's punch is a timed move: a load (hips and
    knees sink, hands in at the chest), then an explosive extension of both arms together with the hips and trunk
    rising, low to high, into the centre of the chest, then the drive in and up. Phases on the controller, so a later
