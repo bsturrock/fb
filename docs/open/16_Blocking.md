@@ -1,6 +1,8 @@
 # 16. Blocking
 
-Status (2026-11-17): planned; step 1 (the probe) is next. Nothing built.
+Status (2026-11-17): the rough first slice is in the lab (palm push, block controller with its engaged state, the `BL`
+scenes); what was built, the owner's rulings, the tracked defects and the lab links are in the
+[handoff](../handoff/plan16.md). Outstanding: the user's first lab look. Left: the list below.
 
 ## What a viewer should see (first slice; orchestrator's assumption, user to correct in the lab)
 
@@ -12,123 +14,28 @@ overpowered. Not in the first slice: shed moves, getting round, pass-rush choice
 
 - **Rough and end to end first**, then polish what looks worst in the lab, together with the parked footwork queue
   (plan 15) and the parked tackle list.
-- **Legs stay posed** (user, 2026-11-17: load-bearing feet are physics, which this project does not do). If a pushed
-  man looks wrong (slides back with both feet planted behind him, or holds like a wall on one foot), the fix is a rule:
-  how hard he can push back reads where his feet are planted. Only if the lab shows the need.
-- **A behaviour a brain can pick** (user, 2026-11-17: each player eventually gets an internal state machine that
-  drives what he does). Blocking is its own controller kind with a clear request, beside `wrapAttempt`
-  (`ControllerSpec`, `src/sim/fixture.ts`; `makeController`, `src/sim/controllers/index.ts`). Rules it needs in the
-  simulation are keyed on the player's own state, not on a fixture-wide profile the way the tackler's drive, ride and
-  bound-legs rules are keyed on `def.wrap`. No selection logic until asked.
+- **Legs stay posed** (user). Where a pushed man must resist from his feet, a rule reads the planted feet.
+- **A behaviour a brain can pick** (user: each player eventually gets an internal state machine). Own controller kind,
+  small request, simulation rules keyed on the player's own state. No selection logic until asked.
 - Arms in the existing three stages (authored source pose, one task, one final pass); no per-case guards.
+- The men are held apart at arm's length by their hands, not chest to chest (from the probe).
 
-## What exists and what is missing
+## Left
 
-Map with paths and line numbers: worktree `.scratch/p28/blocking-map.md` (2026-11-17, head `e73335e`). In short:
-controllers, arm reach onto another body, force budgets and contact stepping exist; a palm that pushes does not (the
-palm grip is tension-only, only the forearm clamp pushes, and the palm band stops below the upper chest); the only
-ground resistance is the drive motor's cap; `Role` is `runner | defender` and `runner` implies the ball; there are no
-stance, punch, shuffle or backpedal clips, and `../football-sim-6` is empty.
+1. **The base.** A push at shoulder height is a moment the balance torque (240 N m) cannot hold, so at hard pushes
+   both men tip backwards. The moment a man can resist comes from his base: weight times the distance from his hips to
+   his rear planted foot along the push line, read from the posed feet. With it, the stance must keep a foot back
+   (today the rear foot sits at +0.03 m and the requested stagger is not kept), so a man with a foot back leans in and
+   holds and a man with his feet together goes over. Flag off, then on for `BL`; `BL-F8-hardNoHinge` is the scene.
+2. **Stance and punch from the user's animations** (being prepared): hips back, trunk pitched, knees clear; replaces
+   the controller's one stance request. Reference for the look, and source poses if on the model skeleton.
+3. **Force contest**, as far as the lab shows the need: push strength from effort rather than requested speed, choppy
+   steps while giving ground, lean building to a real fall when overpowered.
+4. **Polish** in the handoff's defect order (forearm through forearm first), after the user's look.
+5. **Milestone:** lab review by the user after 1 and 2.
 
-## Step 1, the probe (done 2026-11-17, no source change)
-
-23 untracked scenes built from `L3-F6-hold` with every L3 flip, no `wrap`, no `rules`, two model-body script players
-(worktree `.scratch/p29/`: `scenes.ts`, `probe.ts`, `out/*.json`, `stills/`; lab view of unregistered scenes through
-`vite.probe.config.ts`). What two men do today with existing pieces only:
-
-- **Chest to chest they hold each other up easily, and look wrong.** The torso boxes carry the whole push (400 N at a
-  1 m/s request, 1200 N at 3 m/s), lean 0.1-1.6 deg, balance torque 6-9 N m of 240. They stand upright as an A-frame,
-  facemasks meshed, arms hanging or swept back to the hips, thighs 16-21 cm through each other for 0.5-1.0 s (the leg
-  guard leaves 0.18-0.22 m unresolved), then freeze to the millimetre.
-- **The forearm clamp is not a push.** Elbows tucked about 85 deg, the two men's hands meet between the chests; contact
-  on the torso box's side edges; force chatters (about 3000 clamp events in 8 s, mean 95-230 N); the flickering contact
-  flips the feet between the clip and contact steps several times a second; any asymmetry twists the pair until both
-  fall (2.7-5.5 s). The palm grip is rejected `outsideBand` (chest at local y 0.42, band ends 0.40) and only pulls.
-- **No force contest.** The drive is a velocity servo: whoever requests more speed wins. The weaker man is pushed back
-  steadily (3.0 m, or 7.6 m out of bounds with his drive saturated 4.3 s), upright at 1.8 deg with no foot under his
-  hips for 4.1 s, and nothing ever makes him fall. Men driven back gallop (14-16); a still pair re-steps 2-4 mm about
-  40 times.
-- **Nothing ends it wrongly** without wrap and rules. With the L3 rules on, `progressStopped` ends the play 0.7 s after
-  contact. A `runner` braces (reads well) and keeps his carry arm. Prep mode's same-role filter was not reached.
-- Legs stay posed: nothing here needs load-bearing legs; what fails is where the legs are put and what the hands do.
-
-## Design (orchestrator, 2026-11-17, from the probe)
-
-The men must be held apart **at arm's length by the hands**, not chest to chest: that one change removes the meshed
-facemasks, the crossed thighs and the hanging arms. So, in order:
-
-1. **Palm push** (`arms.ts`): a compressive palm contact on the other man's chest or shoulder, a steady patch like the
-   torso contact rather than the clamp's on/off force, inside the existing arm budgets, with its own target band that
-   reaches the chest and shoulders. Flag off.
-2. **Block controller and engaged state**: a new `ControllerSpec` kind that steers at its man, keeps arm's length,
-   punches the hands on and holds them, and asks for push by effort. "Engaged" is a persistent state owned by the
-   player (the feet regime must not follow a flickering contact); the hip hinge and whatever else it needs read that
-   state, not `WrapProfile.strike`. No fixture uses it.
-3. **Fixtures on**: a new family `BL` (its own prefix, so nothing existing changes; it names the profile layers it
-   takes explicitly) with even, blocker stronger, defender stronger, walk-in, off-centre and mirrored scenes; in the
-   lab list. First rough look.
-4. **Stance and punch pose** from the user's blocking animations (promised 2026-11-17; reference for the look, and
-   source poses if on the model skeleton): hips back, trunk pitched, knees clear of the other man.
-5. **Force contest** (only as far as the lab shows the need): push strength from effort, push-back capacity read from
-   the planted feet (a rule; legs stay posed), choppy steps while giving ground, and lean building to a real fall when
-   overpowered.
-6. **Milestone:** lab review by the user.
-
-**Item 1 done (2026-11-17, `581dec4`, `7b76123`; flag off, 584/584, all 414 fixtures, traces and matrices
-byte-identical to `.scratch/p28/final`).** `ArmIntent.action: 'push'` with `PushRequest { effort, lengthM }`
-(`ArmScriptSegment.push` in scripts), profile `ArmProfile.palmPush` = `PALM_PUSH_V1`, reads `ArmSystem.pushOf`,
-`ArmObs.pushId`, events `pushBegin`/`pushEnd`/`pushRejected`, faults under `SimDebug.arm`
-(`tests/palm-push.test.ts`, 8 cases with twins). The patch is held in the pushed man's frame and the arm is a strut
-from shoulder to patch (spring on compression, damped, never negative, capped by elbow torque over the shown elbow's
-lever, tapering to zero as the elbow folds 75-100 deg); it yields under overload rather than releasing; a push counts
-as retention, so the feet regime no longer flickers. Seen in the probe scenes (worktree `.scratch/p30/`): the men stay
-0.3-0.4 m apart, arms out onto the chest, force steady (62 N per hand at a 0.3 m/s request, 102 N at 0.5), 4-8 push
-events a scene against the clamp's thousands. Open from it:
-
-- **Both men tip over backwards at about 4 s once the request reaches 1 m/s.** A push at shoulder height is a moment
-  the balance torque (240 N m) cannot hold, and chest contact no longer carries it between them. A 10 deg forward
-  posture lean does not help. This is the force contest's rule arriving early: the moment a man can resist must come
-  from his base, the distance from his hips to his rear planted foot (weight times that distance), so a man with a
-  foot back leans into a push and a man with his feet together goes over. Legs stay posed; the planted feet are read.
-- Symmetric hands share a lane, so the two men's forearms pass through each other; arms avoid bodies, not other arms.
-- The drawn palm sits 2-3.4 cm off the drawn chest (the patch is on the proxy box, as grips are).
-
-**Items 2 and 3 done (2026-11-17, `a219796`..`ab4b7b2`; 590/590, the 414 earlier fixtures' summaries and traces
-byte-identical, check `.scratch/p31/final` against `p30/final`).** First lab look is the user's (milestone).
-
-- Controller: `ControllerSpec` kind `block` (target, effort, hold or drive, hands `under|over`), profile `BLOCK_V1`
-  with `BLOCK_V1_HANDS`; the posture is one stance request (lean, hinge, drop, height, stagger) an authored pose can
-  replace. State: `PlayerRuntime.block`, phase `approach|engaged|lost`, advanced by `advanceBlockState`, observed as
-  `ctx.observed.block`. Read by `retained()` (the feet stay on contact stepping while engaged) and by the hinge
-  (`pl.block || pl.hinge?.limits`, no longer only `def.wrap.strike`). Faults `SimDebug.block`. Tests
-  `tests/block.test.ts` (6 with twins): follows his man, hands on within 0.8 s and kept, chest gap 0.62-0.80 m,
-  engagement survives 0.25 s without hands, a swap to another controller releases cleanly, the even scene stands 9 s.
-- Family `BL` (8 scenes, two `defender`s, no ball, no rules), its layers named in `registered()`: the L3 layers, its
-  arm profile `+palm-push-block`. `BL-F1-even`, `-F2-walkIn`, `-F3-blockerDrives`, `-F4-defenderStronger`,
-  `-F5-offCentre`, `-F6` its mirror, `-F7-hard`, `-F8-hardNoHinge` (shows the backward tip: hands off about 2 s, both
-  ragdolls by 2.76 s). BL is in the leg and L4 matrices because it carries the leg guard and fall response.
-- Seen: hands on in about 0.5 s; square, hips back, knees bent, chest gap 0.66-0.70 m; the stronger man drives the
-  other back about 2 m at 0.24 m/s in short steps, no gallop.
-
-Tracked from this step (polish order by look):
-
-1. Forearm through forearm, 8-9 cm, sustained in every scene (under/over hands cut it from 12 cm; arms avoid bodies,
-   not other arms).
-2. The crouch is deep and A-framed; the stance waits for the user's animations.
-3. The rear foot does not go behind the hips (even scene: front foot +0.14 m, rear +0.03 m along the push line; the
-   requested 0.24 m stagger is not kept), so there is no base to lean on. Balance torque 123-129 N m even, 180 steady
-   in `-F7-hard` with a 0.17 s peak of 454-518 over the 240 cap, 244 then about 1159 at the fall in `-F8`.
-4. The driven man has both feet off the ground 0.18-0.23 s (`-F3`, `-F4`).
-5. `-F8`: the fallen man's upper arm 11.4 cm in his own trunk from 2.65 s (ragdoll), and one substep each way over the
-   power ceiling in his fall (165 W against 135 W predicted): the two new L4 matrix entries.
-6. A starting stance with a stagger (`initial.stance.staggerM`) slides the planted foot 5.8 cm at scene start; the BL
-   scenes start square to avoid it. Own fix step.
-
-Next: the base (item 5's rule: resistible moment from hips to rear planted foot, and a stance that keeps a foot back),
-then the stance and punch from the user's animations.
-
-Each is flag off first, then on, full-checked (`CLAUDE.md`). Roles: first slice uses two `defender`s; a blocker role
-and the rules (`progressStopped`) wait until blocking meets a ball carrier.
+Each is flag off first, then on, full-checked (`CLAUDE.md`). Later, when blocking meets a ball carrier: a blocker role
+and the rules (`progressStopped`).
 
 ## Acceptance (viewer rules)
 
