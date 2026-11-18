@@ -104,6 +104,19 @@ settle; the men square, hips back, knees bent, chests 0.66-0.70 m apart, for
 the whole scene; the stronger man drives the other back about 2 m at 0.24 m/s in short steps with no gallop; the man
 walking in brakes and engages without a chest bump.
 
+**Flat feet, flag off** (`0d3a2e9`, `8030882`; `FlatStance`, `FLAT_V1` in `src/sim/block-base.ts`, `withFlat` in
+`controllers/block.ts`, `FootPlanInput.flat` into `contact-steps.ts`). Each foot's home moves ahead of its hip until
+the shin over a flat foot leans at most 20 deg; a planted shin 4 deg past the range forces a step; the step dead zone
+is a 16 cm cover and the want leads the hips by half the capture lead. On in the probe: even holds 100 % dead flat
+(before 51-92 % of planted time with the heel over 3 cm, worst 19-21 cm), one 15 cm step then planted for 8 s
+(before a stream of 6-13 cm steps); the driver takes 20 cm steps at 2.4 per second with 2.5 cm of lift (before 15 cm
+at 3.2 per second, a toe drag); a constructed knock-back takes two steps and settles (the model's own settings: four,
+dribbling back). Strike contact numbers unchanged. **The flip is parked**, see the plan for why and what is next.
+Tests `tests/block-flat.test.ts`; the `load.closeMps` test is in `tests/block-strike.test.ts` (f). 608/608.
+Found in the shared stepping model, not changed: swing lift is measured from the start height, so a lifted heel kills
+the lift (the toe drag); an infinite gain overrides the feet taking turns (the 3 cm steps); step length stays near
+cover plus lead whatever the speed; a planted foot cannot step while the other swings.
+
 ## Tracked defects (polish order by look)
 
 1. Forearm through forearm, 4.8-7.8 cm with the strike (8-9 before), sustained in every scene. Arms avoid bodies, not
