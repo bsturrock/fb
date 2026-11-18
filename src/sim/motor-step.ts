@@ -8,12 +8,14 @@ import { add, v3, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forw
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
 import { hingeBalanceTorque } from './hinge';
+import { baseCeiling, baseMoments, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
   Simulation,
   | 'balanceProfile'
   | 'balanced'
+  | 'coreBody'
   | 'def'
   | 'physics'
   | 'players'
@@ -90,6 +92,9 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
             : Sb?.balanceCeiling === 'appliedLoad'
               ? Math.min(B.maxBalanceTorqueNm, pl.sus.appliedN * pl.body.supportRadiusM)
               : availableBalanceTorque(B, b.massKg, g, pl.body.supportRadiusM);
+        // plan 16 (the base): an engaged blocker whose base resists holds what his planted feet give (block-base.ts)
+        const base = baseOf(host, pl, b.massKg * Math.abs(g));
+        if (base) balCap = baseCeiling(base.m);
         // contact motion M2 follow-up: a braced carrier short of his desired lean holds the lean he has reached
         // (CarrierBracePose.leanHold)
         const up = upOf(b.rotation);
@@ -98,10 +103,13 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
         const hold = pl.sus ? postureGravityHold(holdUp, pl.sus.pivotN / Math.abs(g), g, pl.sus.leverM) : postureGravityHold(holdUp, b.massKg, g, bal.leverM);
         // contact motion polish 1.1: under a hip hinge, the legs' balance first, then the trunk's pitch (hinge.ts)
         const bt = pl.hinge ? hingeBalanceTorque(pl.hinge, b.rotation, b.angularVelocity, bal.desiredUp, B, balCap, hold, holdUp) : computeBalanceTorque(up, bal.desiredUp, b.angularVelocity, B, balCap, hold, holdUp);
+        const held = base ? limitToBase(bt.capped, base.m, base.u) : null;
         balReq = bt.requested;
-        balCapped = bt.capped;
-        balSat = bt.saturated;
-        const c = combineSupportTorque(bt.capped, yaw.cap > 0 ? yaw.torqueY : 0, B.combinedCeilingNm);
+        balCapped = held ? held.torque : bt.capped;
+        balSat = bt.saturated || !!held?.saturated;
+        // (the yaw keeps its room above the balance: the combined ceiling rises with a base past the fixed one)
+        const ceiling = base ? B.combinedCeilingNm + Math.max(0, balCap - B.maxBalanceTorqueNm) : B.combinedCeilingNm;
+        const c = combineSupportTorque(balCapped, yaw.cap > 0 ? yaw.torqueY : 0, ceiling);
         support = c.torque;
         supportScale = c.scale;
       } else support = v3();
@@ -124,4 +132,20 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
       leanScale: ls,
     };
   }
+}
+
+/**
+ * Plan 16: the base of a supported man engaged in a block whose profile's base resists (`BlockBase.resist`): what his
+ * planted soles give about his support's ground point, along the line to his man (null otherwise: the ordinary ceiling).
+ */
+function baseOf(host: MotorHost, pl: MotorHost['players'][number], weightN: number): { m: BaseMoments; u: ReturnType<typeof v3> } | null {
+  const blk = pl.block;
+  if (!blk?.base?.resist || blk.phase !== 'engaged' || !pl.sus?.active || !pl.feet) return null;
+  const him = host.players.find((o) => o.id === blk.target);
+  if (!him) return null;
+  const me = pl.proxy.body.translation();
+  const to = host.coreBody(him).translation();
+  const d = v3(to.x - me.x, 0, to.z - me.z);
+  const u = len(d) > 1e-9 ? norm(d) : v3(0, 0, 1);
+  return { m: baseMoments(soleContacts(pl.feet, SOLE_TOUCH_M), pl.sus.pivotPointWorld, u, weightN), u };
 }
