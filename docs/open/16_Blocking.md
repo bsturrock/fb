@@ -74,8 +74,13 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
       forward over planted feet, the heel lifts, and the sole base reads 0; the striker's own reaction (about 900 N
       for 0.1 s above his centre of mass) is more than a flat base returns; a flat rear foot behind the hips needs
       an almost straight leg; and the shared pose and stepping keep a toe landing on tiptoe, re-step it, and block
-      the foot that must re-anchor. **Open: a change of approach, awaiting the user** (see the handoff's "To
-      resume").
+      the foot that must re-anchor.
+   d. **Change of approach, agreed by the user 2026-11-18: the contest decides movement.** A planted, flat man in
+      his stance is anchored upright; what the punch and push do to him is move him (hips driven back, a burst at
+      the first collision, then he anchors), not tip him; how far and fast comes from a contest rule (the hit, effort,
+      who is lower; inside hands in item 3); his feet follow his hips with the flat step rule; he falls only when
+      the contest overpowers him or his steps cannot keep up. Legs stay posed. `BASE_V3`'s tipping clamp is not
+      used for this.
 3. **Inside hands and the contest.** The winner gets under and stands the loser up: the loser's posture rises and
    what he can resist drops, so he is driven up and back. The big move happens at the first collision (user): the
    loser is knocked up and back in a burst, then anchors and fights back; later pushing is usually slower and

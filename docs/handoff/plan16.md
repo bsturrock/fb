@@ -14,8 +14,8 @@ baseline: main checkout `.scratch/p33/on`.
    flip for `BL` was parked three times (worktree `.scratch/p34`, `p35`, `p36` `parked/`; the plan's item "Next: flat
    feet" says why). 620 tests; baseline main checkout `.scratch/p36/give-flagoff` (its 9 suite failures were
    timeouts under outside load; the five files pass alone, `rerun-timeouts.log`).
-2. Proposed to the user 2026-11-18, awaiting his word: stop deciding who is moved by a tipping moment about the
-   feet. The contest (punch, leverage, effort, who is lower) decides how far and fast a man is driven back; his feet
+2. **Agreed by the user 2026-11-18** (in build, check dir `.scratch/p37/`): stop deciding who is moved by a tipping
+   moment about the feet. The contest (punch, leverage, effort, who is lower) decides how far and fast a man is driven back; his feet
    follow his hips with the flat step rule (which works when he is moved rather than tipped); a planted, flat man in
    his stance is anchored upright; he falls only when the contest says he is overpowered or his steps cannot keep
    up. The alternative is to keep the literal base and first fix the shared pose and stepping (toe plants rolling
