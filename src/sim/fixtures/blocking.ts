@@ -5,7 +5,7 @@
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import { BLOCK_V1, withBase, type BlockHands, type BlockIntent, type BlockProfile } from '../controllers/block';
-import { BASE_V1 } from '../block-base';
+import { BASE_V2 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
@@ -94,10 +94,11 @@ export const BLOCK_V1_HARD: BlockProfile = { ...BLOCK_V1, id: 'block-v1-hard', d
 export const BLOCK_V1_HARD_NO_HINGE: BlockProfile = { ...BLOCK_V1_HARD, id: 'block-v1-hard-no-hinge', stance: { ...BLOCK_V1.stance, hingeDeg: 0, dropM: 0 } };
 
 /**
- * The BL men's base (p32): BASE_V1 with the stance 3 cm wider per foot (the owner, 2026-11-17: feet under the hips,
- * "maybe slightly wider, not super wide").
+ * The BL men's base (p32): BASE_V2 (the stance covers the pressure the balance asks for; the balance holds what the
+ * planted feet give) with the stance 3 cm wider per foot (the owner, 2026-11-17: feet under the hips, "maybe slightly
+ * wider, not super wide").
  */
-export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, BASE_V1, 0.03);
+export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, BASE_V2, 0.03);
 const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: based(profile) });
 const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: based(profile) });
 
