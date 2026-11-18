@@ -67,6 +67,9 @@ export function supportTargets(host: SupportHost, pl: PlayerRuntime, S: Suspensi
   // stagger is a pose request: rate-bounded so the feet never jump
   const sg = req?.staggerM ?? 0;
   st.staggerM += clamp(sg - st.staggerM, -S.stance.maxRateMps * dt, S.stance.maxRateMps * dt);
+  // plan 16 (the base): so is the stance's width (kept absent until something asks for one)
+  const wd = req?.widthAddM ?? 0;
+  if (wd !== 0 || st.widthAddM !== undefined) st.widthAddM = (st.widthAddM ?? 0) + clamp(wd - (st.widthAddM ?? 0), -S.stance.maxRateMps * dt, S.stance.maxRateMps * dt);
   let runM: RunHeight | null = null;
   const P = host.def.runClips;
   if (pl.run && P && host.heightModels && pl.run.w > 0) {

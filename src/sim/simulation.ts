@@ -641,6 +641,7 @@ export class Simulation {
         const h0 = clamp(st0?.heightM ?? S.standingHeightM, S.targetRangeM[0], S.targetRangeM[1]);
         sus = newSuspensionRuntime(h0);
         sus.staggerM = st0?.staggerM ?? 0;
+        if (st0?.widthAddM) sus.widthAddM = st0.widthAddM;
         const cal = this.heightCalibration(setup.body);
         let runM: RunHeight | null = null;
         if (run && def.runClips && this.heightModels) {

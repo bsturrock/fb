@@ -16,6 +16,7 @@ import type { ArmSide } from './contracts';
 import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, type Quat } from './vec';
 import { auditInput, keepLandmarks, recordTransition, type AuditHost } from './transition-audit';
 import type { Simulation, PlayerRuntime } from './simulation';
+import { braceHome, neededCop } from './block-base';
 
 /** What the pose runtime reads and writes on the simulation. */
 export type PoseHost = AuditHost &
@@ -105,7 +106,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
       memory: pl.poseMemory,
       sampled,
       ground: pl.sus
-        ? { y: pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0, staggerM: pl.sus.staggerM, ...(pl.controlMode === 'falling' ? { bodyRelative: true } : {}) }
+        ? { y: pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0, staggerM: pl.sus.staggerM, ...(pl.controlMode === 'falling' ? { bodyRelative: true } : {}), ...(pl.sus.widthAddM ? { widthAddM: pl.sus.widthAddM } : {}) }
         : undefined,
       dtS: dt,
       handoffPossible: !!host.def.ragdoll && !pl.rag && !pl.handoff,
@@ -580,15 +581,20 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
   const hips = {} as FootPlanInput['hips'];
   const home = {} as FootPlanInput['home'];
   const request = {} as FootPlanInput['request'];
+  const brace = braceOf(host, pl, R);
   for (const s of ['left', 'right'] as ArmSide[]) {
     const hip = toWorld(core, hipLocal(pl.body, s));
     hips[s] = hip;
     const st = (s === 'left' ? 0.5 : -0.5) * (inp.ground?.staggerM ?? 0);
     // plan 08: the fitted idle stance opens as the travel stops (the same width as the ordinary request)
-    const wide = inp.loco ? idleWidthAddM(inp.loco.profile, pl.body, s) * (s === 'left' ? -1 : 1) * idleStanceFade(inp.speed) : 0;
+    let wide = inp.loco ? idleWidthAddM(inp.loco.profile, pl.body, s) * (s === 'left' ? -1 : 1) * idleStanceFade(inp.speed) : 0;
+    // plan 16 (the base): a stance's own width on top (the ordinary request's too)
+    if (inp.ground?.widthAddM) wide += inp.ground.widthAddM * (s === 'left' ? -1 : 1);
     // plan 13e: the home leaves out the idle sway's displacement (the feet stay where the body stood)
     const sw = pl.swayM || v3();
     home[s] = v3(hip.x + fwdH.x * st + rightW.x * wide - sw.x, gy + soleM, hip.z + fwdH.z * st + rightW.z * wide - sw.z);
+    // plan 16 (the base): an engaged blocker's home covers the centre of pressure his balance asks for
+    if (brace) home[s] = braceHome(home[s], s, brace.rear, brace.u, brace.cop, brace.heelM, brace.toeM, brace.marginM);
     request[s] = toWorld(core, legRequestLocal(inp, s));
   }
   const P = host.def.runClips;
@@ -630,6 +636,31 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
     ...(host.def.jointRange ? { heelLift: true } : {}),
     ...(parts ? { ground: groundFor(parts, pl.id, gy + soleM + R.lengths.shin), legs: R, ...(host.def.jointRange ? { range: { profile: host.def.jointRange, sideX: { left: sideSignX(pl.body, 'left'), right: sideSignX(pl.body, 'right') } } } : {}) } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
+  };
+}
+
+/**
+ * Plan 16 (the base, `BlockBase.brace`): what an engaged blocker's feet must cover this substep, or null (no brace, not
+ * engaged, not standing on his support, his man gone). The push line runs from him to his man; the centre of pressure is
+ * the one this substep's balance request asks for (block-base.ts `neededCop`, at his nominal weight); his rear foot is
+ * the one his stance staggers back (the right while the left is forward).
+ */
+function braceOf(host: PoseHost, pl: PlayerRuntime, R: ProxyPoseInput['ragdoll']): { rear: ArmSide; u: Vec3; cop: Vec3; heelM: number; toeM: number; marginM: number } | null {
+  const B = pl.block?.base?.brace;
+  const sus = pl.sus;
+  if (!B || pl.block!.phase !== 'engaged' || pl.controlMode !== 'supported' || pl.rag || !sus?.active) return null;
+  const him = host.players.find((o) => o.id === pl.block!.target);
+  if (!him) return null;
+  const me = vc(pl.proxy.body.translation());
+  const u = norm(horiz(sub(vc(host.coreBody(him).translation()), me)), v3(0, 0, 1));
+  const W = pl.proxy.body.mass() * Math.abs(host.def.solver.gravityY);
+  return {
+    rear: sus.staggerM >= 0 ? 'right' : 'left',
+    u,
+    cop: neededCop(sus.pivotPointWorld, pl.applied.balanceRequested, W),
+    heelM: Math.max(0, R.shoe.halfExtents.z - R.shoe.forwardM),
+    toeM: R.shoe.forwardM + R.shoe.halfExtents.z,
+    marginM: B.marginM,
   };
 }
 

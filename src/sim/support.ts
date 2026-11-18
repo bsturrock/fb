@@ -53,6 +53,11 @@ export interface SuspensionRuntime {
   /** Feedforward acceleration of the target (m/s^2). */
   targetAMps2: number;
   staggerM: number;
+  /**
+   * Plan 16 (the base): the stance's extra width per foot (m), rate-bounded as the stagger is; absent until a stance
+   * request (or the reset's) asks for one, and read as 0 then.
+   */
+  widthAddM?: number;
   /** Clip-derived running height of this substep and its feasibility scale (NaN / 1 when no clip plays). */
   runM: number;
   bobScale: number;

@@ -57,7 +57,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       ...(m.walkInMps ? { velocity: v3(0, 0, sign * m.walkInMps) } : {}),
       // set in his stance's height, feet square: a reset into the stagger slides the rear plant 5.8 cm on the first
       // substep (p31); the stance request staggers them from there
-      ...(set ? { stance: { heightM: P.stance.heightM, staggerM: 0 } } : {}),
+      ...(set ? { stance: { heightM: P.stance.heightM, staggerM: 0, ...(P.stance.widthAddM ? { widthAddM: P.stance.widthAddM } : {}) } } : {}),
     },
     arms: { enabled: { left: true, right: true }, mode: { left: 'forearmClamp', right: 'forearmClamp' }, acquisition: false, closeEffortScale: 1 },
     controller: {

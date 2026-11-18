@@ -65,6 +65,8 @@ export interface LocomotionIntent {
 export interface StanceRequest {
   heightM?: number;
   staggerM?: number;
+  /** Plan 16 (the base): each foot this much (m) further out from the hips than the standing stance (pose only; absent 0). */
+  widthAddM?: number;
 }
 
 export interface ArmIntent {

@@ -14,6 +14,7 @@ import type { BodyProfile, MotorProfile } from '../profiles';
 import { sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
+import type { BlockBase } from '../block-base';
 import type { Controller, ControllerContext } from './base';
 import { clamp, dot, horiz, len, norm, qRot, rad, scale, sub, add, v3, type Vec3 } from '../vec';
 
@@ -53,6 +54,8 @@ export interface BlockStance {
   dropM: number;
   heightM: number;
   staggerM: number;
+  /** Plan 16 (the base): each foot this much (m) further out than the standing stance (`StanceRequest.widthAddM`; absent 0). */
+  widthAddM?: number;
 }
 
 /** A palm's aim on the other man, in his frame: height above his origin, distance off his centre line, depth from his chest's front (into him). */
@@ -101,6 +104,8 @@ export interface BlockProfile {
   hinge: HingeLimits;
   /** The engaged state leaves after this long (s) with nothing holding between the two men. */
   engage: { lostS: number };
+  /** Plan 16 (the base, block-base.ts): what his feet give him while engaged; absent, nothing (the stance as asked). */
+  base?: BlockBase;
 }
 
 /**
@@ -145,6 +150,12 @@ export const BLOCK_V1: BlockProfile = {
 };
 
 /**
+ * Plan 16 (the base): a block profile with a base (block-base.ts) and its stance `widthAddM` (m per foot) wider, under an
+ * id that names both.
+ */
+export const withBase = (p: BlockProfile, base: BlockBase, widthAddM: number): BlockProfile => ({ ...p, id: `${p.id}+${base.id}+w${Math.round(widthAddM * 100)}`, stance: { ...p.stance, widthAddM }, base });
+
+/**
  * A fixture's block (`ControllerSpec` kind `block`): the request, from `fromS` (default 0; before it he stands where he
  * is, facing as he started, arms at rest), under `profile` (default BLOCK_V1).
  */
@@ -164,6 +175,8 @@ export interface BlockState {
   lastOnT: number;
   /** The block's hinge bounds (its profile's), for the hinge his stance asks for. */
   hinge: HingeLimits;
+  /** The block's base (its profile's; absent without one), read by the feet while he is engaged. */
+  base?: BlockBase;
 }
 
 /** The engaged state's fault switches (`SimDebug.block`; tests' negative controls). */
@@ -187,7 +200,7 @@ export function advanceBlockState(
 ): { st: BlockState | undefined; change: { from: BlockPhase | null; to: BlockPhase | null } | null } {
   if (!req) return { st: undefined, change: st ? { from: st.phase, to: null } : null };
   const fresh = !st || st.target !== req.request.target;
-  const s: BlockState = fresh ? { target: req.request.target, phase: 'approach', since: t, lastOnT: -Infinity, hinge: req.profile.hinge } : st!;
+  const s: BlockState = fresh ? { target: req.request.target, phase: 'approach', since: t, lastOnT: -Infinity, hinge: req.profile.hinge, ...(req.profile.base ? { base: req.profile.base } : {}) } : st!;
   const from = fresh ? null : s.phase;
   if (on) s.lastOnT = t;
   let to: BlockPhase = s.phase;
@@ -312,7 +325,7 @@ export class BlockController implements Controller {
       arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
     const S = P.stance;
-    const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM };
+    const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}) };
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
