@@ -12,11 +12,11 @@ import { bodyParts, groundFor, type Part } from './free-ground';
 import { colliderWorldPose, externalFromColliders, ragdollPose, SEGMENTS, type ExternalShape } from './ragdoll';
 import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, solvedImpulses, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
-import type { ArmSide } from './contracts';
+import type { ArmSide, FlatStance } from './contracts';
 import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, type Quat } from './vec';
 import { auditInput, keepLandmarks, recordTransition, type AuditHost } from './transition-audit';
 import type { Simulation, PlayerRuntime } from './simulation';
-import { braceHome, flatAheadM, neededCop } from './block-base';
+import { ballAheadM, braceHome, flatAheadM, neededCop, shinForAnkleRad } from './block-base';
 
 /** What the pose runtime reads and writes on the simulation. */
 export type PoseHost = AuditHost &
@@ -644,7 +644,7 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
       return v3(c.x, 0, c.z);
     }),
     ...(host.def.jointRange ? { heelLift: true } : {}),
-    ...(flat ? { flat: { maxShinRad: flat.maxShinRad, aimShinRad: flat.rangeRad, coverM: pl.sus!.flat!.coverM, captureK: pl.sus!.flat!.captureK } } : {}),
+    ...(flat ? { flat: { maxShinRad: flat.maxShinRad, aimShinRad: flat.rangeRad, coverM: pl.sus!.flat!.coverM, captureK: pl.sus!.flat!.captureK, ...(pl.sus!.flat!.ball ? { aheadCoverM: pl.sus!.flat!.ball.aheadCoverM, landAheadM: flat.landAheadM } : {}) } } : {}),
     ...(parts ? { ground: groundFor(parts, pl.id, gy + soleM + R.lengths.shin), legs: R, ...(host.def.jointRange ? { range: { profile: host.def.jointRange, sideX: { left: sideSignX(pl.body, 'left'), right: sideSignX(pl.body, 'right') } } } : {}) } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
   };
@@ -657,11 +657,12 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
  * feet that with the stagger kept (m, >= 0); the shin lean past which a plant steps, and the ankle's range. Null without
  * a joint-range ankle, or when he is not standing supported.
  */
-function flatOf(host: PoseHost, pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R: ProxyPoseInput['ragdoll'], gy: number): { shiftM: number; needM: Record<ArmSide, number>; braceM?: Record<ArmSide, number>; maxShinRad: number; rangeRad: number } | null {
+function flatOf(host: PoseHost, pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R: ProxyPoseInput['ragdoll'], gy: number): { shiftM: number; needM: Record<ArmSide, number>; braceM?: Record<ArmSide, number>; maxShinRad: number; rangeRad: number; landAheadM?: number } | null {
   const F = pl.sus?.flat;
   const A = host.def.jointRange?.ankle;
   if (!F || !A || pl.controlMode !== 'supported' || pl.rag) return null;
   const soleM = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
+  if (F.ball) return ballOf(pl, core, R, gy, F, F.ball, (A.dorsiDeg * Math.PI) / 180, soleM);
   const lean = ((A.dorsiDeg - F.marginDeg) * Math.PI) / 180;
   const needM = {} as Record<ArmSide, number>;
   // (p35, `braceDeg`: where a braced rear foot may stand, on its ball at the hips' height now)
@@ -675,6 +676,33 @@ function flatOf(host: PoseHost, pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R
     shiftM = Math.max(shiftM, needM[s] - (s === 'left' ? 0.5 : -0.5) * pl.sus!.staggerM);
   }
   return { shiftM, needM, ...(braceM ? { braceM } : {}), maxShinRad: ((A.dorsiDeg + F.stepPastDeg) * Math.PI) / 180, rangeRad: (A.dorsiDeg * Math.PI) / 180 };
+}
+
+/**
+ * Plan 16 (p38, the lean-in, `FlatStance.ball`): each foot's least place ahead of its hip (negative: behind) is where the
+ * rear foot stands on its ball at the ball's pitch, at the hips' height now or, lower, at the stance's lowest root; the
+ * pair's shift puts the rear foot there with the stagger kept (any sign). The shin lean (as over the flat footprint, the
+ * stepping model's `leanAt`) past which a plant steps is the one at which its foot would stand at `stepDeg`, its aim's
+ * within the one at the ball's pitch, both at the lower hips' height now; that step lands where the foot would stand at
+ * `landDeg` (`landAheadM` ahead of the ball's place).
+ */
+function ballOf(pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R: ProxyPoseInput['ragdoll'], gy: number, F: FlatStance, B: NonNullable<FlatStance['ball']>, rangeRad: number, soleM: number): { shiftM: number; needM: Record<ArmSide, number>; maxShinRad: number; rangeRad: number; landAheadM: number } {
+  const toeM = R.shoe.forwardM + R.shoe.halfExtents.z;
+  const { thigh, shin } = R.lengths;
+  const deg = (d: number) => (d * Math.PI) / 180;
+  const needM = {} as Record<ArmSide, number>;
+  let shiftM = -Infinity;
+  let nowM = Infinity;
+  for (const s of ['left', 'right'] as ArmSide[]) {
+    const hip = toWorld(core, hipLocal(pl.body, s));
+    nowM = Math.min(nowM, hip.y - gy);
+    const hipG = F.lowRootM === undefined ? hip.y - gy : Math.min(hip.y - gy, hip.y - core.p.y + F.lowRootM);
+    needM[s] = ballAheadM(thigh, shin, hipG, rangeRad, deg(B.pitchDeg), soleM, toeM);
+    shiftM = Math.max(shiftM, needM[s] - (s === 'left' ? 0.5 : -0.5) * pl.sus!.staggerM);
+  }
+  const at = (pitchDeg: number) => ballAheadM(thigh, shin, nowM, rangeRad, deg(pitchDeg), soleM, toeM);
+  const leanAt = (pitchDeg: number) => shinForAnkleRad(thigh, shin, at(pitchDeg), nowM - soleM);
+  return { shiftM, needM, maxShinRad: leanAt(B.stepDeg), rangeRad: leanAt(B.pitchDeg), landAheadM: Math.max(0, at(B.landDeg) - at(B.pitchDeg)) };
 }
 
 /** The pair's shift ahead for a flat stance (flatOf), 0 without one. */

@@ -402,6 +402,171 @@ export function withAthletic(p: BlockProfile, A: AthleticStance, L: StanceGeomet
 }
 
 /**
+ * Plan 16 (p38): the lean-in stance, every pose input of a block's stance in this one object (an authored stance replaces
+ * it whole). The feet stand behind the hips and the body inclines into his man: the load places them, the rear foot on its
+ * ball (`ball.pitchDeg` heel up about its toe, its shin at the ankle's range plus that pitch) under a thigh sloping
+ * `load.thighDeg` below horizontal, the front foot `staggerM` ahead. Over those same planted feet the set stance (the hold
+ * and the drive), the strike and the stood-up stance (knocked back: the contest's stood level) stand to their own thigh
+ * slopes, each foot as flat as the ankle's range lets it. Every height follows from those angles and the leg
+ * (`leanInStances`); none is set per scene. The trunk is pitched into him, `leanDeg` of it the whole-body lean and the rest
+ * on the hip hinge, moving at `hinge`. `ball.stepDeg`: the viewer's limit for a foot on its ball (a plant past it steps,
+ * landing where it would stand at `ball.landDeg`, under the hips; within it the contest counts the foot as set);
+ * `ball.aheadCoverM`: how far ahead of its want a plant may stand before it steps back (FlatStance.ball). `flat`: the
+ * stepping's dead zone and capture lead under the stance.
+ */
+export interface LeanInStance {
+  id: string;
+  ball: { pitchDeg: number; stepDeg: number; landDeg: number; aheadCoverM: number };
+  load: TrunkPose & { thighDeg: number };
+  set: TrunkPose & { thighDeg: number };
+  strike: TrunkPose & { thighDeg: number };
+  stood: TrunkPose & { thighDeg: number };
+  staggerM: number;
+  hinge: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2'>;
+  flat: Pick<FlatStance, 'coverM' | 'captureK'>;
+}
+
+/** The leg's geometry the lean-in is derived on: the stance geometry, the ankle's distance behind the shoe's toe tip and the shoe's length (m). */
+export type LeanGeometry = StanceGeometry & { toeM: number; shoeM: number };
+
+/** What a lean-in stance comes to on a leg (`leanInStances`): the four block stances, the flat stance (with its ball), where the rear ankle stands ahead of its hip (m; negative behind), and each phase's hip height over the ground and rear foot pitch (deg). */
+export interface LeanInDerived {
+  stance: BlockStance;
+  load: BlockStance;
+  strike: BlockStance;
+  stood: BlockStance;
+  flat: FlatStance;
+  aheadM: number;
+  hips: Record<'load' | 'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }>;
+}
+
+/**
+ * The hip's height over the ground (m) of a leg whose thigh slopes `thighRad` below horizontal over a foot whose flat
+ * footprint's ankle stands `aheadM` ahead of the hip, the foot as flat as the ankle's range lets it (pitched heel up
+ * about its toe just enough for the shin to lean the range plus the pitch), and that pitch (rad).
+ */
+export function standOver(L: LeanGeometry, aheadM: number, thighRad: number): { overGroundM: number; pitchRad: number } {
+  const range = (L.dorsiDeg * Math.PI) / 180;
+  const at = (p: number) => {
+    const fwd = L.toeM * (1 - Math.cos(p)) + L.soleM * Math.sin(p);
+    const leg = legForThigh(L.thighM, L.shinM, aheadM + fwd, thighRad);
+    return { f: leg.shinRad - (range + p), overGroundM: leg.upM + L.soleM * Math.cos(p) + L.toeM * Math.sin(p) };
+  };
+  const flat = at(0);
+  if (flat.f <= 0) return { overGroundM: flat.overGroundM, pitchRad: 0 };
+  let lo = 0;
+  let hi = Math.PI / 4;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (at(mid).f > 0) lo = mid;
+    else hi = mid;
+  }
+  return { overGroundM: at(hi).overGroundM, pitchRad: hi };
+}
+
+/**
+ * The lean-in on a leg: the load's rear foot on its ball at `ball.pitchDeg` under the load's thigh places the rear ankle
+ * (`legShape`, the shin at the range plus the pitch; the flat footprint's ankle that far behind the pitched one); every
+ * phase's hips stand over that ankle at its thigh (`standOver`), its root height the hip's over the ground less the hip's
+ * height over the origin at that trunk pitch; the hinge the trunk's pitch less the lean, no hip drop. The flat stance
+ * stands the feet there (`FlatStance.ball`, `lowRootM` the load's root), so they stay planted from the set stance down
+ * through the load, up through the strike and up again when he is stood up.
+ */
+export function leanInStances(S: LeanInStance, L: LeanGeometry): LeanInDerived {
+  const r = (d: number) => (d * Math.PI) / 180;
+  const p = r(S.ball.pitchDeg);
+  const low = legShape(L.thighM, L.shinM, r(S.load.thighDeg), r(L.dorsiDeg) + p);
+  const aheadM = low.aheadM - (L.toeM * (1 - Math.cos(p)) + L.soleM * Math.sin(p));
+  const hips = {
+    load: { overGroundM: low.upM + L.soleM * Math.cos(p) + L.toeM * Math.sin(p), pitchDeg: S.ball.pitchDeg },
+    ...(Object.fromEntries((['set', 'strike', 'stood'] as const).map((k) => {
+      const o = standOver(L, aheadM, r(S[k].thighDeg));
+      return [k, { overGroundM: o.overGroundM, pitchDeg: (o.pitchRad * 180) / Math.PI }];
+    })) as Record<'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }>),
+  };
+  const stance = (k: keyof typeof hips): BlockStance => {
+    const t = S[k];
+    return { leanDeg: t.leanDeg, hingeDeg: t.trunkDeg - t.leanDeg, dropM: 0, heightM: hips[k].overGroundM - L.hipUpM * Math.cos(r(t.trunkDeg)), staggerM: S.staggerM };
+  };
+  const load = stance('load');
+  return {
+    stance: stance('set'),
+    load,
+    strike: stance('strike'),
+    stood: stance('stood'),
+    flat: { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: load.heightM, ball: { ...S.ball } },
+    aheadM,
+    hips,
+  };
+}
+
+/**
+ * Plan 16 (p38): a block profile on a lean-in stance (`leanInStances` on the leg `L`): its stance, the strike's load and
+ * strike stances and its flat feet (with the ball) derived from `S` (the stance's width kept), the hinge's bound raised to
+ * the deepest hinge asked, every chest gap wider by what the deeper pitch brings the chests nearer (as `withAthletic`);
+ * on the contest, the stood-up level raising the hips and the trunk to the stood-up stance's (`stood.riseM` the root's
+ * rise, `stood.trunkDeg` the hinge's fall), and a foot on its ball within the stance's limit counting as set. Under an id
+ * that names it (and the contest's, which names both).
+ */
+export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): BlockProfile {
+  const d = leanInStances(S, L);
+  const w = p.stance.widthAddM ? { widthAddM: p.stance.widthAddM } : {};
+  const maxDeg = Math.max(p.hinge.maxDeg, d.stance.hingeDeg, ...(p.strike ? [d.load.hingeDeg, d.strike.hingeDeg] : []));
+  const s0 = -2 * (chestShiftM(L, S.set.trunkDeg) - chestShiftM(L, p.stance.leanDeg + p.stance.hingeDeg));
+  const heelM = (deg: number) => L.shoeM * Math.sin((deg * Math.PI) / 180);
+  return {
+    ...p,
+    id: `${p.id}+${S.id}`,
+    approach: { ...p.approach, holdGapM: p.approach.holdGapM - s0 },
+    punchGapM: p.punchGapM - s0,
+    stance: { ...d.stance, ...w },
+    hinge: { ...p.hinge, ...S.hinge, maxDeg },
+    flat: d.flat,
+    ...(p.strike ? { strike: { ...p.strike, loadGapM: p.strike.loadGapM - s0, load: { ...p.strike.load, closeGapM: p.strike.load.closeGapM - s0, stance: { ...d.load, ...w } }, strike: { ...p.strike.strike, stance: { ...d.strike, ...w } } } } : {}),
+    ...(p.contest
+      ? {
+          contest: {
+            ...p.contest,
+            id: `${p.contest.id}+${S.id}`,
+            set: { heelM: Math.max(p.contest.set.heelM, heelM(S.ball.stepDeg)), pitchDeg: Math.max(p.contest.set.pitchDeg, S.ball.stepDeg) },
+            stood: { ...p.contest.stood, riseM: d.stood.heightM - d.stance.heightM, trunkDeg: d.stance.hingeDeg - d.stood.hingeDeg },
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Plan 16 (p38): the lean-in, the user's A (two men inclined into each other, a line from the helmet down the back to the
+ * hips and on to feet behind the hips). Derived on the BL body (thigh 0.43, shin 0.45, the ankle's 25 deg):
+ * - The load: the thigh 64 deg below horizontal, the rear foot on its ball at 10 deg (heel 5 cm up), its flat footprint's
+ *   ankle 9 cm behind the hips, the front foot 8 cm ahead of it (both behind the hips); hips 0.90 m over the ground.
+ * - The set stance (the hold and the drive) 66 deg, the strike 70 (it rises 2 cm and its rear foot comes down to 5 deg),
+ *   the stood-up stance 72 with the trunk at 14 (hips 0.92). Knees bent 45-65 deg through the block.
+ * - The trunk at 20 deg in every phase but the stood-up one (ATHLETIC_V2's reason: at 30 the forearms pass through each
+ *   other), 6-8 of it whole-body lean.
+ * Limits: the feet can stand behind the hips only as far as the ankle's 25 deg and a rear foot on its ball let them, so
+ * the hips stand near their standing height (a lower lean-in needs some 35 deg of ankle). The ball's limit is 14 deg
+ * (heel 7.4 cm up on the 30 cm shoe), not the flat feet's 10 deg and 3 cm: in close-ups the foot reads as on its ball (the
+ * ball and toes flat on the ground, the heel lifted, a lineman's drive foot), not on its toes (the tiptoe defect is some
+ * 30 deg on the toe tip). A plant past it steps and lands at 2 deg, under the hips; one more than 7 cm ahead of its want
+ * steps back. Support: the stance asks the whole root height (`StanceRequest.heightWhole`: no contact preparation drop
+ * under it), the hinge pivots about the support point under his centre of mass as before, and the feet are posed to the
+ * plan: the stance changes only the suspension's targets, no force of its own.
+ */
+export const LEAN_IN_V1: LeanInStance = {
+  id: 'lean-in-v1',
+  ball: { pitchDeg: 10, stepDeg: 14, landDeg: 2, aheadCoverM: 0.07 },
+  load: { thighDeg: 64, trunkDeg: 20, leanDeg: 6 },
+  set: { thighDeg: 66, trunkDeg: 20, leanDeg: 8 },
+  strike: { thighDeg: 70, trunkDeg: 20, leanDeg: 8 },
+  stood: { thighDeg: 72, trunkDeg: 14, leanDeg: 6 },
+  staggerM: 0.08,
+  hinge: { rateDegPerS: 120, accelDegPerS2: 300 },
+  flat: { coverM: 0.12, captureK: 0.5 },
+};
+
+/**
  * A fixture's block (`ControllerSpec` kind `block`): the request, from `fromS` (default 0; before it he stands where he
  * is, facing as he started, arms at rest), under `profile` (default BLOCK_V1).
  */
@@ -710,7 +875,7 @@ export class BlockController implements Controller {
     // hips up and trunk up)
     const S1 = gl > 0 ? { ...S0, heightM: S0.heightM + gl * P.give!.riseM } : S0;
     const S = sl > 0 ? { ...S1, heightM: S1.heightM + sl * P.contest!.stood.riseM, hingeDeg: Math.max(0, S1.hingeDeg - sl * P.contest!.stood.trunkDeg) } : S1;
-    const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}) };
+    const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}), ...(P.flat?.ball ? { heightWhole: true } : {}) };
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,

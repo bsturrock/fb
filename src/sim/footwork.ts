@@ -589,9 +589,10 @@ export interface FootPlanInput {
    * Plan 16 (flat feet, the stance's `FlatStance`): under the stepping model, a plant whose shin over a flat foot leans
    * past `maxShinRad` steps when its aim's is within `aimShinRad` (the ankle's range), its turn or not; with both feet down a step needs a gain past
    * `coverM` (in place of the model's), and its want leads the hips by `captureK` times the capture point's lead (the
-   * model's 1). Absent: the model as it is.
+   * model's 1). Plan 16 (p38, the lean-in): a plant further ahead of its want (along its heading) than `aheadCoverM` steps, its turn or not, and
+   * the shin's forced step lands `landAheadM` further ahead (m, along his heading). Absent: the model as it is.
    */
-  flat?: { maxShinRad: number; aimShinRad: number; coverM: number; captureK: number };
+  flat?: { maxShinRad: number; aimShinRad: number; coverM: number; captureK: number; aheadCoverM?: number; landAheadM?: number };
   /** Plan 13e: the other players' cores (world, horizontal: y 0), what can hold a leg off its home. */
   others?: Vec3[];
   /** Plan 15 (`FootworkProfile.steps`): this player's free ground, the other players' footprints and parts (free-ground.ts). */

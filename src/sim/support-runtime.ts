@@ -99,6 +99,8 @@ export function supportTargets(host: SupportHost, pl: PlayerRuntime, S: Suspensi
 
 /** Plan 08: the bounded height drop preparation requests (m), continuous with its weight; 0 without a locomotion profile. */
 export function prepDropM(host: SupportHost, pl: PlayerRuntime): number {
+  // (plan 16 p38: none under a stance that asks its height whole, `StanceRequest.heightWhole`)
+  if (pl.intent.locomotion.stance?.heightWhole) return 0;
   return pl.loco ? host.def.locomotion!.contact.prepDropM * smooth(pl.loco.prepW) : 0;
 }
 

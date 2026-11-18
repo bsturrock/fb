@@ -37,7 +37,7 @@ import { armTwistRad, swingExcess } from './joint-cone';
 import { flexReach, maxFlexRad, plannedChain, plannedLeg, type FootRequest } from './pose';
 import { shinLeanRad } from './block-base';
 import { quinticStep } from './step-path';
-import { add, clamp, dist, headingOf, len, norm, qInvRot, qRot, rad, round, sub, v3, wrapPi, type Quat, type Vec3 } from './vec';
+import { add, clamp, dist, dot, headingOf, len, norm, qInvRot, qRot, rad, round, sub, v3, wrapPi, type Quat, type Vec3 } from './vec';
 
 export interface StepModelProfile {
   id: string;
@@ -114,6 +114,14 @@ export interface ContactFoot {
   bound: boolean;
   /** The hips outrun it: their support point (the capture point) lies beyond its short step, its want cut short. */
   outrun: boolean;
+  /**
+   * Plan 16 (p38, the lean-in): this step's support point lies this much further ahead along his heading (m; a trailing
+   * plant's forced step, `FootPlanInput.flat.landAheadM`, lands under the hips); planted, the plant may stand that much
+   * further ahead of its want before it steps back (`aheadCoverM`). Absent: none.
+   */
+  landM?: number;
+  /** Plan 16 (p38): the landing ahead (m) the step this plant begins now takes (written by `gainOf`, read by `begin`). */
+  nextLandM?: number;
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -203,14 +211,16 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
  * the shoe's centre (along the body heading) with the foot's radius, its other foot's side wall (no crossing) and its leg
  * from the hip there.
  */
-function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): { support: Vec3; want: Vec3; aim: Vec3; depthM: number; outrun: boolean } {
+function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number, landM = 0): { support: Vec3; want: Vec3; aim: Vec3; depthM: number; outrun: boolean } {
   const P = plan.profile;
   const M = P.steps!;
   const sole = inp.groundY + inp.soleM;
   const hip = v3(inp.hips[s].x + inp.vel.x * aheadS, inp.hips[s].y, inp.hips[s].z + inp.vel.z * aheadS);
   // (plan 16, a flat stance: the capture point's lead scaled by its `captureK`; 0, where the hips will be)
   const lead = inp.flat ? aheadS + inp.flat.captureK * Math.sqrt(Math.max(0, hip.y - inp.groundY) / G) : aheadS + Math.sqrt(Math.max(0, hip.y - inp.groundY) / G);
-  const support = v3(inp.home[s].x + inp.vel.x * lead, sole, inp.home[s].z + inp.vel.z * lead);
+  // (plan 16 p38: a lean-in's forced step lands `landM` further ahead, `ContactFoot.landM`)
+  const hd = landM ? headingNow(inp) : 0;
+  const support = v3(inp.home[s].x + inp.vel.x * lead + Math.sin(hd) * landM, sole, inp.home[s].z + inp.vel.z * lead + Math.cos(hd) * landM);
   // a short step from the hip, within the knee's range at the stance height (the rest of the leg's ranges: `inRange`),
   // asked a margin inside the reach so the plant stands when it lands (the hips' motion over the step is a prediction)
   const vert = hip.y - sole;
@@ -239,10 +249,10 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
 }
 
 /** Where, for a step from `from`: its time (from its length) and its aim for a landing then. */
-function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3): { support: Vec3; aim: Vec3; depthM: number; bound: boolean; outrun: boolean; T: number } {
+function aimFrom(plan: FootPlan, s: ArmSide, inp: FootPlanInput, from: Vec3, landM = 0): { support: Vec3; aim: Vec3; depthM: number; bound: boolean; outrun: boolean; T: number } {
   // (the length depends on the landing time and the time on the length: twice round from the shortest step)
   const to = (T: number) => {
-    const a = aimOf(plan, s, inp, T);
+    const a = aimOf(plan, s, inp, T, landM);
     return { support: a.support, aim: a.aim, depthM: a.depthM, bound: isBound(plan, a.depthM), outrun: a.outrun };
   };
   let T = plan.profile.steps!.minS;
@@ -294,6 +304,7 @@ function gainOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput): number {
   const M = plan.profile.steps!;
   const f = plan.feet[s];
   const c = f.contact!;
+  delete c.nextLandM;
   const ankle = add(f.heelW!, v3(0, inp.soleM, 0));
   const { support, want, aim, depthM, outrun } = aimOf(plan, s, inp, 0);
   const off = len(hz(sub(ankle, want)));
@@ -313,7 +324,15 @@ function gainOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput): number {
       const c = plannedChain(R, inp.hips[s], a, h);
       return shinLeanRad(c.mid, c.end, dir);
     };
-    if (leanAt(ankle) > inp.flat.maxShinRad && leanAt(aim) <= inp.flat.aimShinRad) return Infinity;
+    if (leanAt(ankle) > inp.flat.maxShinRad && leanAt(aim) <= inp.flat.aimShinRad) {
+      // (p38, the lean-in: the trailing plant's step lands under the hips)
+      if (inp.flat.landAheadM !== undefined) c.nextLandM = inp.flat.landAheadM;
+      return Infinity;
+    }
+    // p38, the lean-in: a plant further ahead of its want along his heading than `aheadCoverM` steps, its turn or not
+    // (his feet kept behind his hips: a man driven back, or a foot left ahead, steps back)
+    // (a plant that landed ahead under the hips, `ContactFoot.landM`, that much further)
+    if (inp.flat.aheadCoverM !== undefined && dot(sub(ankle, want), dir) > inp.flat.aheadCoverM + (c.landM ?? 0)) return Infinity;
   }
   const shoe = add(ankle, v3(Math.sin(h) * plan.shoe.centerFoot.z, 0, Math.cos(h) * plan.shoe.centerFoot.z));
   const g = inp.ground ?? { prints: [] };
@@ -336,15 +355,17 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
     f.releaseAtS = inp.t;
     f.heelW = f.anchorW = null;
   }
+  // (plan 16 p38: a forced step's landing ahead, written by gainOf just before)
+  const landM = why === 'step' ? f.contact?.nextLandM : undefined;
   f.mode = 'swing';
   f.source = 'step';
   f.why = why;
   f.drag = f.short = false;
   seedAchieved(f);
-  const { support, aim, depthM, bound, outrun, T } = aimFrom(plan, s, inp, f.target);
+  const { support, aim, depthM, bound, outrun, T } = aimFrom(plan, s, inp, f.target, landM);
   const L = dist(f.target, aim);
   const h0 = Math.max(0, f.target.y - (inp.groundY + inp.soleM));
-  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim, depthM, bound, outrun };
+  f.contact = { T, h0, vy0: f.stepY.v, liftM: Math.max(0, M.liftM * clamp(L / M.maxStepM, 1 / 3, 1) - h0), support, aim, depthM, bound, outrun, ...(landM ? { landM } : {}) };
   f.elapsedS = 0;
   f.durS = T;
   f.dest = aim;
@@ -368,7 +389,7 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
   const dt = inp.dt;
   const sole = inp.groundY + inp.soleM;
   const left = Math.max(c.T - f.elapsedS, dt);
-  const a = aimOf(plan, s, inp, left);
+  const a = aimOf(plan, s, inp, left, c.landM);
   c.support = a.support;
   c.aim = a.aim;
   c.depthM = a.depthM;

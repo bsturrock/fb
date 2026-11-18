@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { ATHLETIC_V2, BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type StanceGeometry } from '../controllers/block';
+import { ATHLETIC_V2, BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type LeanGeometry, type LeanInStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -22,18 +22,28 @@ export interface BlockMan {
   profile?: BlockProfile;
   /** Plan 16 (p35): his profile on this athletic stance (`withAthletic`), derived on the scene's leg (`legOf`). */
   athletic?: AthleticStance;
+  /** Plan 16 (p38): his profile on this lean-in stance (`withLeanIn`), derived on the scene's leg (`legOf`; in place of `athletic`). */
+  leanIn?: LeanInStance;
 }
 
-/** Plan 16 (p35): a scene's body for the athletic stance (`StanceGeometry`): the ragdoll profile's thigh, shin and sole, the body's hip and torso box, the joint range's ankle. */
-export function legOf(def: FixtureDef, body: PlayerSetup['body']): StanceGeometry {
+/**
+ * Plan 16 (p35): a scene's body for the athletic stance (`StanceGeometry`): the ragdoll profile's thigh, shin and sole, the
+ * body's hip and torso box, the joint range's ankle; for the lean-in (p38, `LeanGeometry`) the shoe's toe tip ahead of the
+ * ankle and its length.
+ */
+export function legOf(def: FixtureDef, body: PlayerSetup['body']): LeanGeometry {
   const R = def.ragdoll!;
   if (body.kind === 'legacyCapsule') throw new Error('the athletic stance needs the compound body');
   const c = body.compound.torso.center;
-  return { thighM: R.lengths.thigh, shinM: R.lengths.shin, soleM: R.shoe.belowAnkleM + R.shoe.halfExtents.y, hipUpM: body.hipRight.y, chestUpM: c.y, chestAheadM: c.z, dorsiDeg: def.jointRange!.ankle.dorsiDeg };
+  return { thighM: R.lengths.thigh, shinM: R.lengths.shin, soleM: R.shoe.belowAnkleM + R.shoe.halfExtents.y, hipUpM: body.hipRight.y, chestUpM: c.y, chestAheadM: c.z, dorsiDeg: def.jointRange!.ankle.dorsiDeg, toeM: R.shoe.forwardM + R.shoe.halfExtents.z, shoeM: 2 * R.shoe.halfExtents.z };
 }
 
-/** A man's block profile: his own (default BLOCK_V1), on his athletic stance when he has one. */
-export const profileOf = (m: BlockMan, def: FixtureDef, body: PlayerSetup['body']): BlockProfile => (m.athletic ? withAthletic(m.profile ?? BLOCK_V1, m.athletic, legOf(def, body)) : (m.profile ?? BLOCK_V1));
+/** A man's block profile: his own (default BLOCK_V1), on his lean-in or athletic stance when he has one. */
+export const profileOf = (m: BlockMan, def: FixtureDef, body: PlayerSetup['body']): BlockProfile =>
+  m.leanIn ? withLeanIn(m.profile ?? BLOCK_V1, m.leanIn, legOf(def, body)) : m.athletic ? withAthletic(m.profile ?? BLOCK_V1, m.athletic, legOf(def, body)) : (m.profile ?? BLOCK_V1);
+
+/** The set stance's trunk pitch of a man's own stance (lean-in or athletic; none: his profile's). */
+const setTrunkDeg = (m: BlockMan): number | null => (m.leanIn ? m.leanIn.set.trunkDeg : m.athletic ? m.athletic.set.trunkDeg : null);
 
 export interface BlockSceneOpts {
   id: string;
@@ -58,7 +68,7 @@ export const PALM_PUSH_BLOCK: PalmPushProfile = { ...PALM_PUSH_V1, bornFacingDot
  * athletic men's set stance pitches the chest than their profile's own (each man's chest the other's palms meet).
  */
 const palmWidenDeg = (o: BlockSceneOpts): number =>
-  Math.max(...[o.A, o.B].map((m) => (m.athletic ? m.athletic.set.trunkDeg - ((m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg) : 0)));
+  Math.max(...[o.A, o.B].map((m) => (setTrunkDeg(m) !== null ? setTrunkDeg(m)! - ((m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg) : 0)));
 function palmPushOf(o: BlockSceneOpts): PalmPushProfile {
   const more = palmWidenDeg(o);
   if (more <= 0) return PALM_PUSH_BLOCK;
@@ -91,7 +101,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       kind: 'block',
       request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
-      ...(m.profile || m.athletic ? { profile: P } : {}),
+      ...(m.profile || m.athletic || m.leanIn ? { profile: P } : {}),
     },
   };
 }
@@ -102,10 +112,11 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
  */
 function sepOf(o: BlockSceneOpts, def: FixtureDef, body: PlayerSetup['body']): number {
   const more = (m: BlockMan) => {
-    if (!m.athletic) return 0;
+    const t = setTrunkDeg(m);
+    if (t === null) return 0;
     const G = legOf(def, body);
     const p = m.profile ?? BLOCK_V1;
-    return chestShiftM(G, m.athletic.set.trunkDeg) - chestShiftM(G, p.stance.leanDeg + p.stance.hingeDeg);
+    return chestShiftM(G, t) - chestShiftM(G, p.stance.leanDeg + p.stance.hingeDeg);
   };
   return 1.1 + more(o.A) + more(o.B);
 }

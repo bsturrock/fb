@@ -421,6 +421,28 @@ export function flatAheadM(thighM: number, shinM: number, hipM: number, shinRad:
 }
 
 /**
+ * Plan 16 (p38, the lean-in): where (m, along the facing; negative: behind) the ankle over a foot's flat footprint (the
+ * plan's plant, its sole on the ground under the ankle) stands ahead of its hip for the foot to stand on its ball, pitched
+ * `pitchRad` heel up about its toe tip (the pose's plant pivot: the lowest sole corner on the footprint's anchor) with the
+ * shin leaning the ankle's range `rangeRad` plus that pitch, the hip `hipOverGroundM` above the ground. The ankle is
+ * `soleM` above a flat sole and `toeM` behind the toe tip; pitched, it rises to soleM cos + toeM sin and stands ahead of
+ * the flat ankle by toeM (1 - cos) + soleM sin. A place further back lifts the heel further.
+ */
+export function ballAheadM(thighM: number, shinM: number, hipOverGroundM: number, rangeRad: number, pitchRad: number, soleM: number, toeM: number): number {
+  const up = soleM * Math.cos(pitchRad) + toeM * Math.sin(pitchRad);
+  return flatAheadM(thighM, shinM, hipOverGroundM - up, rangeRad + pitchRad) - (toeM * (1 - Math.cos(pitchRad)) + soleM * Math.sin(pitchRad));
+}
+
+/**
+ * Plan 16 (p38): the shin's forward lean (rad) of the sagittal leg (thigh `thighM`, shin `shinM`, the knee forward) from
+ * a hip `hipM` above its ankle to that ankle `aheadM` ahead of it (negative: behind), as over a flat foot.
+ */
+export function shinForAnkleRad(thighM: number, shinM: number, aheadM: number, hipM: number): number {
+  const D = Math.hypot(aheadM, hipM);
+  return Math.atan2(-aheadM, hipM) + Math.acos(clamp((shinM * shinM + D * D - thighM * thighM) / (2 * shinM * D), -1, 1));
+}
+
+/**
  * Plan 16 (p35, the athletic stance): a sagittal leg of thigh `thighM` and shin `shinM`, the thigh sloping `thighRad`
  * below horizontal from the hip forward to the knee, the shin leaning `shinRad` forward from the ankle up to the knee: the
  * ankle's place ahead of the hip (m; negative behind) and the hip's height above the ankle (m).

@@ -69,6 +69,11 @@ export interface StanceRequest {
   widthAddM?: number;
   /** Plan 16 (flat feet): the feet stand where a flat foot holds the hips (`FlatStance`; absent: under the hips). */
   flat?: FlatStance;
+  /**
+   * Plan 16 (p38, the lean-in): `heightM` is the whole of the root's height: the support takes no locomotion preparation
+   * drop under it (a stance whose feet are placed for its own heights is its own preparation). Absent: the drop as ever.
+   */
+  heightWhole?: boolean;
 }
 
 /**
@@ -98,6 +103,16 @@ export interface FlatStance {
    * limit, below `stepPastDeg`), not only to where it stands flat. Absent: a brace never takes a foot back past flat.
    */
   braceDeg?: number;
+  /**
+   * Plan 16 (p38, the lean-in): the feet behind the hips. Each foot's home stands where the rear foot stands on its ball,
+   * pitched `pitchDeg` heel up about its toe with its shin at the ankle's range plus the pitch (at the hips' height now
+   * or, lower, at `lowRootM`; block-base.ts `ballAheadM`), the front foot the stagger ahead of it; a plant whose foot
+   * would stand pitched past `stepDeg` at the hips' height now steps, its turn or not, to an aim where it stands within
+   * `pitchDeg`, landing where it would stand at `landDeg` (under the hips); a plant further ahead of its want (along its
+   * heading) than `aheadCoverM` steps, its turn or not (the feet kept behind the hips). In place of the flat rule (`marginDeg`,
+   * `stepPastDeg`, `braceDeg` unused). Absent: the flat rule.
+   */
+  ball?: { pitchDeg: number; stepDeg: number; landDeg: number; aheadCoverM: number };
 }
 
 export interface ArmIntent {
