@@ -9,11 +9,19 @@ baseline: main checkout `.scratch/p33/on`.
 
 ## To resume
 
-1. Get the user's lab look at base and punch (scenes below) and the path of the blocking animations being prepared.
-2. Then the inside-hand contest (plan, "Left", item 3), flag off then on for `BL`, full check against
-   `.scratch/p33/on`. Take the missing test (defect 6) with it.
+1. The lab still shows base and punch as of `4e5f442` (toe stance). Flat feet (`FLAT_V1`), the sole base
+   (`BASE_V3`), the athletic stance (`ATHLETIC_V1`) and the give level (`GIVE_V1`) are all committed flag off; their
+   flip for `BL` was parked three times (worktree `.scratch/p34`, `p35`, `p36` `parked/`; the plan's item "Next: flat
+   feet" says why). 620 tests; baseline main checkout `.scratch/p36/give-flagoff` (its 9 suite failures were
+   timeouts under outside load; the five files pass alone, `rerun-timeouts.log`).
+2. Proposed to the user 2026-11-18, awaiting his word: stop deciding who is moved by a tipping moment about the
+   feet. The contest (punch, leverage, effort, who is lower) decides how far and fast a man is driven back; his feet
+   follow his hips with the flat step rule (which works when he is moved rather than tipped); a planted, flat man in
+   his stance is anchored upright; he falls only when the contest says he is overpowered or his steps cannot keep
+   up. The alternative is to keep the literal base and first fix the shared pose and stepping (toe plants rolling
+   flat, re-anchor steps) and the strike reaction, three or more steps of uncertain outcome.
 3. One builder at a time in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main
-   checkout's `.scratch/p34/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
+   checkout's `.scratch/p37/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
 

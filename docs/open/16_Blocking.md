@@ -67,6 +67,15 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
       flat, until his feet are under him again, then anchors. He falls only when the steps cannot catch him.
       **Decision:** `-F7`'s bar changes from "stands where he is" to "is driven back on his feet and stays up";
       standing still against a push four times his base was only ever possible on the old toe brace.
+   c. **Third attempt parked too** (`37182f8` flag off: `GIVE_V1`, a 0..1 level of how far the demand is past the
+      base, raising the hips and cutting his drive; worktree `.scratch/p36/parked/`). No variant passes: with the
+      rise, the even scenes fall; with stepping experiments, heels go back to 17-20 cm. What blocks it is the
+      tipping model, not a parameter: the supported body rotates about its centre of mass, so a hit swings the hips
+      forward over planted feet, the heel lifts, and the sole base reads 0; the striker's own reaction (about 900 N
+      for 0.1 s above his centre of mass) is more than a flat base returns; a flat rear foot behind the hips needs
+      an almost straight leg; and the shared pose and stepping keep a toe landing on tiptoe, re-step it, and block
+      the foot that must re-anchor. **Open: a change of approach, awaiting the user** (see the handoff's "To
+      resume").
 3. **Inside hands and the contest.** The winner gets under and stands the loser up: the loser's posture rises and
    what he can resist drops, so he is driven up and back. The big move happens at the first collision (user): the
    loser is knocked up and back in a burst, then anchors and fights back; later pushing is usually slower and
