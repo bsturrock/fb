@@ -16,6 +16,11 @@ outstanding is the user's lab look, then item 3.
   leverage should "meaningfully push back the opponent and sort of lift them up off their feet (not literally) so
   they are easier to push": the loser is stood up and driven up and back.
 - **Violent.** "They are punching in the chest and trying to drive their opponent up and back."
+- **Feet behind him, leaning in** (third look, 2026-11-18: "the stance is really the problem... they need their
+  feet under them to support, particularly the 'losing' man; in real life no way they would be standing"). His
+  drawing: each man's line runs from the helmet down the back to the hips, then away from the other man to feet
+  planted behind the hips; the two men make an A, heads and hands meeting, feet far apart. Not hips back with the
+  feet out in front. **This is the next step**, ahead of item 3.
 - **Feet flat on the ground, an athletic base** (second look, 2026-11-18: "a real problem"). No standing on the toes
   with the heels up, no tiptoe foot behind. Helmets touching is fine. Forearms through each other: better, still a
   problem.
