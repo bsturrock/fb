@@ -14,7 +14,7 @@ import type { BodyProfile, MotorProfile } from '../profiles';
 import { sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
-import { legForThigh, legShape, type BlockBase } from '../block-base';
+import { legForThigh, legShape, type BlockBase, type GiveGround, type GiveState } from '../block-base';
 import type { Controller, ControllerContext } from './base';
 import { clamp, dot, horiz, len, norm, qRot, rad, scale, sub, add, v3, type Vec3 } from '../vec';
 
@@ -115,6 +115,8 @@ export interface BlockProfile {
   strike?: BlockStrike;
   /** Plan 16, flat feet (`FlatStance`, asked with his stance throughout the block); absent, the feet under the hips. */
   flat?: FlatStance;
+  /** Plan 16 (p36), giving ground (block-base.ts `GiveGround`, read while engaged on a base that resists); absent, none. */
+  give?: GiveGround;
 }
 
 /** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
@@ -225,6 +227,9 @@ export const BLOCK_STRIKE_V1: BlockStrike = {
   load: { minS: 0.3, tolM: 0.08, closeGapM: 0.5, closeMps: 0.6, hands: { forwardM: 0.06, x: 0.13, y: 0.3 }, stance: { leanDeg: 6, hingeDeg: 14, dropM: 0.06, heightM: 0.78, staggerM: 0.24 }, movingMps: 1.5, movingDepth: 0.4 },
   strike: { contactM: 0.6, minReachM: 0.5, leadS: 0.1, throughS: 0.12, maxS: 0.4, straightM: 0.69, stance: { leanDeg: 8, hingeDeg: 14, dropM: 0, heightM: 0.84, staggerM: 0.24 }, extendMps: 3 },
 };
+
+/** Plan 16 (p36): a block profile that gives ground (`GiveGround`), under an id that names it. */
+export const withGive = (p: BlockProfile, give: GiveGround): BlockProfile => ({ ...p, id: `${p.id}+${give.id}`, give });
 
 /** Plan 16, the punch as a strike: a block profile with `strike`, under an id that names it. */
 export const withStrike = (p: BlockProfile, strike: BlockStrike): BlockProfile => ({ ...p, id: `${p.id}+${strike.id}`, strike });
@@ -399,6 +404,8 @@ export interface BlockState {
   base?: BlockBase;
   /** Plan 16: the punch in progress (a profile with a strike; his controller's, from his request). */
   punch?: PunchState;
+  /** Plan 16 (p36): his giving ground (a profile with `give`), kept by the motor step from his balance and his base. */
+  give?: GiveState & { profile: GiveGround };
 }
 
 /** The engaged state's fault switches (`SimDebug.block`; tests' negative controls). */
@@ -422,7 +429,7 @@ export function advanceBlockState(
 ): { st: BlockState | undefined; change: { from: BlockPhase | null; to: BlockPhase | null } | null } {
   if (!req) return { st: undefined, change: st ? { from: st.phase, to: null } : null };
   const fresh = !st || st.target !== req.request.target;
-  const s: BlockState = fresh ? { target: req.request.target, phase: 'approach', since: t, lastOnT: -Infinity, hinge: req.profile.hinge, ...(req.profile.base ? { base: req.profile.base } : {}) } : st!;
+  const s: BlockState = fresh ? { target: req.request.target, phase: 'approach', since: t, lastOnT: -Infinity, hinge: req.profile.hinge, ...(req.profile.base ? { base: req.profile.base } : {}), ...(req.profile.give ? { give: { profile: req.profile.give, excessM: 0, level: 0 } } : {}) } : st!;
   const from = fresh ? null : s.phase;
   if (on) s.lastOnT = t;
   if (req.punch) s.punch = { ...req.punch };
@@ -602,6 +609,8 @@ export class BlockController implements Controller {
         this.armLen[side] = { m: L, t: ctx.t };
       }
     }
+    // (p36, giving ground: his level, from the snapshot; 0 without `give`)
+    const gl = P.give ? (ctx.observed.block?.[ctx.self]?.give ?? 0) : 0;
     let along: number;
     if (phase === 'engaged' && handOn) {
       const mine = horiz(me.position);
@@ -609,6 +618,8 @@ export class BlockController implements Controller {
       const given = Math.max(0, dot(sub(this.anchor, mine), dir));
       const extra = R.intent === 'drive' ? P.driveMps : Math.min(P.hold.gainPerS * given, P.hold.maxMps - P.pressMps);
       along = effort * (P.pressMps + Math.max(0, extra));
+      // (pushed past his base, his weight going back, he has no drive into his man)
+      if (gl > 0) along *= 1 - gl;
     } else {
       // closing (or engaged chest to chest, no hand on: back to arm's length)
       this.anchor = null;
@@ -663,7 +674,9 @@ export class BlockController implements Controller {
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
       arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
-    const S = K ? punchPose(P, pu) : P.stance;
+    const S0 = K ? punchPose(P, pu) : P.stance;
+    // (p36, giving ground: stood up by how far he is pushed past his base)
+    const S = gl > 0 ? { ...S0, heightM: S0.heightM + gl * P.give!.riseM } : S0;
     const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}) };
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },

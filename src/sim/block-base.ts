@@ -71,6 +71,47 @@ export const BASE_V3: BlockBase = { ...BASE_V2, id: 'base-v3', soles: { loadHeel
  */
 export const FLAT_V1: FlatStance = { id: 'flat-v1', marginDeg: 5, stepPastDeg: 4, coverM: 0.16, captureK: 0.5 };
 
+/** Plan 16 (p36): the first giving ground (no registered fixture has it yet). */
+export const GIVE_V1: GiveGround = { id: 'give-v1', fullM: 0.15, attackS: 0.03, releaseS: 0.2, riseM: 0.08 };
+
+/**
+ * Plan 16 (p36), giving ground (`BlockProfile.give`): how far a man in a block is pushed past his base, and his posture
+ * for it. While engaged on a base that resists, his balance may ask the centre of pressure behind what his base gives
+ * (`limitToBase` holding that part); how far behind (`GiveState.excessM`: the asked moment past the base's back over his
+ * weight) is followed by a level (0..1 of `fullM`), rising within `attackS` and falling within `releaseS`. The level is
+ * his controller's (the snapshot's `block[id].give`): it stands him up (his stance's hips `riseM` higher at level 1) and
+ * takes the drive out of his request (none at level 1). Posture and request only: the base, the balance and the drive's
+ * bounds are unchanged, so it neither pushes nor holds him. Stepping back for it is not part of it.
+ */
+export interface GiveGround {
+  id: string;
+  /** The excess (m) at which the level is full. */
+  fullM: number;
+  /** The level's time constants rising and falling (s). */
+  attackS: number;
+  releaseS: number;
+  /** His stance's hips raised by this (m) at level 1. */
+  riseM: number;
+}
+
+/** A man's giving ground (`BlockState.give`, a profile with `give`): the asked pressure's excess behind his base (m) and its level (0..1). */
+export interface GiveState {
+  excessM: number;
+  level: number;
+}
+
+/**
+ * One substep of giving ground: `demandNm` the balance torque's part that needs the pressure behind his support (about
+ * up x u, positive tipping him toward his man), `backNm` what his base gives there (`BaseMoments.back`; 0 with no base),
+ * his weight `weightN`. The level follows clamp(excess / fullM, 0, 1) at its attack or release.
+ */
+export function advanceGive(st: GiveState, G: GiveGround, demandNm: number, backNm: number, weightN: number, dt: number): void {
+  st.excessM = Math.max(0, demandNm - backNm) / weightN;
+  const want = clamp(st.excessM / G.fullM, 0, 1);
+  const tau = want > st.level ? G.attackS : G.releaseS;
+  st.level += (want - st.level) * (1 - Math.exp(-dt / tau));
+}
+
 /**
  * The centre of pressure (world, on the ground) the balance torque `tau` asks for: the support's ground point `pivot`
  * moved by cross(up, tau) / weight (a torque about the push line's level normal moves it along the line, one about the

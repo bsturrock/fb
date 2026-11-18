@@ -1990,7 +1990,7 @@ export class Simulation {
     for (const pl of this.players) balance[pl.id] = this.balanceState(pl);
     // plan 16: the engaged states (absent while nobody blocks)
     let block: Snapshot['block'];
-    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}) };
+    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}) };
     return { tick: this.tick, substep, t: this.t, bodies, contacts, pairGap: { ...this.pairGap }, arms, wrap, balance, ...(block ? { block } : {}) };
   }
 

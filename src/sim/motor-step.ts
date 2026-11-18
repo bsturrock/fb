@@ -8,7 +8,7 @@ import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, 
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
 import { hingeBalanceTorque } from './hinge';
-import { baseCeiling, baseMoments, copBounds, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
+import { advanceGive, baseCeiling, baseMoments, copBounds, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
@@ -104,6 +104,9 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
         // contact motion polish 1.1: under a hip hinge, the legs' balance first, then the trunk's pitch (hinge.ts)
         const bt = pl.hinge ? hingeBalanceTorque(pl.hinge, b.rotation, b.angularVelocity, bal.desiredUp, B, balCap, hold, holdUp) : computeBalanceTorque(up, bal.desiredUp, b.angularVelocity, B, balCap, hold, holdUp);
         const held = base ? limitToBase(bt.capped, base.m, base.u) : null;
+        // plan 16 (p36, giving ground): how far behind his base his balance asks the pressure (none without a base)
+        const give = pl.block?.give;
+        if (give) advanceGive(give, give.profile, base ? dot(bt.requested, cross(UP, base.u)) : 0, base ? base.m.back : 0, b.massKg * Math.abs(g), host.physics.dt);
         balReq = bt.requested;
         balCapped = held ? held.torque : bt.capped;
         balSat = bt.saturated || !!held?.saturated;
