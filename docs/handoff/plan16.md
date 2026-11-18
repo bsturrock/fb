@@ -9,28 +9,34 @@ baseline: main checkout `.scratch/p33/on`.
 
 ## To resume
 
-1. The lab still shows base and punch as of `4e5f442` (toe stance). Flat feet (`FLAT_V1`), the sole base
-   (`BASE_V3`), the athletic stance (`ATHLETIC_V1`) and the give level (`GIVE_V1`) are all committed flag off; their
-   flip for `BL` was parked three times (worktree `.scratch/p34`, `p35`, `p36` `parked/`; the plan's item "Next: flat
-   feet" says why). 620 tests; baseline main checkout `.scratch/p36/give-flagoff` (its 9 suite failures were
-   timeouts under outside load; the five files pass alone, `rerun-timeouts.log`).
-2. **Agreed by the user 2026-11-18** (in build, check dir `.scratch/p37/`): stop deciding who is moved by a tipping
-   moment about the feet. The contest (punch, leverage, effort, who is lower) decides how far and fast a man is driven back; his feet
-   follow his hips with the flat step rule (which works when he is moved rather than tipped); a planted, flat man in
-   his stance is anchored upright; he falls only when the contest says he is overpowered or his steps cannot keep
-   up. The alternative is to keep the literal base and first fix the shared pose and stepping (toe plants rolling
-   flat, re-anchor steps) and the strike reaction, three or more steps of uncertain outcome.
-3. One builder at a time in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main
-   checkout's `.scratch/p37/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
+1. **The contest decides movement, on for `BL`** (`ddc0e07`, `a462cc3`; agreed by the user 2026-11-18 after the
+   sole-moment base was parked three times, worktree `.scratch/p34`-`p36` `parked/`). `CONTEST_V1`
+   (`BlockContest`, `contested()`): a planted man in his block is anchored upright; each man has a hold capacity
+   along the push line from effort, how low he is, feet planted and flat against mid-step, and how stood up he is
+   (a level that rises at a hit and releases), with a leverage input held at 1 until item 3; the net of the real
+   strike and push forces against it moves his hips; `FLAT_V1` steps follow; he goes down `contest:overpowered` as a
+   ragdoll when the margin holds against him. With it BL runs `ATHLETIC_V2` (trunk 20 deg; at `V1`'s 30 deg the
+   under and over hands land 11 cm apart in height and the forearms cross 8-9 cm all block; the deeper trunk can
+   return with the inside lane). `BASE_V2/V3`, `GIVE_V1`, `based`, `ATHLETIC_V1` are flag-off or test-only now
+   (cleanup later). 627 tests; baseline main checkout `.scratch/p37/contest-flip2`. Under heavy outside machine load
+   the runner can exit 1 with every test passing, and tests time out; rerun alone before believing either.
+2. Seen: feet flat 98-100 % of planted time in even scenes (0-1 steps, 1-4 cm of travel, a jolt, hips up 5-7 cm and
+   back in stance in about 1 s); the weaker man in `-F3`/`-F4` is knocked 11-14 cm in the first 0.5 s, then about
+   0.4 m over the remaining 7.5 s in five flat 16-18 cm steps (before: walked back 2 m at constant speed in 16-27
+   steps); `-F2` the walk-in's momentum knocks the set man 0.43 m in 0.5 s in three flat steps, then he anchors;
+   `-F7` is a stalemate (equal men cancel until leverage exists); nobody falls in any BL scene (`-F8` both stood up
+   again). Strike contact unchanged (elbow 63-80 deg, 54-66 % through, 273-965 N peak).
+3. Next: the user's lab look (scenes below), then item 3. One builder at a time in the worktree
+   `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main checkout's `.scratch/p38/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
 
-- `?fixture=BL-F1-even&cam=front&speed=0.25&t=0.3` load to 0.45 s, strike, contact 0.53-0.61, drive from 0.7
-- `?fixture=BL-F2-walkIn&cam=front&speed=0.25&t=1.0` walks in, shallow load, contact about 1.42; the re-arm at
-  1.8-2.3 is defect 2
-- `?fixture=BL-F3-blockerDrives&cam=front&speed=0.25&t=4` the drive
-- `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.4` the hit, then the pushed man steps a foot back and holds (`t=3`)
-- `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=1.2` the scene built to tip them: both fall, at 1.36 and 1.74 s
+- `?fixture=BL-F1-even&cam=front&speed=0.25&t=0.3` load, strike, the jolt at about 0.5, flat feet, planted
+- `?fixture=BL-F2-walkIn&cam=front&speed=0.25&t=1.3` the walk-in's hit knocks the set man back three steps
+- `?fixture=BL-F3-blockerDrives&cam=front&speed=0.25&t=0.45` knocked, anchors, driven (steps at 0.83, 1.32, 3.15)
+- `?fixture=BL-F4-defenderStronger&cam=front&speed=0.25&t=0.45` the weaker man knocked
+- `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.45` stalemate
+- `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=0.7` defect: one man run back 4 m without his hands on
 
 ## Owner rulings (2026-11-17)
 
@@ -126,6 +132,18 @@ the lift (the toe drag); an infinite gain overrides the feet taking turns (the 3
 cover plus lead whatever the speed; a planted foot cannot step while the other swings.
 
 ## Tracked defects (polish order by look)
+
+From the contest (2026-11-18), ahead of the older list below, parts of which describe the toe stance it replaced:
+
+- The first collision in `-F3`/`-F4` is modest (11-14 cm at up to 0.5 m/s, with 13 cm more in the next second): a
+  one-second shove, not a violent burst. Leverage (item 3) is the intended lever; over hands deliver about half the
+  strike force and collapse above about 300 N.
+- `-F8`: a man mid-step has almost no capacity (a stepping foot weighs 0, a planted foot past the limit 0.5), so once
+  he is stepping he keeps losing ground: 4.2 m in 30 steps, his punch never landing. And `-F8` has lost its meaning
+  (the athletic stance gives it a hinge again): redefine or retire it.
+- The stance reads as a squat from the side: stagger only 10 cm, knees over toes.
+- Drivers' rear heels rise 6-7 cm for 20-32 % of planted time (`-F3` A, `-F4` B, `-F7` B).
+- The overpower margin can read the other man's push from this substep or the last, by player order.
 
 1. Forearm through forearm, 4.8-7.8 cm with the strike (8-9 before), sustained in every scene. Arms avoid bodies, not
    other arms. Named on `BLOCK_V1_HANDS`. Item 3 is the answer.

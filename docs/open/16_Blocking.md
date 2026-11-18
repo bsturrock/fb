@@ -2,8 +2,8 @@
 
 Status (2026-11-17): the rough first slice is in the lab (palm push, block controller with its engaged state, the `BL`
 scenes), the base and the punch are built; what was built, the owner's rulings, the tracked defects and the lab links
-are in the [handoff](../handoff/plan16.md). The user has looked at base and punch (2026-11-18); next is flat feet,
-then item 3.
+are in the [handoff](../handoff/plan16.md). The contest decides movement and the men stand flat-footed (2026-11-18);
+outstanding is the user's lab look, then item 3.
 
 ## What a viewer should see (user, 2026-11-17, after the first lab look: "as a start this looks ok")
 
@@ -80,7 +80,8 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
       the first collision, then he anchors), not tip him; how far and fast comes from a contest rule (the hit, effort,
       who is lower; inside hands in item 3); his feet follow his hips with the flat step rule; he falls only when
       the contest overpowers him or his steps cannot keep up. Legs stay posed. `BASE_V3`'s tipping clamp is not
-      used for this.
+      used for this. **Done and on for `BL`** (`CONTEST_V1`, with flat feet and `ATHLETIC_V2`; see the handoff).
+      Outstanding: the user's lab look.
 3. **Inside hands and the contest.** The winner gets under and stands the loser up: the loser's posture rises and
    what he can resist drops, so he is driven up and back. The big move happens at the first collision (user): the
    loser is knocked up and back in a burst, then anchors and fights back; later pushing is usually slower and
