@@ -36,6 +36,11 @@ export interface BlockRequest {
   effort: number;
   intent: BlockIntent;
   hands?: BlockHands;
+  /**
+   * Plan 16, the punch as a strike (a profile with `strike`): which punch he is on (default 0). The move (load, strike,
+   * drive) starts again from wherever he is whenever this changes: a brain re-punches by counting it up.
+   */
+  punch?: number;
 }
 
 /** The engaged state's phases: closing on his man, engaged with him, or engaged before and now lost. */
@@ -106,6 +111,56 @@ export interface BlockProfile {
   engage: { lostS: number };
   /** Plan 16 (the base, block-base.ts): what his feet give him while engaged; absent, nothing (the stance as asked). */
   base?: BlockBase;
+  /** Plan 16, the punch as a strike (`BlockStrike`); absent, the hands go on from the ready point as they reach him. */
+  strike?: BlockStrike;
+}
+
+/** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
+export type PunchPhase = 'load' | 'strike' | 'drive';
+
+/**
+ * The punch in progress (`BlockState.punch`, a profile with a strike): which punch (`n`, the request's `punch`), its
+ * phase and when that began (s), and how deep this one loads (`depth`, 0..1 of the load stance's change, from his speed
+ * as the load began).
+ */
+export interface PunchState {
+  n: number;
+  phase: PunchPhase;
+  since: number;
+  depth: number;
+  /** Striking: when a palm first landed on him (s; absent: not yet). */
+  onT?: number;
+}
+
+/**
+ * Plan 16, the punch as a strike (`BlockProfile.strike`): a timed move, so the palms hit his chest while the arms are
+ * still extending. The load: the hands in at his own chest, low (`load.hands`, in his frame as `BlockProfile.ready` is),
+ * the hips and knees down (`load.stance`); loaded, he keeps closing, to `load.closeGapM` of chest gap in place of the
+ * approach's hold gap. The load begins inside `loadGapM` of chest gap (at once engaged), or earlier closing on him: when
+ * the gap would be the punch gap after the load and `strike.leadS` at the closing speed now. The strike is thrown when
+ * the hands are loaded (within `load.tolM`, after `load.minS` times the load's depth) and his chest will be within
+ * `strike.contactM` of the shoulders (mean over the two arms, shoulder to the aim's point on his chest's surface) after
+ * `strike.leadS` (the hands' travel from the load point) at the closing speed now: a partial extension, so the palms land
+ * on bent arms. Striking: both arms at once from the load point onto the profile's aim (low to high) at the arm's top
+ * speed; the hips rising and the trunk and lean going into him (`strike.stance`). A palm that lands is the palm push
+ * (arms.ts), its held length asked to the arm's full reach at the speed the palm was extending as it landed (at least
+ * `strike.extendMps`): the rest of the extension drives through him, so the hit's force is the strut's, from the hand's
+ * own speed and the man behind it. The drive follows `strike.throughS` after the first palm landed (the profile's stance,
+ * aim and length: the engaged block as without a strike). With no palm on, a free arm out to `strike.straightM` or
+ * `strike.maxS` gone, the strike missed and he loads again. A man moving as the load begins loads less, and more briefly:
+ * the stance's change (load and strike) and the load's least time are scaled from 1 standing to `load.movingDepth` at
+ * `load.movingMps` and faster. The same move starts again whenever the request's `punch` changes.
+ *
+ * The hit's force is the palm push's (the strut between the two men through the shared allocator, equal and opposite at
+ * the patch, capped by the elbow's torque at the request's effort and the allocator's ceilings): its work is the arm's,
+ * counted where every applied force's is. No impulse is added. Every pose input of the punch is here and in the
+ * profile's own stance (`punchPose`), so authored poses can replace them.
+ */
+export interface BlockStrike {
+  id: string;
+  loadGapM: number;
+  load: { minS: number; tolM: number; closeGapM: number; hands: { forwardM: number; x: number; y: number }; stance: BlockStance; movingMps: number; movingDepth: number };
+  strike: { contactM: number; leadS: number; throughS: number; maxS: number; straightM: number; stance: BlockStance; extendMps: number };
 }
 
 /**
@@ -150,6 +205,26 @@ export const BLOCK_V1: BlockProfile = {
 };
 
 /**
+ * Plan 16, the first strike (no registered fixture has it yet). The load begins from 1.1 m of chest gap (0.3 outside the
+ * punch gap); hands 6 cm ahead of the chest, 13 cm off its centre, 0.30 m up his frame (below both aims, so the strike
+ * goes low to high), the root asked down to 0.78 (of the stance's 0.84) with 6 cm of hip drop, 14 deg of trunk pitch and
+ * 6 of lean, for at least 0.3 s, closing to 0.5 m of chest gap; a man at 1.5 m/s or more loads 40 % as deep and as long.
+ * The strike is thrown for the palms to land at 0.60 m from the shoulder (of the arm's 0.72 reach: about 70 deg of elbow
+ * flexion, inside the push's 75 deg give), 0.1 s ahead (the hands' travel at the arm's 4 m/s); the root back up to 0.84
+ * with no drop, 18 deg of pitch and 12 of lean; the drive 0.12 s after the first palm lands. Missed: a free arm out to
+ * 0.69 m, or 0.4 s gone.
+ */
+export const BLOCK_STRIKE_V1: BlockStrike = {
+  id: 'strike-v1',
+  loadGapM: 1.1,
+  load: { minS: 0.3, tolM: 0.08, closeGapM: 0.5, hands: { forwardM: 0.06, x: 0.13, y: 0.3 }, stance: { leanDeg: 6, hingeDeg: 14, dropM: 0.06, heightM: 0.78, staggerM: 0.24 }, movingMps: 1.5, movingDepth: 0.4 },
+  strike: { contactM: 0.6, leadS: 0.1, throughS: 0.12, maxS: 0.4, straightM: 0.69, stance: { leanDeg: 12, hingeDeg: 18, dropM: 0, heightM: 0.84, staggerM: 0.24 }, extendMps: 3 },
+};
+
+/** Plan 16, the punch as a strike: a block profile with `strike`, under an id that names it. */
+export const withStrike = (p: BlockProfile, strike: BlockStrike): BlockProfile => ({ ...p, id: `${p.id}+${strike.id}`, strike });
+
+/**
  * Plan 16 (the base): a block profile with a base (block-base.ts) and its stance `widthAddM` (m per foot) wider, under an
  * id that names both.
  */
@@ -177,6 +252,8 @@ export interface BlockState {
   hinge: HingeLimits;
   /** The block's base (its profile's; absent without one), read by the feet while he is engaged. */
   base?: BlockBase;
+  /** Plan 16: the punch in progress (a profile with a strike; his controller's, from his request). */
+  punch?: PunchState;
 }
 
 /** The engaged state's fault switches (`SimDebug.block`; tests' negative controls). */
@@ -193,7 +270,7 @@ export interface BlockDebug {
  */
 export function advanceBlockState(
   st: BlockState | undefined,
-  req: { request: BlockRequest; profile: BlockProfile } | undefined,
+  req: { request: BlockRequest; profile: BlockProfile; punch?: PunchState } | undefined,
   on: boolean,
   t: number,
   fault?: BlockDebug,
@@ -203,6 +280,8 @@ export function advanceBlockState(
   const s: BlockState = fresh ? { target: req.request.target, phase: 'approach', since: t, lastOnT: -Infinity, hinge: req.profile.hinge, ...(req.profile.base ? { base: req.profile.base } : {}) } : st!;
   const from = fresh ? null : s.phase;
   if (on) s.lastOnT = t;
+  if (req.punch) s.punch = { ...req.punch };
+  else if (s.punch) delete s.punch;
   let to: BlockPhase = s.phase;
   if (on) to = 'engaged';
   else if (s.phase === 'engaged' && (fault?.fromContact || t - s.lastOnT >= req.profile.engage.lostS - 1e-9)) to = 'lost';
@@ -214,6 +293,69 @@ export function advanceBlockState(
 }
 
 const SIDES: ArmSide[] = ['left', 'right'];
+
+/** How deep a punch loads (0..1 of the load stance's change) for a man moving at `speedMps` as the load begins. */
+export const punchDepth = (K: BlockStrike, speedMps: number): number => 1 - (1 - K.load.movingDepth) * clamp(speedMps / K.load.movingMps, 0, 1);
+
+/**
+ * The punch's stance now (every pose input of the move in one place): the profile's stance, moved toward the load's or
+ * the strike's by the punch's depth; the drive (and a block without a strike, or no punch yet) stands in the profile's.
+ */
+export function punchPose(P: BlockProfile, pu: PunchState | undefined): BlockStance {
+  const K = P.strike;
+  if (!K || !pu || pu.phase === 'drive') return P.stance;
+  const to: BlockStance = pu.phase === 'load' ? K.load.stance : K.strike.stance;
+  const S = P.stance;
+  const m = (a: number, b: number) => a + (b - a) * pu.depth;
+  return { ...S, leanDeg: m(S.leanDeg, to.leanDeg), hingeDeg: m(S.hingeDeg, to.hingeDeg), dropM: m(S.dropM, to.dropM), heightM: m(S.heightM, to.heightM), staggerM: m(S.staggerM, to.staggerM) };
+}
+
+/** What the punch's phases read each decision (`nextPunch`). */
+export interface PunchCues {
+  t: number;
+  /** The request's punch number (`BlockRequest.punch`, default 0). */
+  serial: number;
+  /** The chest gap (m) and how fast it closes (m/s, + closing); engaged with his man (the engaged state). */
+  gap: number;
+  closingMps: number;
+  engaged: boolean;
+  /** The engaged state lost (`BlockPhase` 'lost'). */
+  lost: boolean;
+  /** Shoulder to the aim's point on his chest (m, the mean of the two arms). */
+  reachM: number;
+  /** Both palms within `load.tolM` of the load point; a palm on him; a free arm out to `strike.straightM`. */
+  loaded: boolean;
+  anyOn: boolean;
+  straight: boolean;
+  /** His own speed (m/s). */
+  speedMps: number;
+}
+
+/**
+ * One decision of the punch (`BlockStrike`): a new punch number starts the move again; none yet, the load begins inside
+ * the load gap (or engaged, or closing on him); loaded and in range, the strike; landed and still on `strike.throughS`
+ * after, the drive; missed (no palm on, and a free arm straight or the strike's time gone), or the block lost in the
+ * drive, the load again. Returns the punch now (undefined: none begun).
+ */
+export function nextPunch(K: BlockStrike, punchGapM: number, pu: PunchState | undefined, c: PunchCues): PunchState | undefined {
+  const cur = pu && pu.n === c.serial ? pu : undefined;
+  const closing = Math.max(0, c.closingMps);
+  if (!cur) {
+    const depth = punchDepth(K, c.speedMps);
+    return c.engaged || c.gap <= K.loadGapM || c.gap - closing * (K.load.minS * depth + K.strike.leadS) <= punchGapM ? { n: c.serial, phase: 'load', since: c.t, depth } : undefined;
+  }
+  const age = c.t - cur.since + 1e-9;
+  if (cur.phase === 'load' && age >= K.load.minS * cur.depth && c.loaded && c.reachM - closing * K.strike.leadS <= K.strike.contactM) return { ...cur, phase: 'strike', since: c.t };
+  if (cur.phase === 'strike') {
+    const onT = cur.onT ?? (c.anyOn ? c.t : undefined);
+    if (c.anyOn && onT !== undefined && c.t - onT + 1e-9 >= K.strike.throughS) return { n: cur.n, phase: 'drive', since: c.t, depth: cur.depth };
+    if (!c.anyOn && (c.straight || age >= K.strike.maxS)) return { n: cur.n, phase: 'load', since: c.t, depth: punchDepth(K, c.speedMps) };
+    if (onT !== undefined && cur.onT === undefined) return { ...cur, onT };
+  }
+  // the block lost in the drive (nothing on him for the engaged state's lost time): the hands back in, loaded again
+  if (cur.phase === 'drive' && c.lost) return { n: cur.n, phase: 'load', since: c.t, depth: punchDepth(K, c.speedMps) };
+  return cur;
+}
 
 /** Horizontal distance from a body's origin to its torso box's face along world direction d (m). */
 function frontOf(body: BodyProfile, q: { x: number; y: number; z: number; w: number }, d: Vec3): number {
@@ -243,6 +385,9 @@ export class BlockController implements Controller {
   private punchedAt: Record<ArmSide, number | null> = { left: null, right: null };
   /** Per arm: its palm was on him at the last decision. */
   private wasOn: Record<ArmSide, boolean> = { left: false, right: false };
+  /** Striking (a profile with a strike), per arm: its shoulder-to-palm length at the last decision and when (s), and how fast it was extending while free (m/s). */
+  private armLen: Record<ArmSide, { m: number; t: number } | null> = { left: null, right: null };
+  private hitMps: Record<ArmSide, number> = { left: 0, right: 0 };
 
   constructor(
     readonly spec: BlockSpec,
@@ -280,6 +425,41 @@ export class BlockController implements Controller {
     const across = sub(hv, scale(dir, dot(hv, dir)));
     const obs = ctx.observed.arms[ctx.self];
     const handOn = SIDES.some((side) => !!obs?.[side]?.pushId);
+    // the punch as a strike (a profile with one): its phase from the last (his engaged state's) and what holds now
+    const K = P.strike;
+    const handPoint = (side: ArmSide, h: { forwardM: number; x: number; y: number }): Vec3 =>
+      add(me.position, qRot(me.rotation, v3(sideSignX(myBody, side) * h.x, h.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + h.forwardM)));
+    const hands = R.hands ?? P.hands.default;
+    const aim = P.hands[hands];
+    // a palm's aim on him (world): my right hand on his left side (his frame), the side across from it, `depth` into his chest
+    const aimPoint = (side: ArmSide, depth: number): Vec3 =>
+      add(him.position, qRot(him.rotation, v3(sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x, aim.y, frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) - depth)));
+    let pu: PunchState | undefined;
+    if (K) {
+      const was = ctx.observed.block?.[ctx.self];
+      const armOf = (side: ArmSide) => (obs?.[side] ? len(sub(obs[side]!.palmContactWorld, obs[side]!.shoulderWorld)) : 0);
+      pu = nextPunch(K, P.punchGapM, was?.target === R.target ? was.punch : undefined, {
+        t: ctx.t,
+        serial: R.punch ?? 0,
+        gap,
+        closingMps: dot(sub(horiz(me.linearVelocity), horiz(him.linearVelocity)), dir),
+        engaged: phase === 'engaged',
+        lost: phase === 'lost',
+        reachM: SIDES.reduce((m, side) => m + (obs?.[side] ? len(sub(aimPoint(side, 0), obs[side]!.shoulderWorld)) : Infinity), 0) / SIDES.length,
+        loaded: SIDES.every((side) => !!obs?.[side] && len(sub(obs[side]!.palmContactWorld, handPoint(side, K.load.hands))) <= K.load.tolM),
+        anyOn: SIDES.some((side) => !!obs?.[side]?.pushId),
+        straight: SIDES.some((side) => !obs?.[side]?.pushId && armOf(side) >= K.strike.straightM),
+        speedMps: len(horiz(me.linearVelocity)),
+      });
+      // striking, each free arm's extension speed (the speed its palm lands at); otherwise none
+      for (const side of SIDES) {
+        const L = armOf(side);
+        const prev = this.armLen[side];
+        if (pu?.phase === 'strike' && !obs?.[side]?.pushId && prev && ctx.t > prev.t) this.hitMps[side] = Math.max(0, (L - prev.m) / (ctx.t - prev.t));
+        else if (pu?.phase !== 'strike') this.hitMps[side] = 0;
+        this.armLen[side] = { m: L, t: ctx.t };
+      }
+    }
     let along: number;
     if (phase === 'engaged' && handOn) {
       const mine = horiz(me.position);
@@ -291,20 +471,35 @@ export class BlockController implements Controller {
       // closing (or engaged chest to chest, no hand on: back to arm's length)
       this.anchor = null;
       const A = P.approach;
-      const left = gap - A.holdGapM;
+      // (loaded and striking, he closes on to the load's gap: the punch is thrown from range, not walked on)
+      const left = gap - (K && pu && pu.phase !== 'drive' ? K.load.closeGapM : A.holdGapM);
       const close = left > 0 ? Math.min(A.mps, A.gainPerS * left, Math.sqrt(2 * A.brakeMps2 * left)) : Math.max(-A.backMps, A.gainPerS * left);
       // the gap closes at that speed, his own part of it counted (he follows a man moving off, gives ground to one coming on)
       along = Math.max(-A.backMps, close + dot(hv, dir));
     }
     const vel = add(scale(dir, along), across);
     // the hands: up while closing, punched on from the punch gap (or engaged), pulled back to re-arm when one came off
-    const hands = R.hands ?? P.hands.default;
-    const aim = P.hands[hands];
     const punch = phase === 'engaged' || gap <= P.punchGapM;
     const arms: Partial<Record<ArmSide, ArmIntent>> = {};
     for (const side of SIDES) {
       const out = sideSignX(myBody, side);
       const o = obs?.[side];
+      // the strike's load and strike: both arms together (the drive is the block's own hands, below)
+      if (K && pu?.phase !== 'drive') {
+        if (pu?.phase !== 'strike') {
+          // no punch yet: up at the ready point; loading: in at his chest, low
+          this.punchedAt[side] = null;
+          this.wasOn[side] = false;
+          arms[side] = { action: 'reach', targetWorld: pu ? handPoint(side, K.load.hands) : handPoint(side, P.ready) };
+          continue;
+        }
+        // striking: a palm in flight since the strike began (the drive's re-arm counts from it)
+        if (o?.pushId || this.punchedAt[side] === null) this.punchedAt[side] = o?.pushId ? ctx.t : pu.since;
+        this.wasOn[side] = !!o?.pushId;
+        const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
+        arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort, extendMps: Math.max(K.strike.extendMps, this.hitMps[side]) }, ...pole };
+        continue;
+      }
       // ready: in front of his own chest
       const readyLocal = v3(out * P.ready.x, P.ready.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + P.ready.forwardM);
       const readyWorld = add(me.position, qRot(me.rotation, readyLocal));
@@ -324,14 +519,14 @@ export class BlockController implements Controller {
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
       arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
-    const S = P.stance;
+    const S = K ? punchPose(P, pu) : P.stance;
     const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}) };
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
       posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM } },
-      block: { request: { ...R }, profile: P },
-      debug: { phase: `block:${phase}`, gap, along, hands },
+      block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}) },
+      debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null } : {}) },
     };
   }
 

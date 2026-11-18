@@ -2128,7 +2128,8 @@ export class ArmSystem {
     const facing = -dot(n, nW);
     // the rest length moves toward the request's
     const want = clamp(intent.push?.lengthM ?? P.maxReachM, P.minReachM, P.maxReachM);
-    c.restM += clamp(want - c.restM, -PP.extendMps * dt, PP.extendMps * dt);
+    const rate = intent.push?.extendMps ?? PP.extendMps;
+    c.restM += clamp(want - c.restM, -rate * dt, rate * dt);
     let end: string | null = null;
     if (L > P.maxReachM + P.hold.reachTolM) end = 'unreachable';
     else if (dot(nW, sub(sW, pW)) <= 0) end = 'invalidSurface';

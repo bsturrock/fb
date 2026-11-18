@@ -96,7 +96,7 @@ export function recordTrace(host: EvidenceHost): void {
     }
     if (pl.rag?.envelope) players[pl.id].lim = round(Math.max(0, ...pl.rag.envelope.map((e) => e.maxOverDeg)), 2);
     if (pl.feet && !pl.rag) players[pl.id].ft = footTrace(pl.feet);
-    if (pl.block) players[pl.id].blk = { ph: pl.block.phase, t: pl.block.target };
+    if (pl.block) players[pl.id].blk = { ph: pl.block.phase, t: pl.block.target, ...(pl.block.punch ? { pu: pl.block.punch.phase, pn: pl.block.punch.n } : {}) };
     if (pl.brace) players[pl.id].br = { w: round(pl.brace.w, 4), th: pl.brace.threat, tc: pl.brace.tcS === null ? null : round(pl.brace.tcS, 4) };
     if (pl.loco && !pl.rag) players[pl.id].loco = { m: pl.loco.mode, why: pl.loco.reason, p: round(pl.loco.prepW, 3), c: round(pl.loco.contactW, 3), s: round(pl.loco.swing, 3), d: round(host.prepDrop(pl), 4) };
     if (pl.run && host.def.runClips && !pl.rag) {

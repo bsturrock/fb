@@ -1,7 +1,7 @@
 // Shared runtime contracts: identities, intents, snapshots, contacts, events.
 import type { Quat, Vec3 } from './vec';
 import type { ArmObs, WrapStatus } from './arms';
-import type { BlockProfile, BlockRequest, BlockState } from './controllers/block';
+import type { BlockProfile, BlockRequest, BlockState, PunchState } from './controllers/block';
 
 export type PlayerId = string;
 export type ArmSide = 'left' | 'right';
@@ -91,10 +91,13 @@ export interface ArmIntent {
 /**
  * Plan 16, the palm push: `effort` 0..1 (default 1) scales the elbow's extension torque, the most the arm can push;
  * `lengthM` is the arm's held length, shoulder to palm (default and at most the arm's reach, at least its minimum).
+ * `extendMps` (plan 16, the punch as a strike): how fast the held length moves toward `lengthM` (m/s; absent the
+ * profile's `PalmPushProfile.extendMps`): a strike extends the arm fast, which loads the strut.
  */
 export interface PushRequest {
   effort?: number;
   lengthM?: number;
+  extendMps?: number;
 }
 
 /** Gate 3 balance observation (radians; displayed degrees are derived separately). */
@@ -145,9 +148,10 @@ export interface PlayerIntent {
   behind?: true;
   /**
    * Plan 16: he is blocking (controllers/block.ts): his request and his block's profile. The simulation keeps his engaged
-   * state from it (`PlayerRuntime.block`); absent, he has none.
+   * state from it (`PlayerRuntime.block`); absent, he has none. `punch` (a block profile with a strike): the punch's
+   * phase as his controller has it now, kept on that state.
    */
-  block?: { request: BlockRequest; profile: BlockProfile };
+  block?: { request: BlockRequest; profile: BlockProfile; punch?: PunchState };
   /** Controller-reported diagnostics (phase names, aim points). Never read by mechanics. */
   debug?: Record<string, unknown>;
 }
@@ -233,7 +237,7 @@ export interface Snapshot {
   /** Gate 3 balance state per player (free-rotation stance; zeros under the locked legacy stance). */
   balance: Record<PlayerId, BalanceState>;
   /** Plan 16: every blocking player's engaged state (absent while nobody blocks). */
-  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since'>>;
+  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since' | 'punch'>>;
 }
 
 /**
