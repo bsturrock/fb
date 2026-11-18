@@ -2,7 +2,8 @@
 
 Status (2026-11-17): the rough first slice is in the lab (palm push, block controller with its engaged state, the `BL`
 scenes), the base and the punch are built; what was built, the owner's rulings, the tracked defects and the lab links
-are in the [handoff](../handoff/plan16.md). Outstanding: the user's lab look at base and punch. Then item 3.
+are in the [handoff](../handoff/plan16.md). The user has looked at base and punch (2026-11-18); next is flat feet,
+then item 3.
 
 ## What a viewer should see (user, 2026-11-17, after the first lab look: "as a start this looks ok")
 
@@ -11,7 +12,13 @@ are in the [handoff](../handoff/plan16.md). Outstanding: the user's lab look at 
   is the main weapon of the block.
 - **The punch is timed.** "Can't extend and then make contact, needs to extend and hit chest with high impact": the
   hands land while the arms are still extending, never straight arms first that then close.
-- **Inside control wins.** Whoever gets the centre, inside hand position has the leverage and generally wins.
+- **Inside control wins.** Whoever gets the centre, inside hand position has the leverage and generally wins. Inside
+  leverage should "meaningfully push back the opponent and sort of lift them up off their feet (not literally) so
+  they are easier to push": the loser is stood up and driven up and back.
+- **Violent.** "They are punching in the chest and trying to drive their opponent up and back."
+- **Feet flat on the ground, an athletic base** (second look, 2026-11-18: "a real problem"). No standing on the toes
+  with the heels up, no tiptoe foot behind. Helmets touching is fine. Forearms through each other: better, still a
+  problem.
 - **A stronger base, not a wide one.** Close legs with bent knees right under the hips cannot withstand a block; but
   feet under the hips is good, "maybe slightly wider, not super wide". A foot goes back to brace when the push calls
   for it, not as the standing pose.
@@ -42,7 +49,12 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
 2. **The punch as a strike: done** (`BLOCK_STRIKE_V1` on `BL`; see the handoff). Load, a strike timed to land on bent
    arms mid-extension, then the drive; restartable. Its poses still come from the stance, hinge and ready-hands
    requests; the user's animations replace them when they arrive.
-3. **Inside hands and the contest.** Both men aim for the centre of the chest, so they compete for the inside lane:
+   **Next: flat feet and an athletic base** (user's second look). The blocking stance and its steps keep the whole
+   sole down: the crouch comes from hips back and a flat back within the ankle's range rather than heels lifting; feet
+   a little wider than the hips, toes ahead; the brace foot lands flat; steps are short and flat-footed. The base
+   rule then reads a real base behind the heel.
+3. **Inside hands and the contest.** The winner gets under and stands the loser up: the loser's posture rises and
+   what he can resist drops, so he is driven up and back. Both men aim for the centre of the chest, so they compete for the inside lane:
    who is inside is decided by who got there (timing, reach), not set per fixture as `under|over` is now. This is
    also the answer to forearm through forearm: one man's hands inside, the other's outside. The contest's advantage
    comes from inside hands and being lower; push strength from effort rather than requested speed; the loser gives
