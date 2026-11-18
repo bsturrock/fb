@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_V1, withBase, type BlockHands, type BlockIntent, type BlockProfile } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_V1, withBase, withStrike, type BlockHands, type BlockIntent, type BlockProfile } from '../controllers/block';
 import { BASE_V2 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -99,10 +99,12 @@ export const BLOCK_V1_HARD_NO_HINGE: BlockProfile = { ...BLOCK_V1_HARD, id: 'blo
  * wider, not super wide").
  */
 export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, BASE_V2, 0.03);
-const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: based(profile) });
-const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: based(profile) });
+/** A BL man's block (p33): on his base (`based`), punching with the strike (BLOCK_STRIKE_V1: load, strike, drive). */
+const struck = (p?: BlockProfile): BlockProfile => withStrike(based(p), BLOCK_STRIKE_V1);
+const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: struck(profile) });
+const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: struck(profile) });
 
-/** The BL scenes (A's hands under, B's over, in every one; every man on his base, `based`). */
+/** The BL scenes (A's hands under, B's over, in every one; every man on his base, `based`, and striking, BLOCK_STRIKE_V1). */
 export const BL_SCENES: BlockSceneOpts[] = [
   { id: 'BL-F1-even', title: 'Even match, standing: both hold at effort 0.5 from 1.1 m apart, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), durationS: 9 },
   { id: 'BL-F2-walkIn', title: 'Even match, A walks in at 1.5 m/s from 3 m onto B, who sets at 1 s; both hold at effort 0.5, 9 s', A: { ...hold(0.5, 'under'), walkInMps: 1.5 }, B: { ...hold(0.5, 'over'), fromS: 1 }, sepM: 3, durationS: 9 },
