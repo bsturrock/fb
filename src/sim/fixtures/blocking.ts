@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { ATHLETIC_V2, BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type LeanGeometry, type LeanInStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, LEAN_IN_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type LeanGeometry, type LeanInStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -156,14 +156,14 @@ export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, B
  * is the supported model's own), punching with the strike, the stance 3 cm wider per foot as on the base.
  */
 export const contested = (p: BlockProfile = BLOCK_V1): BlockProfile => withContest(withStrike({ ...p, stance: { ...p.stance, widthAddM: 0.03 } }, BLOCK_STRIKE_V1), CONTEST_V1);
-/** A BL man (p37): his block on the contest (`contested`), on the athletic stance (ATHLETIC_V2, its flat feet with it). */
-const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: contested(profile), athletic: ATHLETIC_V2 });
-const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: contested(profile), athletic: ATHLETIC_V2 });
+/** A BL man (p38): his block on the contest (`contested`), on the lean-in (LEAN_IN_V1, its feet behind his hips with it). */
+const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: contested(profile), leanIn: LEAN_IN_V1 });
+const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: contested(profile), leanIn: LEAN_IN_V1 });
 
 /**
  * The BL scenes (A's hands under, B's over, in every one; every man on the contest, `contested`, striking with
- * BLOCK_STRIKE_V1, on the athletic stance ATHLETIC_V2 with its flat feet). Before p37 they stood on BASE_V2 (`based`)
- * with no athletic stance.
+ * BLOCK_STRIKE_V1, on the lean-in LEAN_IN_V1, his feet behind his hips). Before p38 they stood on the athletic stance
+ * ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
 export const BL_SCENES: BlockSceneOpts[] = [
   { id: 'BL-F1-even', title: 'Even match, standing: both hold at effort 0.5 from 1.1 m apart, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), durationS: 9 },

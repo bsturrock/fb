@@ -541,7 +541,7 @@ export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): B
  * hips and on to feet behind the hips). Derived on the BL body (thigh 0.43, shin 0.45, the ankle's 25 deg):
  * - The load: the thigh 64 deg below horizontal, the rear foot on its ball at 10 deg (heel 5 cm up), its flat footprint's
  *   ankle 9 cm behind the hips, the front foot 8 cm ahead of it (both behind the hips); hips 0.90 m over the ground.
- * - The set stance (the hold and the drive) 66 deg, the strike 70 (it rises 2 cm and its rear foot comes down to 5 deg),
+ * - The set stance (the hold and the drive) 66 deg, the strike 70 (it rises 1.3 cm, its rear foot down to 5 deg),
  *   the stood-up stance 72 with the trunk at 14 (hips 0.92). Knees bent 45-65 deg through the block.
  * - The trunk at 20 deg in every phase but the stood-up one (ATHLETIC_V2's reason: at 30 the forearms pass through each
  *   other), 6-8 of it whole-body lean.
