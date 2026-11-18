@@ -42,6 +42,12 @@ export interface BlockBase {
 export const BASE_V1: BlockBase = { id: 'base-v1', brace: { marginM: 0.08 } };
 
 /**
+ * The base that resists (plan 16, p32): BASE_V1's stance, and the balance held to what the planted feet give in place of
+ * the fixed 240 N m (`resist`).
+ */
+export const BASE_V2: BlockBase = { ...BASE_V1, id: 'base-v2', resist: true };
+
+/**
  * The centre of pressure (world, on the ground) the balance torque `tau` asks for: the support's ground point `pivot`
  * moved by cross(up, tau) / weight (a torque about the push line's level normal moves it along the line, one about the
  * line moves it across). Horizontal only; `weightN` > 0.
