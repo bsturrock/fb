@@ -1,14 +1,16 @@
 # 16. Blocking
 
 Status (2026-11-17): the rough first slice is in the lab (palm push, block controller with its engaged state, the `BL`
-scenes) and the base is built; what was built, the owner's rulings, the tracked defects and the lab links are in the
-[handoff](../handoff/plan16.md). Next: the punch, then the user's lab look at base and punch together.
+scenes), the base and the punch are built; what was built, the owner's rulings, the tracked defects and the lab links
+are in the [handoff](../handoff/plan16.md). Outstanding: the user's lab look at base and punch. Then item 3.
 
 ## What a viewer should see (user, 2026-11-17, after the first lab look: "as a start this looks ok")
 
 - **Load low, explode up and forward**, the punch leading that effort. Arms in at the chest, loaded, then both hands
   explode out together, low to high, aimed at the centre of the chest (the chest pads), and drive in and up. The punch
   is the main weapon of the block.
+- **The punch is timed.** "Can't extend and then make contact, needs to extend and hit chest with high impact": the
+  hands land while the arms are still extending, never straight arms first that then close.
 - **Inside control wins.** Whoever gets the centre, inside hand position has the leverage and generally wins.
 - **A stronger base, not a wide one.** Close legs with bent knees right under the hips cannot withstand a block; but
   feet under the hips is good, "maybe slightly wider, not super wide". A foot goes back to brace when the push calls
@@ -37,11 +39,9 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
 
 1. **The base: done** (`BASE_V1`, `BASE_V2` on `BL`; see the handoff). A man resists what his planted feet give and
    steps a foot back when the push needs it.
-2. **The punch as a strike.** Today the hands drift on and hold. A block's punch is a timed move: a load (hips and
-   knees sink, hands in at the chest), then an explosive extension of both arms together with the hips and trunk
-   rising, low to high, into the centre of the chest, then the drive in and up. Phases on the controller, so a later
-   re-punch is the same move started again. Poses from the user's animations when they arrive (being prepared);
-   until then from the existing stance, hinge and ready-hands requests.
+2. **The punch as a strike: done** (`BLOCK_STRIKE_V1` on `BL`; see the handoff). Load, a strike timed to land on bent
+   arms mid-extension, then the drive; restartable. Its poses still come from the stance, hinge and ready-hands
+   requests; the user's animations replace them when they arrive.
 3. **Inside hands and the contest.** Both men aim for the centre of the chest, so they compete for the inside lane:
    who is inside is decided by who got there (timing, reach), not set per fixture as `under|over` is now. This is
    also the answer to forearm through forearm: one man's hands inside, the other's outside. The contest's advantage

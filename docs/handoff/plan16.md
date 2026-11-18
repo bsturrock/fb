@@ -3,26 +3,26 @@
 Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `model-integration`, both pushed.
 State on 2026-11-17: the palm push, the block controller with its engaged state, the `BL` scenes and the base
 (standing against a hard push from the planted feet) are in; the user has had a first lab look ("as a start this looks
-ok"; the picture of a block that came from it is at the top of the plan). The punch as a strike is next. 596/596
+ok"; the picture of a block that came from it is at the top of the plan). The punch as a timed strike is in. 601/601
 tests; the 414 earlier fixtures' summaries and traces are byte-identical to before the plan. Current full-check
-baseline: main checkout `.scratch/p32/resist`.
+baseline: main checkout `.scratch/p33/on`.
 
 ## To resume
 
-1. Build the punch (plan, "Left", item 2), flag off then on for `BL`, full check against `.scratch/p32/resist`.
-2. Then the user's lab look at base and punch together; ask for the path of the blocking animations being prepared.
+1. Get the user's lab look at base and punch (scenes below) and the path of the blocking animations being prepared.
+2. Then the inside-hand contest (plan, "Left", item 3), flag off then on for `BL`, full check against
+   `.scratch/p33/on`. Take the missing test (defect 6) with it.
 3. One builder at a time in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main
-   checkout's `.scratch/p33/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
+   checkout's `.scratch/p34/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
 
-- `?fixture=BL-F1-even&cam=front&speed=0.25&t=0.5` punch and hold
-- `?fixture=BL-F2-walkIn&cam=front&speed=0.25&t=1.2` walk in and engage
+- `?fixture=BL-F1-even&cam=front&speed=0.25&t=0.3` load to 0.45 s, strike, contact 0.53-0.61, drive from 0.7
+- `?fixture=BL-F2-walkIn&cam=front&speed=0.25&t=1.0` walks in, shallow load, contact about 1.42; the re-arm at
+  1.8-2.3 is defect 2
 - `?fixture=BL-F3-blockerDrives&cam=front&speed=0.25&t=4` the drive
-- `?fixture=BL-F5-offCentre&cam=front&speed=0.25&t=4` off centre
-- `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.6` the pushed man steps a foot back and braces, then holds (`t=3`)
-- `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=1.5` the pushed man is overpowered in his step back and falls;
-  the other now stays up (before the base both fell)
+- `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.4` the hit, then the pushed man steps a foot back and holds (`t=3`)
+- `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=1.2` the scene built to tip them: both fall, at 1.36 and 1.74 s
 
 ## Owner rulings (2026-11-17)
 
@@ -86,15 +86,31 @@ pushed man goes at about 0.95 s in his step back and the pusher lurches forward 
 would work for any supported man but is not applied outside blocking: heel lift in a crouch leaves no base behind, so
 it would weaken many L3 and HC players; an opt-in trial (the carrier's brace) would be its own step.
 
-**What a viewer sees.** Hands on in about 0.5 s; the men square, hips back, knees bent, chests 0.66-0.70 m apart, for
+**The punch as a strike** (`03bb832`..`4e5f442`; `src/sim/controllers/block.ts`, `PushRequest.extendMps`). Profile
+`BLOCK_STRIKE_V1`, on for `BL`. Phases on the player's own block state: *load* (hands in at his chest, hips sink about
+12 cm over 0.3 s; a man walking in sinks about 2 cm; loaded, he closes at no more than 0.6 m/s), *strike* (thrown
+when, after the hands' 0.1 s of travel at the current closing speed, the other man's chest will be within 0.6 m of
+his shoulders, a partial extension of a 0.72 m arm; inside 0.5 m he steps back instead), *drive* (0.12 s after
+contact, or when the palms come off). A strike that misses (arm straight, or 0.4 s gone) loads again;
+`BlockRequest.punch`, a number, restarts the move. No impulse is added: the push's held length extends at the palm's
+landing speed, so the hit is the strut's force through the allocator. Measured at first contact in every scene: elbow
+66-80 deg, 55-66 % through the extension, hand 3.1-3.9 m/s, peak 240-830 N against 37-315 N held, the other man's
+trunk moved 0.1-0.56 m/s; before, every palm landed on a straight arm at 0.5-0.7 m/s with 15-58 N. Hips rise 4-6 cm
+in the 0.15 s after contact. Even scenes and `-F7` stand; `-F8` A falls at 1.36 s (was 1.90) and B falls again, at
+1.74 s. Tests `tests/block-strike.test.ts` (5 with twins).
+
+**What a viewer sees.** Both sink with hands in at the chest, punch onto bent arms with a jolt, hips come up, then
+settle; the men square, hips back, knees bent, chests 0.66-0.70 m apart, for
 the whole scene; the stronger man drives the other back about 2 m at 0.24 m/s in short steps with no gallop; the man
 walking in brakes and engages without a chest bump.
 
 ## Tracked defects (polish order by look)
 
-1. Forearm through forearm, 8-9 cm, sustained in every scene. Under/over hands cut it from 12 cm; arms avoid bodies,
-   not other arms. Named on `BLOCK_V1_HANDS`.
-2. The crouch is deep and A-framed. Waits for the user's animations.
+1. Forearm through forearm, 4.8-7.8 cm with the strike (8-9 before), sustained in every scene. Arms avoid bodies, not
+   other arms. Named on `BLOCK_V1_HANDS`. Item 3 is the answer.
+2. `-F2`: after the first exchange the walking man's palms come off and the plain re-arm sweeps through the other's
+   forearms for about 0.4 s around 1.8-2.2 s (10.9 cm). The re-arm should be a re-punch.
+   Also: the crouch is deep and A-framed, and the helmets nearly touch at contact. Wait for the user's animations.
 3. The brace: the rear foot lands on its toe with the heel about 22 cm up, and the step back is the weak moment (no
    base behind him while the foot is in the air; `-F7` dips and gives a little ground, harder pushes fell him there).
    Placing the foot by its toe would give a longer base. A quicker or earlier step is the other lever.
@@ -102,9 +118,12 @@ walking in brakes and engages without a chest bump.
    stepping twice. The stepping model's existing exception for a foot planted in another player; his block has ended
    by then. (The old "both feet off the ground 0.18-0.23 s" in `-F3`, `-F4` measured drawn ankle height, which the
    crouch's heel lift inflates; with both soles more than 2 cm up it is 0 s.)
-5. `-F8`: the fallen man's upper arm 11.4 cm in his own trunk from 2.65 s, and one substep each way over the power
-   ceiling in his fall (165 W against 135 W predicted): the two new L4 matrix entries (12 over the ceiling, 10 before).
-6. A starting stance with a stagger (`initial.stance.staggerM`) slides the planted foot 5.8 cm at scene start. The BL
+5. `-F8`: the fallen man's upper arms cross 18.8 cm in his ragdoll; his fall gains energy in passive solves (up to
+   10.65 J at 1.7 s; the mechanism L3 and HC already have, up to 70 J). B's fall with the strike on comes from the
+   moved trajectory (switching the strike off at 1.6 s gives the same falls) but has no state-capture test yet.
+6. The cap on closing speed while loaded (`load.closeMps`, 0.6 m/s) has no test or fault twin. Without it the walk-in
+   crushes inside striking range and the men end chest to chest.
+   A starting stance with a stagger (`initial.stance.staggerM`) slides the planted foot 5.8 cm at scene start. The BL
    scenes start square to avoid it; it needs its own fix step.
 7. The drawn palm sits 2-3.4 cm off the drawn chest (the patch is on the proxy box, as grips are).
 8. No force contest: push strength still follows requested speed; an overpowered man is driven back but only falls by
@@ -127,7 +146,8 @@ the L2 traces.
 
 - Full checks (main checkout): `.scratch/p28/final` (cleanup), `.scratch/p30/final` (palm push),
   `.scratch/p31/final` with `final.compare.txt` (controller and BL), `.scratch/p32/stance` and `.scratch/p32/resist`
-  with their `.compare.txt` (the base).
+  with their `.compare.txt` (the base), `.scratch/p33/off`, `off2`, `on` with theirs (the strike; worktree
+  `.scratch/p33/stills/`, `P-` = before).
 - Probes and stills (worktree): `.scratch/p29/` (before), `.scratch/p30/` (palm push in the probe scenes),
   `.scratch/p31/` (BL), `.scratch/p32/` (the base; `stills/`, and `lab/vite.probe.config.ts` for the harder-push and
   feet-together scenes). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
