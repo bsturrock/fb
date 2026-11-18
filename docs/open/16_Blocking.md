@@ -4,11 +4,22 @@ Status (2026-11-17): the rough first slice is in the lab (palm push, block contr
 scenes); what was built, the owner's rulings, the tracked defects and the lab links are in the
 [handoff](../handoff/plan16.md). Outstanding: the user's first lab look. Left: the list below.
 
-## What a viewer should see (first slice; orchestrator's assumption, user to correct in the lab)
+## What a viewer should see (user, 2026-11-17, after the first lab look: "as a start this looks ok")
 
-Two men meet upright. Hands come up, punch out onto the other's chest or shoulders and stay on. The blocker holds his
-ground or drives; the defender pushes back. Short choppy steps under the hips. Nobody falls unless genuinely
-overpowered. Not in the first slice: shed moves, getting round, pass-rush choices, a ball.
+- **Load low, explode up and forward**, the punch leading that effort. Arms in at the chest, loaded, then both hands
+  explode out together, low to high, aimed at the centre of the chest (the chest pads), and drive in and up. The punch
+  is the main weapon of the block.
+- **Inside control wins.** Whoever gets the centre, inside hand position has the leverage and generally wins.
+- **A wide, strong base.** Close legs with bent knees right under the hips cannot withstand a block.
+- **Two entries.** From a three-point stance (very low to high); and from running (the play developing, next-level
+  blocks): still load low with the legs and explode low to high, less pronounced, since he is already moving and more
+  upright.
+- A man with both feet off the ground can be right in a situation but generally should not happen.
+- **Dynamic, later.** Several punches, re-punching for inside position, sweeping the other man's hands,
+  re-establishing position; a block sustains, but it is not one move into a static hold. Not to be built yet; the
+  block must not be designed as a single action that cannot be re-punched.
+
+Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, pass-rush choices, a ball.
 
 ## Direction
 
@@ -27,12 +38,23 @@ overpowered. Not in the first slice: shed moves, getting round, pass-rush choice
    his rear planted foot along the push line, read from the posed feet. With it, the stance must keep a foot back
    (today the rear foot sits at +0.03 m and the requested stagger is not kept), so a man with a foot back leans in and
    holds and a man with his feet together goes over. Flag off, then on for `BL`; `BL-F8-hardNoHinge` is the scene.
-2. **Stance and punch from the user's animations** (being prepared): hips back, trunk pitched, knees clear; replaces
-   the controller's one stance request. Reference for the look, and source poses if on the model skeleton.
-3. **Force contest**, as far as the lab shows the need: push strength from effort rather than requested speed, choppy
-   steps while giving ground, lean building to a real fall when overpowered.
-4. **Polish** in the handoff's defect order (forearm through forearm first), after the user's look.
-5. **Milestone:** lab review by the user after 1 and 2.
+   The base is wide and staggered, not feet under the hips (user).
+2. **The punch as a strike.** Today the hands drift on and hold. A block's punch is a timed move: a load (hips and
+   knees sink, hands in at the chest), then an explosive extension of both arms together with the hips and trunk
+   rising, low to high, into the centre of the chest, then the drive in and up. Phases on the controller, so a later
+   re-punch is the same move started again. Poses from the user's animations when they arrive (being prepared);
+   until then from the existing stance, hinge and ready-hands requests.
+3. **Inside hands and the contest.** Both men aim for the centre of the chest, so they compete for the inside lane:
+   who is inside is decided by who got there (timing, reach), not set per fixture as `under|over` is now. This is
+   also the answer to forearm through forearm: one man's hands inside, the other's outside. The contest's advantage
+   comes from inside hands and being lower; push strength from effort rather than requested speed; the loser gives
+   ground in choppy steps and, overpowered, leans to a real fall.
+4. **Entries:** a three-point stance start (very low to high) and a run-in (less pronounced load, more upright), as
+   scenes.
+5. **Polish** in the handoff's defect order, with the footwork and tackle queues.
+6. **Milestone:** lab review by the user after 1 and 2, again after 3 and 4.
+
+Later, on the user's word: the dynamic block (re-punch for inside position, hand sweeps, re-establishing).
 
 Each is flag off first, then on, full-checked (`CLAUDE.md`). Later, when blocking meets a ball carrier: a blocker role
 and the rules (`progressStopped`).
