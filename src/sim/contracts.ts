@@ -92,6 +92,12 @@ export interface FlatStance {
    * where a flat foot holds the hips at the lower of that and now, so they need no step as the stance sinks to it.
    */
   lowRootM?: number;
+  /**
+   * Plan 16 (p35): a brace (the base's `brace` asking his rear foot back) may take the rear foot back to where its shin
+   * leans this far past the ankle's range at the hips' height now (deg; on the ball of the foot within the viewer's
+   * limit, below `stepPastDeg`), not only to where it stands flat. Absent: a brace never takes a foot back past flat.
+   */
+  braceDeg?: number;
 }
 
 export interface ArmIntent {

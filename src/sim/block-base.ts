@@ -31,6 +31,12 @@ export interface BlockBase {
   brace?: { marginM: number };
   /** The balance torque is held to what the base gives (`limitToBase`) in place of the balance profile's fixed ceiling. */
   resist?: true;
+  /**
+   * Plan 16 (p35, `BASE_V3`): what the base gives is read from the soles and his centre of mass (`copBounds`), not as a
+   * reach from the support's ground point; a planted heel up no more than `loadHeelM` on a foot pitched no more than
+   * `loadPitchDeg` bears weight (`soleContacts`). Absent: BASE_V2's reading.
+   */
+  soles?: { loadHeelM: number; loadPitchDeg: number };
 }
 
 /**
@@ -46,6 +52,15 @@ export const BASE_V1: BlockBase = { id: 'base-v1', brace: { marginM: 0.08 } };
  * the fixed 240 N m (`resist`).
  */
 export const BASE_V2: BlockBase = { ...BASE_V1, id: 'base-v2', resist: true };
+
+/**
+ * The base read from the soles (plan 16, p35): BASE_V2, its reading `copBounds` (the centre of pressure within the touching
+ * soles, or under his centre of mass), and a planted heel within the viewer's limit for a foot on the ground (3 cm up,
+ * the foot pitched 10 deg at most) bearing weight. Why the heel: the drawn ankle stops at 25 deg of dorsiflexion and its
+ * heel lifts past that (heel lift, plan 12), about 0.5 cm a degree on the model's 30 cm shoe; a loaded ankle gives some
+ * 5-10 deg more than its unloaded range, so a heel within 3 cm (about 6 deg past it) is one his weight would press down.
+ */
+export const BASE_V3: BlockBase = { ...BASE_V2, id: 'base-v3', soles: { loadHeelM: 0.03, loadPitchDeg: 10 } };
 
 /**
  * The first flat stance (plan 16, p34; `FlatStance`): each foot ahead of its hip where the shin over a flat foot leans
@@ -85,7 +100,7 @@ export function braceHome(home: Vec3, s: ArmSide, rear: ArmSide, u: Vec3, cop: V
  * lowest, though a pose may show it a little off). A heel shown lifted leaves the toe's corners, a foot on an edge that
  * edge's; a foot that is not planted gives nothing.
  */
-export function soleContacts(plan: FootPlan, touchM: number): Vec3[] {
+export function soleContacts(plan: FootPlan, touchM: number, load?: BlockBase['soles']): Vec3[] {
   const out: Vec3[] = [];
   const { he, centerFoot } = plan.shoe;
   for (const s of SIDES) {
@@ -94,9 +109,51 @@ export function soleContacts(plan: FootPlan, touchM: number): Vec3[] {
     const cs: Vec3[] = [];
     for (const x of [-he.x, he.x]) for (const z of [centerFoot.z - he.z, centerFoot.z + he.z]) cs.push(add(f.ankleW, qRot(f.footQ, v3(x, centerFoot.y - he.y, z))));
     const low = Math.min(...cs.map((c) => c.y));
-    for (const c of cs) if (c.y - low <= touchM) out.push(c);
+    // (plan 16, `BlockBase.soles`: a heel within the limit bears weight, the whole sole with it; the heel's height is its
+    // middle's, cs[0] and cs[2] its corners, above the sole's lowest corner, so a foot rolled onto an edge reads its lift)
+    const pitch = Math.asin(clamp(qRot(f.footQ, v3(0, 0, 1)).y, -1, 1));
+    const bears = !!load && Math.abs(pitch) <= (load.loadPitchDeg * Math.PI) / 180 && (cs[0].y + cs[2].y) / 2 - low <= load.loadHeelM;
+    for (const c of cs) if (bears || c.y - low <= touchM) out.push(c);
   }
   return out;
+}
+
+/**
+ * Plan 16 (p35, `BlockBase.soles`): what the base gives, read from the soles and his centre of mass. The identity: the
+ * support force W at its ground point `pivot` and the balance torque tau act on him as W at the centre of pressure
+ * pivot + (up x tau) / W (`neededCop`), and the ground can push only where a sole touches it. So the centre of pressure is
+ * held within the touching soles' extent along the push line `u` and across it; and where his weight's own ground point
+ * (`com`, his centre of mass on the ground) lies off them (a foot in a step, a stance behind its heels), it may stay under
+ * it. Held toward that extent, the pressure only ever comes toward his centre of mass along each line: the moment of the
+ * ground's force about his centre of mass is only ever reduced, never added to. Returned as `BaseMoments` about the support's
+ * ground point for `limitToBase` (W times the reach of that extent behind, ahead and to each side of `pivot`), signed: a
+ * side the extent does not reach past the ground point is negative (the pressure must stay on the other side of it).
+ * Read from the centre of mass (`comBase`), these are the moments he can resist a push with from his feet.
+ */
+export function copBounds(points: Vec3[], pivot: Vec3, com: Vec3, u: Vec3, weightN: number): BaseMoments {
+  const a = cross(UP, u);
+  const at = (p: Vec3) => ({ along: dot(v3(p.x - pivot.x, 0, p.z - pivot.z), u), across: dot(v3(p.x - pivot.x, 0, p.z - pivot.z), a) });
+  const c = at(com);
+  let lo = c.along;
+  let hi = c.along;
+  let right = c.across;
+  let left = c.across;
+  for (const p of points) {
+    const r = at(p);
+    lo = Math.min(lo, r.along);
+    hi = Math.max(hi, r.along);
+    right = Math.min(right, r.across);
+    left = Math.max(left, r.across);
+  }
+  return { back: -weightN * lo, front: weightN * hi, left: weightN * left, right: -weightN * right };
+}
+
+/**
+ * Plan 16 (p35): the moments his feet give against a push, from his centre of mass `com` (N m): weight times how far the
+ * touching soles reach behind it, ahead of it and to either side along the push line `u` (0 where none reaches past it).
+ */
+export function comBase(points: Vec3[], com: Vec3, u: Vec3, weightN: number): BaseMoments {
+  return baseMoments(points, com, u, weightN);
 }
 
 /**
@@ -137,6 +194,27 @@ export function baseMoments(points: Vec3[], pivot: Vec3, u: Vec3, weightN: numbe
 export function flatAheadM(thighM: number, shinM: number, hipM: number, shinRad: number): number {
   const c = clamp((hipM - shinM * Math.cos(shinRad)) / thighM, -1, 1);
   return thighM * Math.sqrt(1 - c * c) - shinM * Math.sin(shinRad);
+}
+
+/**
+ * Plan 16 (p35, the athletic stance): a sagittal leg of thigh `thighM` and shin `shinM`, the thigh sloping `thighRad`
+ * below horizontal from the hip forward to the knee, the shin leaning `shinRad` forward from the ankle up to the knee: the
+ * ankle's place ahead of the hip (m; negative behind) and the hip's height above the ankle (m).
+ */
+export function legShape(thighM: number, shinM: number, thighRad: number, shinRad: number): { aheadM: number; upM: number } {
+  return { aheadM: thighM * Math.cos(thighRad) - shinM * Math.sin(shinRad), upM: thighM * Math.sin(thighRad) + shinM * Math.cos(shinRad) };
+}
+
+/** The same leg over an ankle `aheadM` in front of the hip with its shin leaning `shinRad`: the thigh's slope (rad) and the hip's height above the ankle (m). */
+export function legForShin(thighM: number, shinM: number, aheadM: number, shinRad: number): { thighRad: number; upM: number } {
+  const thighRad = Math.acos(clamp((aheadM + shinM * Math.sin(shinRad)) / thighM, -1, 1));
+  return { thighRad, upM: legShape(thighM, shinM, thighRad, shinRad).upM };
+}
+
+/** The same leg over an ankle `aheadM` in front of the hip with its thigh sloping `thighRad`: the shin's lean (rad) and the hip's height above the ankle (m). */
+export function legForThigh(thighM: number, shinM: number, aheadM: number, thighRad: number): { shinRad: number; upM: number } {
+  const shinRad = Math.asin(clamp((thighM * Math.cos(thighRad) - aheadM) / shinM, -1, 1));
+  return { shinRad, upM: legShape(thighM, shinM, thighRad, shinRad).upM };
 }
 
 /** The forward lean (rad) of the shin from the ankle up to the knee, along the horizontal heading `dir` (unit). */

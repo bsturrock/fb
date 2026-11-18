@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_V1, withBase, withStrike, type BlockHands, type BlockIntent, type BlockProfile } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type StanceGeometry } from '../controllers/block';
 import { BASE_V2 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -20,7 +20,20 @@ export interface BlockMan {
   /** He walks in: his speed at t = 0 toward the other (m/s). */
   walkInMps?: number;
   profile?: BlockProfile;
+  /** Plan 16 (p35): his profile on this athletic stance (`withAthletic`), derived on the scene's leg (`legOf`). */
+  athletic?: AthleticStance;
 }
+
+/** Plan 16 (p35): a scene's body for the athletic stance (`StanceGeometry`): the ragdoll profile's thigh, shin and sole, the body's hip and torso box, the joint range's ankle. */
+export function legOf(def: FixtureDef, body: PlayerSetup['body']): StanceGeometry {
+  const R = def.ragdoll!;
+  if (body.kind === 'legacyCapsule') throw new Error('the athletic stance needs the compound body');
+  const c = body.compound.torso.center;
+  return { thighM: R.lengths.thigh, shinM: R.lengths.shin, soleM: R.shoe.belowAnkleM + R.shoe.halfExtents.y, hipUpM: body.hipRight.y, chestUpM: c.y, chestAheadM: c.z, dorsiDeg: def.jointRange!.ankle.dorsiDeg };
+}
+
+/** A man's block profile: his own (default BLOCK_V1), on his athletic stance when he has one. */
+export const profileOf = (m: BlockMan, def: FixtureDef, body: PlayerSetup['body']): BlockProfile => (m.athletic ? withAthletic(m.profile ?? BLOCK_V1, m.athletic, legOf(def, body)) : (m.profile ?? BLOCK_V1));
 
 export interface BlockSceneOpts {
   id: string;
@@ -40,12 +53,23 @@ export interface BlockSceneOpts {
  */
 export const PALM_PUSH_BLOCK: PalmPushProfile = { ...PALM_PUSH_V1, bornFacingDot: 0.6, keepFacingDot: 0.45 };
 
+/**
+ * The palm push of a scene (p35): PALM_PUSH_BLOCK, its arm line cone widened (born and kept) by however much deeper the
+ * athletic men's set stance pitches the chest than their profile's own (each man's chest the other's palms meet).
+ */
+function palmPushOf(o: BlockSceneOpts): PalmPushProfile {
+  const more = Math.max(...[o.A, o.B].map((m) => (m.athletic ? m.athletic.set.trunkDeg - ((m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg) : 0)));
+  if (more <= 0) return PALM_PUSH_BLOCK;
+  const wider = (dot: number) => Math.cos(Math.acos(dot) + (more * Math.PI) / 180);
+  return { ...PALM_PUSH_BLOCK, bornFacingDot: wider(PALM_PUSH_BLOCK.bornFacingDot), keepFacingDot: wider(PALM_PUSH_BLOCK.keepFacingDot) };
+}
+
 const source = (): FixtureDef => l3f6().find((d) => d.id === 'L3-F6-hold')!;
 
-function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetup): PlayerSetup {
+function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetup, def: FixtureDef): PlayerSetup {
   const sign = id === 'A' ? 1 : -1;
-  const sep = o.sepM ?? 1.1;
-  const P = m.profile ?? BLOCK_V1;
+  const sep = o.sepM ?? sepOf(o, def, template.body);
+  const P = profileOf(m, def, template.body);
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
   return {
     ...template,
@@ -65,9 +89,23 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       kind: 'block',
       request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
-      ...(m.profile ? { profile: m.profile } : {}),
+      ...(m.profile || m.athletic ? { profile: P } : {}),
     },
   };
+}
+
+/**
+ * The scene's start separation (`BlockSceneOpts.sepM`; default 1.1): with athletic men, wider by what their set stance's
+ * deeper pitch brings each chest nearer than the profile's own (`chestShiftM`), so the pitched chests meet as before.
+ */
+function sepOf(o: BlockSceneOpts, def: FixtureDef, body: PlayerSetup['body']): number {
+  const more = (m: BlockMan) => {
+    if (!m.athletic) return 0;
+    const G = legOf(def, body);
+    const p = m.profile ?? BLOCK_V1;
+    return chestShiftM(G, m.athletic.set.trunkDeg) - chestShiftM(G, p.stance.leanDeg + p.stance.hingeDeg);
+  };
+  return 1.1 + more(o.A) + more(o.B);
 }
 
 /** One BL scene from L3-F6-hold's package: two blocking defenders, no ball, no rules, no wrap. */
@@ -80,11 +118,11 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     milestone: 'BL',
     title: o.title,
     notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1, on a base when its profile has one) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
-    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block`, palmPush: PALM_PUSH_BLOCK },
+    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block`, palmPush: palmPushOf(o) },
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },
     focus: { A: 'B', B: 'A' },
-    players: [man('A', o, o.A, D), man('B', o, o.B, D)],
+    players: [man('A', o, o.A, D, base), man('B', o, o.B, D, base)],
   };
 }
 

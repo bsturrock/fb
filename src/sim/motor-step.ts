@@ -4,11 +4,11 @@
 import type { Snapshot } from './contracts';
 import { computeDrive, computeYaw } from './motors';
 import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, desiredUpFrom, leanScale, postureGravityHold } from './balance';
-import { add, v3, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, UP } from './vec';
+import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, UP } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
 import { hingeBalanceTorque } from './hinge';
-import { baseCeiling, baseMoments, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
+import { baseCeiling, baseMoments, copBounds, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
@@ -147,5 +147,8 @@ function baseOf(host: MotorHost, pl: MotorHost['players'][number], weightN: numb
   const to = host.coreBody(him).translation();
   const d = v3(to.x - me.x, 0, to.z - me.z);
   const u = len(d) > 1e-9 ? norm(d) : v3(0, 0, 1);
+  // (p35, BASE_V3: read from the soles and his centre of mass, a heel within the limit bearing weight)
+  const S = blk.base.soles;
+  if (S) return { m: copBounds(soleContacts(pl.feet, SOLE_TOUCH_M, S), pl.sus.pivotPointWorld, vc(pl.proxy.body.worldCom()), u, weightN), u };
   return { m: baseMoments(soleContacts(pl.feet, SOLE_TOUCH_M), pl.sus.pivotPointWorld, u, weightN), u };
 }

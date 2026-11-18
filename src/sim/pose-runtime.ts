@@ -598,10 +598,12 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
     // plan 16 (the base): an engaged blocker's home covers the centre of pressure his balance asks for
     if (flat) home[s] = addScaled(home[s], fwdH, flat.shiftM);
     if (brace) home[s] = braceHome(home[s], s, brace.rear, brace.u, brace.cop, brace.heelM, brace.toeM, brace.marginM);
-    // (a flat stance: a brace never takes a foot back past where it stands flat)
+    // (a flat stance: a brace never takes a foot back past where it stands flat; p35, with `braceDeg`, its rear foot back
+    // to where it stands on its ball within the limit)
     if (flat) {
       const m = dot(sub(home[s], hip), fwdH);
-      if (m < flat.needM[s]) home[s] = addScaled(home[s], fwdH, flat.needM[s] - m);
+      const least = brace && s === brace.rear && flat.braceM ? Math.min(flat.needM[s], flat.braceM[s]) : flat.needM[s];
+      if (m < least) home[s] = addScaled(home[s], fwdH, least - m);
     }
     request[s] = toWorld(core, legRequestLocal(inp, s));
   }
@@ -655,21 +657,24 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
  * feet that with the stagger kept (m, >= 0); the shin lean past which a plant steps, and the ankle's range. Null without
  * a joint-range ankle, or when he is not standing supported.
  */
-function flatOf(host: PoseHost, pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R: ProxyPoseInput['ragdoll'], gy: number): { shiftM: number; needM: Record<ArmSide, number>; maxShinRad: number; rangeRad: number } | null {
+function flatOf(host: PoseHost, pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R: ProxyPoseInput['ragdoll'], gy: number): { shiftM: number; needM: Record<ArmSide, number>; braceM?: Record<ArmSide, number>; maxShinRad: number; rangeRad: number } | null {
   const F = pl.sus?.flat;
   const A = host.def.jointRange?.ankle;
   if (!F || !A || pl.controlMode !== 'supported' || pl.rag) return null;
   const soleM = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
   const lean = ((A.dorsiDeg - F.marginDeg) * Math.PI) / 180;
   const needM = {} as Record<ArmSide, number>;
+  // (p35, `braceDeg`: where a braced rear foot may stand, on its ball at the hips' height now)
+  const braceM = F.braceDeg !== undefined ? ({} as Record<ArmSide, number>) : undefined;
   let shiftM = 0;
   for (const s of ['left', 'right'] as ArmSide[]) {
     const hip = toWorld(core, hipLocal(pl.body, s));
     const hipM = F.lowRootM === undefined ? hip.y - gy - soleM : Math.min(hip.y - gy, hip.y - core.p.y + F.lowRootM) - soleM;
     needM[s] = flatAheadM(R.lengths.thigh, R.lengths.shin, hipM, lean);
+    if (braceM) braceM[s] = flatAheadM(R.lengths.thigh, R.lengths.shin, hip.y - gy - soleM, ((A.dorsiDeg + F.braceDeg!) * Math.PI) / 180);
     shiftM = Math.max(shiftM, needM[s] - (s === 'left' ? 0.5 : -0.5) * pl.sus!.staggerM);
   }
-  return { shiftM, needM, maxShinRad: ((A.dorsiDeg + F.stepPastDeg) * Math.PI) / 180, rangeRad: (A.dorsiDeg * Math.PI) / 180 };
+  return { shiftM, needM, ...(braceM ? { braceM } : {}), maxShinRad: ((A.dorsiDeg + F.stepPastDeg) * Math.PI) / 180, rangeRad: (A.dorsiDeg * Math.PI) / 180 };
 }
 
 /** The pair's shift ahead for a flat stance (flatOf), 0 without one. */

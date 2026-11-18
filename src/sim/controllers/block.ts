@@ -14,7 +14,7 @@ import type { BodyProfile, MotorProfile } from '../profiles';
 import { sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
-import type { BlockBase } from '../block-base';
+import { legForThigh, legShape, type BlockBase } from '../block-base';
 import type { Controller, ControllerContext } from './base';
 import { clamp, dot, horiz, len, norm, qRot, rad, scale, sub, add, v3, type Vec3 } from '../vec';
 
@@ -250,6 +250,130 @@ export const withFlat = (p: BlockProfile, flat: FlatStance, staggerM: number): B
   stance: { ...p.stance, staggerM },
   ...(p.strike ? { strike: { ...p.strike, load: { ...p.strike.load, stance: { ...p.strike.load.stance, staggerM } }, strike: { ...p.strike.strike, stance: { ...p.strike.strike.stance, staggerM } } } } : {}),
 });
+
+/**
+ * Plan 16 (p35): the body the athletic stance is derived on (m): thigh, shin, the ankle's height over the ground (the
+ * sole), the hip above the body's origin, the torso box's centre above and ahead of it; the ankle's dorsiflexion range (deg).
+ */
+export interface StanceGeometry {
+  thighM: number;
+  shinM: number;
+  soleM: number;
+  hipUpM: number;
+  chestUpM: number;
+  chestAheadM: number;
+  dorsiDeg: number;
+}
+
+/**
+ * How much nearer (m) a body pitched `trunkDeg` forward brings its torso box's front than it stands unpitched (the chest
+ * gaps are measured unpitched, at the origin's height).
+ */
+export const chestShiftM = (G: StanceGeometry, trunkDeg: number): number => {
+  const t = (trunkDeg * Math.PI) / 180;
+  return G.chestUpM * Math.sin(t) + G.chestAheadM * Math.cos(t) - G.chestAheadM;
+};
+
+/** One phase of the athletic stance: the trunk's pitch from vertical (deg), `leanDeg` of it the whole-body lean, the rest on the hip hinge. */
+export interface TrunkPose {
+  trunkDeg: number;
+  leanDeg: number;
+}
+
+/**
+ * Plan 16 (p35): the athletic stance, every pose input of a block's stance in this one object (an authored stance replaces
+ * it whole). The load, the deepest, places the feet: the rear shin over its flat foot leans `load.shinDeg` (within the
+ * ankle's range: the flat stance's margin is what is left of it) with the thigh sloping `load.thighDeg` below horizontal,
+ * the front foot `staggerM` ahead. Over those same planted feet the set stance (the hold and the drive) stands to a thigh
+ * at `set.thighDeg` and the strike rises to one at `strike.thighDeg`: hips back, knees bent, shins forward within the
+ * range. Every height follows from those angles and the leg (`athleticStances`); none is set per scene. The trunk is
+ * pitched well forward (hips back, shoulders toward the toes), `leanDeg` of it the whole-body lean and the rest on the hip
+ * hinge, which moves at `hinge` (the stance is reached from upright within the load). `flat`: the flat stance's stepping.
+ */
+export interface AthleticStance {
+  id: string;
+  set: TrunkPose & { thighDeg: number };
+  load: TrunkPose & { thighDeg: number; shinDeg: number };
+  strike: TrunkPose & { thighDeg: number };
+  staggerM: number;
+  hinge: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2'>;
+  flat: Pick<FlatStance, 'stepPastDeg' | 'coverM' | 'captureK' | 'braceDeg'>;
+}
+
+/**
+ * Plan 16 (p35): the first athletic stance (no registered fixture has it yet). The load's thigh at 45 deg and the rear
+ * shin at 23 (2 deg inside the ankle's 25) place the feet; the set stance stands to a 52 deg thigh and the strike rises to
+ * 58 over them; the trunk at 30 deg (28 striking), 6 of it lean (8 striking). The brace may take the rear foot back to
+ * where its shin leans 5 deg past the range (the heel about 1.5 cm up, inside the viewer's 3 cm); a plant steps once its
+ * shin leans 10 past (the heel well up). Deeper trunks bring the heads together before the hands reach (42 deg: the men
+ * engage head to head, no palm on) and leave the flat feet nothing behind the centre of mass to hold the pitch with.
+ */
+export const ATHLETIC_V1: AthleticStance = {
+  id: 'athletic-v1',
+  set: { thighDeg: 52, trunkDeg: 30, leanDeg: 6 },
+  load: { thighDeg: 45, shinDeg: 23, trunkDeg: 30, leanDeg: 6 },
+  strike: { thighDeg: 58, trunkDeg: 28, leanDeg: 8 },
+  staggerM: 0.1,
+  hinge: { rateDegPerS: 120, accelDegPerS2: 300 },
+  flat: { stepPastDeg: 10, coverM: 0.16, captureK: 0.5, braceDeg: 5 },
+};
+
+/** What an athletic stance comes to on a leg (`athleticStances`): the three block stances, the flat stance, and where the rear ankle stands ahead of its hip (m). */
+export interface AthleticDerived {
+  stance: BlockStance;
+  load: BlockStance;
+  strike: BlockStance;
+  flat: FlatStance;
+  aheadM: number;
+}
+
+/**
+ * The athletic stance on a leg: the rear ankle `aheadM` ahead of its hip (`legShape` of the load's thigh and shin); each
+ * phase's root height the hip's height above that ankle (its own thigh over the same ankle) plus the sole, less the hip's
+ * height over the origin at that trunk pitch; the hinge the trunk's pitch less the lean, no hip drop (the height is the
+ * drop). The flat stance places the feet for the load (its shin lean, `lowRootM` its root), so they stay planted from the
+ * set stance down through the load and up through the strike.
+ */
+export function athleticStances(A: AthleticStance, L: StanceGeometry): AthleticDerived {
+  const r = (d: number) => (d * Math.PI) / 180;
+  const low = legShape(L.thighM, L.shinM, r(A.load.thighDeg), r(A.load.shinDeg));
+  const a = low.aheadM;
+  const set = legForThigh(L.thighM, L.shinM, a, r(A.set.thighDeg));
+  const strike = legForThigh(L.thighM, L.shinM, a, r(A.strike.thighDeg));
+  const root = (upM: number, t: TrunkPose) => upM + L.soleM - L.hipUpM * Math.cos(r(t.trunkDeg));
+  const stance = (upM: number, t: TrunkPose): BlockStance => ({ leanDeg: t.leanDeg, hingeDeg: t.trunkDeg - t.leanDeg, dropM: 0, heightM: root(upM, t), staggerM: A.staggerM });
+  const load = stance(low.upM, A.load);
+  return {
+    stance: stance(set.upM, A.set),
+    load,
+    strike: stance(strike.upM, A.strike),
+    flat: { id: A.id, marginDeg: L.dorsiDeg - A.load.shinDeg, ...A.flat, lowRootM: load.heightM },
+    aheadM: a,
+  };
+}
+
+/**
+ * Plan 16 (p35): a block profile on an athletic stance (`athleticStances` on the leg `L`): its stance, the strike's load
+ * and strike stances and its flat feet derived from `A` (the stance's width kept), the hinge's bound raised to the deepest
+ * hinge asked, under an id that names it.
+ */
+export function withAthletic(p: BlockProfile, A: AthleticStance, L: StanceGeometry): BlockProfile {
+  const d = athleticStances(A, L);
+  const w = p.stance.widthAddM ? { widthAddM: p.stance.widthAddM } : {};
+  const maxDeg = Math.max(p.hinge.maxDeg, d.stance.hingeDeg, ...(p.strike ? [d.load.hingeDeg, d.strike.hingeDeg] : []));
+  // every chest gap wider by what the deeper pitch brings the two chests nearer than the profile's own stance's
+  const s0 = -2 * (chestShiftM(L, A.set.trunkDeg) - chestShiftM(L, p.stance.leanDeg + p.stance.hingeDeg));
+  return {
+    ...p,
+    id: `${p.id}+${A.id}`,
+    approach: { ...p.approach, holdGapM: p.approach.holdGapM - s0 },
+    punchGapM: p.punchGapM - s0,
+    stance: { ...d.stance, ...w },
+    hinge: { ...p.hinge, ...A.hinge, maxDeg },
+    flat: d.flat,
+    ...(p.strike ? { strike: { ...p.strike, loadGapM: p.strike.loadGapM - s0, load: { ...p.strike.load, closeGapM: p.strike.load.closeGapM - s0, stance: { ...d.load, ...w } }, strike: { ...p.strike.strike, stance: { ...d.strike, ...w } } } } : {}),
+  };
+}
 
 /**
  * A fixture's block (`ControllerSpec` kind `block`): the request, from `fromS` (default 0; before it he stands where he
