@@ -174,17 +174,25 @@ describe('plan 16, the punch as a strike (BLOCK_STRIKE_V1)', () => {
     }
   }, 180_000);
 
-  it('(b) a miss reloads: a strike at a man who backs off out of reach goes back to the load (no palm held out on a straight arm past 0.25 s); a strike that never reloads holds straight arms out', async () => {
+  it('(b) a miss reloads: a strike at a man taken out of reach as it is thrown (a script man moved 0.6 m back) goes back to the load (no palm held out on a straight arm past 0.25 s); a strike that never reloads holds straight arms out', async () => {
     const never = variant('test-strike-never-reload', { strike: { straightM: 0.8, maxS: 10 } });
     for (const [K, reloads] of [
       [BLOCK_STRIKE_V1, true],
       [never, false],
     ] as const) {
-      // B: a script man who stands, then backs off at 3 m/s from 0.6 s (as A's strike is thrown: his palms graze B and come off)
-      const d = scene({ durationS: 1.6 }, K);
-      const B = d.players[1];
-      const back = { ...d, players: [d.players[0], { ...B, controller: { kind: 'script' as const, segments: [{ fromS: 0, velocity: v3(), facing: v3(0, 0, -1), effort: 1 }, { fromS: 0.6, velocity: v3(0, 0, 3), facing: v3(0, 0, -1), effort: 1 }] } }] };
-      const r = await run(back);
+      const d = scene({ durationS: 1.4 }, K);
+      const stands = { ...d, players: [d.players[0], { ...d.players[1], controller: { kind: 'script' as const, segments: [{ fromS: 0, velocity: v3(), facing: v3(0, 0, -1), effort: 1 }] } }] };
+      // the constructed miss: B set 0.6 m further off (+z) the substep A's strike begins
+      let moved = false;
+      const r = await run(stands, (sim) => {
+        const A = sim.players.find((p) => p.id === 'A')!;
+        if (moved || A.block?.punch?.phase !== 'strike') return;
+        moved = true;
+        const b = sim.players.find((p) => p.id === 'B')!.proxy.body;
+        const t = b.translation();
+        b.setTranslation({ x: t.x, y: t.y, z: t.z + 0.6 }, true);
+      });
+      expect(moved, 'B moved off as the strike began').toBe(true);
       const s = r.s.filter((x) => x.m.A?.supported);
       expect(s.some((x) => x.m.A.punch?.phase === 'strike'), 'A strikes').toBe(true);
       // the longest run of substeps with a free arm out at 0.68 m or more
@@ -209,7 +217,7 @@ describe('plan 16, the punch as a strike (BLOCK_STRIKE_V1)', () => {
     expect(punchDepth(K, 0)).toBe(1);
     expect(punchDepth(K, 1.5)).toBeCloseTo(0.4, 9);
     expect(punchDepth(K, 3)).toBeCloseTo(0.4, 9);
-    const cues = (o: Partial<PunchCues>): PunchCues => ({ t: 0, serial: 0, gap: 1.3, closingMps: 0, engaged: false, lost: false, reachM: 1, loaded: false, anyOn: false, straight: false, speedMps: 0, ...o });
+    const cues = (o: Partial<PunchCues>): PunchCues => ({ t: 0, serial: 0, gap: 1.3, closingMps: 0, engaged: false, reachM: 1, loaded: false, anyOn: false, straight: false, speedMps: 0, ...o });
     expect(nextPunch(K, 0.8, undefined, cues({})), 'standing at 1.3 m: no load yet').toBeUndefined();
     expect(nextPunch(K, 0.8, undefined, cues({ closingMps: 3, speedMps: 3 }))?.phase, 'closing at 3 m/s at 1.3 m: the load').toBe('load');
     const deep = variant('test-strike-deep-moving', { load: { movingDepth: 1 } });
@@ -270,4 +278,19 @@ describe('plan 16, the punch as a strike (BLOCK_STRIKE_V1)', () => {
       expect(after.at(-1)!.m.A.held.left && after.at(-1)!.m.A.held.right, "A's palms on at the end").toBe(true);
     }
   }, 180_000);
+
+  it('(e) the phases: loaded, thrown only from range (reach 0.55 m, not closer than 0.5: at 0.45 he waits); a strike landed whose palms come off goes to the drive (the block\'s hands re-arm), one that never landed and straightened loads again; with no floor (minReachM 0) the too-close strike is thrown', () => {
+    const K = BLOCK_STRIKE_V1;
+    const cues = (o: Partial<PunchCues>): PunchCues => ({ t: 1, serial: 0, gap: 0.6, closingMps: 0, engaged: false, reachM: 0.55, loaded: true, anyOn: false, straight: false, speedMps: 0, ...o });
+    const load: PunchState = { n: 0, phase: 'load', since: 0, depth: 1 };
+    expect(nextPunch(K, 0.8, load, cues({}))?.phase, 'loaded at 0.55 m').toBe('strike');
+    expect(nextPunch(K, 0.8, load, cues({ reachM: 0.45 }))?.phase, 'loaded at 0.45 m').toBe('load');
+    const bare = variant('test-strike-no-floor', { strike: { minReachM: 0 } });
+    expect(nextPunch(bare, 0.8, load, cues({ reachM: 0.45 }))?.phase, 'loaded at 0.45 m, no floor').toBe('strike');
+    const landed: PunchState = { n: 0, phase: 'strike', since: 1, depth: 1, onT: 1.02 };
+    expect(nextPunch(K, 0.8, landed, cues({ t: 1.05, anyOn: false, straight: true }))?.phase, 'landed, palms off').toBe('drive');
+    expect(nextPunch(K, 0.8, landed, cues({ t: 1.05, anyOn: true }))?.phase, 'landed, on, not yet through').toBe('strike');
+    const thrown: PunchState = { n: 0, phase: 'strike', since: 1, depth: 1 };
+    expect(nextPunch(K, 0.8, thrown, cues({ t: 1.05, straight: true }))?.phase, 'never landed, straight').toBe('load');
+  });
 });
