@@ -4,7 +4,8 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_V1, type BlockHands, type BlockIntent, type BlockProfile } from '../controllers/block';
+import { BLOCK_V1, withBase, type BlockHands, type BlockIntent, type BlockProfile } from '../controllers/block';
+import { BASE_V1 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
@@ -78,7 +79,7 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     id: o.id,
     milestone: 'BL',
     title: o.title,
-    notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
+    notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1, on a base when its profile has one) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
     armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block`, palmPush: PALM_PUSH_BLOCK },
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },
@@ -92,18 +93,23 @@ export const BLOCK_V1_HARD: BlockProfile = { ...BLOCK_V1, id: 'block-v1-hard', d
 /** The same without the hip hinge (the trunk over the hips, 8 deg of lean): the push at shoulder height tips a man back (p30). */
 export const BLOCK_V1_HARD_NO_HINGE: BlockProfile = { ...BLOCK_V1_HARD, id: 'block-v1-hard-no-hinge', stance: { ...BLOCK_V1.stance, hingeDeg: 0, dropM: 0 } };
 
-const hold = (effort: number, hands: 'under' | 'over'): BlockMan => ({ effort, intent: 'hold', hands });
-const drive = (effort: number, hands: 'under' | 'over'): BlockMan => ({ effort, intent: 'drive', hands });
+/**
+ * The BL men's base (p32): BASE_V1 with the stance 3 cm wider per foot (the owner, 2026-11-17: feet under the hips,
+ * "maybe slightly wider, not super wide").
+ */
+export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, BASE_V1, 0.03);
+const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: based(profile) });
+const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: based(profile) });
 
-/** The BL scenes (A's hands under, B's over, in every one). */
+/** The BL scenes (A's hands under, B's over, in every one; every man on his base, `based`). */
 export const BL_SCENES: BlockSceneOpts[] = [
   { id: 'BL-F1-even', title: 'Even match, standing: both hold at effort 0.5 from 1.1 m apart, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), durationS: 9 },
   { id: 'BL-F2-walkIn', title: 'Even match, A walks in at 1.5 m/s from 3 m onto B, who sets at 1 s; both hold at effort 0.5, 9 s', A: { ...hold(0.5, 'under'), walkInMps: 1.5 }, B: { ...hold(0.5, 'over'), fromS: 1 }, sepM: 3, durationS: 9 },
   { id: 'BL-F3-blockerDrives', title: 'Blocker stronger: A drives at effort 1, B holds at effort 0.4, 9 s', A: drive(1, 'under'), B: hold(0.4, 'over'), durationS: 9 },
   { id: 'BL-F4-defenderStronger', title: 'Defender stronger: B drives at effort 1, A drives at effort 0.4, 9 s', A: drive(0.4, 'under'), B: drive(1, 'over'), durationS: 9 },
   { id: 'BL-F5-offCentre', title: 'Off centre by half a man: B 0.25 m to the side, both hold at effort 0.5, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), offsetX: 0.25, durationS: 9 },
-  { id: 'BL-F7-hard', title: 'Harder: both drive at effort 1 asking 1.4 m/s, 9 s (the stance holds it)', A: { ...drive(1, 'under'), profile: BLOCK_V1_HARD }, B: { ...drive(1, 'over'), profile: BLOCK_V1_HARD }, durationS: 9 },
-  { id: 'BL-F8-hardNoHinge', title: 'Harder without the hip hinge: both drive at effort 1 asking 1.4 m/s, 9 s (the push at shoulder height tips them)', A: { ...drive(1, 'under'), profile: BLOCK_V1_HARD_NO_HINGE }, B: { ...drive(1, 'over'), profile: BLOCK_V1_HARD_NO_HINGE }, durationS: 9 },
+  { id: 'BL-F7-hard', title: 'Harder: both drive at effort 1 asking 1.4 m/s, 9 s (the stance holds it)', A: drive(1, 'under', BLOCK_V1_HARD), B: drive(1, 'over', BLOCK_V1_HARD), durationS: 9 },
+  { id: 'BL-F8-hardNoHinge', title: 'Harder without the hip hinge: both drive at effort 1 asking 1.4 m/s, 9 s (the push at shoulder height tips them)', A: drive(1, 'under', BLOCK_V1_HARD_NO_HINGE), B: drive(1, 'over', BLOCK_V1_HARD_NO_HINGE), durationS: 9 },
 ];
 
 /** The BL family: the scenes, and the off-centre one mirrored (BL-F6). */
