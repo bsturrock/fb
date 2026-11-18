@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type StanceGeometry } from '../controllers/block';
+import { ATHLETIC_V2, BLOCK_STRIKE_V1, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type StanceGeometry } from '../controllers/block';
 import { BASE_V2, CONTEST_V1 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -57,8 +57,10 @@ export const PALM_PUSH_BLOCK: PalmPushProfile = { ...PALM_PUSH_V1, bornFacingDot
  * The palm push of a scene (p35): PALM_PUSH_BLOCK, its arm line cone widened (born and kept) by however much deeper the
  * athletic men's set stance pitches the chest than their profile's own (each man's chest the other's palms meet).
  */
+const palmWidenDeg = (o: BlockSceneOpts): number =>
+  Math.max(...[o.A, o.B].map((m) => (m.athletic ? m.athletic.set.trunkDeg - ((m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg) : 0)));
 function palmPushOf(o: BlockSceneOpts): PalmPushProfile {
-  const more = Math.max(...[o.A, o.B].map((m) => (m.athletic ? m.athletic.set.trunkDeg - ((m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg) : 0)));
+  const more = palmWidenDeg(o);
   if (more <= 0) return PALM_PUSH_BLOCK;
   const wider = (dot: number) => Math.cos(Math.acos(dot) + (more * Math.PI) / 180);
   return { ...PALM_PUSH_BLOCK, bornFacingDot: wider(PALM_PUSH_BLOCK.bornFacingDot), keepFacingDot: wider(PALM_PUSH_BLOCK.keepFacingDot) };
@@ -118,7 +120,8 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     milestone: 'BL',
     title: o.title,
     notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1, on a base when its profile has one) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
-    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block`, palmPush: palmPushOf(o) },
+    // the arm profile's id names the widened cone (one id, one set of values)
+    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}`, palmPush: palmPushOf(o) },
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },
     focus: { A: 'B', B: 'A' },
@@ -139,16 +142,18 @@ export const BLOCK_V1_HARD_NO_HINGE: BlockProfile = { ...BLOCK_V1_HARD, id: 'blo
 export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, BASE_V2, 0.03);
 /**
  * Plan 16 (p37): a BL man's block on the contest (CONTEST_V1: his push and hold decide who moves; no base, so his balance
- * is the supported model's own), punching with the strike, the stance 3 cm wider per foot as on the base (no fixture
- * has it yet).
+ * is the supported model's own), punching with the strike, the stance 3 cm wider per foot as on the base.
  */
 export const contested = (p: BlockProfile = BLOCK_V1): BlockProfile => withContest(withStrike({ ...p, stance: { ...p.stance, widthAddM: 0.03 } }, BLOCK_STRIKE_V1), CONTEST_V1);
-/** A BL man's block (p33): on his base (`based`), punching with the strike (BLOCK_STRIKE_V1: load, strike, drive). */
-const struck = (p?: BlockProfile): BlockProfile => withStrike(based(p), BLOCK_STRIKE_V1);
-const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: struck(profile) });
-const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: struck(profile) });
+/** A BL man (p37): his block on the contest (`contested`), on the athletic stance (ATHLETIC_V2, its flat feet with it). */
+const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: contested(profile), athletic: ATHLETIC_V2 });
+const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: contested(profile), athletic: ATHLETIC_V2 });
 
-/** The BL scenes (A's hands under, B's over, in every one; every man on his base, `based`, and striking, BLOCK_STRIKE_V1). */
+/**
+ * The BL scenes (A's hands under, B's over, in every one; every man on the contest, `contested`, striking with
+ * BLOCK_STRIKE_V1, on the athletic stance ATHLETIC_V2 with its flat feet). Before p37 they stood on BASE_V2 (`based`)
+ * with no athletic stance.
+ */
 export const BL_SCENES: BlockSceneOpts[] = [
   { id: 'BL-F1-even', title: 'Even match, standing: both hold at effort 0.5 from 1.1 m apart, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), durationS: 9 },
   { id: 'BL-F2-walkIn', title: 'Even match, A walks in at 1.5 m/s from 3 m onto B, who sets at 1 s; both hold at effort 0.5, 9 s', A: { ...hold(0.5, 'under'), walkInMps: 1.5 }, B: { ...hold(0.5, 'over'), fromS: 1 }, sepM: 3, durationS: 9 },

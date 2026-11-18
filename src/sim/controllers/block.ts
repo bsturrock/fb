@@ -328,6 +328,22 @@ export const ATHLETIC_V1: AthleticStance = {
   flat: { stepPastDeg: 10, coverM: 0.16, captureK: 0.5, braceDeg: 5 },
 };
 
+/**
+ * Plan 16 (p37): ATHLETIC_V1's legs with the trunk at 20 deg in every phase (the BL block's own 8 of lean and 12 of
+ * hinge), the lean as before. On two chests pitched 30 deg toward each other the under hands (0.37 m up the chest) and the
+ * over hands (0.53) land 11 cm apart in height, and the forearms pass through each other for the whole block (8-9 cm
+ * deep, against 2 on the BL block); at 20 they stay about as apart as on the BL block. The inside lane (item 3) is the
+ * real answer to forearm through forearm; the deeper trunk can come back with it. With the contest the trunk no longer
+ * holds the pitch over the flat feet (BASE_V3's concern), so nothing else asks for 30.
+ */
+export const ATHLETIC_V2: AthleticStance = {
+  ...ATHLETIC_V1,
+  id: 'athletic-v2',
+  set: { ...ATHLETIC_V1.set, trunkDeg: 20 },
+  load: { ...ATHLETIC_V1.load, trunkDeg: 20 },
+  strike: { ...ATHLETIC_V1.strike, trunkDeg: 20 },
+};
+
 /** What an athletic stance comes to on a leg (`athleticStances`): the three block stances, the flat stance, and where the rear ankle stands ahead of its hip (m). */
 export interface AthleticDerived {
   stance: BlockStance;

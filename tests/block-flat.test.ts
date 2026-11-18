@@ -8,9 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { FLAT_V1 } from '../src/sim/block-base';
 import { STEPS_V2, withSteps } from '../src/sim/contact-steps';
 import type { ArmSide, FlatStance } from '../src/sim/contracts';
-import { withFlat, type BlockProfile } from '../src/sim/controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_V1, withFlat, withStrike } from '../src/sim/controllers/block';
 import type { FixtureDef } from '../src/sim/fixture';
-import { BL_SCENES, blockScene } from '../src/sim/fixtures/blocking';
+import { BL_SCENES, based, blockScene, type BlockMan } from '../src/sim/fixtures/blocking';
 import { FOOTWORK_L3, initFeet, newFootPlan, observeFeet, planFeet, type FootEvent, type FootPlanInput } from '../src/sim/footwork';
 import { groundOf } from '../src/sim/free-ground';
 import type { FootRequest, PhysicalPose } from '../src/sim/pose';
@@ -25,10 +25,16 @@ const LIMIT = { heelM: 0.03, pitchDeg: 10 };
 /** The stagger the flat stance stands at (m; the block profiles' 0.24 puts the rear foot under the hips). */
 const STAGGER_M = 0.1;
 
+/** A BL man as before the contest (p34's scenes): on BASE_V2, striking, no athletic stance, no contest. */
+const unflat = (m: BlockMan): BlockMan => ({ effort: m.effort, intent: m.intent, hands: m.hands, profile: withStrike(based(BLOCK_V1), BLOCK_STRIKE_V1) });
+
 const scene = (id: string, flat: FlatStance | null, durationS: number): FixtureDef => {
   const o = BL_SCENES.find((x) => x.id === id)!;
-  const on = (p: BlockProfile): BlockProfile => (flat ? withFlat(p, flat, STAGGER_M) : p);
-  return blockScene({ ...o, A: { ...o.A, profile: on(o.A.profile!) }, B: { ...o.B, profile: on(o.B.profile!) }, durationS }, FIX('L3-F6-hold'));
+  const on = (m: BlockMan): BlockMan => {
+    const u = unflat(m);
+    return { ...u, profile: flat ? withFlat(u.profile!, flat, STAGGER_M) : u.profile };
+  };
+  return blockScene({ ...o, A: on(o.A), B: on(o.B), durationS }, FIX('L3-F6-hold'));
 };
 
 interface Feet {
