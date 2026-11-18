@@ -67,6 +67,31 @@ export interface StanceRequest {
   staggerM?: number;
   /** Plan 16 (the base): each foot this much (m) further out from the hips than the standing stance (pose only; absent 0). */
   widthAddM?: number;
+  /** Plan 16 (flat feet): the feet stand where a flat foot holds the hips (`FlatStance`; absent: under the hips). */
+  flat?: FlatStance;
+}
+
+/**
+ * Plan 16 (flat feet, block-base.ts `flatAheadM`): a stance whose feet stand where the whole sole can be down. Each foot's
+ * place (the stepping model's home, the pose's ordinary request) is far enough ahead of its hip, along the facing, that
+ * the shin over a flat foot leans no more than the ankle's dorsiflexion range less `marginDeg` at the hips' height now
+ * or the stance's lowest (`lowRootM`; the stagger kept: the pair moves forward together). Planted, a foot steps (its
+ * turn or not) once its shin leans `stepPastDeg` past the range (the heel coming up), when its aim is within the range;
+ * and with both feet down, a foot steps only once stepping gains it more than `coverM` (m, in place of the stepping
+ * model's own), its want led by `captureK` of the capture point's lead.
+ */
+export interface FlatStance {
+  id: string;
+  marginDeg: number;
+  stepPastDeg: number;
+  coverM: number;
+  /** The stepping model's want leads the hips by this times the capture point's lead (the model's: 1; 0: where the hips will be when the foot lands). */
+  captureK: number;
+  /**
+   * The lowest root height (m above the ground) the stance asks for (absent: the hips' height now only): the feet stand
+   * where a flat foot holds the hips at the lower of that and now, so they need no step as the stance sinks to it.
+   */
+  lowRootM?: number;
 }
 
 export interface ArmIntent {

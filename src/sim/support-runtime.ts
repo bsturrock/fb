@@ -70,6 +70,9 @@ export function supportTargets(host: SupportHost, pl: PlayerRuntime, S: Suspensi
   // plan 16 (the base): so is the stance's width (kept absent until something asks for one)
   const wd = req?.widthAddM ?? 0;
   if (wd !== 0 || st.widthAddM !== undefined) st.widthAddM = (st.widthAddM ?? 0) + clamp(wd - (st.widthAddM ?? 0), -S.stance.maxRateMps * dt, S.stance.maxRateMps * dt);
+  // plan 16 (flat feet): the flat-foot placement while asked (the placement itself is the pose's, pose-runtime.ts)
+  if (req?.flat) st.flat = req.flat;
+  else if (st.flat) delete st.flat;
   let runM: RunHeight | null = null;
   const P = host.def.runClips;
   if (pl.run && P && host.heightModels && pl.run.w > 0) {

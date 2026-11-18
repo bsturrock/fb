@@ -9,7 +9,7 @@
 // and what holds between him and his man (a palm push either way, or their bodies touching), with hysteresis: it enters
 // at once and leaves only after `engage.lostS` with nothing holding. The feet regime and the hip hinge read it, so neither
 // follows a flickering contact.
-import type { ArmIntent, ArmSide, PlayerId, PlayerIntent, StanceRequest } from '../contracts';
+import type { ArmIntent, ArmSide, FlatStance, PlayerId, PlayerIntent, StanceRequest } from '../contracts';
 import type { BodyProfile, MotorProfile } from '../profiles';
 import { sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
@@ -113,6 +113,8 @@ export interface BlockProfile {
   base?: BlockBase;
   /** Plan 16, the punch as a strike (`BlockStrike`); absent, the hands go on from the ready point as they reach him. */
   strike?: BlockStrike;
+  /** Plan 16, flat feet (`FlatStance`, asked with his stance throughout the block); absent, the feet under the hips. */
+  flat?: FlatStance;
 }
 
 /** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
@@ -232,6 +234,22 @@ export const withStrike = (p: BlockProfile, strike: BlockStrike): BlockProfile =
  * id that names both.
  */
 export const withBase = (p: BlockProfile, base: BlockBase, widthAddM: number): BlockProfile => ({ ...p, id: `${p.id}+${base.id}+w${Math.round(widthAddM * 100)}`, stance: { ...p.stance, widthAddM }, base });
+
+/** The lowest root height (m) a block profile's stances ask for: the stance's, the load's and the strike's height less their hip drop. */
+export const lowRootOf = (p: BlockProfile): number =>
+  Math.min(...[p.stance, ...(p.strike ? [p.strike.load.stance, p.strike.strike.stance] : [])].map((s) => s.heightM - Math.min(s.dropM, p.hinge.maxDropM)));
+
+/**
+ * Plan 16, flat feet: a block profile whose stance stands on flat feet (`flat`, for the lowest root its stances ask,
+ * `lowRootOf`), its stagger (the stance's, the load's and the strike's) `staggerM`, under an id that names both.
+ */
+export const withFlat = (p: BlockProfile, flat: FlatStance, staggerM: number): BlockProfile => ({
+  ...p,
+  id: `${p.id}+${flat.id}+s${Math.round(staggerM * 100)}`,
+  flat: { ...flat, lowRootM: lowRootOf(p) },
+  stance: { ...p.stance, staggerM },
+  ...(p.strike ? { strike: { ...p.strike, load: { ...p.strike.load, stance: { ...p.strike.load.stance, staggerM } }, strike: { ...p.strike.strike, stance: { ...p.strike.strike.stance, staggerM } } } } : {}),
+});
 
 /**
  * A fixture's block (`ControllerSpec` kind `block`): the request, from `fromS` (default 0; before it he stands where he
@@ -522,7 +540,7 @@ export class BlockController implements Controller {
       arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
     const S = K ? punchPose(P, pu) : P.stance;
-    const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}) };
+    const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}) };
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,

@@ -642,6 +642,7 @@ export class Simulation {
         sus = newSuspensionRuntime(h0);
         sus.staggerM = st0?.staggerM ?? 0;
         if (st0?.widthAddM) sus.widthAddM = st0.widthAddM;
+        if (st0?.flat) sus.flat = st0.flat;
         const cal = this.heightCalibration(setup.body);
         let runM: RunHeight | null = null;
         if (run && def.runClips && this.heightModels) {

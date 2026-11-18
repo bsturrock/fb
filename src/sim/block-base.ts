@@ -13,7 +13,7 @@
 //   the push line's level normal is held within weight x the reach behind him (a push toward him) and weight x the reach
 //   ahead; about the line, within weight x the reach to either side. No moment from a foot in a step, none beyond weight
 //   x reach; the torque is only limited, never set, and nothing is added.
-import type { ArmSide } from './contracts';
+import type { ArmSide, FlatStance } from './contracts';
 import type { FootPlan } from './footwork';
 import { clamp, cross, dot, qRot, scale, add, v3, UP, type Vec3 } from './vec';
 
@@ -46,6 +46,15 @@ export const BASE_V1: BlockBase = { id: 'base-v1', brace: { marginM: 0.08 } };
  * the fixed 240 N m (`resist`).
  */
 export const BASE_V2: BlockBase = { ...BASE_V1, id: 'base-v2', resist: true };
+
+/**
+ * The first flat stance (plan 16, p34; `FlatStance`): each foot ahead of its hip where the shin over a flat foot leans
+ * 5 deg inside the ankle's range (20 of 25 deg); planted, it steps once the shin leans 4 deg past the range (the heel
+ * about 2 cm up on the model's 30 cm shoe). The feet stay put until a step gains 16 cm (the stepping model's own: 12),
+ * so a man moved steps a committed 15-25 cm, not a patter of short ones; his want leads the hips by half the capture
+ * point's lead (a man in a block is held by his man, not running: the full lead makes every step long and early).
+ */
+export const FLAT_V1: FlatStance = { id: 'flat-v1', marginDeg: 5, stepPastDeg: 4, coverM: 0.16, captureK: 0.5 };
 
 /**
  * The centre of pressure (world, on the ground) the balance torque `tau` asks for: the support's ground point `pivot`
@@ -115,6 +124,25 @@ export function baseMoments(points: Vec3[], pivot: Vec3, u: Vec3, weightN: numbe
     m.right = Math.max(m.right, -weightN * across);
   }
   return m;
+}
+
+/**
+ * Plan 16 (flat feet, `FlatStance`): how far (m, along the facing; negative: behind) an ankle must stand ahead of its hip
+ * for the shin over a flat foot to lean forward no more than `shinRad`, the hip `hipM` above the ankle, the leg of
+ * thigh `thighM` and shin `shinM` bent in the sagittal plane. The shin leans less the further ahead the ankle stands, so
+ * any place at least this far ahead is within the lean. With the shin at the lean the knee is `shinM` up it from the
+ * ankle, and the hip a thigh above the knee: behind the ankle by thigh x sin(thigh angle) less shin x sin(lean). A hip
+ * the thigh cannot reach down to at that lean (too low or too high) takes the nearest the thigh can.
+ */
+export function flatAheadM(thighM: number, shinM: number, hipM: number, shinRad: number): number {
+  const c = clamp((hipM - shinM * Math.cos(shinRad)) / thighM, -1, 1);
+  return thighM * Math.sqrt(1 - c * c) - shinM * Math.sin(shinRad);
+}
+
+/** The forward lean (rad) of the shin from the ankle up to the knee, along the horizontal heading `dir` (unit). */
+export function shinLeanRad(knee: Vec3, ankle: Vec3, dir: Vec3): number {
+  const d = { x: knee.x - ankle.x, y: knee.y - ankle.y, z: knee.z - ankle.z };
+  return Math.atan2(d.x * dir.x + d.z * dir.z, d.y);
 }
 
 /** The largest moment the base gives in any direction (N m): the balance's scalar ceiling under it. */

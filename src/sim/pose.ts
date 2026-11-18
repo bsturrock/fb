@@ -501,7 +501,7 @@ export interface ProxyPoseInput {
    * `bodyRelative` (falling proxies): without support the ordinary leg request is the body-relative one (legs follow
    * the body; a ground target below a lying body folds the legs over the torso); the floor lift and continuity stay.
    */
-  ground?: { y: number; staggerM: number; fixedGait?: boolean; bodyRelative?: boolean; widthAddM?: number };
+  ground?: { y: number; staggerM: number; fixedGait?: boolean; bodyRelative?: boolean; widthAddM?: number; /** Plan 16 (flat feet): both feet this far (m) ahead of the hips along the facing. */ aheadM?: number };
   /**
    * Plan 07 foot planner requests (footwork.ts), ground-relative legs only. `ground.fixedGait`: the procedural phase gait
    * swings each foot along the actual travel (the 06a gait swung it against travel: the recorded moonwalk).
@@ -889,7 +889,8 @@ export function legRequestLocal(inp: ProxyPoseInput, s: ArmSide): Vec3 {
     const hipW = toWorld(pose, v3(hipL.x, hipL.y, hipL.z));
     const gx = qRot(pose.q, v3(vdir.x * off, 0, vdir.z * off));
     const still = idleStanceFade(inp.speed);
-    const st = (s === 'left' ? 0.5 : -0.5) * gr.staggerM * still;
+    // (plan 16, flat feet: the pair ahead of the hips, `ground.aheadM`)
+    const st = gr.aheadM ? ((s === 'left' ? 0.5 : -0.5) * gr.staggerM + gr.aheadM) * still : (s === 'left' ? 0.5 : -0.5) * gr.staggerM * still;
     // plan 08: the fitted idle stance is wider than the hips; it opens as the travel stops (absent: unchanged)
     // (plan 16, the base: a stance's own width on top, `ground.widthAddM`)
     const wx = (inp.loco ? idleWidthAddM(inp.loco.profile, body, s) * still : 0) + (gr.widthAddM ?? 0);

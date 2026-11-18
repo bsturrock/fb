@@ -35,6 +35,7 @@ import type { FootEvent, FootPlan, FootPlanInput, FootReason, FootworkProfile } 
 import { depthAt, isFree, leastDeep, nearestNoDeeper, type FootQuery } from './free-ground';
 import { armTwistRad, swingExcess } from './joint-cone';
 import { flexReach, maxFlexRad, plannedChain, plannedLeg, type FootRequest } from './pose';
+import { shinLeanRad } from './block-base';
 import { quinticStep } from './step-path';
 import { add, clamp, dist, headingOf, len, norm, qInvRot, qRot, rad, round, sub, v3, wrapPi, type Quat, type Vec3 } from './vec';
 
@@ -170,7 +171,8 @@ export function stepFeet(plan: FootPlan, inp: FootPlanInput, ev: FootEvent[]): R
   if (plan.feet.left.mode === 'planted' && plan.feet.right.mode === 'planted') {
     const more: ArmSide = gain.right > gain.left || (gain.right === gain.left && plan.lastStep === 'left') ? 'right' : 'left';
     const turn = more === plan.lastStep && gain[more] < Infinity && !inp.debug?.stepsNoTurns ? other(more) : more;
-    if (gain[turn] > P.steps!.coverM) begin(plan, turn, inp, ev, 'step');
+    // (plan 16, a flat stance: its own cover)
+    if (gain[turn] > (inp.flat?.coverM ?? P.steps!.coverM)) begin(plan, turn, inp, ev, 'step');
   }
   for (const s of SIDES) {
     const f = plan.feet[s];
@@ -206,7 +208,8 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number): 
   const M = P.steps!;
   const sole = inp.groundY + inp.soleM;
   const hip = v3(inp.hips[s].x + inp.vel.x * aheadS, inp.hips[s].y, inp.hips[s].z + inp.vel.z * aheadS);
-  const lead = aheadS + Math.sqrt(Math.max(0, hip.y - inp.groundY) / G);
+  // (plan 16, a flat stance: the capture point's lead scaled by its `captureK`; 0, where the hips will be)
+  const lead = inp.flat ? aheadS + inp.flat.captureK * Math.sqrt(Math.max(0, hip.y - inp.groundY) / G) : aheadS + Math.sqrt(Math.max(0, hip.y - inp.groundY) / G);
   const support = v3(inp.home[s].x + inp.vel.x * lead, sole, inp.home[s].z + inp.vel.z * lead);
   // a short step from the hip, within the knee's range at the stance height (the rest of the leg's ranges: `inRange`),
   // asked a margin inside the reach so the plant stands when it lands (the hips' motion over the step is a prediction)
@@ -302,6 +305,16 @@ function gainOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput): number {
   if (!Number.isFinite(depthM)) return -Infinity;
   const R = inp.legs;
   const h = f.headingRad;
+  // plan 16, a flat stance: a plant whose shin leans past the flat foot's (the heel coming up) steps, its turn or not, to
+  // an aim where the foot stands flat inside the ankle's range (not a few centimetres on, still at its edge)
+  if (inp.flat && R && depthM <= equalM(plan, inp)) {
+    const dir = v3(Math.sin(h), 0, Math.cos(h));
+    const leanAt = (a: Vec3): number => {
+      const c = plannedChain(R, inp.hips[s], a, h);
+      return shinLeanRad(c.mid, c.end, dir);
+    };
+    if (leanAt(ankle) > inp.flat.maxShinRad && leanAt(aim) <= inp.flat.aimShinRad) return Infinity;
+  }
   const shoe = add(ankle, v3(Math.sin(h) * plan.shoe.centerFoot.z, 0, Math.cos(h) * plan.shoe.centerFoot.z));
   const g = inp.ground ?? { prints: [] };
   const leg = (skinM: number) => (R ? { leg: { at: () => plannedLeg(R, s, inp.hips[s], ankle, h), skinM } } : {});

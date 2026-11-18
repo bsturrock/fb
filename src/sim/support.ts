@@ -16,6 +16,7 @@
 //      the applied load bounds drive and yaw, the balance ceiling is the nominal-weight one while support is valid;
 //   6. motors, arms, solve; 7. probe of the solved state; pose from the solved state and the step-3 phase.
 import type { SuspensionSupport } from './profiles';
+import type { FlatStance } from './contracts';
 import type { RunClip, RunClipProfile, RunPlayback } from './run-clip';
 import { clamp, v3, type Vec3 } from './vec';
 
@@ -58,6 +59,8 @@ export interface SuspensionRuntime {
    * request (or the reset's) asks for one, and read as 0 then.
    */
   widthAddM?: number;
+  /** Plan 16 (flat feet): the stance's flat-foot placement while a stance request (or the reset's) asks for it. */
+  flat?: FlatStance;
   /** Clip-derived running height of this substep and its feasibility scale (NaN / 1 when no clip plays). */
   runM: number;
   bobScale: number;

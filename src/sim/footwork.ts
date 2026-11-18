@@ -585,6 +585,13 @@ export interface FootPlanInput {
    * ankle range limit, the shin leaning past it) lands on the ball of the foot: its lowest sole corner.
    */
   heelLift?: boolean;
+  /**
+   * Plan 16 (flat feet, the stance's `FlatStance`): under the stepping model, a plant whose shin over a flat foot leans
+   * past `maxShinRad` steps when its aim's is within `aimShinRad` (the ankle's range), its turn or not; with both feet down a step needs a gain past
+   * `coverM` (in place of the model's), and its want leads the hips by `captureK` times the capture point's lead (the
+   * model's 1). Absent: the model as it is.
+   */
+  flat?: { maxShinRad: number; aimShinRad: number; coverM: number; captureK: number };
   /** Plan 13e: the other players' cores (world, horizontal: y 0), what can hold a leg off its home. */
   others?: Vec3[];
   /** Plan 15 (`FootworkProfile.steps`): this player's free ground, the other players' footprints and parts (free-ground.ts). */
