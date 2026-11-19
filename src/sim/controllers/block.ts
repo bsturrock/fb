@@ -41,7 +41,23 @@ export interface BlockRequest {
    * drive) starts again from wherever he is whenever this changes: a brain re-punches by counting it up.
    */
   punch?: number;
+  /**
+   * Plan 16 (p39): his pre-snap stance (`PreSnapStance`). He holds it from the reset until the snap (`BlockSpec.fromS`)
+   * and fires out of it into the block. Under a profile without that stance (`BlockProfile.preSnap`) he stands until the
+   * snap as without one.
+   */
+  stance?: PreSnapStance;
 }
+
+/** Plan 16 (p39): a lineman's pre-snap stance and his side of the ball. */
+export interface PreSnapStance {
+  kind: 'two-point' | 'three-point';
+  side: 'offense' | 'defense';
+}
+
+/** Plan 16 (p39): which of a profile's pre-snap stances (`BlockProfile.preSnap`) a request's stance is: the two-point set is one stance on either side. */
+export type PreSnapKey = 'two-point' | 'three-point-offense' | 'three-point-defense';
+export const preSnapKey = (s: PreSnapStance): PreSnapKey => (s.kind === 'two-point' ? 'two-point' : s.side === 'offense' ? 'three-point-offense' : 'three-point-defense');
 
 /** The engaged state's phases: closing on his man, engaged with him, or engaged before and now lost. */
 export type BlockPhase = 'approach' | 'engaged' | 'lost';
@@ -119,6 +135,11 @@ export interface BlockProfile {
   give?: GiveGround;
   /** Plan 16 (p37), the contest (block-base.ts `BlockContest`): engaged, his drive along the line is his push and hold; absent, the drive's servo. */
   contest?: BlockContest;
+  /**
+   * Plan 16 (p39), the pre-snap stances he can hold (`BlockRequest.stance`) and each one's pose: the block stance asked
+   * until the snap (his hands at the ready point, `ready`; his feet as `flat` places them). Absent: none.
+   */
+  preSnap?: Partial<Record<PreSnapKey, BlockStance>>;
 }
 
 /** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
@@ -414,7 +435,8 @@ export function withAthletic(p: BlockProfile, A: AthleticStance, L: StanceGeomet
  * `ball.aheadCoverM`: how far ahead of its want a plant may stand before it steps back (FlatStance.ball). `flat`: the
  * stepping's dead zone and capture lead under the stance. `ankleDeg` (p39): the ankle's dorsiflexion range under the
  * stance (`FlatStance.dorsiDeg`; the owner's ruling: about 38 deg for a loaded ankle in a block), every height derived on
- * it; absent, the leg's (the joint range profile's 25).
+ * it; absent, the leg's (the joint range profile's 25). `twoPoint` (p39): the two-point set before the snap
+ * (`BlockProfile.preSnap`), standing to its own thigh slope over the same planted feet; absent, none.
  */
 export interface LeanInStance {
   id: string;
@@ -424,6 +446,7 @@ export interface LeanInStance {
   set: TrunkPose & { thighDeg: number };
   strike: TrunkPose & { thighDeg: number };
   stood: TrunkPose & { thighDeg: number };
+  twoPoint?: TrunkPose & { thighDeg: number };
   staggerM: number;
   hinge: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2'>;
   flat: Pick<FlatStance, 'coverM' | 'captureK'>;
@@ -438,9 +461,11 @@ export interface LeanInDerived {
   load: BlockStance;
   strike: BlockStance;
   stood: BlockStance;
+  /** The two-point set (p39; a stance with `twoPoint`). */
+  twoPoint?: BlockStance;
   flat: FlatStance;
   aheadM: number;
-  hips: Record<'load' | 'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }>;
+  hips: Record<'load' | 'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }> & { twoPoint?: { overGroundM: number; pitchDeg: number } };
 }
 
 /**
@@ -482,16 +507,18 @@ export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived 
   const p = r(S.ball.pitchDeg);
   const low = legShape(L.thighM, L.shinM, r(S.load.thighDeg), r(L.dorsiDeg) + p);
   const aheadM = low.aheadM - (L.toeM * (1 - Math.cos(p)) + L.soleM * Math.sin(p));
-  const hips = {
-    load: { overGroundM: low.upM + L.soleM * Math.cos(p) + L.toeM * Math.sin(p), pitchDeg: S.ball.pitchDeg },
-    ...(Object.fromEntries((['set', 'strike', 'stood'] as const).map((k) => {
-      const o = standOver(L, aheadM, r(S[k].thighDeg));
-      return [k, { overGroundM: o.overGroundM, pitchDeg: (o.pitchRad * 180) / Math.PI }];
-    })) as Record<'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }>),
+  const over = (thighDeg: number) => {
+    const o = standOver(L, aheadM, r(thighDeg));
+    return { overGroundM: o.overGroundM, pitchDeg: (o.pitchRad * 180) / Math.PI };
   };
-  const stance = (k: keyof typeof hips): BlockStance => {
-    const t = S[k];
-    return { leanDeg: t.leanDeg, hingeDeg: t.trunkDeg - t.leanDeg, dropM: 0, heightM: hips[k].overGroundM - L.hipUpM * Math.cos(r(t.trunkDeg)), staggerM: S.staggerM };
+  const hips: LeanInDerived['hips'] = {
+    load: { overGroundM: low.upM + L.soleM * Math.cos(p) + L.toeM * Math.sin(p), pitchDeg: S.ball.pitchDeg },
+    ...(Object.fromEntries((['set', 'strike', 'stood'] as const).map((k) => [k, over(S[k].thighDeg)])) as Record<'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }>),
+    ...(S.twoPoint ? { twoPoint: over(S.twoPoint.thighDeg) } : {}),
+  };
+  const stance = (k: 'load' | 'set' | 'strike' | 'stood' | 'twoPoint'): BlockStance => {
+    const t = S[k]!;
+    return { leanDeg: t.leanDeg, hingeDeg: t.trunkDeg - t.leanDeg, dropM: 0, heightM: hips[k]!.overGroundM - L.hipUpM * Math.cos(r(t.trunkDeg)), staggerM: S.staggerM };
   };
   const load = stance('load');
   return {
@@ -499,6 +526,7 @@ export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived 
     load,
     strike: stance('strike'),
     stood: stance('stood'),
+    ...(S.twoPoint ? { twoPoint: stance('twoPoint') } : {}),
     flat: { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: load.heightM, ball: { ...S.ball }, ...(S.ankleDeg !== undefined ? { dorsiDeg: S.ankleDeg } : {}) },
     aheadM,
     hips,
@@ -516,7 +544,7 @@ export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived 
 export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): BlockProfile {
   const d = leanInStances(S, L);
   const w = p.stance.widthAddM ? { widthAddM: p.stance.widthAddM } : {};
-  const maxDeg = Math.max(p.hinge.maxDeg, d.stance.hingeDeg, ...(p.strike ? [d.load.hingeDeg, d.strike.hingeDeg] : []));
+  const maxDeg = Math.max(p.hinge.maxDeg, d.stance.hingeDeg, ...(p.strike ? [d.load.hingeDeg, d.strike.hingeDeg] : []), ...(d.twoPoint ? [d.twoPoint.hingeDeg] : []));
   const s0 = -2 * (chestShiftM(L, S.set.trunkDeg) - chestShiftM(L, p.stance.leanDeg + p.stance.hingeDeg));
   const heelM = (deg: number) => L.shoeM * Math.sin((deg * Math.PI) / 180);
   return {
@@ -527,6 +555,7 @@ export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): B
     stance: { ...d.stance, ...w },
     hinge: { ...p.hinge, ...S.hinge, maxDeg },
     flat: d.flat,
+    ...(d.twoPoint ? { preSnap: { ...p.preSnap, 'two-point': { ...d.twoPoint, ...w } } } : {}),
     ...(p.strike ? { strike: { ...p.strike, loadGapM: p.strike.loadGapM - s0, load: { ...p.strike.load, closeGapM: p.strike.load.closeGapM - s0, stance: { ...d.load, ...w } }, strike: { ...p.strike.strike, stance: { ...d.strike, ...w } } } } : {}),
     ...(p.contest
       ? {
@@ -597,6 +626,17 @@ export const LEAN_IN_V2: LeanInStance = {
   hinge: { rateDegPerS: 120, accelDegPerS2: 300 },
   flat: { coverM: 0.12, captureK: 0.5 },
 };
+
+/**
+ * Plan 16 (p39): LEAN_IN_V2 with the two-point set before the snap (`twoPoint`): over the load's planted feet the thigh
+ * 50 deg below horizontal (hips 0.78 m, 2.6 cm over the load's: the fire-out barely sinks), knees about 84 deg, the rear
+ * foot near flat (6 deg, the heel 3 cm up), the trunk at 25 deg (6 of it lean), the hands at the ready point. Getting
+ * set from the reset takes about 0.7 s (the hinge's 300 deg/s2), the hips going 9 cm back as the trunk pitches. Limit: a
+ * deeper trunk takes the hips further back over the planted feet, past the ball's 7 cm cover, and the rear foot steps in
+ * the stance (28 deg: one man; 35: both, at 0.6 s); a deeper set needs its own feet under the hips, the snap's first step
+ * taking them back.
+ */
+export const LEAN_IN_V3: LeanInStance = { ...LEAN_IN_V2, id: 'lean-in-v3', twoPoint: { thighDeg: 50, trunkDeg: 25, leanDeg: 6 } };
 
 /**
  * A fixture's block (`ControllerSpec` kind `block`): the request, from `fromS` (default 0; before it he stands where he
@@ -780,7 +820,11 @@ export class BlockController implements Controller {
     const me = ctx.observed.bodies[ctx.self];
     const him = ctx.observed.bodies[R.target];
     const stand = (phase: string): PlayerIntent => ({ locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: this.lastFacing, effort: 1 }, debug: { phase } });
-    if (ctx.t + 1e-9 < (this.spec.fromS ?? 0)) return stand('block:waiting');
+    if (ctx.t + 1e-9 < (this.spec.fromS ?? 0)) {
+      // (p39: in his pre-snap stance, when he has one, until the snap)
+      const pre = R.stance ? P.preSnap?.[preSnapKey(R.stance)] : undefined;
+      return pre && me ? this.preSnap(ctx, pre, me) : stand('block:waiting');
+    }
     // his man gone or down: the block is over (no request; the arms rest, every push ends)
     if (!me || !him || him.controlMode !== 'supported' || him.representation !== 'proxy') {
       this.anchor = null;
@@ -907,13 +951,40 @@ export class BlockController implements Controller {
     // hips up and trunk up)
     const S1 = gl > 0 ? { ...S0, heightM: S0.heightM + gl * P.give!.riseM } : S0;
     const S = sl > 0 ? { ...S1, heightM: S1.heightM + sl * P.contest!.stood.riseM, hingeDeg: Math.max(0, S1.hingeDeg - sl * P.contest!.stood.trunkDeg) } : S1;
-    const stance: StanceRequest = { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}), ...(P.flat?.ball ? { heightWhole: true } : {}) };
+    const stance = this.stanceRequest(S);
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
       posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM } },
       block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}) },
       debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}) },
+    };
+  }
+
+  /** The suspension's stance request for one of his block stances (on his flat feet, the whole root height on a ball). */
+  private stanceRequest(S: BlockStance): StanceRequest {
+    const P = this.profile;
+    return { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}), ...(P.flat?.ball ? { heightWhole: true } : {}) };
+  }
+
+  /**
+   * Plan 16 (p39): before the snap, in his pre-snap stance `S` (`BlockProfile.preSnap`): standing where he is, facing as he
+   * started, his stance (height, stagger, width, flat feet), lean and hinge asked, both hands at the ready point. He asks to
+   * block (the engaged state's request), so the hinge has his block's bounds; nothing moves him toward his man.
+   */
+  private preSnap(ctx: ControllerContext, S: BlockStance, me: ControllerContext['observed']['bodies'][string]): PlayerIntent {
+    const P = this.profile;
+    const myBody = ctx.bodies[ctx.self];
+    const ready = (side: ArmSide): ArmIntent => ({
+      action: 'reach',
+      targetWorld: add(me.position, qRot(me.rotation, v3(sideSignX(myBody, side) * P.ready.x, P.ready.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + P.ready.forwardM))),
+    });
+    return {
+      locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: this.lastFacing, effort: 1, stance: this.stanceRequest(S) },
+      arms: { left: ready('left'), right: ready('right') },
+      posture: { leanDirWorld: this.lastFacing, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM } },
+      block: { request: { ...this.spec.request }, profile: P },
+      debug: { phase: 'block:set' },
     };
   }
 

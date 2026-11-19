@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, LEAN_IN_V2, BLOCK_V1, chestShiftM, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type LeanGeometry, type LeanInStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, LEAN_IN_V2, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -24,6 +24,11 @@ export interface BlockMan {
   athletic?: AthleticStance;
   /** Plan 16 (p38): his profile on this lean-in stance (`withLeanIn`), derived on the scene's leg (`legOf`; in place of `athletic`). */
   leanIn?: LeanInStance;
+  /**
+   * Plan 16 (p39): his pre-snap stance (`BlockRequest.stance`), held from the reset until `fromS` (the snap). Set in it from
+   * the reset when his profile has it (`BlockProfile.preSnap`).
+   */
+  stance?: PreSnapStance;
 }
 
 /**
@@ -83,6 +88,9 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const sep = o.sepM ?? sepOf(o, def, template.body);
   const P = profileOf(m, def, template.body);
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
+  // (p39: a man in a pre-snap stance is set in it from the reset)
+  const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
+  const S0 = pre ?? (set ? P.stance : undefined);
   return {
     ...template,
     id,
@@ -94,12 +102,12 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       ...(m.walkInMps ? { velocity: v3(0, 0, sign * m.walkInMps) } : {}),
       // set in his stance's height, feet square: a reset into the stagger slides the rear plant 5.8 cm on the first
       // substep (p31); the stance request staggers them from there
-      ...(set ? { stance: { heightM: P.stance.heightM, staggerM: 0, ...(P.stance.widthAddM ? { widthAddM: P.stance.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}) } } : {}),
+      ...(S0 ? { stance: { heightM: S0.heightM, staggerM: 0, ...(S0.widthAddM ? { widthAddM: S0.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}) } } : {}),
     },
     arms: { enabled: { left: true, right: true }, mode: { left: 'forearmClamp', right: 'forearmClamp' }, acquisition: false, closeEffortScale: 1 },
     controller: {
       kind: 'block',
-      request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}) },
+      request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
       ...(m.profile || m.athletic || m.leanIn ? { profile: P } : {}),
     },
