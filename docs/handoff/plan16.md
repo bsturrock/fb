@@ -94,6 +94,22 @@ baseline: main checkout `.scratch/p33/on`.
      (b) `-F9`'s defender's palms are rejected for 1.5 s (not facing / above the band on a pitched torso).
      (c) Helmets within a few cm 0.2 s after the snap. (d) The scenes start 2 m apart (hands 1.14 m apart); at
      1.7 m the defender falls (`contest:pastAnchor`), at 1.5 m the heads touch.
+   - **The hit, p42** (`7f992f5`, `bfe21bb`; `CONTEST_V2` + `BLOCK_STRIKE_V4`, on for `-F9`/`-F10` only). Defect
+     (a) above is fixed there. Cause: the palms landed past the flex where the arm starts to give, the palm force
+     ramps over 0.08 s while the men close 0.24 m, and elbow torque caps it near 280 N against the 1300-1650 N
+     the stop needs. Rule (`ContestHit`): while a strike is on with a palm push between two engaged men, a force
+     pair at the centres of mass, reduced mass x (closing speed + punch) / 0.02 s, at most 3000 N; the man with
+     the larger push capacity holds his share with his legs, the other takes it. Now: chests stay 0.35-0.52 m
+     apart (was 0.06), the holder is knocked back 0.30 m (`-F9`) / 0.49 m (`-F10`) in 0.4 s at up to 1.0-1.7 m/s
+     and anchors by +0.7 s, both men's palms on 1.6-1.9 s of the 2 s after contact (was 0), nobody falls. Who
+     wins at equal effort is who lands first (the first to land has the unlimited burst). 649 tests; baseline
+     main checkout `.scratch/p42/b-hit-on` (tool PASS). **Left:** the winner's palms come off when his man is
+     knocked out of reach and he re-punches 0.5 s later on a straight arm; the knocked man stands up to hips
+     0.85-0.87 m, trunk 10-14 deg; the winner's lean shallows to 15 deg; forearms cross where under and over
+     hands meet; the pitched-torso acceptance (b) is unchanged (hands get on because the chests stay apart);
+     start gap (d) unchanged: at 1.7 m the palms land collapsed and the holder is run 1 m without anchoring.
+     **Not flipped: the eight older scenes.** On `CONTEST_V2` `-F4`, `-F5`, `-F6` get a new fall (A overpowered
+     at 0.85-0.93 s); they already hold at arm's length. To be decided with item 3.
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
