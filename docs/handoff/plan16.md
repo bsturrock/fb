@@ -81,7 +81,20 @@ baseline: main checkout `.scratch/p33/on`.
    - 642 tests; baseline main checkout `.scratch/p40/d-scenes2` (suite) with the pass from `d-scenes`. Both runs
      show 642/642 passed plus a runner exit ("vitest exited 1 with no report") or stack-trace errors under a
      machine load of 26-31; the five files named pass alone. A run on a quiet machine is still owed.
-   - **Left, worst first:** (1) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
+   - **The fire-out, p41** (`5a9403c`, `d6c45ef`; `BLOCK_STRIKE_V3`, `BlockStrike.fire`, on for `-F9`/`-F10`
+     only). What stood him up was the free locomotion's run clip (its blend weight rose as soon as he asked for
+     speed and took the suspension target to running height 0.90 m) and the walking start ramp (the creep); while
+     firing his feet are now the block's contact stepping. The trunk also could not rise fast enough: `hipNm`
+     (up to 400 N m of the hips' own torque, firing only). Now: hips stay at stance height through the first
+     steps, 0.80-0.84 m at contact, contact 0.52 s after the snap (was 1.33), bodies closing at 3 m/s (was 1.2),
+     steps 8-63 cm, nobody falls. 646 tests; baseline main checkout `.scratch/p41/b-fire-on` (tool's own HARD
+     INVARIANTS PASS). **Defects, worst first:** (a) the collision is not held at arm's length: the palm pushes
+     collapse in 0.05-0.09 s at 20-45 N, torso hits torso, and by contact + 0.15 s both stand upright chest to
+     chest, facemask to facemask, arms folded; the hit moves neither man back (each keeps coming 0.22-0.27 m).
+     (b) `-F9`'s defender's palms are rejected for 1.5 s (not facing / above the band on a pitched torso).
+     (c) Helmets within a few cm 0.2 s after the snap. (d) The scenes start 2 m apart (hands 1.14 m apart); at
+     1.7 m the defender falls (`contest:pastAnchor`), at 1.5 m the heads touch.
+   - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
      0.725 m target, and the suspension only pushes up; find what lifts it, with a twin capture. (2) No weight on
