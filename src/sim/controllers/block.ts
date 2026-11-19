@@ -16,7 +16,7 @@ import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
 import { legForThigh, legShape, newContest, type BlockBase, type BlockContest, type ContestState, type GiveGround, type GiveState } from '../block-base';
 import type { Controller, ControllerContext } from './base';
-import { clamp, dot, horiz, len, norm, qRot, rad, scale, sub, add, v3, type Vec3 } from '../vec';
+import { clamp, cross, dot, horiz, len, levelForwardOf, norm, qFromAxisAngle, qInvRot, qRot, rad, scale, sub, add, v3, type Vec3 } from '../vec';
 
 /** What the block does once engaged: hold his ground (push back as he is moved) or drive his man back. */
 export type BlockIntent = 'hold' | 'drive';
@@ -244,7 +244,29 @@ export interface PunchState {
 export interface BlockStrike {
   id: string;
   loadGapM: number;
-  load: { minS: number; tolM: number; closeGapM: number; closeMps: number; hands: { forwardM: number; x: number; y: number }; stance: BlockStance; movingMps: number; movingDepth: number };
+  load: {
+    minS: number;
+    tolM: number;
+    closeGapM: number;
+    closeMps: number;
+    hands: { forwardM: number; x: number; y: number };
+    stance: BlockStance;
+    movingMps: number;
+    movingDepth: number;
+    /**
+     * Plan 16 (p43): the load point (`hands`, in his own frame) is placed for the loaded trunk he is asked (the load
+     * stance's lean and hinge, `stance`; firing, the fire's `trunkDeg`); while his trunk is pitched deeper than that the
+     * point keeps its place on his shoulders as in that trunk (his frame turned back up about his level lateral axis,
+     * about the shoulder), not in at a chest that faces the turf, and the elbow goes to `pole` (owner-local direction from
+     * the shoulder in that trunk, x outward, mirrored per arm; asked first, `ArmIntent.poleLocal`). Why: out of a
+     * three-point (the trunk at 90-96 deg, rising at 300 deg/s) the point in his own frame lies between his belly and his
+     * thighs, and the arms went there through the thighs (forearm and palm 8-11 cm in the thigh for the first 0.25 s,
+     * BL-F9-threePoint); with the point on his shoulders but the elbow at the last pole the arm took (back along a trunk
+     * facing the turf) the upper arm swept 4-10 cm through the thigh instead. Absent: in his own frame however deep, the
+     * arm's own pole.
+     */
+    onShoulders?: { pole: Vec3 };
+  };
   strike: {
     contactM: number;
     minReachM: number;
@@ -375,6 +397,13 @@ export const BLOCK_STRIKE_V3: BlockStrike = { ...BLOCK_STRIKE_V2, id: 'strike-v3
  * trunk kept inclined under his man's palms on his upper chest). For the contest's hit (CONTEST_V2).
  */
 export const BLOCK_STRIKE_V4: BlockStrike = { ...BLOCK_STRIKE_V3, id: 'strike-v4', strike: { ...BLOCK_STRIKE_V3.strike, contactM: 0.66, riseOnLand: true, hipNm: 400 } };
+
+/**
+ * Plan 16 (p43): V4 with the load on his shoulders (`load.onShoulders`): out of a three-point the hands come off the turf
+ * and up under his shoulders to the load as his trunk rises, not in between his chest and his thighs, the elbows out, down
+ * and back in the loaded trunk (the arm's rest pole there), outside the thighs.
+ */
+export const BLOCK_STRIKE_V5: BlockStrike = { ...BLOCK_STRIKE_V4, id: 'strike-v5', load: { ...BLOCK_STRIKE_V4.load, onShoulders: { pole: v3(1, -0.6, -0.4) } } };
 
 /** Plan 16 (p37): a block profile whose engaged drive is the contest (`BlockContest`), under an id that names it. */
 export const withContest = (p: BlockProfile, contest: BlockContest): BlockProfile => ({ ...p, id: `${p.id}+${contest.id}`, contest });
@@ -1007,6 +1036,9 @@ export function nextPunch(K: BlockStrike, punchGapM: number, pu: PunchState | un
   return cur;
 }
 
+/** Plan 16 (p43): the loaded trunk (deg from vertical) a punch asks: firing, the fire's; otherwise the load stance's lean and hinge. */
+const loadTrunkDeg = (K: BlockStrike, pu: PunchState | undefined): number => (K.fire && pu?.fire ? K.fire.trunkDeg : K.load.stance.leanDeg + K.load.stance.hingeDeg);
+
 /** Horizontal distance from a body's origin to its torso box's face along world direction d (m). */
 function frontOf(body: BodyProfile, q: { x: number; y: number; z: number; w: number }, d: Vec3): number {
   if (body.kind === 'legacyCapsule') return body.legacy.radius;
@@ -1083,6 +1115,20 @@ export class BlockController implements Controller {
     const K = P.strike;
     const handPoint = (side: ArmSide, h: { forwardM: number; x: number; y: number }): Vec3 =>
       add(me.position, qRot(me.rotation, v3(sideSignX(myBody, side) * h.x, h.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + h.forwardM)));
+    // (p43, `load.onShoulders`: the load point and the elbow on his shoulders as in the loaded trunk he is asked,
+    // `trunkDeg`, when his is deeper; the frame turned back up about his level lateral axis, about the shoulder)
+    const loadArm = (side: ArmSide, Kl: BlockStrike['load'], trunkDeg: number): { targetWorld: Vec3; poleLocal?: Vec3 } => {
+      const lp = handPoint(side, Kl.hands);
+      const L = Kl.onShoulders;
+      if (!L) return { targetWorld: lp };
+      const up = qRot(me.rotation, v3(0, 1, 0));
+      const F = levelForwardOf(me.rotation);
+      const over = Math.max(0, Math.atan2(dot(up, F), up.y) - rad(trunkDeg));
+      const back = qFromAxisAngle(norm(cross(v3(0, 1, 0), F)), -over);
+      const sh = add(me.position, qRot(me.rotation, shoulderLocal(myBody, side)));
+      const pole = qInvRot(me.rotation, qRot(back, qRot(me.rotation, v3(sideSignX(myBody, side) * L.pole.x, L.pole.y, L.pole.z))));
+      return over > 0 ? { targetWorld: add(sh, qRot(back, sub(lp, sh))), poleLocal: pole } : { targetWorld: lp };
+    };
     const hands = R.hands ?? P.hands.default;
     const aim = P.hands[hands];
     // a palm's aim on him (world): my right hand on his left side (his frame), the side across from it, `depth` into his chest
@@ -1100,7 +1146,7 @@ export class BlockController implements Controller {
         closingMps: dot(sub(horiz(me.linearVelocity), horiz(him.linearVelocity)), dir),
         engaged: phase === 'engaged',
         reachM,
-        loaded: SIDES.every((side) => !!obs?.[side] && len(sub(obs[side]!.palmContactWorld, handPoint(side, K.load.hands))) <= K.load.tolM),
+        loaded: SIDES.every((side) => !!obs?.[side] && len(sub(obs[side]!.palmContactWorld, loadArm(side, K.load, loadTrunkDeg(K, was?.target === R.target ? was.punch : undefined)).targetWorld)) <= K.load.tolM),
         anyOn: SIDES.some((side) => !!obs?.[side]?.pushId),
         straight: SIDES.some((side) => !obs?.[side]?.pushId && armOf(side) >= K.strike.straightM),
         speedMps: len(horiz(me.linearVelocity)),
@@ -1156,7 +1202,7 @@ export class BlockController implements Controller {
           // no punch yet: up at the ready point; loading: in at his chest, low
           this.punchedAt[side] = null;
           this.wasOn[side] = false;
-          arms[side] = { action: 'reach', targetWorld: pu ? handPoint(side, K.load.hands) : handPoint(side, P.ready) };
+          arms[side] = pu ? { action: 'reach', ...loadArm(side, K.load, loadTrunkDeg(K, pu)) } : { action: 'reach', targetWorld: handPoint(side, P.ready) };
           continue;
         }
         // striking: a palm in flight since the strike began (the drive's re-arm counts from it)
