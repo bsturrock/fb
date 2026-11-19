@@ -1,5 +1,5 @@
 // Ladder 13c: the supported upper arm and elbow kept out of the own trunk (SelfClearanceProfile.upperArm,
-// `withUpperArmClearance`, used by no fixture yet). Plan 11 kept the forearm, palm and fingers out of the measured trunk;
+// `withUpperArmClearance`; from plan 16 p44 used by the BL scenes, no other fixture). Plan 11 kept the forearm, palm and fingers out of the measured trunk;
 // the upper arm hung against it, and the visible meter reads it past 5 cm for about a fifth of L3's supported time
 // (clip arms carried across the chest, arm-task arms reaching through it). Under the profile the self shapes take the
 // upper arm's distal half at the elbow's thickness (the forearm's radius: at the drawn 9.9 cm the fitted idle arm is
@@ -18,12 +18,13 @@ import { asCaptured } from './runs';
 import { loadState, resumeState } from './state';
 
 describe('ladder 13c: the upper arm in the arms\' self-clearance', () => {
-  it('the profile: self-clearance-v1 with the upper arm, used by no fixture; its self shape is the distal half of the bone at the given radius, fitted inside the elbow; without it the shapes are plan 11\'s', () => {
+  it('the profile: self-clearance-v1 with the upper arm, used by the BL scenes only; its self shape is the distal half of the bone at the given radius, fitted inside the elbow; without it the shapes are plan 11\'s', () => {
     const on = withUpperArmClearance(SELF_CLEARANCE_V1);
     expect(on).toEqual({ ...SELF_CLEARANCE_V1, id: `${SELF_CLEARANCE_V1.id}+${UPPER_ARM_SELF_ID}`, upperArm: true });
     expect(withUpperArmClearance(on)).toBe(on);
     expect(withoutUpperArmClearance(on)).toEqual(SELF_CLEARANCE_V1);
-    for (const d of allFixtures()) expect(d.selfClearance?.upperArm, d.id).toBeUndefined();
+    // (plan 16 p44: the BL scenes take it, `BlockSceneOpts.upperArm`; no other fixture does)
+    for (const d of allFixtures()) expect(d.selfClearance?.upperArm, d.id).toBe(d.milestone === 'BL' ? true : undefined);
     const sh = v3(0.2, 1.4, 0);
     const el = v3(0.25, 1.1, 0.05);
     const wr = v3(0.3, 0.9, 0.2);
