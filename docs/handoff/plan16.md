@@ -64,7 +64,29 @@ baseline: main checkout `.scratch/p33/on`.
       set needs its own foot placement under the hips.
    d. A first step faster than the load's 0.6 m/s close; the new scenes (three-point offense against three-point
       defense; two-point set against a three-point defender); tests with fault twins.
-   Then item 3. One builder at a time in the worktree
+   Then item 3.
+6. **p40: the deadlock, the three-point stances, two scenes** (`ad62a5c`, `fef43f6`, `d772a93`, `d6bdc0a`). 5a and
+   5b are done, 5c and the fire-out of 5d are not.
+   - Deadlock, real cause: the man with the shorter reach strikes first and his palms hold the other at arm's
+     length with no closing speed, so the other's strike condition (`reach - closing x leadS <= contactM`) never
+     holds. Rule: engaged, loaded and held off inside `engagedReachM` (0.66 m), he strikes (`BLOCK_STRIKE_V2`, on
+     for BL). `-F8` was this: it now ends in a stalemate (was a 4.5 m run-back); its title is stale.
+   - Three-point stances (`LEAN_IN_V4`, `PreSnapPose`, `StanceRequest.lowM`, `PostureIntent.headUp`,
+     `FlatStance.level`, a slow hinge pace into the stance), authored from geometry; the offense FBX agrees and
+     was a cross-check, the defense FBX contradicts the photos and is unused. Offense: hips 0.69 m level with the
+     shoulders, knees 90 deg, feet flat, base 0.56 m, palm on the turf. Defense: hips 0.78 m, 8 cm over the
+     shoulders, heel-to-toe stagger, rear heel up 8 cm, palm 1 cm over the turf.
+   - Scenes `BL-F9-threePoint`, `BL-F10-twoPointVsThree`: set from the reset (takes 2.3 s), snap at 3.3 s. Nobody
+     falls. The loser's hips are behind his feet 11-20 % of the engaged time here.
+   - 642 tests; baseline main checkout `.scratch/p40/d-scenes2` (suite) with the pass from `d-scenes`. Both runs
+     show 642/642 passed plus a runner exit ("vitest exited 1 with no report") or stack-trace errors under a
+     machine load of 26-31; the five files named pass alone. A run on a quiet machine is still owed.
+   - **Left, worst first:** (1) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
+     in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
+     `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
+     0.725 m target, and the suspension only pushes up; find what lifts it, with a twin capture. (2) No weight on
+     the down hand (the arm only reaches). (3) Defense front knee 75 deg. (4) The two-point has no feet of its own
+     (5c). (5) Getting set takes 2.3 s. One builder at a time in the worktree
    `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main checkout's `.scratch/p38/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
