@@ -9,7 +9,7 @@
 // and what holds between him and his man (a palm push either way, or their bodies touching), with hysteresis: it enters
 // at once and leaves only after `engage.lostS` with nothing holding. The feet regime and the hip hinge read it, so neither
 // follows a flickering contact.
-import type { ArmIntent, ArmSide, FlatStance, HeadUp, PlayerId, PlayerIntent, StanceRequest } from '../contracts';
+import type { ArmIntent, ArmSide, FlatStance, HeadGaze, HeadUp, PlayerId, PlayerIntent, StanceRequest } from '../contracts';
 import type { BodyProfile, MotorProfile } from '../profiles';
 import { shoulderLocal, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
@@ -168,7 +168,29 @@ export interface BlockProfile {
    * until the snap (his hands at the ready point, `ready`; his feet as `flat` places them). Absent: none.
    */
   preSnap?: Partial<Record<PreSnapKey, PreSnapPose>>;
+  /** Plan 16 (p43), his eyes on his man (`BlockGaze`); absent, the head on the trunk (in a pre-snap stance, its head up). */
+  gaze?: BlockGaze;
 }
+
+/**
+ * Plan 16 (p43), his eyes on his man (`BlockProfile.gaze`): in his pre-snap stance and blocking, the head on his man's
+ * head (`PostureIntent.gaze`), the neck extended at most as far as his pre-snap stance's head goes (`PreSnapPose.head`,
+ * its `maxDeg`: the extension the stance shows) or `maxDeg` without one. Why: the stance's head up is a rule on the
+ * trunk's own pitch, asked only until the snap; at the snap the head fell onto a trunk still pitched 90 deg (the face from
+ * 40 deg below the horizon to 90 in one tick, BL-F9-threePoint) and came up only as the trunk did (on the turf for the
+ * first 0.2 s, still 50-70 deg down at 0.25 s). Looking at a point bounds the same extension in the stance (the stance's
+ * head is unchanged there) and keeps it through the fire-out, easing off only as the trunk rises.
+ */
+export interface BlockGaze {
+  id: string;
+  maxDeg: number;
+}
+
+/** Plan 16 (p43): the first gaze, the neck at most 50 deg extended without a stance's own (the three-point offense's). */
+export const GAZE_V1: BlockGaze = { id: 'gaze-v1', maxDeg: 50 };
+
+/** Plan 16 (p43): a block profile with his eyes on his man (`BlockGaze`), under an id that names it. */
+export const withGaze = (p: BlockProfile, gaze: BlockGaze): BlockProfile => ({ ...p, id: `${p.id}+${gaze.id}`, gaze });
 
 /** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
 export type PunchPhase = 'load' | 'strike' | 'drive';
@@ -1036,7 +1058,7 @@ export class BlockController implements Controller {
     if (ctx.t + 1e-9 < (this.spec.fromS ?? 0)) {
       // (p39: in his pre-snap stance, when he has one, until the snap)
       const pre = R.stance ? P.preSnap?.[preSnapKey(R.stance)] : undefined;
-      return pre && me ? this.preSnap(ctx, pre, me) : stand('block:waiting');
+      return pre && me ? this.preSnap(ctx, pre, me, him) : stand('block:waiting');
     }
     // his man gone or down: the block is over (no request; the arms rest, every push ends)
     if (!me || !him || him.controlMode !== 'supported' || him.representation !== 'proxy') {
@@ -1176,10 +1198,12 @@ export class BlockController implements Controller {
     const S = sl > 0 ? { ...S1, heightM: S1.heightM + sl * P.contest!.stood.riseM, hingeDeg: Math.max(0, S1.hingeDeg - sl * P.contest!.stood.trunkDeg) } : S1;
     // (p41, firing: his feet's frame level, as in the stance he comes out of)
     const stance = this.stanceRequest(fire && P.flat ? { ...S, flat: { ...P.flat, level: true } } : S);
+    // (p43: his eyes on his man, the neck's range his pre-snap stance's)
+    const gaze = this.gazeOn(ctx, R.stance ? P.preSnap?.[preSnapKey(R.stance)] : undefined, him);
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
-      posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM } },
+      posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
       block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
       debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}) },
     };
@@ -1200,8 +1224,10 @@ export class BlockController implements Controller {
    * block (the engaged state's request), so the hinge has his block's bounds; nothing moves him toward his man. (p40: a
    * pose's own feet, floor, hands and head as it asks: a hand at its place in his level frame, `PreSnapHand`.)
    */
-  private preSnap(ctx: ControllerContext, S: PreSnapPose, me: ControllerContext['observed']['bodies'][string]): PlayerIntent {
+  private preSnap(ctx: ControllerContext, S: PreSnapPose, me: ControllerContext['observed']['bodies'][string], him?: ControllerContext['observed']['bodies'][string]): PlayerIntent {
     const P = this.profile;
+    // (p43: his eyes on his man, in place of the stance's head up)
+    const gaze = this.gazeOn(ctx, S, him);
     const myBody = ctx.bodies[ctx.self];
     const lateral = norm(horiz(qRot(me.rotation, v3(1, 0, 0))), v3(1, 0, 0));
     const hand = (side: ArmSide): ArmIntent => {
@@ -1215,10 +1241,20 @@ export class BlockController implements Controller {
     return {
       locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: this.lastFacing, effort: 1, stance: this.stanceRequest(S) },
       arms: { left: hand('left'), right: hand('right') },
-      posture: { leanDirWorld: this.lastFacing, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(S.head ? { headUp: S.head } : {}) },
+      posture: { leanDirWorld: this.lastFacing, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : S.head ? { headUp: S.head } : {}) },
       block: { request: { ...this.spec.request }, profile: P, ...(S.pace ? { hinge: { ...P.hinge, ...S.pace } } : {}) },
       debug: { phase: 'block:set' },
     };
+  }
+
+  /**
+   * Plan 16 (p43): his eyes on his man (a profile with `gaze`): on his man's head, the neck's range his pre-snap stance's
+   * head (`S`, when he has one) or the gaze's own. Undefined without a gaze or a man.
+   */
+  private gazeOn(ctx: ControllerContext, S: PreSnapPose | undefined, him: ControllerContext['observed']['bodies'][string] | undefined): HeadGaze | undefined {
+    const G = this.profile.gaze;
+    if (!G || !him) return undefined;
+    return { atWorld: add(him.position, qRot(him.rotation, ctx.bodies[this.spec.request.target].headCenter)), maxDeg: S?.head?.maxDeg ?? G.maxDeg };
   }
 
   exportParams(tickS: number): unknown {

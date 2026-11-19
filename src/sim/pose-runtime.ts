@@ -12,7 +12,7 @@ import { bodyParts, groundFor, type Part } from './free-ground';
 import { colliderWorldPose, externalFromColliders, ragdollPose, SEGMENTS, type ExternalShape } from './ragdoll';
 import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, solvedImpulses, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
-import type { ArmSide, FlatStance, HeadUp } from './contracts';
+import type { ArmSide, FlatStance, HeadGaze, HeadUp } from './contracts';
 import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, levelForwardOf, type Quat } from './vec';
 import { auditInput, keepLandmarks, recordTransition, type AuditHost } from './transition-audit';
 import type { Simulation, PlayerRuntime } from './simulation';
@@ -109,7 +109,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
         ? { y: pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0, staggerM: pl.sus.staggerM, ...(pl.controlMode === 'falling' ? { bodyRelative: true } : {}), ...(pl.sus.flat?.level ? { levelFwd: levelForwardOf(core.q) } : {}), ...(pl.sus.widthAddM ? { widthAddM: pl.sus.widthAddM } : {}), ...(pl.sus.flat ? { aheadM: flatShiftM(host, pl, core, RP, pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0) } : {}) }
         : undefined,
       dtS: dt,
-      ...(pl.intent.posture?.headUp ? { headUpRad: headUpRadOf(core.q, pl.intent.posture.headUp) } : {}),
+      ...(pl.intent.posture?.gaze ? { headUpRad: gazeRadOf(core, pl.body, pl.intent.posture.gaze) } : pl.intent.posture?.headUp ? { headUpRad: headUpRadOf(core.q, pl.intent.posture.headUp) } : {}),
       handoffPossible: !!host.def.ragdoll && !pl.rag && !pl.handoff,
       ...(pl.deferred ? { handoffDeferred: true } : {}),
       ...(host.def.legGuard?.sweep ? { legSweep: true } : {}),
@@ -515,6 +515,25 @@ export function headUpRadOf(q: Quat, H: HeadUp): number {
   const up = qRot(q, v3(0, 1, 0));
   const pitchDeg = (Math.acos(Math.max(-1, Math.min(1, up.y))) * 180) / Math.PI;
   return (Math.max(0, Math.min(H.maxDeg, pitchDeg - H.freeDeg)) * Math.PI) / 180;
+}
+
+/**
+ * Plan 16 (p43): the head's extension on the neck (rad) under `HeadGaze` for a body at `core`: the angle, about the
+ * trunk's lateral axis, from the face on the trunk (its forward) to the point in the trunk's sagittal plane, seen from
+ * the head's centre as that extension places it (two passes), between 0 and `maxDeg`.
+ */
+export function gazeRadOf(core: { p: Vec3; q: Quat }, body: PlayerRuntime['body'], G: HeadGaze): number {
+  if (body.kind !== 'upperBodyCompound') return 0;
+  const max = (G.maxDeg * Math.PI) / 180;
+  const neck = toWorld(core, body.neck);
+  const head = sub(body.headCenter, body.neck);
+  let rad = 0;
+  for (let i = 0; i < 2; i++) {
+    const hc = add(neck, qRot(qMul(core.q, qFromAxisAngle(v3(1, 0, 0), -rad)), head));
+    const d = qInvRot(core.q, sub(G.atWorld, hc));
+    rad = clamp(Math.atan2(d.y, d.z), 0, max);
+  }
+  return rad;
 }
 
 /** Plan 13e: the idle cycle at the player's phase and its weight (a locomotion profile with a cycle only). */

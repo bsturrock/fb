@@ -193,6 +193,18 @@ export interface PostureIntent {
   hinge?: { rad: number; dropM: number };
   /** Plan 16 (p40): the head up (`HeadUp`); absent, the head on the trunk. */
   headUp?: HeadUp;
+  /** Plan 16 (p43): the head on a point (`HeadGaze`), in place of `headUp`; absent, none. */
+  gaze?: HeadGaze;
+}
+
+/**
+ * Plan 16 (p43): the head on a point. The drawn head extends on the neck (about the trunk's lateral axis, as `HeadUp`
+ * does) until its face points at `atWorld` in the trunk's own sagittal plane, between the head on the trunk (0: the
+ * neck is not flexed for it) and `maxDeg` of extension (the neck's range).
+ */
+export interface HeadGaze {
+  atWorld: Vec3;
+  maxDeg: number;
 }
 
 /**
