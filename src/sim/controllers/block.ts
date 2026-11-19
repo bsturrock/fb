@@ -16,7 +16,7 @@ import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
 import { legForThigh, legShape, newContest, type BlockBase, type BlockContest, type ContestState, type GiveGround, type GiveState } from '../block-base';
 import type { Controller, ControllerContext } from './base';
-import { clamp, cross, dot, horiz, len, levelForwardOf, norm, qFromAxisAngle, qInvRot, qRot, rad, scale, sub, add, v3, type Vec3 } from '../vec';
+import { clamp, cross, dot, horiz, len, levelForwardOf, norm, qFromAxisAngle, qInvRot, qRot, rad, scale, sub, add, addScaled, v3, type Vec3 } from '../vec';
 
 /** What the block does once engaged: hold his ground (push back as he is moved) or drive his man back. */
 export type BlockIntent = 'hold' | 'drive';
@@ -90,6 +90,18 @@ export interface PreSnapHand {
   x: number;
   upM: number;
   pole?: Vec3;
+  /**
+   * Plan 16 (p44), a hand down on the turf: its place stands in front of his knee by this much (m) beyond the thigh's and
+   * the palm's radius, the knee as it stands in the set; and while the turf there is beyond his reach the hand asks the
+   * lowest point over it his arm reaches (`front`, derived by `leanInStances`). He is set at his stance's height from the
+   * reset, his trunk upright and tipping in at the stance's pace: the turf under his shoulder beyond his reach, the hand
+   * reaching for it hung straight down onto his squatting thigh, through it (10-14 cm in for the first second). Over the
+   * place in front of the knee it hangs clear of the thigh and comes down to the turf as his trunk goes down; in the set
+   * the place ahead of his shoulder is the further one, and the turf within reach. Absent: none.
+   */
+  kneeClearM?: number;
+  /** Derived (p44, from `kneeClearM`): the place stands at least `aheadM` ahead of his root along his facing (m), and the hand no lower than his arm's reach `reachM` from his shoulder. */
+  front?: { aheadM: number; reachM: number };
 }
 
 /**
@@ -630,7 +642,7 @@ export interface ThreePointSpec extends TrunkPose {
 }
 
 /** The leg's geometry the lean-in is derived on: the stance geometry, the ankle's distance behind the shoe's toe tip and the shoe's length (m). */
-export type LeanGeometry = StanceGeometry & { toeM: number; shoeM: number };
+export type LeanGeometry = StanceGeometry & { toeM: number; shoeM: number; /** The drawn thigh's and palm's radii and the arm's reach (m; p44, a hand's `kneeClearM`). */ thighRM?: number; palmRM?: number; reachM?: number };
 
 /** What a lean-in stance comes to on a leg (`leanInStances`): the four block stances, the flat stance (with its ball), where the rear ankle stands ahead of its hip (m; negative behind), and each phase's hip height over the ground and rear foot pitch (deg). */
 export interface LeanInDerived {
@@ -709,7 +721,11 @@ export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived 
     const heightM = overGroundM - Lt.hipUpM * Math.cos(r(T.trunkDeg));
     // (a pitch of 0: the flat rule, both feet flat ahead of the hips, a plant stepping past `stepDeg` over the range)
     const flat: FlatStance = T.pitchDeg > 0 ? { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: heightM, ball: { ...S.ball, pitchDeg: T.pitchDeg, stepDeg: T.stepDeg }, dorsiDeg: Lt.dorsiDeg, level: true } : { id: S.id, marginDeg: 0, stepPastDeg: T.stepDeg, ...S.flat, lowRootM: heightM, dorsiDeg: Lt.dorsiDeg, level: true };
-    return { leanDeg: T.leanDeg, hingeDeg: T.trunkDeg - T.leanDeg, dropM: 0, heightM, staggerM: T.staggerM, widthAddM: T.widthAddM, flat, lowM: heightM, hands: T.hands, head: T.head, pace: T.pace, overGroundM };
+    // (p44: a hand in front of the knee as it stands in the set, the thigh at its slope ahead of the hips)
+    const kneeM = Lt.thighM * Math.cos(r(T.thighDeg));
+    const hand = (H: PreSnapHand): PreSnapHand => (H.kneeClearM !== undefined && L0.thighRM !== undefined && L0.palmRM !== undefined && L0.reachM !== undefined ? { ...H, front: { aheadM: kneeM + L0.thighRM + L0.palmRM + H.kneeClearM, reachM: L0.reachM } } : H);
+    const hands = Object.fromEntries(Object.entries(T.hands).map(([k, H]) => [k, hand(H!)])) as ThreePointSpec['hands'];
+    return { leanDeg: T.leanDeg, hingeDeg: T.trunkDeg - T.leanDeg, dropM: 0, heightM, staggerM: T.staggerM, widthAddM: T.widthAddM, flat, lowM: heightM, hands, head: T.head, pace: T.pace, overGroundM };
   };
   const tp = S.threePoint;
   return {
@@ -888,6 +904,21 @@ export const LEAN_IN_V4: LeanInStance = {
       pace: { rateDegPerS: 45, accelDegPerS2: 90 },
     },
   },
+};
+
+/**
+ * Plan 16 (p44): LEAN_IN_V4 with each three-point's down hand reaching the turf in front of his knee (`PreSnapHand.kneeClearM`,
+ * 2 cm beyond the thigh's and the palm's radius, the knee as it stands in the set): getting set from standing, his shoulder
+ * over his hips, the hand reaching for the turf under the shoulder hung straight down through his thigh (10-14 cm in for
+ * the first second). The stances themselves as V4: once his trunk is down the turf ahead of his shoulder is in front of
+ * the knee.
+ */
+export const LEAN_IN_V5: LeanInStance = {
+  ...LEAN_IN_V4,
+  id: 'lean-in-v5',
+  threePoint: Object.fromEntries(
+    Object.entries(LEAN_IN_V4.threePoint!).map(([k, T]) => [k, { ...T!, hands: { ...T!.hands, right: { ...T!.hands.right!, kneeClearM: 0.02 } } }]),
+  ) as LeanInStance['threePoint'],
 };
 
 /**
@@ -1281,8 +1312,16 @@ export class BlockController implements Controller {
       const out = sideSignX(myBody, side);
       if (!H) return { action: 'reach', targetWorld: add(me.position, qRot(me.rotation, v3(out * P.ready.x, P.ready.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + P.ready.forwardM))) };
       const sh = add(me.position, qRot(me.rotation, shoulderLocal(myBody, side)));
-      const at = add(add(sh, scale(this.lastFacing, H.forwardM)), scale(lateral, out * H.x));
-      return { action: 'reach', targetWorld: v3(at.x, H.upM, at.z), ...(H.pole ? { poleLocal: v3(out * H.pole.x, H.pole.y, H.pole.z) } : {}) };
+      const at0 = add(add(sh, scale(this.lastFacing, H.forwardM)), scale(lateral, out * H.x));
+      let at = v3(at0.x, H.upM, at0.z);
+      // (p44: in front of his knee, and no lower than he reaches there)
+      if (H.front) {
+        const lead = dot(sub(at, me.position), this.lastFacing);
+        if (lead < H.front.aheadM) at = addScaled(at, this.lastFacing, H.front.aheadM - lead);
+        const h = len(horiz(sub(at, sh)));
+        if (h < H.front.reachM) at = v3(at.x, Math.max(at.y, sh.y - Math.sqrt(H.front.reachM * H.front.reachM - h * h)), at.z);
+      }
+      return { action: 'reach', targetWorld: at, ...(H.pole ? { poleLocal: v3(out * H.pole.x, H.pole.y, H.pole.z) } : {}) };
     };
     return {
       locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: this.lastFacing, effort: 1, stance: this.stanceRequest(S) },

@@ -40,7 +40,7 @@ export function legOf(def: FixtureDef, body: PlayerSetup['body']): LeanGeometry 
   const R = def.ragdoll!;
   if (body.kind === 'legacyCapsule') throw new Error('the athletic stance needs the compound body');
   const c = body.compound.torso.center;
-  return { thighM: R.lengths.thigh, shinM: R.lengths.shin, soleM: R.shoe.belowAnkleM + R.shoe.halfExtents.y, hipUpM: body.hipRight.y, chestUpM: c.y, chestAheadM: c.z, dorsiDeg: def.jointRange!.ankle.dorsiDeg, toeM: R.shoe.forwardM + R.shoe.halfExtents.z, shoeM: 2 * R.shoe.halfExtents.z };
+  return { thighM: R.lengths.thigh, shinM: R.lengths.shin, soleM: R.shoe.belowAnkleM + R.shoe.halfExtents.y, hipUpM: body.hipRight.y, chestUpM: c.y, chestAheadM: c.z, dorsiDeg: def.jointRange!.ankle.dorsiDeg, toeM: R.shoe.forwardM + R.shoe.halfExtents.z, shoeM: 2 * R.shoe.halfExtents.z, thighRM: R.radii.thigh, palmRM: R.radii.palm, ...(def.armProfile ? { reachM: def.armProfile.maxReachM } : {}) };
 }
 
 /** A man's block profile: his own (default BLOCK_V1), on his lean-in or athletic stance when he has one. */
