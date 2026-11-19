@@ -7,7 +7,7 @@ import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, des
 import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, scale, sub, UP, levelForwardOf, qFromUnitVectors } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
-import { hingeBalanceTorque } from './hinge';
+import { hingeBalanceTorque, hipTorque } from './hinge';
 import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
 /** What the motor step reads from the simulation. */
@@ -109,7 +109,8 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
         const holdUp = reached ? up : bal.desiredUp;
         const hold = pl.sus ? postureGravityHold(holdUp, pl.sus.pivotN / Math.abs(g), g, pl.sus.leverM) : postureGravityHold(holdUp, b.massKg, g, bal.leverM);
         // contact motion polish 1.1: under a hip hinge, the legs' balance first, then the trunk's pitch (hinge.ts)
-        const bt = pl.hinge ? hingeBalanceTorque(pl.hinge, b.rotation, b.angularVelocity, bal.desiredUp, B, balCap, hold, holdUp) : computeBalanceTorque(up, bal.desiredUp, b.angularVelocity, B, balCap, hold, holdUp);
+        const hb = pl.hinge ? hingeBalanceTorque(pl.hinge, b.rotation, b.angularVelocity, bal.desiredUp, B, balCap, hold, holdUp) : null;
+        const bt = hb ?? computeBalanceTorque(up, bal.desiredUp, b.angularVelocity, B, balCap, hold, holdUp);
         const held = base ? limitToBase(bt.capped, base.m, base.u) : null;
         // plan 16 (p36, giving ground): how far behind his base his balance asks the pressure (none without a base)
         const give = pl.block?.give;
@@ -122,6 +123,8 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
         const c = combineSupportTorque(balCapped, yaw.cap > 0 ? yaw.torqueY : 0, ceiling);
         support = c.torque;
         supportScale = c.scale;
+        // plan 16 (p41): the hips' own torque on the trunk's pitch, beyond the balance's cap (bounds with `hipNm`)
+        if (hb && pl.hinge?.limits?.hipNm) support = add(support, hipTorque(pl.hinge.limits, b.rotation, hb));
       } else support = v3();
     }
     if (len(support) > 0) pl.proxy.body.addTorque(support, true);

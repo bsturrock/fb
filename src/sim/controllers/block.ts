@@ -185,6 +185,12 @@ export interface PunchState {
   depth: number;
   /** Striking: when a palm first landed on him (s; absent: not yet). */
   onT?: number;
+  /**
+   * Plan 16 (p41): this punch is his fire-out (`BlockStrike.fire`), from the snap out of his pre-snap stance until a
+   * strike lands (a missed one loads again, still firing). While it is, his feet are the block's contact stepping (the
+   * simulation's `retained`), not the free locomotion's.
+   */
+  fire?: true;
 }
 
 /**
@@ -234,6 +240,27 @@ export interface BlockStrike {
      */
     engagedReachM?: number;
   };
+  /** Plan 16 (p41): the fire-out (`BlockFire`); absent, the first punch out of a pre-snap stance is any other punch. */
+  fire?: BlockFire;
+}
+
+/**
+ * Plan 16 (p41), the fire-out: a man set in a pre-snap stance (`BlockRequest.stance`, one his profile holds) loads at the
+ * snap wherever his man is, and that first punch is his fire-out (`PunchState.fire`) until a strike lands. Firing:
+ * - his feet are the block's contact stepping, not the free locomotion's (the simulation's `retained`): no walking start
+ *   ramp and no run clip, whose running height (0.87-0.90 m) the suspension took as his speed rose and stood him up out
+ *   of the stance whatever the stance asked (p40's parked fire-out: the root at 0.92 against a 0.725 target); his feet's
+ *   frame is level (`FlatStance.level`), as in the stance he comes out of, so the planter reads his deep pitch as his;
+ * - he goes at his own `mps` toward his man (braked as the approach brakes, on the gap to the load's), whatever his man
+ *   does: both men firing close at twice it (the load's `closeMps` is the gap's);
+ * - loaded, the load's stance with the trunk at `trunkDeg` from vertical (the hips at the load's height, the back flat
+ *   and low); striking, the strike's (the hips and the trunk up through the contact);
+ * - his hip hinge moves at `pace` (with the hips' own torque, `HingeLimits.hipNm`), in place of the block's.
+ */
+export interface BlockFire {
+  mps: number;
+  trunkDeg: number;
+  pace: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2' | 'hipNm'>;
 }
 
 /**
@@ -304,6 +331,13 @@ export const BLOCK_STRIKE_V1: BlockStrike = {
  * the fire-out deadlock; the same in BL-F8, where the man held off is run back 4.5 m without a palm on).
  */
 export const BLOCK_STRIKE_V2: BlockStrike = { ...BLOCK_STRIKE_V1, id: 'strike-v2', strike: { ...BLOCK_STRIKE_V1.strike, engagedReachM: 0.66 } };
+
+/**
+ * Plan 16 (p41): BLOCK_STRIKE_V2 with the fire-out (`BlockFire`): out of a pre-snap stance he goes at 2 m/s, the hips
+ * low, the trunk brought up to 45 deg at 300 deg/s (1500 deg/s2, the hips adding up to 400 N m beyond the balance's cap)
+ * and on to the strike's as it is thrown. No registered fixture has it yet.
+ */
+export const BLOCK_STRIKE_V3: BlockStrike = { ...BLOCK_STRIKE_V2, id: 'strike-v3', fire: { mps: 2, trunkDeg: 45, pace: { rateDegPerS: 300, accelDegPerS2: 1500, hipNm: 400 } } };
 
 /** Plan 16 (p37): a block profile whose engaged drive is the contest (`BlockContest`), under an id that names it. */
 export const withContest = (p: BlockProfile, contest: BlockContest): BlockProfile => ({ ...p, id: `${p.id}+${contest.id}`, contest });
@@ -832,6 +866,8 @@ export interface BlockDebug {
   contestEffortBlind?: boolean;
   /** The contest's fall clauses never take him down. */
   contestNoFall?: boolean;
+  /** Plan 16 (p41) fault: a fire-out's feet are the free locomotion's (the walking start ramp and the run clip), as before p41. */
+  fireFree?: boolean;
 }
 
 /**
@@ -900,6 +936,8 @@ export interface PunchCues {
   straight: boolean;
   /** His own speed (m/s). */
   speedMps: number;
+  /** Plan 16 (p41): he is out of his pre-snap stance on his first punch (number 0) under a strike with `fire` (it loads at once, as his fire-out). */
+  fired?: boolean;
 }
 
 /**
@@ -914,6 +952,8 @@ export function nextPunch(K: BlockStrike, punchGapM: number, pu: PunchState | un
   const closing = Math.max(0, c.closingMps);
   if (!cur) {
     const depth = punchDepth(K, c.speedMps);
+    // (p41, the fire-out: out of his pre-snap stance he loads at the snap, wherever his man is)
+    if (c.fired) return { n: c.serial, phase: 'load', since: c.t, depth, fire: true };
     return c.engaged || c.gap <= K.loadGapM || c.gap - closing * (K.load.minS * depth + K.strike.leadS) <= punchGapM ? { n: c.serial, phase: 'load', since: c.t, depth } : undefined;
   }
   const age = c.t - cur.since + 1e-9;
@@ -924,7 +964,7 @@ export function nextPunch(K: BlockStrike, punchGapM: number, pu: PunchState | un
     const onT = cur.onT ?? (c.anyOn ? c.t : undefined);
     // landed: the drive once through (or once the palms came off: the block's own hands re-arm them)
     if (onT !== undefined && (!c.anyOn || c.t - onT + 1e-9 >= K.strike.throughS)) return { n: cur.n, phase: 'drive', since: c.t, depth: cur.depth };
-    if (onT === undefined && (c.straight || age >= K.strike.maxS)) return { n: cur.n, phase: 'load', since: c.t, depth: punchDepth(K, c.speedMps) };
+    if (onT === undefined && (c.straight || age >= K.strike.maxS)) return { n: cur.n, phase: 'load', since: c.t, depth: punchDepth(K, c.speedMps), ...(cur.fire ? { fire: true as const } : {}) };
     if (onT !== undefined && cur.onT === undefined) return { ...cur, onT };
   }
   return cur;
@@ -1027,6 +1067,7 @@ export class BlockController implements Controller {
         anyOn: SIDES.some((side) => !!obs?.[side]?.pushId),
         straight: SIDES.some((side) => !obs?.[side]?.pushId && armOf(side) >= K.strike.straightM),
         speedMps: len(horiz(me.linearVelocity)),
+        ...(K.fire && R.stance && P.preSnap?.[preSnapKey(R.stance)] && (R.punch ?? 0) === 0 ? { fired: true } : {}),
       });
       // striking, each free arm's extension speed (the speed its palm lands at); otherwise none
       for (const side of SIDES) {
@@ -1041,6 +1082,8 @@ export class BlockController implements Controller {
     const gl = P.give ? (ctx.observed.block?.[ctx.self]?.give ?? 0) : 0;
     // (p37, the contest: how far he is stood up, from the snapshot; 0 without `contest`)
     const sl = P.contest ? (ctx.observed.block?.[ctx.self]?.stood ?? 0) : 0;
+    // (p41, the fire-out: his punch out of his pre-snap stance until a strike lands)
+    const fire = K?.fire && pu?.fire && pu.phase !== 'drive' ? K.fire : undefined;
     let along: number;
     if (phase === 'engaged' && handOn) {
       const mine = horiz(me.position);
@@ -1058,9 +1101,10 @@ export class BlockController implements Controller {
       // (loaded or striking, to the load's gap; a strike profile's man closer than a strike lands from steps back)
       const left = gap - (K && pu && pu.phase !== 'drive' ? K.load.closeGapM : A.holdGapM);
       const loaded = !!K && !!pu && pu.phase !== 'drive';
-      const close = left > 0 ? Math.min(loaded ? K!.load.closeMps : A.mps, A.gainPerS * left, Math.sqrt(2 * A.brakeMps2 * left)) : Math.max(-A.backMps, A.gainPerS * left);
-      // the gap closes at that speed, his own part of it counted (he follows a man moving off, gives ground to one coming on)
-      along = K && pu && pu.phase !== 'drive' && reachM < K.strike.minReachM ? -A.backMps : Math.max(-A.backMps, close + dot(hv, dir));
+      const close = left > 0 ? Math.min(fire ? fire.mps : loaded ? K!.load.closeMps : A.mps, A.gainPerS * left, Math.sqrt(2 * A.brakeMps2 * left)) : Math.max(-A.backMps, A.gainPerS * left);
+      // the gap closes at that speed, his own part of it counted (he follows a man moving off, gives ground to one coming
+      // on); firing, that is his own speed (p41)
+      along = K && pu && pu.phase !== 'drive' && reachM < K.strike.minReachM ? -A.backMps : Math.max(-A.backMps, fire ? close : close + dot(hv, dir));
     }
     const vel = add(scale(dir, along), across);
     // the hands: up while closing, punched on from the punch gap (or engaged), pulled back to re-arm when one came off
@@ -1104,18 +1148,21 @@ export class BlockController implements Controller {
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
       arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
-    const S0 = K ? punchPose(P, pu) : P.stance;
+    const S00 = K ? punchPose(P, pu) : P.stance;
+    // (p41, the fire-out: loaded, the trunk at the fire's, low)
+    const S0 = fire && pu?.phase === 'load' ? { ...S00, hingeDeg: Math.max(0, fire.trunkDeg - S00.leanDeg) } : S00;
     // (p36, giving ground: stood up by how far he is pushed past his base; p37, the contest: by how hard he is knocked back,
     // hips up and trunk up)
     const S1 = gl > 0 ? { ...S0, heightM: S0.heightM + gl * P.give!.riseM } : S0;
     const S = sl > 0 ? { ...S1, heightM: S1.heightM + sl * P.contest!.stood.riseM, hingeDeg: Math.max(0, S1.hingeDeg - sl * P.contest!.stood.trunkDeg) } : S1;
-    const stance = this.stanceRequest(S);
+    // (p41, firing: his feet's frame level, as in the stance he comes out of)
+    const stance = this.stanceRequest(fire && P.flat ? { ...S, flat: { ...P.flat, level: true } } : S);
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
       posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM } },
-      block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}) },
-      debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}) },
+      block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : {}) },
+      debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}) },
     };
   }
 

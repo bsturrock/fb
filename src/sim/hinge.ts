@@ -65,6 +65,13 @@ export interface HingeLimits {
   accelDegPerS2: number;
   maxDropM: number;
   dropRateMps: number;
+  /**
+   * Plan 16 (p41): the hips' own torque (N m) about the hinge's axis: what the trunk's pitch toward its command asks
+   * beyond the part of the balance's cap the legs leave it, up to this, is added (`hipTorque`). The hips' extensors work
+   * against his posed legs; the legs' balance alone (240 N m, most of it taken by his lean) brings a trunk pitched 90 deg
+   * up in most of a second, where a blocker firing out of a three-point stance does it in a fraction of one. Absent: none.
+   */
+  hipNm?: number;
 }
 
 /** Signed angle (rad) about unit `a` from `from` to `to`, each projected on the plane normal to `a`. */
@@ -92,11 +99,16 @@ export function legRotation(h: HingeState, q: Quat, legsUp: Vec3): Quat {
   return s > 0 ? qMul(qFromAxisAngle(hingeAxis(q), -s), q) : q;
 }
 
-/** The legs' angular velocity: inside the hinge's range its axis component turns the hinge, not the legs. */
+/**
+ * The legs' angular velocity: inside the hinge's range its axis component turns the hinge, not the legs. (p41: under
+ * bounds with the hips' own torque, `HingeLimits.hipNm`, at the range's edge too: a trunk coming up as fast as the cap
+ * follows it down stands at that edge, and its rise read as the legs turning put the whole balance against it.)
+ */
 export function legOmega(h: HingeState, q: Quat, legsUp: Vec3, omega: Vec3): Vec3 {
   const p = hingePitch(q, legsUp);
   const a = hingeAxis(q);
-  return p > 0 && p < h.capRad ? sub(omega, scale(a, dot(omega, a))) : omega;
+  const inside = h.limits?.hipNm ? p > 0 && p <= h.capRad + 1e-9 : p > 0 && p < h.capRad;
+  return inside ? sub(omega, scale(a, dot(omega, a))) : omega;
 }
 
 /**
@@ -114,7 +126,7 @@ export function hingeBalanceTorque(
   cap: number,
   gravityHoldNm: number,
   holdUp: Vec3,
-): BalanceTorque {
+): BalanceTorque & { hingeWantNm: number; hingeNm: number } {
   const legs = computeBalanceTorque(upOf(legRotation(h, q, legsUp)), legsUp, legOmega(h, q, legsUp, omega), b, cap, gravityHoldNm, holdUp);
   const a = hingeAxis(q);
   const pitch = hingePitch(q, legsUp);
@@ -122,7 +134,17 @@ export function hingeBalanceTorque(
   const room = Math.max(0, cap - len(legs.capped));
   const hinge = clamp(want, -room, room);
   const requested = add(legs.requested, scale(a, want));
-  return { requested, capped: add(legs.capped, scale(a, hinge)), cap, thetaError: legs.thetaError, saturated: legs.saturated || Math.abs(want) > room + 1e-9 };
+  return { requested, capped: add(legs.capped, scale(a, hinge)), cap, thetaError: legs.thetaError, saturated: legs.saturated || Math.abs(want) > room + 1e-9, hingeWantNm: want, hingeNm: hinge };
+}
+
+/**
+ * Plan 16 (p41): the hips' own torque (world, N m) under bounds with `hipNm`: the part of the trunk's pitch torque toward
+ * its command (`hingeBalanceTorque`'s `hingeWantNm`) the balance's cap left unserved (`hingeNm` served), up to `hipNm`,
+ * about the hinge's axis. Zero without it.
+ */
+export function hipTorque(L: HingeLimits | undefined, q: Quat, bt: { hingeWantNm: number; hingeNm: number }): Vec3 {
+  if (!L?.hipNm) return v3();
+  return scale(hingeAxis(q), clamp(bt.hingeWantNm - bt.hingeNm, -L.hipNm, L.hipNm));
 }
 
 /**

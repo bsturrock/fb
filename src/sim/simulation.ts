@@ -1335,9 +1335,11 @@ export class Simulation {
 
   /**
    * A held grip, clamp, fall link or palm push on or by this player (owner or target); plan 16: or he is engaged in a
-   * block, his own or another's on him (the engaged state, not this substep's holds).
+   * block, his own or another's on him (the engaged state, not this substep's holds), or (p41) firing out of his stance.
    */
   private retained(pl: PlayerRuntime): boolean {
+    // (p41: his fire-out, `PunchState.fire`: the block's footwork from the snap)
+    if (pl.block?.punch?.fire && pl.block.punch.phase !== 'drive' && !this.opts.debug?.block?.fireFree) return true;
     if (!this.opts.debug?.block?.feetIgnore) for (const o of this.players) if (o.block?.phase === 'engaged' && (o === pl || o.block.target === pl.id)) return true;
     if (!this.arms) return false;
     for (const g of this.arms.grips.values()) if (g.ownerId === pl.id || g.targetId === pl.id) return true;
