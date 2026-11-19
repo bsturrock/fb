@@ -615,6 +615,12 @@ export interface LeanInStance {
   twoPoint?: TrunkPose & { thighDeg: number };
   /** Plan 16 (p40): the three-point stances before the snap (`ThreePointSpec`, `BlockProfile.preSnap`); absent, none. */
   threePoint?: Partial<Record<'offense' | 'defense', ThreePointSpec>>;
+  /**
+   * Plan 16 (p44): the two-point set before the snap on its own feet, a set stance as a three-point's (`ThreePointSpec`:
+   * the feet placed for its own thigh slope, width and stagger, its trunk, hands, head and pace), in place of `twoPoint`
+   * (a stance over the load's planted feet: the lean-in's narrow base and stagger). Absent: `twoPoint`.
+   */
+  twoPointSet?: ThreePointSpec;
   staggerM: number;
   hinge: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2'>;
   flat: Pick<FlatStance, 'coverM' | 'captureK'>;
@@ -654,6 +660,8 @@ export interface LeanInDerived {
   twoPoint?: BlockStance;
   /** The three-point stances (p40; a stance with `threePoint`), each with its hips' height over the ground (m). */
   threePoint?: Partial<Record<'offense' | 'defense', PreSnapPose & { overGroundM: number }>>;
+  /** The two-point set on its own feet (p44; a stance with `twoPointSet`), with its hips' height over the ground (m). */
+  twoPointSet?: PreSnapPose & { overGroundM: number };
   flat: FlatStance;
   aheadM: number;
   hips: Record<'load' | 'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }> & { twoPoint?: { overGroundM: number; pitchDeg: number } };
@@ -735,18 +743,21 @@ export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived 
     stood: stance('stood'),
     ...(S.twoPoint ? { twoPoint: stance('twoPoint') } : {}),
     ...(tp ? { threePoint: { ...(tp.offense ? { offense: three(tp.offense) } : {}), ...(tp.defense ? { defense: three(tp.defense) } : {}) } } : {}),
+    ...(S.twoPointSet ? { twoPointSet: three(S.twoPointSet) } : {}),
     flat: { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: load.heightM, ball: { ...S.ball }, ...(S.ankleDeg !== undefined ? { dorsiDeg: S.ankleDeg } : {}) },
     aheadM,
     hips,
   };
 }
 
+/** A derived set stance as a pre-snap pose (its hips' height over the ground dropped). */
+const strip = (t: PreSnapPose & { overGroundM: number }): PreSnapPose => {
+  const { overGroundM: _o, ...rest } = t;
+  return rest;
+};
+
 /** Plan 16 (p40): a lean-in's three-point stances as pre-snap poses (`BlockProfile.preSnap`). */
 function threePointPoses(d: LeanInDerived): Partial<Record<PreSnapKey, PreSnapPose>> {
-  const strip = (t: PreSnapPose & { overGroundM: number }): PreSnapPose => {
-    const { overGroundM: _o, ...rest } = t;
-    return rest;
-  };
   const T = d.threePoint ?? {};
   return { ...(T.offense ? { 'three-point-offense': strip(T.offense) } : {}), ...(T.defense ? { 'three-point-defense': strip(T.defense) } : {}) };
 }
@@ -762,7 +773,7 @@ function threePointPoses(d: LeanInDerived): Partial<Record<PreSnapKey, PreSnapPo
 export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): BlockProfile {
   const d = leanInStances(S, L);
   const w = p.stance.widthAddM ? { widthAddM: p.stance.widthAddM } : {};
-  const tp = Object.values(d.threePoint ?? {}).map(({ overGroundM: _o, ...t }) => t);
+  const tp = [...Object.values(d.threePoint ?? {}), ...(d.twoPointSet ? [d.twoPointSet] : [])].map(({ overGroundM: _o, ...t }) => t);
   const maxDeg = Math.max(p.hinge.maxDeg, d.stance.hingeDeg, ...(p.strike ? [d.load.hingeDeg, d.strike.hingeDeg] : []), ...(d.twoPoint ? [d.twoPoint.hingeDeg] : []), ...tp.map((t) => t.hingeDeg));
   const s0 = -2 * (chestShiftM(L, S.set.trunkDeg) - chestShiftM(L, p.stance.leanDeg + p.stance.hingeDeg));
   const heelM = (deg: number) => L.shoeM * Math.sin((deg * Math.PI) / 180);
@@ -774,7 +785,7 @@ export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): B
     stance: { ...d.stance, ...w },
     hinge: { ...p.hinge, ...S.hinge, maxDeg },
     flat: d.flat,
-    ...(d.twoPoint || d.threePoint ? { preSnap: { ...p.preSnap, ...(d.twoPoint ? { 'two-point': { ...d.twoPoint, ...w } } : {}), ...threePointPoses(d) } } : {}),
+    ...(d.twoPoint || d.threePoint || d.twoPointSet ? { preSnap: { ...p.preSnap, ...(d.twoPointSet ? { 'two-point': strip(d.twoPointSet) } : d.twoPoint ? { 'two-point': { ...d.twoPoint, ...w } } : {}), ...threePointPoses(d) } } : {}),
     ...(p.strike ? { strike: { ...p.strike, loadGapM: p.strike.loadGapM - s0, load: { ...p.strike.load, closeGapM: p.strike.load.closeGapM - s0, stance: { ...d.load, ...w } }, strike: { ...p.strike.strike, stance: { ...d.strike, ...w } } } } : {}),
     ...(p.contest
       ? {
@@ -919,6 +930,33 @@ export const LEAN_IN_V5: LeanInStance = {
   threePoint: Object.fromEntries(
     Object.entries(LEAN_IN_V4.threePoint!).map(([k, T]) => [k, { ...T!, hands: { ...T!.hands, right: { ...T!.hands.right!, kneeClearM: 0.02 } } }]),
   ) as LeanInStance['threePoint'],
+};
+
+/**
+ * Plan 16 (p44): LEAN_IN_V5 with the two-point set on its own feet (`twoPointSet`), from the reference photos (worktree
+ * `.scratch/refs/two-point/`): a wide base (each foot 12 cm out) with an 8 cm stagger, both feet flat ahead of the hips
+ * (the flat rule, stepping only past 2 deg over the ankle's range), the thigh 40 deg below horizontal, so the hips sink
+ * (0.74 m in BL-F10-twoPointVsThree, knees 80-85 deg, the ankles 19 cm ahead of the hips under a 43 deg trunk); the trunk
+ * at 40 deg (6 of it lean), chest and head up; both hands ready in front of the knees at about the knees' height, a little
+ * inside the shoulders (`kneeClearM`: in front of the knee as it stands in the set). Getting set at the three-point's
+ * pace. V5's `twoPoint` (over the lean-in's planted feet: 37 cm apart, 24 cm stagger, trunk 28, hands at 0.93 m) is not
+ * used; the three-point stances are V5's.
+ */
+export const LEAN_IN_V6: LeanInStance = {
+  ...LEAN_IN_V5,
+  id: 'lean-in-v6',
+  twoPointSet: {
+    thighDeg: 40,
+    pitchDeg: 0,
+    stepDeg: 2,
+    staggerM: 0.08,
+    widthAddM: 0.12,
+    trunkDeg: 40,
+    leanDeg: 6,
+    hands: { right: { forwardM: 0.2, x: -0.1, upM: 0.55, kneeClearM: 0.02 }, left: { forwardM: 0.2, x: -0.1, upM: 0.55, kneeClearM: 0.02 } },
+    head: { freeDeg: 30, maxDeg: 45 },
+    pace: { rateDegPerS: 45, accelDegPerS2: 90 },
+  },
 };
 
 /**
