@@ -718,6 +718,14 @@ export interface ArmProfile {
  * two: the arm collapsed (flexion past `collapseFlexDeg`), slipped (facing below `keepFacingDot`), out of reach, the
  * shoulder behind the surface, a pose the arm cannot show, the request ended, the owner falling, either player's switch,
  * the referee's ending; and the arm must then leave the body by `hold.withdrawM` before it can push again.
+ *
+ * `seat` (plan 16 p44; absent: the patch is the surface point under the palm-contact landmark): the patch is where the
+ * shown palm rests on the surface, the palm as it touched moved along the surface's normal by its gap (out by its depth,
+ * in by its clearance), so the palm ball touches it exactly. The palm ball sits back from the landmark along the
+ * forearm, so an arm meeting the chest at a slant touches with the landmark still off the surface: at 65 deg off the
+ * normal the ball is 2.3 cm deeper than the landmark, and the landmark's projection showed the palm that far inside him
+ * from the push's first substep, past the arm's surface tolerance, and the push ended at once (`invalidPose`). Straight
+ * on the two are the same point.
  */
 export interface PalmPushProfile {
   stiffness: number;
@@ -730,6 +738,7 @@ export interface PalmPushProfile {
   bornFacingDot: number;
   keepFacingDot: number;
   band: { regions: ColliderRegion[]; lowM: number; highM: number; frontMinDot: number };
+  seat?: boolean;
 }
 
 /**

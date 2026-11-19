@@ -2072,8 +2072,9 @@ export class ArmSystem {
     const tp = this.prePose(tgt.rb);
     const tpPart = this.prePose(h.obstacle.rb);
     const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
-    const proj = h.obstacle.collider.projectPoint(sol.palm, false);
-    const anchor = proj ? vc(proj.point) : h.pointTarget;
+    // (p44, `seat`: where the shown palm ball rests on the surface, the palm moved along the normal by its gap)
+    const proj = PP.seat ? null : h.obstacle.collider.projectPoint(sol.palm, false);
+    const anchor = PP.seat ? addScaled(sol.palm, h.normal, -h.distance) : proj ? vc(proj.point) : h.pointTarget;
     const L = len(sub(anchor, sW));
     const facing = dot(norm(sub(anchor, sW), v3(0, 0, 1)), scale(h.normal, -1));
     const yLocal = toLocal(tp, anchor).y;
