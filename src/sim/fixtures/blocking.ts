@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, LEAN_IN_V2, LEAN_IN_V4, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V3, LEAN_IN_V2, LEAN_IN_V4, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1 } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -168,10 +168,11 @@ export const contested = (p: BlockProfile = BLOCK_V1, K: BlockStrike = BLOCK_STR
 /**
  * A BL man (p39): his block on the contest (`contested`), on the low lean-in (LEAN_IN_V2: the ankle's 38 deg in a block,
  * hips 0.82 m set, 0.75 loaded; p38's LEAN_IN_V1 stood him at 0.90), striking with BLOCK_STRIKE_V2 (p40: engaged and held
- * off at arm's length he strikes from there; on V1 he stayed loaded).
+ * off at arm's length he strikes from there; on V1 he stayed loaded), or the strike `K` (p41: the men set before the snap
+ * on BLOCK_STRIKE_V3, the fire-out).
  */
-const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'hold', hands, profile: contested(profile, BLOCK_STRIKE_V2), leanIn: LEAN_IN_V2 });
-const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile): BlockMan => ({ effort, intent: 'drive', hands, profile: contested(profile, BLOCK_STRIKE_V2), leanIn: LEAN_IN_V2 });
+const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile, K: BlockStrike = BLOCK_STRIKE_V2): BlockMan => ({ effort, intent: 'hold', hands, profile: contested(profile, K), leanIn: LEAN_IN_V2 });
+const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile, K: BlockStrike = BLOCK_STRIKE_V2): BlockMan => ({ effort, intent: 'drive', hands, profile: contested(profile, K), leanIn: LEAN_IN_V2 });
 /**
  * A BL man set before the snap (p40): on LEAN_IN_V4 (LEAN_IN_V2 with its two-point set and three-point stances), set in
  * `stance` from the reset, his block from the snap at `snapS`.
@@ -193,17 +194,17 @@ export const BL_SCENES: BlockSceneOpts[] = [
   { id: 'BL-F8-hardNoHinge', title: 'Harder without the hip hinge: both drive at effort 1 asking 1.4 m/s, 9 s (the push at shoulder height tips them)', A: drive(1, 'under', BLOCK_V1_HARD_NO_HINGE), B: drive(1, 'over', BLOCK_V1_HARD_NO_HINGE), durationS: 9 },
   {
     id: 'BL-F9-threePoint',
-    title: 'Three-point against three-point: A on offense, B on defense, set from the reset 2 m apart, the snap at 3.3 s (about 1 s set); A drives, B holds, both at effort 0.5, 8 s',
-    A: setIn(drive(0.5, 'under'), 'three-point', 'offense', 3.3),
-    B: setIn(hold(0.5, 'over'), 'three-point', 'defense', 3.3),
+    title: 'Three-point against three-point: A on offense, B on defense, set from the reset 2 m apart, the snap at 3.3 s (about 1 s set), both firing out at it; A drives, B holds, both at effort 0.5, 8 s',
+    A: setIn(drive(0.5, 'under', undefined, BLOCK_STRIKE_V3), 'three-point', 'offense', 3.3),
+    B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V3), 'three-point', 'defense', 3.3),
     sepM: 2,
     durationS: 8,
   },
   {
     id: 'BL-F10-twoPointVsThree',
-    title: 'Two-point set against a three-point defender: A in the two-point set, B in the three-point defense, 2 m apart, the snap at 3.3 s; A drives, B holds, both at effort 0.5, 8 s',
-    A: setIn(drive(0.5, 'under'), 'two-point', 'offense', 3.3),
-    B: setIn(hold(0.5, 'over'), 'three-point', 'defense', 3.3),
+    title: 'Two-point set against a three-point defender: A in the two-point set, B in the three-point defense, 2 m apart, the snap at 3.3 s, both firing out at it; A drives, B holds, both at effort 0.5, 8 s',
+    A: setIn(drive(0.5, 'under', undefined, BLOCK_STRIKE_V3), 'two-point', 'offense', 3.3),
+    B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V3), 'three-point', 'defense', 3.3),
     sepM: 2,
     durationS: 8,
   },
