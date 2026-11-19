@@ -572,6 +572,33 @@ export const LEAN_IN_V1: LeanInStance = {
 };
 
 /**
+ * Plan 16 (p39): the low lean-in, LEAN_IN_V1 on the ankle's range in a block (`ankleDeg` 38, the owner's ruling
+ * 2026-11-18: the loaded ankle bends to about 38 deg while blocking). Derived on the BL body:
+ * - The load: the thigh 46 deg below horizontal, the rear foot on its ball at 9 deg (heel 4.8 cm up), its flat
+ *   footprint's ankle 4.7 cm behind the hips, the front foot 7 cm ahead of it; hips 0.754 m over the ground (the root at
+ *   0.725, inside the suspension's lowest 0.72); knees bent about 90 deg.
+ * - The set stance (the hold and the drive) 56 deg: hips 0.815 (V1 0.904), the rear foot nearly flat (1.6 deg), knees
+ *   about 74; the load sinks 6.1 cm from it (V1 0.8). The strike 66: hips 0.889, 13.5 cm over the load, both feet flat
+ *   (the rise of the punch, low to high). The stood-up stance 70 with the trunk at 14 (hips 0.915).
+ * - The trunk at 20 deg in every phase but the stood-up one, 6-8 of it whole-body lean, as V1.
+ * The cost of low: with the ankle at 38 the feet stand behind the hips by less than on V1's tall stance (the feet's
+ * mid-point 1 cm behind the hips, V1 5 cm). A deeper ball takes the feet further back but lifts the load's heel past the
+ * ball's limit as the loaded man closes on his planted feet (10 deg: 14.3-15.2 deg in the BL probes; 9: 13.2-13.5).
+ */
+export const LEAN_IN_V2: LeanInStance = {
+  id: 'lean-in-v2',
+  ankleDeg: 38,
+  ball: { pitchDeg: 9, stepDeg: 14, landDeg: 2, aheadCoverM: 0.07 },
+  load: { thighDeg: 46, trunkDeg: 20, leanDeg: 6 },
+  set: { thighDeg: 56, trunkDeg: 20, leanDeg: 8 },
+  strike: { thighDeg: 66, trunkDeg: 20, leanDeg: 8 },
+  stood: { thighDeg: 70, trunkDeg: 14, leanDeg: 6 },
+  staggerM: 0.07,
+  hinge: { rateDegPerS: 120, accelDegPerS2: 300 },
+  flat: { coverM: 0.12, captureK: 0.5 },
+};
+
+/**
  * A fixture's block (`ControllerSpec` kind `block`): the request, from `fromS` (default 0; before it he stands where he
  * is, facing as he started, arms at rest), under `profile` (default BLOCK_V1).
  */
