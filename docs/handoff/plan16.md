@@ -40,8 +40,31 @@ baseline: main checkout `.scratch/p33/on`.
 3. Reference for stances (untracked, press photos, never commit): worktree `.scratch/refs/` `two-point/`,
    `three-point-offense/`, `three-point-defense/` (user's photos; offense and defense differ), and
    `/Users/brandon/Projects/football-player-creator/anims/3pt Stance Offense.fbx`, `3pt Stance Defense.fbx`.
-   Next: the ankle-range question to the user (a low stance), then the three-point entry (plan item 4, moved ahead
-   of item 3 at the user's request), then item 3. One builder at a time in the worktree
+4. **The low lean-in** (p39: `1ec5d17`, `311fb56`, `af56fa4`). User ruling 2026-11-18: "ankle can go that far if
+   needed while blocking": a blocking stance's weight-bearing ankle bends to 38 deg (`FlatStance.dorsiDeg`,
+   `LeanInStance.ankleDeg`, read through `pose-runtime.ts jointRangeOf`); every other player keeps 25 deg, and a
+   ragdoll made from a blocker keeps 25. BL stands on `LEAN_IN_V2`: hips 0.82 m set, 0.76 at the load (sinks 6 cm,
+   was 1), rising 7 cm in the 0.3 s after the palms land, 0.82 driving; knees about 90 deg at the load. Nobody
+   falls, outcomes unchanged. 637 tests; baseline main checkout `.scratch/p39/low-flip` (flag-off step after it:
+   `presnap-off`, 639 tests). Defects from it: **the losing man's hips are behind his feet's mid-point 66-70 % of
+   the engaged time again** (up to 3.7 cm; `LEAN_IN_V1` had 0 %), and he takes 15 steps of 9-10 cm over 0.8 m
+   (was 7 over 0.47 m); `-F5` and `-F8` load heels 1 deg past the ball limit; `-F8` run-back 4.5 m.
+5. **Pre-snap stance, flag off** (`4ea1b19`): `BlockRequest.stance` `{kind: two-point|three-point, side:
+   offense|defense}`, `BlockProfile.preSnap` a pose per stance, held from the reset to `fromS` (the snap), then
+   the block runs; `LEAN_IN_V3` = `V2` + a two-point set (hips 0.78 m, trunk 25 deg, knees 84 deg). No fixture
+   uses it. Left for the three-point entry, in order:
+   a. **Fire-out deadlock.** From the two-point set at the 1.1 m gap one man strikes first and the other stays
+      in the load for the whole run, hands at his chest (likely: he is inside the strike's 0.5 m least reach and
+      the contest overrides his step back). Existing mechanism, reached by the set's wider gap. Fix first.
+   b. Three-point poses: the suspension clamps the root at 0.72 m and a three-point needs about 0.62-0.68 (a
+      stance-scoped lower bound, like `dorsiDeg`); the guard ball sits 0.62 m under the origin; trunk pitch
+      60-75 deg against the block hinge's bound; the down hand needs a reach to a turf point (arms have no floor
+      clamp); off arm and head up. The FBX clips are unchecked against the photos.
+   c. The two-point trunk stops at 25 deg: deeper and the feet, placed for the lean-in, step during the set. A
+      set needs its own foot placement under the hips.
+   d. A first step faster than the load's 0.6 m/s close; the new scenes (three-point offense against three-point
+      defense; two-point set against a three-point defender); tests with fault twins.
+   Then item 3. One builder at a time in the worktree
    `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main checkout's `.scratch/p38/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
