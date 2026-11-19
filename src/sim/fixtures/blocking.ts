@@ -6,7 +6,7 @@
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V4, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, type BlockContest } from '../block-base';
-import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
+import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
 import { l3f6 } from './transitions';
@@ -61,6 +61,12 @@ export interface BlockSceneOpts {
   durationS: number;
   /** Plan 16 (p44): the palm push's patch where the shown palm rests on his surface (`PalmPushProfile.seat`; absent: the landmark's projection). */
   seat?: boolean;
+  /**
+   * Plan 16 (p44): the upper arm in the arms' self-clearance (`withUpperArmClearance`), and his own body never ending a
+   * held push (`PalmPushProfile.ownBodyKeeps`: under the upper arm's clearance an elbow the push presses against his ribs
+   * would otherwise release it).
+   */
+  upperArm?: boolean;
 }
 
 /**
@@ -78,7 +84,7 @@ const palmWidenDeg = (o: BlockSceneOpts): number =>
   Math.max(...[o.A, o.B].map((m) => (setTrunkDeg(m) !== null ? setTrunkDeg(m)! - ((m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg) : 0)));
 function palmPushOf(o: BlockSceneOpts): PalmPushProfile {
   const more = palmWidenDeg(o);
-  const P = o.seat ? { ...PALM_PUSH_BLOCK, seat: true } : PALM_PUSH_BLOCK;
+  const P = { ...PALM_PUSH_BLOCK, ...(o.seat ? { seat: true } : {}), ...(o.upperArm ? { ownBodyKeeps: true } : {}) };
   if (more <= 0) return P;
   const wider = (dot: number) => Math.cos(Math.acos(dot) + (more * Math.PI) / 180);
   return { ...P, bornFacingDot: wider(P.bornFacingDot), keepFacingDot: wider(P.keepFacingDot) };
@@ -142,8 +148,9 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     milestone: 'BL',
     title: o.title,
     notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1, on a base when its profile has one) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
-    // the arm profile's id names the widened cone and the seat (one id, one set of values)
-    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}`, palmPush: palmPushOf(o) },
+    // the arm profile's id names the widened cone, the seat and the hold over his own body (one id, one set of values)
+    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}${o.upperArm ? '+own-body-keeps' : ''}`, palmPush: palmPushOf(o) },
+    ...(o.upperArm ? { selfClearance: withUpperArmClearance(rest.selfClearance!) } : {}),
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },
     focus: { A: 'B', B: 'A' },

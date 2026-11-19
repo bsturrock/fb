@@ -726,6 +726,13 @@ export interface ArmProfile {
  * normal the ball is 2.3 cm deeper than the landmark, and the landmark's projection showed the palm that far inside him
  * from the push's first substep, past the arm's surface tolerance, and the push ended at once (`invalidPose`). Straight
  * on the two are the same point.
+ *
+ * `ownBodyKeeps` (plan 16 p44; absent: a held push ends when every pose the arm can show meets his own trunk past the
+ * self-clearance's tolerance, as any pose it cannot show): his own body never ends a held push. The held arm takes a
+ * pose clear of everything when it has one, else, of the poses clear of everything but his own trunk, the one least into
+ * it. A man pushing does not let go because his elbow comes against his ribs: under the upper arm's self-clearance
+ * (`SelfClearanceProfile.upperArm`) a held arm whose elbow is pressed in by the push had no clear pose and was released,
+ * then struck again on a straight arm.
  */
 export interface PalmPushProfile {
   stiffness: number;
@@ -739,6 +746,7 @@ export interface PalmPushProfile {
   keepFacingDot: number;
   band: { regions: ColliderRegion[]; lowM: number; highM: number; frontMinDot: number };
   seat?: boolean;
+  ownBodyKeeps?: boolean;
 }
 
 /**

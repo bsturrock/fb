@@ -516,8 +516,12 @@ export class ArmSystem {
     return [a.poleLocal, v3(s, -0.6, -0.4), v3(s, 0, -0.1), v3(s, 0.6, -0.2), v3(s * 0.4, -1, 0), v3(s, -0.4, 0.6)];
   }
 
-  /** Two-bone pose for a palm landmark (owner-local), testing exterior pole alternatives against obstacles. */
-  private solveArm(pl: ArmHostPlayer, a: ArmRt, ownerPose: Pose, palmLocal: Vec3, obstacles: Obstacle[], poses?: Map<Obstacle, Pose>, fixedPalmWorld?: Vec3): ArmPoseSolve {
+  /**
+   * Two-bone pose for a palm landmark (owner-local), testing exterior pole alternatives against obstacles. `selfSoft`
+   * (p44, a held push under `PalmPushProfile.ownBodyKeeps`): when no pose is clear of everything, the pose clear of all
+   * but his own trunk that is least into it is valid.
+   */
+  private solveArm(pl: ArmHostPlayer, a: ArmRt, ownerPose: Pose, palmLocal: Vec3, obstacles: Obstacle[], poses?: Map<Obstacle, Pose>, fixedPalmWorld?: Vec3, selfSoft = false): ArmPoseSolve {
     const P = this.profile;
     const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
     const target = fixedPalmWorld ?? toWorld(ownerPose, palmLocal);
@@ -526,6 +530,8 @@ export class ArmSystem {
     let best: ArmPoseSolve | null = null;
     let bestDepth = Infinity;
     let bestOver = Infinity;
+    let soft: ArmPoseSolve | null = null;
+    let softDist = -Infinity;
     // contact motion M1 (a twist profile): each pole's elbow is turned about the shoulder-to-palm line into the twist
     // window: the range, within one rate step of the arm's twist when this substep began (the range alone before there
     // is one). Nothing outside it is tried: collision-free end poses do not make a continuous path between them, so a
@@ -580,6 +586,10 @@ export class ArmSystem {
       const valid = (!worst || worst.distance >= -tol) && over <= 0;
       const s: ArmPoseSolve = { elbow: r.mid, wrist, palm: r.end, pole: poleL, valid, worst, palmHit: pc, forearmHit: fa };
       if (valid) return s;
+      if (selfSoft && self && over <= 0 && [up, fa, pc].every((h) => !h || h.distance >= -tol) && self.distance > softDist) {
+        soft = s;
+        softDist = self.distance;
+      }
       if (J) {
         // the least bad: by depth past the surface tolerance, then by range excess
         const depth = worst ? Math.max(0, -worst.distance - tol) : 0;
@@ -590,6 +600,7 @@ export class ArmSystem {
         }
       } else if (!best || (worst && best.worst && worst.distance > best.worst.distance)) best = s;
     }
+    if (soft) return { ...soft, valid: true };
     return best!;
   }
 
@@ -2140,7 +2151,7 @@ export class ArmSystem {
       return null;
     }
     const shown = K?.pushPalmAtRest ? addScaled(sW, n, Math.min(c.restM, P.maxReachM)) : pW;
-    const sol = this.solveArm(pl, a, ownerPose, a.palmLocal, obstacles, undefined, shown);
+    const sol = this.solveArm(pl, a, ownerPose, a.palmLocal, obstacles, undefined, shown, !!PP.ownBodyKeeps);
     const el = elbowOf(sW, sol.elbow, sol.palm);
     if (!sol.valid && !K?.pushPalmAtRest) end = 'invalidPose';
     else if (el.flexRad >= rad(PP.collapseFlexDeg)) end = 'collapsed';
@@ -2187,7 +2198,7 @@ export class ArmSystem {
     else if (dot(qRot(tp.q, c.normalLocal), sub(sW, pW)) <= 0) end = 'invalidSurface';
     else {
       if (K?.pushPalmAtRest) shown = addScaled(sW, norm(sub(pW, sW), v3(0, 0, 1)), Math.min(c.restM, P.maxReachM));
-      sol = this.solveArm(pl, a, ownerPost, a.palmLocal, obstacles, undefined, shown);
+      sol = this.solveArm(pl, a, ownerPost, a.palmLocal, obstacles, undefined, shown, !!P.palmPush!.ownBodyKeeps);
       if (!sol.valid && !K?.pushPalmAtRest) end = 'invalidPose';
     }
     if (end || !sol) {
