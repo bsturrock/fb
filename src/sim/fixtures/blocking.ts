@@ -186,7 +186,8 @@ const setIn = (m: BlockMan, kind: 'two-point' | 'three-point', side: 'offense' |
 /**
  * The BL scenes (A's hands under, B's over, in every one; every man on the contest, `contested`, striking with
  * BLOCK_STRIKE_V2 (before p40 V1), on the low lean-in LEAN_IN_V2, his feet behind his hips; the two set before the snap,
- * F9 and F10, on BLOCK_STRIKE_V5 and CONTEST_V2 from p43, the load on his shoulders; p42 on BLOCK_STRIKE_V4, the hit
+ * F9 and F10, on BLOCK_STRIKE_V5 and CONTEST_V2 from p43, the load on his shoulders, from p44 the landing palm seated
+ * on his chest (`seat`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
 export const BL_SCENES: BlockSceneOpts[] = [
@@ -204,6 +205,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3),
     sepM: 2,
     durationS: 8,
+    seat: true,
   },
   {
     id: 'BL-F10-twoPointVsThree',
@@ -212,6 +214,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3),
     sepM: 2,
     durationS: 8,
+    seat: true,
   },
 ];
 
