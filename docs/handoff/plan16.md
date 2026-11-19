@@ -110,6 +110,24 @@ baseline: main checkout `.scratch/p33/on`.
      start gap (d) unchanged: at 1.7 m the palms land collapsed and the holder is run 1 m without anchoring.
      **Not flipped: the eight older scenes.** On `CONTEST_V2` `-F4`, `-F5`, `-F6` get a new fall (A overpowered
      at 0.85-0.93 s); they already hold at arm's length. To be decided with item 3.
+   - **Eyes and arms out of the stance, p43** (`501ca2a`, `67feb1d`, `29cd334`, `bb938f2`; `GAZE_V1` and
+     `BLOCK_STRIKE_V5`, on for `-F9`/`-F10`). User's fourth look (2026-11-19): "honestly pretty solid to start",
+     the starting stance "is good"; but the head must "come up quicker to look at opponent, they are looking at
+     the ground too long", and "head drops a lot and arms go inside body". Causes: head up was asked only before
+     the snap, so at the snap the face fell from 41 to 90 deg below the horizon in one tick; and the load point,
+     fixed in the body frame and authored for a 20 deg trunk, sat between belly and thighs at a 90 deg trunk.
+     Rules: a gaze at the other man's head, neck extension within the stance's range, through the block; while
+     the trunk is deeper than the loaded trunk the load point and elbow pole are placed as under that trunk. Now
+     the face never dips below its stance attitude (mean angle to the other man's head 42-48 deg to 10-19) and
+     no arm is in the thigh during the load (11 cm to 0). Contact time and outcomes unchanged. 652 tests;
+     baseline main checkout `.scratch/p43/d-load-on2` (tool PASS; pass in `d-load-on`). **Drift and left:** the
+     holder is knocked back 0.54-0.57 m (was 0.30-0.49) and both men's palms are on 1.15 s of 2 s (was 1.6-1.9),
+     because both of his palms now land about 2 cm inside the chest, past the arm's tolerance, and the push is
+     released at once until 0.95 s (existing mechanism: a palm landing at 3 m/s of closing sinks in on the
+     push's first substep; before, one arm escaped it by 2 mm). Tracked, own step. Getting set: the down hand is
+     10-14 cm inside the thigh for the first second (the turf target is out of reach while he is upright). Upper
+     arm 7-8 cm in his own trunk during strike and drive in every BL scene (`withUpperArmClearance`, not on for
+     BL, cut it to 4-5 cm in a probe).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
