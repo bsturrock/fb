@@ -113,6 +113,14 @@ export interface FlatStance {
    * `stepPastDeg`, `braceDeg` unused). Absent: the flat rule.
    */
   ball?: { pitchDeg: number; stepDeg: number; landDeg: number; aheadCoverM: number };
+  /**
+   * Plan 16 (p39): the ankle's dorsiflexion range (deg) under this stance, in place of the joint range profile's
+   * `ankle.dorsiDeg` for his feet while he stands in it (the owner's ruling, 2026-11-18: a man in a block or a blocking
+   * stance bends the ankle to about 38 deg under load; every other player keeps the profile's 25). The pose's ankle, the
+   * flat and ball rules here and the visible meter read it (pose-runtime.ts `jointRangeOf`); a ragdoll made from him takes
+   * the profile's range as ever. Absent: the profile's.
+   */
+  dorsiDeg?: number;
 }
 
 export interface ArmIntent {

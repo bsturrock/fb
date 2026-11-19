@@ -412,10 +412,13 @@ export function withAthletic(p: BlockProfile, A: AthleticStance, L: StanceGeomet
  * on the hip hinge, moving at `hinge`. `ball.stepDeg`: the viewer's limit for a foot on its ball (a plant past it steps,
  * landing where it would stand at `ball.landDeg`, under the hips; within it the contest counts the foot as set);
  * `ball.aheadCoverM`: how far ahead of its want a plant may stand before it steps back (FlatStance.ball). `flat`: the
- * stepping's dead zone and capture lead under the stance.
+ * stepping's dead zone and capture lead under the stance. `ankleDeg` (p39): the ankle's dorsiflexion range under the
+ * stance (`FlatStance.dorsiDeg`; the owner's ruling: about 38 deg for a loaded ankle in a block), every height derived on
+ * it; absent, the leg's (the joint range profile's 25).
  */
 export interface LeanInStance {
   id: string;
+  ankleDeg?: number;
   ball: { pitchDeg: number; stepDeg: number; landDeg: number; aheadCoverM: number };
   load: TrunkPose & { thighDeg: number };
   set: TrunkPose & { thighDeg: number };
@@ -465,15 +468,17 @@ export function standOver(L: LeanGeometry, aheadM: number, thighRad: number): { 
 }
 
 /**
- * The lean-in on a leg: the load's rear foot on its ball at `ball.pitchDeg` under the load's thigh places the rear ankle
+ * The lean-in on a leg (on the stance's ankle range, `ankleDeg`, when it has one; the flat stance then asks it): the load's rear foot on its ball at `ball.pitchDeg` under the load's thigh places the rear ankle
  * (`legShape`, the shin at the range plus the pitch; the flat footprint's ankle that far behind the pitched one); every
  * phase's hips stand over that ankle at its thigh (`standOver`), its root height the hip's over the ground less the hip's
  * height over the origin at that trunk pitch; the hinge the trunk's pitch less the lean, no hip drop. The flat stance
  * stands the feet there (`FlatStance.ball`, `lowRootM` the load's root), so they stay planted from the set stance down
  * through the load, up through the strike and up again when he is stood up.
  */
-export function leanInStances(S: LeanInStance, L: LeanGeometry): LeanInDerived {
+export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived {
   const r = (d: number) => (d * Math.PI) / 180;
+  // (p39: on the stance's own ankle range, when it has one)
+  const L = S.ankleDeg === undefined ? L0 : { ...L0, dorsiDeg: S.ankleDeg };
   const p = r(S.ball.pitchDeg);
   const low = legShape(L.thighM, L.shinM, r(S.load.thighDeg), r(L.dorsiDeg) + p);
   const aheadM = low.aheadM - (L.toeM * (1 - Math.cos(p)) + L.soleM * Math.sin(p));
@@ -494,7 +499,7 @@ export function leanInStances(S: LeanInStance, L: LeanGeometry): LeanInDerived {
     load,
     strike: stance('strike'),
     stood: stance('stood'),
-    flat: { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: load.heightM, ball: { ...S.ball } },
+    flat: { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: load.heightM, ball: { ...S.ball }, ...(S.ankleDeg !== undefined ? { dorsiDeg: S.ankleDeg } : {}) },
     aheadM,
     hips,
   };

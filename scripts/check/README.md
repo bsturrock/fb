@@ -176,7 +176,7 @@ Norkin & White, *Measurement of Joint Motion*). Implausible and impossible are d
 | Shoulder | rotation | +-100 about neutral (ER 90, IR 70) | +15 | +30 |
 | Neck | flexion / extension | 50 / 60 | +10 | +25 |
 | Neck | turn or tilt | 45 | +15 | +35 |
-| Ankle | dorsiflexion / plantarflexion | 20 / 50 | +10 | +20 |
+| Ankle | dorsiflexion / plantarflexion | 20 / 50 (dorsiflexion: a supported man in a stance with its own ankle range, `FlatStance.dorsiDeg`, that range: the owner's ruling for a loaded ankle in a block, plan 16 p39) | +10 | +20 |
 
 **Overlap.** The drawn shapes are the pose's limb capsules, palm ball and shoe box (`poseLimbShapes`: bew-v6's mesh-fit
 radii on the model body), the trunk hull pieces (the compound cuboids on an authored body) and the head ball. Own-body

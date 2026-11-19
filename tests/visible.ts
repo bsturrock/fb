@@ -73,9 +73,11 @@ export function shoulderRotationDeg(coreToUpperArm: Quat, sideSign: number): num
  *  shoulder: swing, coneEx (excess past the joint-range-v2 cone, the repo's fitted range), rot (`shoulderRotationDeg`,
  *    the anatomical twist, external positive; ladder 13a, plan 09's twist before);
  *  neck: flex (about the core X), off / yoff (anything else: turn and tilt; the ragdoll neck is a hinge);
- *  ankle: pitch (published `anklePitchDeg`, + toe down), where the pose has one.
+ *  ankle: pitch (published `anklePitchDeg`, + toe down), where the pose has one; with `dorsiDeg` (plan 16 p39, a supported
+ *    man in a stance with its own ankle range, `FlatStance.dorsiDeg`) also `dorsi`, the range his dorsiflexion is read
+ *    against in place of the human 20 deg.
  */
-export function jointAngles(pose: PhysicalPose, body: BodyProfile): Record<string, Record<string, number>> {
+export function jointAngles(pose: PhysicalPose, body: BodyProfile, dorsiDeg?: number): Record<string, Record<string, number>> {
   const out: Record<string, Record<string, number>> = {};
   const shE = JOINT_RANGE_V2.shoulder;
   for (const s of SIDES) {
@@ -90,7 +92,7 @@ export function jointAngles(pose: PhysicalPose, body: BodyProfile): Record<strin
     const st = swingTwistOf(qs);
     out[`${s}Shoulder`] = { swing: st.swingRad * D, coneEx: swingExcess(shE, st.dir, ss).rad * D, rot: shoulderRotationDeg(qs, ss) };
     const pitch = pose.anklePitchDeg?.[s];
-    if (pitch !== undefined) out[`${s}Ankle`] = { pitch };
+    if (pitch !== undefined) out[`${s}Ankle`] = dorsiDeg === undefined ? { pitch } : { pitch, dorsi: dorsiDeg };
   }
   const qn = rel(pose, 'core', 'head');
   const xn = qRot(qn, v3(1, 0, 0));
@@ -128,7 +130,8 @@ export interface RangeCheck {
  * bent), extension 30, abduction 45, adduction 30, internal and external rotation 45; knee flexion 140, hyperextension 0;
  * elbow flexion 150, hyperextension 5; shoulder: the repo's joint-range-v2 swing cone (fitted to 45 deg behind the side
  * line hanging) and twist +-100 about neutral (ER 90 / IR 70 standard); neck flexion 50, extension 60, rotation and tilt
- * 45; ankle dorsiflexion 20, plantarflexion 50. Implausible / impossible: this many deg past the range (most DOF 15 / 30;
+ * 45; ankle dorsiflexion 20 (plan 16 p39: a supported man in a stance with its own range, `FlatStance.dorsiDeg`, that range:
+ * the owner's ruling for a weight-bearing ankle in a block, 38), plantarflexion 50. Implausible / impossible: this many deg past the range (most DOF 15 / 30;
  * knee 10 / 20, so 150 / 160 flexion; elbow 5 / 15; ...). The hip's sagittal angle is ambiguous once the thigh passes
  * vertical toward the head or lies out to the side, so past 150 deg of swing the thigh is a `fold` (impossible either
  * way) and flexion / extension are read only below that and within 60 deg of the sagittal plane; hip rotation is not
@@ -151,7 +154,7 @@ export const HUMAN_RANGES: RangeCheck[] = [
   { joint: 'Shoulder', dof: 'rotation', excess: (m) => Math.abs(m.rot) - 100, implausible: 15, impossible: 30 },
   { joint: 'neck', dof: 'flexExt', excess: (m) => (m.flex >= 0 ? m.flex - 50 : -m.flex - 60), implausible: 10, impossible: 25 },
   { joint: 'neck', dof: 'offAxis', excess: (m) => Math.max(m.off, m.yoff) - 45, implausible: 15, impossible: 35 },
-  { joint: 'Ankle', dof: 'dorsiflexion', excess: (m) => -m.pitch - 20, implausible: 10, impossible: 20 },
+  { joint: 'Ankle', dof: 'dorsiflexion', excess: (m) => -m.pitch - (m.dorsi ?? 20), implausible: 10, impossible: 20 },
   { joint: 'Ankle', dof: 'plantarflexion', excess: (m) => m.pitch - 50, implausible: 10, impossible: 20 },
 ];
 
@@ -536,7 +539,8 @@ export class VisibleMeter {
       if (mode === 'rag') this.run.ragS += dt;
       else this.run.supS += dt;
       // joints
-      const J = jointAngles(pose, p.body);
+      // (plan 16 p39: a supported man in a stance with its own ankle range is read against it, the owner's ruling)
+      const J = jointAngles(pose, p.body, mode === 'sup' ? p.sus?.flat?.dorsiDeg : undefined);
       const M = this.run[mode];
       for (const [jn, m] of Object.entries(J)) {
         const base = jn.replace(/^(left|right)/, '');

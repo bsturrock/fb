@@ -3,7 +3,7 @@
 // other players' published limbs, the carry arm).
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { PlayerId, SegmentId } from './contracts';
-import { ARM_G2, DEFAULT_POSE_PROFILE, hipLocal, sideSignX } from './profiles';
+import { ARM_G2, DEFAULT_POSE_PROFILE, hipLocal, sideSignX, type JointRangeProfile } from './profiles';
 import { buildProxyPose, legRequestLocal, poseLimbShapes, type PoseClearance, type PoseShape, type ProxyPoseInput } from './pose';
 import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleTarget, idleWeight, idleWidthAddM, sampleIdle, type LocomotionProfile } from './locomotion';
@@ -100,7 +100,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
       readyHands: !!pl.intent.debug?.readyHands,
       carriesBall: pl.setup.role === 'runner',
       ...(host.def.carry ? { carry: host.def.carry } : {}),
-      ...(host.def.jointRange ? { jointRange: host.def.jointRange } : {}),
+      ...(host.def.jointRange ? { jointRange: jointRangeOf(host, pl)! } : {}),
       localVelDir: sp > 0.2 ? v3(localV.x / sp, 0, localV.z / sp) : v3(0, 0, 1),
       clearance: R ? host.poseClearance(pl, limbs) : undefined,
       memory: pl.poseMemory,
@@ -645,9 +645,22 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
     }),
     ...(host.def.jointRange ? { heelLift: true } : {}),
     ...(flat ? { flat: { maxShinRad: flat.maxShinRad, aimShinRad: flat.rangeRad, coverM: pl.sus!.flat!.coverM, captureK: pl.sus!.flat!.captureK, ...(pl.sus!.flat!.ball ? { aheadCoverM: pl.sus!.flat!.ball.aheadCoverM, landAheadM: flat.landAheadM } : {}) } } : {}),
-    ...(parts ? { ground: groundFor(parts, pl.id, gy + soleM + R.lengths.shin), legs: R, ...(host.def.jointRange ? { range: { profile: host.def.jointRange, sideX: { left: sideSignX(pl.body, 'left'), right: sideSignX(pl.body, 'right') } } } : {}) } : {}),
+    ...(parts ? { ground: groundFor(parts, pl.id, gy + soleM + R.lengths.shin), legs: R, ...(host.def.jointRange ? { range: { profile: jointRangeOf(host, pl)!, sideX: { left: sideSignX(pl.body, 'left'), right: sideSignX(pl.body, 'right') } } } : {}) } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
   };
+}
+
+/**
+ * Plan 16 (p39): the joint range a player's supported pose stands under: the fixture's (absent: none), its ankle's
+ * dorsiflexion the stance's own while he stands in a stance that asks one (`FlatStance.dorsiDeg`, a block or a blocking
+ * stance) and is not a ragdoll. Every reader of the supported ankle's range takes it from here (the pose's ankle, the flat
+ * and ball rules, the foot plan's range); every other player's is the fixture's object itself.
+ */
+export function jointRangeOf(host: Pick<PoseHost, 'def'>, pl: Pick<PlayerRuntime, 'sus' | 'rag'>): JointRangeProfile | undefined {
+  const J = host.def.jointRange;
+  const d = pl.sus?.flat?.dorsiDeg;
+  if (!J || d === undefined || pl.rag) return J;
+  return { ...J, ankle: { ...J.ankle, dorsiDeg: d } };
 }
 
 /**
@@ -659,7 +672,7 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
  */
 function flatOf(host: PoseHost, pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R: ProxyPoseInput['ragdoll'], gy: number): { shiftM: number; needM: Record<ArmSide, number>; braceM?: Record<ArmSide, number>; maxShinRad: number; rangeRad: number; landAheadM?: number } | null {
   const F = pl.sus?.flat;
-  const A = host.def.jointRange?.ankle;
+  const A = jointRangeOf(host, pl)?.ankle;
   if (!F || !A || pl.controlMode !== 'supported' || pl.rag) return null;
   const soleM = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
   if (F.ball) return ballOf(pl, core, R, gy, F, F.ball, (A.dorsiDeg * Math.PI) / 180, soleM);
