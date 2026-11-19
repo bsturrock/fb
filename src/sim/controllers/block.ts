@@ -189,7 +189,23 @@ export interface BlockStrike {
   id: string;
   loadGapM: number;
   load: { minS: number; tolM: number; closeGapM: number; closeMps: number; hands: { forwardM: number; x: number; y: number }; stance: BlockStance; movingMps: number; movingDepth: number };
-  strike: { contactM: number; minReachM: number; leadS: number; throughS: number; maxS: number; straightM: number; stance: BlockStance; extendMps: number };
+  strike: {
+    contactM: number;
+    minReachM: number;
+    leadS: number;
+    throughS: number;
+    maxS: number;
+    straightM: number;
+    stance: BlockStance;
+    extendMps: number;
+    /**
+     * Plan 16 (p40): engaged (something already holds between the two men: the other man's palms on him, or their
+     * bodies), loaded, he strikes from where he is once his man's chest is within this reach (m, as `contactM` is
+     * measured), not waiting for his closing to bring it within `contactM`: held off at arm's length by the other man's
+     * hands he can close no further, and would stay loaded for the whole block. Absent: only `contactM`'s rule.
+     */
+    engagedReachM?: number;
+  };
 }
 
 /**
@@ -250,6 +266,16 @@ export const BLOCK_STRIKE_V1: BlockStrike = {
   load: { minS: 0.3, tolM: 0.08, closeGapM: 0.5, closeMps: 0.6, hands: { forwardM: 0.06, x: 0.13, y: 0.3 }, stance: { leanDeg: 6, hingeDeg: 14, dropM: 0.06, heightM: 0.78, staggerM: 0.24 }, movingMps: 1.5, movingDepth: 0.4 },
   strike: { contactM: 0.6, minReachM: 0.5, leadS: 0.1, throughS: 0.12, maxS: 0.4, straightM: 0.69, stance: { leanDeg: 8, hingeDeg: 14, dropM: 0, heightM: 0.84, staggerM: 0.24 }, extendMps: 3 },
 };
+
+/**
+ * Plan 16 (p40): BLOCK_STRIKE_V1, and engaged he strikes from where he is once his man's chest is within 0.66 m of his
+ * shoulders (`strike.engagedReachM`; 3 cm inside the miss's straight arm, so the palms land before it reads straight).
+ * Why: a loaded man whose man has struck first is held at arm's length by those palms (BL-F1's men from a two-point set
+ * 1.1 m apart: the under man's chest-to-aim reach settles at 0.62-0.69 m, never inside `contactM`'s 0.6 at a closing
+ * speed of 0), so he never closes into range and stays loaded with his hands at his own chest for the whole block (p40,
+ * the fire-out deadlock; the same in BL-F8, where the man held off is run back 4.5 m without a palm on).
+ */
+export const BLOCK_STRIKE_V2: BlockStrike = { ...BLOCK_STRIKE_V1, id: 'strike-v2', strike: { ...BLOCK_STRIKE_V1.strike, engagedReachM: 0.66 } };
 
 /** Plan 16 (p37): a block profile whose engaged drive is the contest (`BlockContest`), under an id that names it. */
 export const withContest = (p: BlockProfile, contest: BlockContest): BlockProfile => ({ ...p, id: `${p.id}+${contest.id}`, contest });
@@ -749,7 +775,8 @@ export interface PunchCues {
 
 /**
  * One decision of the punch (`BlockStrike`): a new punch number starts the move again; none yet, the load begins inside
- * the load gap (or engaged, or closing on him); loaded and in range (not closer than `strike.minReachM`), the strike;
+ * the load gap (or engaged, or closing on him); loaded and in range (not closer than `strike.minReachM`; engaged, within
+ * `strike.engagedReachM` when the profile has it), the strike;
  * landed, the drive `strike.throughS` after (or when the palms come off sooner); missed (none landed, and a free arm
  * straight or the strike's time gone), the load again. The drive lasts until the punch number changes. Returns the punch now (undefined: none begun).
  */
@@ -761,7 +788,9 @@ export function nextPunch(K: BlockStrike, punchGapM: number, pu: PunchState | un
     return c.engaged || c.gap <= K.loadGapM || c.gap - closing * (K.load.minS * depth + K.strike.leadS) <= punchGapM ? { n: c.serial, phase: 'load', since: c.t, depth } : undefined;
   }
   const age = c.t - cur.since + 1e-9;
-  if (cur.phase === 'load' && age >= K.load.minS * cur.depth && c.loaded && c.reachM >= K.strike.minReachM && c.reachM - closing * K.strike.leadS <= K.strike.contactM) return { ...cur, phase: 'strike', since: c.t };
+  // (p40: engaged, in his arm's reach, he throws it from there: `strike.engagedReachM`)
+  const inRange = c.reachM - closing * K.strike.leadS <= K.strike.contactM || (K.strike.engagedReachM !== undefined && c.engaged && c.reachM <= K.strike.engagedReachM);
+  if (cur.phase === 'load' && age >= K.load.minS * cur.depth && c.loaded && c.reachM >= K.strike.minReachM && inRange) return { ...cur, phase: 'strike', since: c.t };
   if (cur.phase === 'strike') {
     const onT = cur.onT ?? (c.anyOn ? c.t : undefined);
     // landed: the drive once through (or once the palms came off: the block's own hands re-arm them)
