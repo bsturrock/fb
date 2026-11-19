@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V4, LEAN_IN_V2, LEAN_IN_V4, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V4, GAZE_V1, LEAN_IN_V2, LEAN_IN_V4, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -175,9 +175,9 @@ const hold = (effort: number, hands: 'under' | 'over', profile?: BlockProfile, K
 const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile, K: BlockStrike = BLOCK_STRIKE_V2, C: BlockContest = CONTEST_V1): BlockMan => ({ effort, intent: 'drive', hands, profile: contested(profile, K, C), leanIn: LEAN_IN_V2 });
 /**
  * A BL man set before the snap (p40): on LEAN_IN_V4 (LEAN_IN_V2 with its two-point set and three-point stances), set in
- * `stance` from the reset, his block from the snap at `snapS`.
+ * `stance` from the reset, his block from the snap at `snapS`; p43: his eyes on his man (GAZE_V1).
  */
-const setIn = (m: BlockMan, kind: 'two-point' | 'three-point', side: 'offense' | 'defense', snapS: number): BlockMan => ({ ...m, leanIn: LEAN_IN_V4, stance: { kind, side }, fromS: snapS });
+const setIn = (m: BlockMan, kind: 'two-point' | 'three-point', side: 'offense' | 'defense', snapS: number): BlockMan => ({ ...m, profile: withGaze(m.profile ?? BLOCK_V1, GAZE_V1), leanIn: LEAN_IN_V4, stance: { kind, side }, fromS: snapS });
 
 /**
  * The BL scenes (A's hands under, B's over, in every one; every man on the contest, `contested`, striking with
