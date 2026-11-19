@@ -128,12 +128,40 @@ baseline: main checkout `.scratch/p33/on`.
      10-14 cm inside the thigh for the first second (the turf target is out of reach while he is upright). Upper
      arm 7-8 cm in his own trunk during strike and drive in every BL scene (`withUpperArmClearance`, not on for
      BL, cut it to 4-5 cm in a probe).
+   - **Landing palms, arms out of his own body, the two-point's feet, p44** (`a7e90ef`, `c265070`; `39ed7ac`,
+     `13314f4`; `30f7bc9`, `0ef74fa`; `e66d41c`, `cdf3fb7`). The p43 drift and the getting-set and upper-arm items
+     above are fixed here.
+     - The landing palm seated (`PalmPushProfile.seat`, `-F9`/`-F10`): the patch is held where the shown palm rests
+       on his surface, not at the landmark's projection (the palm ball sat 2 cm in on the push's first substep and was
+       released, `invalidPose`). `-F9`: both men's palms on 1.57 s of the 2 s after contact (was 1.15), knocked back
+       0.38 m in 0.4 s, anchored 0.70 s after contact (0.54 m, 0.82 s), nobody falls. `-F10` not reached (1.20 s):
+       B's palms land on A's pitched trunk top (p41 (b)); its own step (probes parked, worktree
+       `.scratch/p44/parked/f10-strike-probes.*`).
+     - Upper arm out of his own trunk, all ten BL scenes (`BlockSceneOpts.upperArm`: `withUpperArmClearance` with
+       `PalmPushProfile.ownBodyKeeps`, a held push takes the pose least into his own trunk among those clear of
+       everything else, in place of being released). Elbows 5.0-5.2 cm into the trunk on the meter's 9.9 cm deltoid
+       (was 7.3-8.0; the rule's own shape reads them on the ribs); no outcome changed.
+     - The three-point's down hand in front of his knee (`PreSnapHand.kneeClearM`, `LEAN_IN_V5`): getting set no
+       piece of the down arm is in his thighs (was 10.9-14.5 cm for the first second).
+     - The two-point set on its own feet (`LeanInStance.twoPointSet`, `LEAN_IN_V6`, `-F10`'s A): 56 cm wide (was 37),
+       flat, 8 cm stagger, hips 0.74 m, knees 85, trunk 43 (28), hands 20 cm in front of his knees at 0.55 m. The
+       defender is now knocked back 1.34 m in all (was 0.85): the burst (0.9 m by 0.7 s after contact), 0.6 s with
+       both men's hands off and 0.9 m apart, then A re-lands and drives him 0.27 m; nobody falls.
+     - Not done: knees out over the toes (the knees stand on the hip-ankle line, 9 cm inside each ankle: the leg's
+       knee pole is the foot heading; a knee-out pole needs an eased hand-over at the snap, or the knees jump); the
+       defense front knee stays 75 deg (90 on a flat front foot needs his hips at about 0.69 m, below his shoulders,
+       against "hips over the shoulders"; stagger alone gives 80); no weight on the down hand.
+     - Defects, worst first: `-F10` both men's hands off 0.6 s after the burst; the offense three-point's off hand
+       rests 4-6 cm in his thigh while set (`-F9` A); getting set from the reset a foot steps back once as the trunk
+       tips in (all three set stances, by 1.3 s; the two-point also widens in two steps at the reset); the older BL
+       scenes' held palm balls 1.3-1.5 cm deep (no seat; `-F8` at the tolerance).
+     - 658 tests; baseline main checkout `.scratch/p44/c-two-on` (tool PASS).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
      0.725 m target, and the suspension only pushes up; find what lifts it, with a twin capture. (2) No weight on
-     the down hand (the arm only reaches). (3) Defense front knee 75 deg. (4) The two-point has no feet of its own
-     (5c). (5) Getting set takes 2.3 s. One builder at a time in the worktree
+     the down hand (the arm only reaches). (3) Defense front knee 75 deg. (4) (done, p44) The two-point has no feet of
+     its own (5c). (5) Getting set takes 2.3 s. One builder at a time in the worktree
    `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main checkout's `.scratch/p38/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
 
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
@@ -144,6 +172,10 @@ Lab (`cam=front` is the profile view of two men facing each other; `cam=side` sh
 - `?fixture=BL-F4-defenderStronger&cam=front&speed=0.25&t=0.45` the weaker man knocked
 - `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.45` stalemate
 - `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=0.7` defect: one man run back 4 m without his hands on
+- `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=0.3` getting set: the down hands come down in front of the knees
+- `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=3.7` the hit: palms land and hold, knock-back, anchor
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=0.3` the two-point set forming (wide, flat, trunk 43)
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=3.7` the hit, hands off 4.2-4.9, the drive to 5.6
 
 ## Owner rulings (2026-11-17)
 

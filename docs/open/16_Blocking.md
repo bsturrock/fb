@@ -107,7 +107,9 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    hands straight to the chest plate inside the shoulders, a short first step (overstriding stands him up), hips
    roll forward and up at contact, then short choppy steps with the feet kept under and behind him. References:
    the handoff's "To resume" 3. These poses need the knee well over the toe on a flat foot, more than the ankle's
-   25 deg: the same limit that keeps the lean-in tall.
+   25 deg: the same limit that keeps the lean-in tall. Done through p44 (see the handoff): both three-points, the
+   two-point's own feet, the fire-out, the hit; left: knees out over the toes, the defense front knee at 90, weight on
+   the down hand, the pitched-trunk landing in `-F10`.
 5. **Polish** in the handoff's defect order, with the footwork and tackle queues.
 6. **Milestone:** lab review by the user after 1 and 2, again after 3 and 4.
 
