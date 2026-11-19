@@ -5,7 +5,7 @@
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V3, LEAN_IN_V2, LEAN_IN_V4, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
-import { BASE_V2, CONTEST_V1 } from '../block-base';
+import { BASE_V2, CONTEST_V1, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
@@ -162,9 +162,9 @@ export const based = (p: BlockProfile = BLOCK_V1): BlockProfile => withBase(p, B
 /**
  * Plan 16 (p37): a BL man's block on the contest (CONTEST_V1: his push and hold decide who moves; no base, so his balance
  * is the supported model's own), punching with the strike (`K`, default BLOCK_STRIKE_V1), the stance 3 cm wider per foot
- * as on the base.
+ * as on the base; p42: on the contest `C` (default CONTEST_V1).
  */
-export const contested = (p: BlockProfile = BLOCK_V1, K: BlockStrike = BLOCK_STRIKE_V1): BlockProfile => withContest(withStrike({ ...p, stance: { ...p.stance, widthAddM: 0.03 } }, K), CONTEST_V1);
+export const contested = (p: BlockProfile = BLOCK_V1, K: BlockStrike = BLOCK_STRIKE_V1, C: BlockContest = CONTEST_V1): BlockProfile => withContest(withStrike({ ...p, stance: { ...p.stance, widthAddM: 0.03 } }, K), C);
 /**
  * A BL man (p39): his block on the contest (`contested`), on the low lean-in (LEAN_IN_V2: the ankle's 38 deg in a block,
  * hips 0.82 m set, 0.75 loaded; p38's LEAN_IN_V1 stood him at 0.90), striking with BLOCK_STRIKE_V2 (p40: engaged and held

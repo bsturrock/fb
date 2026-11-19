@@ -8,7 +8,7 @@ import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, 
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
 import { hingeBalanceTorque, hipTorque } from './hinge';
-import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
+import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, hitPair, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
@@ -45,6 +45,7 @@ export const EMPTY_APPLIED = (): AppliedRecord => ({
 /** Step 5: bounded motors for every proxy player (ragdolls get none): drive, yaw and the finite upright support torque. */
 export function applyMotors(host: MotorHost, snap: Snapshot): void {
   const B = host.balanceProfile;
+  let hits = false;
   for (const pl of host.players) {
     if (pl.rag) {
       pl.applied = EMPTY_APPLIED(); // passive ragdoll: no locomotion, yaw, balance or pose-following motors
@@ -76,6 +77,8 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
     const drive = computeDrive(loco, b.linearVelocity, b.massKg, pl.motor, supported, ls * auth);
     // plan 16 (p37, the contest): an engaged blocker's drive along the line to his man is his push and hold
     if (pl.block?.contest) contestDrive(host, pl, drive, b, supported);
+    // (p42, the hit: the force pairs of the strikes between two men, once every player's motors are in)
+    if (pl.block?.contest?.profile.hit) hits = true;
     // (p40, `FlatStance.level`: his yaw read from his level forward, the body's own vanishing near 90 deg of pitch)
     const yawRot = pl.sus?.flat?.level ? qFromUnitVectors(v3(0, 0, 1), levelForwardOf(b.rotation)) : b.rotation;
     const yaw = computeYaw(pl.intent.locomotion, yawRot, b.angularVelocity.y, pl.motor, supported, auth);
@@ -145,6 +148,51 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
       leanScale: ls,
     };
   }
+  if (hits) blockHits(host, snap);
+}
+
+/**
+ * Plan 16 (p42, block-base.ts `ContestHit`): the hit between two supported men engaged in a block with each other, from
+ * the snapshot, once per pair (by the first of the two in id order whose contest has a hit, on its profile): while either
+ * man's punch strikes (or is into its drive by less than his contest's `burst.s`) and a palm push is on between them,
+ * the pair's reduced mass times their closing speed along the line (with the punch's parting) over `tauS`, at most `maxN`,
+ * as a force pair at their centres of mass, less the part the winner's legs hold (none while they do not close). Each
+ * man's contest records it (`hitN`).
+ */
+function blockHits(host: MotorHost, snap: Snapshot): void {
+  const ps = host.players;
+  for (const pl of ps) if (pl.block?.contest?.profile.hit) pl.block.contest.hitN = 0;
+  const striking = (p: (typeof ps)[number]): boolean => {
+    const pu = p.block?.punch;
+    const K = p.block?.contest?.profile;
+    return !!pu && (pu.phase === 'strike' || (pu.phase === 'drive' && !!K && host.t - pu.since < K.burst.s));
+  };
+  for (const pl of ps) {
+    const st = pl.block?.contest;
+    const H = st?.profile.hit;
+    if (!st || !H || pl.rag || pl.controlMode !== 'supported' || pl.block!.phase !== 'engaged') continue;
+    const him = ps.find((o) => o.id === pl.block!.target);
+    if (!him || him.rag || him.controlMode !== 'supported' || him.block?.target !== pl.id || him.block.phase !== 'engaged') continue;
+    if (him.block.contest?.profile.hit && him.id < pl.id) continue;
+    if (!striking(pl) && !striking(him)) continue;
+    const A = host.arms;
+    const on = (p: (typeof ps)[number], o: (typeof ps)[number]): boolean => !!A && (['left', 'right'] as const).some((s) => A.pushOf(p.id, s)?.targetId === o.id);
+    if (!on(pl, him) && !on(him, pl)) continue;
+    // the punch: a man striking with his palms on his man drives them apart at up to `punchMps` times his effort
+    const punch = (p: (typeof ps)[number], o: (typeof ps)[number]): number => (H.punchMps && striking(p) && on(p, o) ? H.punchMps * clamp(p.intent.block?.request.effort ?? p.intent.locomotion.effort, 0, 1) : 0);
+    const a = snap.bodies[pl.id];
+    const b = snap.bodies[him.id];
+    const d = v3(b.position.x - a.position.x, 0, b.position.z - a.position.z);
+    if (len(d) < 1e-9) continue;
+    const u = norm(d);
+    const hc = him.block.contest;
+    const { F, onA, onB } = hitPair(H, (a.massKg * b.massKg) / (a.massKg + b.massKg), dot(sub(a.linearVelocity, b.linearVelocity), u), Math.max(punch(pl, him), punch(him, pl)), st.pushN, hc?.pushN);
+    if (F <= 0) continue;
+    pl.proxy.body.addForce(scale(u, onA), true);
+    him.proxy.body.addForce(scale(u, onB), true);
+    st.hitN = F;
+    if (him.block.contest) him.block.contest.hitN = F;
+  }
 }
 
 /**
@@ -192,14 +240,21 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   const pu = blk.punch;
   const striking = !!pu && (pu.phase === 'strike' || (pu.phase === 'drive' && host.t - pu.since < K.burst.s));
   let burstN = 0;
+  let palmOn = false;
   if (striking && host.arms) for (const side of ['left', 'right'] as const) {
     const e = host.arms.lastForce.get(`${pl.id}:${side}`);
     if (e && e.kind === 'push' && e.target === him.id) burstN += e.actual;
+    if (host.arms.pushOf(pl.id, side)?.targetId === him.id) palmOn = true;
   }
-  const cap = contestCapacity(K, { effort: dbg?.contestEffortBlind ? 1 : (pl.intent.block?.request.effort ?? pl.intent.locomotion.effort), lowM: hipY(him) - hipY(pl), feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN });
+  // (p42, the hit: with the hit taking the closing, his hands carry his burst while his palms are on his man)
+  if (K.hit && palmOn) burstN = Infinity;
+  const effort = dbg?.contestEffortBlind ? 1 : (pl.intent.block?.request.effort ?? pl.intent.locomotion.effort);
+  const cap = contestCapacity(K, { effort, lowM: hipY(him) - hipY(pl), feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN });
   st.pushN = cap.pushN;
   st.holdN = cap.holdN;
-  const f = contestForce(K, cap, v, dot(drive.requestedVelocity, u), !!dbg?.contestHoldPushes);
+  // (p42, `burst.mps`: bursting through his man, his push runs on to at least that speed times his effort)
+  const want = dot(drive.requestedVelocity, u);
+  const f = contestForce(K, cap, v, K.burst.mps !== undefined && striking && burstN > 0 ? Math.max(want, K.burst.mps * clamp(effort, 0, 1)) : want, !!dbg?.contestHoldPushes);
   st.forceN = f.F;
   st.pushF = f.push;
   st.holdF = f.hold;

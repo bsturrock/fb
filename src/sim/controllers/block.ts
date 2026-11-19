@@ -239,6 +239,14 @@ export interface BlockStrike {
      * hands he can close no further, and would stay loaded for the whole block. Absent: only `contactM`'s rule.
      */
     engagedReachM?: number;
+    /**
+     * Plan 16 (p42): striking, his hips stay at the load's height until a palm lands (the trunk comes up to the strike's
+     * as the hands go), and rise into the strike's from the landing: the hips roll up and forward at contact, not as the
+     * hands leave. Absent: the strike's stance from the throw.
+     */
+    riseOnLand?: true;
+    /** Plan 16 (p42): striking and in his drive, his hinge has the hips' own torque, up to this (`HingeLimits.hipNm`). */
+    hipNm?: number;
   };
   /** Plan 16 (p41): the fire-out (`BlockFire`); absent, the first punch out of a pre-snap stance is any other punch. */
   fire?: BlockFire;
@@ -338,6 +346,13 @@ export const BLOCK_STRIKE_V2: BlockStrike = { ...BLOCK_STRIKE_V1, id: 'strike-v2
  * and on to the strike's as it is thrown. No registered fixture has it yet.
  */
 export const BLOCK_STRIKE_V3: BlockStrike = { ...BLOCK_STRIKE_V2, id: 'strike-v3', fire: { mps: 2, trunkDeg: 45, pace: { rateDegPerS: 300, accelDegPerS2: 1500, hipNm: 400 } } };
+
+/**
+ * Plan 16 (p42): V3 thrown from 0.66 m of reach (the palms land on bent arms, about 65-80 deg at the elbow), the hips low
+ * until a palm lands (`riseOnLand`), and striking and driving the hinge with the hips' own torque up to 400 N m (the
+ * trunk kept inclined under his man's palms on his upper chest). For the contest's hit (CONTEST_V2).
+ */
+export const BLOCK_STRIKE_V4: BlockStrike = { ...BLOCK_STRIKE_V3, id: 'strike-v4', strike: { ...BLOCK_STRIKE_V3.strike, contactM: 0.66, riseOnLand: true, hipNm: 400 } };
 
 /** Plan 16 (p37): a block profile whose engaged drive is the contest (`BlockContest`), under an id that names it. */
 export const withContest = (p: BlockProfile, contest: BlockContest): BlockProfile => ({ ...p, id: `${p.id}+${contest.id}`, contest });
@@ -1148,7 +1163,11 @@ export class BlockController implements Controller {
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
       arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
-    const S00 = K ? punchPose(P, pu) : P.stance;
+    // (p42, `strike.riseOnLand`: striking, he stays in the load's stance until a palm lands; the rise is from the landing)
+    const low = !!K?.strike.riseOnLand && pu?.phase === 'strike' && pu.onT === undefined;
+    const S01 = K ? punchPose(P, pu) : P.stance;
+    const SL = low ? punchPose(P, { ...pu!, phase: 'load' }) : S01;
+    const S00 = low ? { ...S01, heightM: SL.heightM, dropM: SL.dropM } : S01;
     // (p41, the fire-out: loaded, the trunk at the fire's, low)
     const S0 = fire && pu?.phase === 'load' ? { ...S00, hingeDeg: Math.max(0, fire.trunkDeg - S00.leanDeg) } : S00;
     // (p36, giving ground: stood up by how far he is pushed past his base; p37, the contest: by how hard he is knocked back,
@@ -1161,7 +1180,7 @@ export class BlockController implements Controller {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
       posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM } },
-      block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : {}) },
+      block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
       debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}) },
     };
   }

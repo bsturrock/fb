@@ -149,7 +149,8 @@ export function advanceGive(st: GiveState, G: GiveGround, demandNm: number, back
 export interface BlockContest {
   id: string;
   pushN: number;
-  burst: { pushN: number; s: number };
+  /** (p42: `mps`, bursting with his palms' force on his man, his push's force-velocity line runs to at least this speed times his effort, m/s; absent, his request's.) */
+  burst: { pushN: number; s: number; mps?: number };
   holdN: number;
   holdFloor: number;
   spanMps: number;
@@ -161,6 +162,44 @@ export interface BlockContest {
   anchorLeanDeg: number;
   stood: { knockMps2: [number, number]; attackS: number; releaseS: number; holdCut: number; pushCut: number; riseM: number; trunkDeg: number };
   fall: { behindM: number; outrunS: number; overLevel: number; overMps: number; overMargin: number; overS: number; leanS: number };
+  /** Plan 16 (p42), the hit (`ContestHit`); absent, none: the pair's closing is the bodies' and the palm struts'. */
+  hit?: ContestHit;
+}
+
+/**
+ * Plan 16 (p42), the hit (`BlockContest.hit`): the first collision's closing taken by the hands, not by the bodies meeting.
+ * While a strike is on between two men engaged with each other (either man's punch striking, or into its drive by less
+ * than `burst.s`) and a palm push is on between them, a force pair along the line between their centres of mass: the
+ * pair's reduced mass times their closing speed over `tauS`, at most `maxN`, only while they close. The closing counts the
+ * punch: a man striking with his palms on his man drives the pair apart at up to `punchMps` times his effort, so the hit
+ * runs on until they part at that speed (the arms' extension). Who takes it is the contest's: the man with the larger
+ * push capacity holds his part with his legs (his capacity over his man's, less 1, over `winX`, at most all of it: that
+ * part is not put on him), and the other takes the hit; an even meeting (equal capacities) shares it and both stop.
+ * While his palms are on his man, his burst is not limited by his palms' force (the hit carries what they put on him).
+ */
+export interface ContestHit {
+  tauS: number;
+  maxN: number;
+  /** The winner's part of the hit his legs hold: his push capacity over his man's, less 1, over this (at most all). */
+  winX: number;
+  /** The punch: a man striking with his palms on his man drives the pair apart at up to this times his effort (m/s; absent, 0). */
+  punchMps?: number;
+}
+
+/**
+ * The hit's force pair (`ContestHit`) between men a and b, along the line from a to b: `F` the hit, `onA` its force on a
+ * (at most 0) and `onB` on b (at least 0), less the part the winner's legs hold. `closingMps` the pair's closing speed,
+ * `punchMps` the punch's parting speed (the larger of the two men's), `pushA`/`pushB` their push capacities now (`pushB`
+ * absent: b has no contest, and neither holds a part). Not closing: none.
+ */
+export function hitPair(H: ContestHit, massKg: number, closingMps: number, punchMps: number, pushA: number, pushB?: number): { F: number; onA: number; onB: number } {
+  const c = closingMps + punchMps;
+  if (c <= 0) return { F: 0, onA: 0, onB: 0 };
+  const F = Math.min(H.maxN, (massKg * c) / H.tauS);
+  const win = (x: number, y: number): number => (x > y && y > 0 ? clamp((x / y - 1) / H.winX, 0, 1) : x > y ? 1 : 0);
+  const wa = pushB === undefined ? 0 : win(pushA, pushB);
+  const wb = pushB === undefined ? 0 : win(pushB, pushA);
+  return { F, onA: -F * (1 - wa), onB: F * (1 - wb) };
 }
 
 /** Why the contest took a man down (`ContestState.down`). */
@@ -186,6 +225,8 @@ export interface ContestState {
   overT: number | null;
   leanT: number | null;
   down?: ContestDown;
+  /** Plan 16 (p42, a contest with `hit`): the hit's force on him last substep (N, along the line; absent or 0: none). */
+  hitN?: number;
 }
 
 /** A fresh contest state. */
@@ -208,6 +249,13 @@ export const CONTEST_V1: BlockContest = {
   stood: { knockMps2: [0.5, 2.5], attackS: 0.03, releaseS: 0.3, holdCut: 0.9, pushCut: 0.8, riseM: 0.08, trunkDeg: 10 },
   fall: { behindM: 0.25, outrunS: 0.3, overLevel: 0.3, overMps: 0.5, overMargin: 1, overS: 0.3, leanS: 0.1 },
 };
+
+/**
+ * Plan 16 (p42): CONTEST_V1 with the hit (`ContestHit`: the pair's closing taken over 0.02 s, at most 3000 N, the winner
+ * holding all his part at twice his man's push capacity, the punch parting them at 1 m/s times effort) and the burst
+ * running on to 2 m/s times effort.
+ */
+export const CONTEST_V2: BlockContest = { ...CONTEST_V1, id: 'contest-v2', burst: { ...CONTEST_V1.burst, mps: 2 }, hit: { tauS: 0.02, maxN: 3000, winX: 1, punchMps: 1 } };
 
 /**
  * How much of his feet a man in a block stands on (0..1, `BlockContest`): each foot planted with its heel within
