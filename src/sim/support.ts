@@ -16,7 +16,7 @@
 //      the applied load bounds drive and yaw, the balance ceiling is the nominal-weight one while support is valid;
 //   6. motors, arms, solve; 7. probe of the solved state; pose from the solved state and the step-3 phase.
 import type { SuspensionSupport } from './profiles';
-import type { FlatStance } from './contracts';
+import type { FlatStance, StanceRequest } from './contracts';
 import type { RunClip, RunClipProfile, RunPlayback } from './run-clip';
 import { clamp, v3, type Vec3 } from './vec';
 
@@ -402,12 +402,19 @@ export function runHeight(
 }
 
 /**
- * Compose this substep's height target: (1 - w) stance + w running, clamped to the target range, slew-limited against
+ * Plan 16 (p40): the lowest root height (m) under a stance request: the suspension's `targetRangeM[0]`, or the stance's
+ * own `lowM` when it asks a lower one (`StanceRequest.lowM`). The one reader of the range's floor for a player's stance.
+ */
+export const stanceFloorM = (S: SuspensionSupport, req: StanceRequest | undefined): number => Math.min(S.targetRangeM[0], req?.lowM ?? Infinity);
+
+/**
+ * Compose this substep's height target: (1 - w) stance + w running, clamped to the target range (its floor `floorM`,
+ * default the range's: a stance's own, `stanceFloorM`), slew-limited against
  * the previous target; the target velocity is the slewed change over the substep (at reset: the bob's analytic rate at
  * the reset phase, which is also the reset vertical velocity of the body). The feedforward
  * acceleration is the weighted stance-filter and bob acceleration, 0 while the range clamp or the slew limit holds.
  */
-export function composeTarget(st: SuspensionRuntime, S: SuspensionSupport, run: Pick<RunHeight, 'heightM' | 'velMps' | 'accelMps2'> | null, weight: number, dt: number, dropM = 0): void {
+export function composeTarget(st: SuspensionRuntime, S: SuspensionSupport, run: Pick<RunHeight, 'heightM' | 'velMps' | 'accelMps2'> | null, weight: number, dt: number, dropM = 0, floorM = S.targetRangeM[0]): void {
   const w = run === null || !(weight > 0) ? 0 : clamp(weight, 0, 1);
   const raw0 = run === null || w === 0 ? st.stanceH : st.stanceH + (run.heightM - st.stanceH) * w;
   // plan 07 item 4: the braking stance blends the whole composition (stance and running height/bob) toward the braking
@@ -417,7 +424,8 @@ export function composeTarget(st: SuspensionRuntime, S: SuspensionSupport, run: 
   const low = B ? Math.min(B.heightM, st.stanceH) : 0;
   // plan 08: a bounded, continuous drop requested by locomotion preparation (0 leaves the expression untouched)
   const raw = (b > 0 ? raw0 + (low - raw0) * b : raw0) - dropM;
-  const want = clamp(raw, S.targetRangeM[0], S.targetRangeM[1]);
+  // (p40: a stance's own floor, `stanceFloorM`)
+  const want = clamp(raw, floorM, S.targetRangeM[1]);
   if (!(dt > 0)) {
     // reset: the steady-state rate and acceleration of the target at the reset phase (a playing clip's bob)
     st.targetM = want;

@@ -4,7 +4,7 @@
 import type { Snapshot } from './contracts';
 import { computeDrive, computeYaw } from './motors';
 import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, desiredUpFrom, leanScale, postureGravityHold } from './balance';
-import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, scale, sub, UP } from './vec';
+import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, scale, sub, UP, levelForwardOf, qFromUnitVectors } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
 import { hingeBalanceTorque } from './hinge';
@@ -76,7 +76,9 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
     const drive = computeDrive(loco, b.linearVelocity, b.massKg, pl.motor, supported, ls * auth);
     // plan 16 (p37, the contest): an engaged blocker's drive along the line to his man is his push and hold
     if (pl.block?.contest) contestDrive(host, pl, drive, b, supported);
-    const yaw = computeYaw(pl.intent.locomotion, b.rotation, b.angularVelocity.y, pl.motor, supported, auth);
+    // (p40, `FlatStance.level`: his yaw read from his level forward, the body's own vanishing near 90 deg of pitch)
+    const yawRot = pl.sus?.flat?.level ? qFromUnitVectors(v3(0, 0, 1), levelForwardOf(b.rotation)) : b.rotation;
+    const yaw = computeYaw(pl.intent.locomotion, yawRot, b.angularVelocity.y, pl.motor, supported, auth);
     if (drive.cap > 0) pl.proxy.body.addForce(drive.force, true);
     let balReq = v3();
     let balCapped = v3();

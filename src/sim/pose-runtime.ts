@@ -12,8 +12,8 @@ import { bodyParts, groundFor, type Part } from './free-ground';
 import { colliderWorldPose, externalFromColliders, ragdollPose, SEGMENTS, type ExternalShape } from './ragdoll';
 import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, solvedImpulses, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
 import { playbackArmMean, playbackWidthAddM, playbackStance, shownSample, playbackSwingProgress, sampleRunClip, playbackSample, retargetSample, type RunPlayback } from './run-clip';
-import type { ArmSide, FlatStance } from './contracts';
-import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, type Quat } from './vec';
+import type { ArmSide, FlatStance, HeadUp } from './contracts';
+import { type Vec3, add, v3, vc, horiz, len, norm, qRot, sub, forwardOf, dot, clamp, qInvRot, addScaled, toWorld, smooth, scale, qFromUnitVectors, qFromAxisAngle, qMul, qNormalize, qConj, cross, levelForwardOf, type Quat } from './vec';
 import { auditInput, keepLandmarks, recordTransition, type AuditHost } from './transition-audit';
 import type { Simulation, PlayerRuntime } from './simulation';
 import { ballAheadM, braceHome, flatAheadM, neededCop, shinForAnkleRad } from './block-base';
@@ -106,9 +106,10 @@ export function updatePoses(host: PoseHost, dt: number): void {
       memory: pl.poseMemory,
       sampled,
       ground: pl.sus
-        ? { y: pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0, staggerM: pl.sus.staggerM, ...(pl.controlMode === 'falling' ? { bodyRelative: true } : {}), ...(pl.sus.widthAddM ? { widthAddM: pl.sus.widthAddM } : {}), ...(pl.sus.flat ? { aheadM: flatShiftM(host, pl, core, RP, pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0) } : {}) }
+        ? { y: pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0, staggerM: pl.sus.staggerM, ...(pl.controlMode === 'falling' ? { bodyRelative: true } : {}), ...(pl.sus.flat?.level ? { levelFwd: levelForwardOf(core.q) } : {}), ...(pl.sus.widthAddM ? { widthAddM: pl.sus.widthAddM } : {}), ...(pl.sus.flat ? { aheadM: flatShiftM(host, pl, core, RP, pl.sus.probe.valid || Number.isFinite(pl.sus.probe.heightM) ? pl.sus.probe.groundY : 0) } : {}) }
         : undefined,
       dtS: dt,
+      ...(pl.intent.posture?.headUp ? { headUpRad: headUpRadOf(core.q, pl.intent.posture.headUp) } : {}),
       handoffPossible: !!host.def.ragdoll && !pl.rag && !pl.handoff,
       ...(pl.deferred ? { handoffDeferred: true } : {}),
       ...(host.def.legGuard?.sweep ? { legSweep: true } : {}),
@@ -509,6 +510,13 @@ export function observePhysicalLegs(host: Pick<PoseHost, 'physics' | 'players' |
   }
 }
 
+/** Plan 16 (p40): the head's extension on the neck (rad) under `HeadUp` for a body at `q`: its pitch from vertical past `freeDeg`, at most `maxDeg`. */
+export function headUpRadOf(q: Quat, H: HeadUp): number {
+  const up = qRot(q, v3(0, 1, 0));
+  const pitchDeg = (Math.acos(Math.max(-1, Math.min(1, up.y))) * 180) / Math.PI;
+  return (Math.max(0, Math.min(H.maxDeg, pitchDeg - H.freeDeg)) * Math.PI) / 180;
+}
+
 /** Plan 13e: the idle cycle at the player's phase and its weight (a locomotion profile with a cycle only). */
 function idleOf(host: PoseHost, pl: PlayerRuntime, sp: number): { idle?: { sample: ReturnType<typeof sampleIdle>; w: number } } {
   const C = host.def.locomotion?.idle.cycle;
@@ -575,7 +583,8 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
   const soleM = R.shoe.belowAnkleM + R.shoe.halfExtents.y;
   const gy = inp.ground!.y;
   const fwd = forwardOf(core.q);
-  const fwdH = norm(v3(fwd.x, 0, fwd.z), v3(0, 0, 1));
+  // (p40, `FlatStance.level`: the level forward through a deep pitch)
+  const fwdH = inp.ground?.levelFwd ?? norm(v3(fwd.x, 0, fwd.z), v3(0, 0, 1));
   const rw = qRot(core.q, v3(sideSignX(pl.body, 'right'), 0, 0));
   const rightW = norm(v3(rw.x, 0, rw.z), v3(1, 0, 0));
   const hips = {} as FootPlanInput['hips'];
@@ -621,7 +630,8 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
   return {
     t: host.t,
     dt,
-    core,
+    // (p40, `FlatStance.level`: the planner's headings from his level forward, the body's own vanishing near 90 deg of pitch)
+    core: inp.ground?.levelFwd ? { p: core.p, q: qFromUnitVectors(v3(0, 0, 1), inp.ground.levelFwd) } : core,
     vel: v3(v.x, 0, v.z),
     yawRate: b.angvel().y,
     supported: pl.controlMode === 'supported' && sus.probe.valid,

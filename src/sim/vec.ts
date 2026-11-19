@@ -274,3 +274,14 @@ export const round = (x: number, d = 4): number => {
   return Math.round(x * k) / k;
 };
 export const rv = (v: Vec3, d = 4): [number, number, number] => [round(v.x, d), round(v.y, d), round(v.z, d)];
+
+/**
+ * Plan 16 (p40): a body's level forward that holds through a deep forward pitch: its forward and its up levelled and
+ * summed ((cos + sin) of the pitch times the facing, sound to 135 deg; the forward alone levelled vanishes at 90 and
+ * turns back past it).
+ */
+export function levelForwardOf(q: Quat): Vec3 {
+  const f = qRot(q, v3(0, 0, 1));
+  const u = qRot(q, v3(0, 1, 0));
+  return norm(v3(f.x + u.x, 0, f.z + u.z), v3(0, 0, 1));
+}

@@ -470,6 +470,8 @@ export interface ProxyPoseInput {
   body: BodyProfile;
   ragdoll: RagdollProfile;
   pose: Pose; // solved proxy origin pose
+  /** Plan 16 (p40): the head's extension on the neck (rad; PostureIntent.headUp). Absent or 0: the head on the trunk. */
+  headUpRad?: number;
   gait: GaitState;
   speed: number;
   /** Achieved arms (Gate 2); when absent a bounded procedural arm pose is generated. */
@@ -501,7 +503,7 @@ export interface ProxyPoseInput {
    * `bodyRelative` (falling proxies): without support the ordinary leg request is the body-relative one (legs follow
    * the body; a ground target below a lying body folds the legs over the torso); the floor lift and continuity stay.
    */
-  ground?: { y: number; staggerM: number; fixedGait?: boolean; bodyRelative?: boolean; widthAddM?: number; /** Plan 16 (flat feet): both feet this far (m) ahead of the hips along the facing. */ aheadM?: number };
+  ground?: { y: number; staggerM: number; fixedGait?: boolean; bodyRelative?: boolean; widthAddM?: number; /** Plan 16 (flat feet): both feet this far (m) ahead of the hips along the facing. */ aheadM?: number; /** Plan 16 (p40, `FlatStance.level`): the feet's forward (level, unit) in place of the body's forward levelled. */ levelFwd?: Vec3 };
   /**
    * Plan 07 foot planner requests (footwork.ts), ground-relative legs only. `ground.fixedGait`: the procedural phase gait
    * swings each foot along the actual travel (the 06a gait swung it against travel: the recorded moonwalk).
@@ -885,7 +887,7 @@ export function legRequestLocal(inp: ProxyPoseInput, s: ArmSide): Vec3 {
   if (gr && !gr.bodyRelative) {
     // ground-relative: the gait offset and stagger along the body's horizontal forward, the ankle at the flat-shoe
     // height above the ground plus the swing lift (world), below the hip
-    const fwdH = norm(v3(fwd.x, 0, fwd.z), v3(0, 0, 1));
+    const fwdH = gr.levelFwd ?? norm(v3(fwd.x, 0, fwd.z), v3(0, 0, 1));
     const hipW = toWorld(pose, v3(hipL.x, hipL.y, hipL.z));
     const gx = qRot(pose.q, v3(vdir.x * off, 0, vdir.z * off));
     const still = idleStanceFade(inp.speed);
@@ -959,6 +961,12 @@ export function buildProxyPose(inp: ProxyPoseInput): PhysicalPose {
     lm.headCenter = add(lm.neck, qRot(hq, sub(body.headCenter, body.neck)));
     segs.head = { segmentId: 'head', originWorld: lm.neck, rotationWorld: hq };
   } else segs.head = { segmentId: 'head', originWorld: lm.neck, rotationWorld: { ...pose.q } };
+  // plan 16 (p40): the head up, extended on the neck about the core's lateral axis
+  if (inp.headUpRad && inp.headUpRad > 0) {
+    const hq = qMul(segs.head.rotationWorld, qFromAxisAngle(v3(1, 0, 0), -inp.headUpRad));
+    lm.headCenter = add(lm.neck, qRot(hq, sub(body.headCenter, body.neck)));
+    segs.head = { segmentId: 'head', originWorld: lm.neck, rotationWorld: hq };
+  }
   // flexion-bounded reach of every generated limb (the joint limits the candidate is validated against)
   const elbowMin = flexReach(R.lengths.upperArm, R.lengths.forearm + R.lengths.palmExtension, maxFlexRad(R, 'elbow'));
   const kneeMin = flexReach(R.lengths.thigh, R.lengths.shin, maxFlexRad(R, 'knee'));

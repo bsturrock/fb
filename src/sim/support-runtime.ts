@@ -2,7 +2,7 @@
 // target and the support force with its tip torque.
 import { RAPIER } from './physics';
 import { type SuspensionSupport } from './profiles';
-import { advanceBraking, advanceStance, brakingDemand, classifyProbe, composeTarget, loadAuthority, runHeight, splitSupportForce, suspensionForce, type RunHeight } from './support';
+import { advanceBraking, advanceStance, brakingDemand, classifyProbe, composeTarget, loadAuthority, runHeight, splitSupportForce, stanceFloorM, suspensionForce, type RunHeight } from './support';
 import { type Vec3, v3, vc, horiz, len, add, cross, qRot, sub, clamp, clampLen, smooth } from './vec';
 import type { Simulation, PlayerRuntime } from './simulation';
 import { hingePivot } from './hinge';
@@ -63,7 +63,9 @@ export function supportTargets(host: SupportHost, pl: PlayerRuntime, S: Suspensi
   const st = pl.sus!;
   const req = pl.intent.locomotion.stance;
   st.requestM = req?.heightM ?? S.standingHeightM;
-  advanceStance(st, S, clamp(st.requestM, S.targetRangeM[0], S.targetRangeM[1]), dt);
+  // (p40: the floor a stance asks, `StanceRequest.lowM`)
+  const floorM = stanceFloorM(S, req);
+  advanceStance(st, S, clamp(st.requestM, floorM, S.targetRangeM[1]), dt);
   // stagger is a pose request: rate-bounded so the feet never jump
   const sg = req?.staggerM ?? 0;
   st.staggerM += clamp(sg - st.staggerM, -S.stance.maxRateMps * dt, S.stance.maxRateMps * dt);
@@ -94,7 +96,7 @@ export function supportTargets(host: SupportHost, pl: PlayerRuntime, S: Suspensi
   // contact motion M2: the carrier's brace drops the hips by its weight, on top of the preparation drop
   const dropM = host.def.brace && pl.brace && pl.brace.w > 0 ? prepDropM(host, pl) + host.def.brace.pose.dropM * pl.brace.w : prepDropM(host, pl);
   // contact motion polish 1.1: a striking tackler's hip hinge drops his hips too
-  composeTarget(st, S, runM, pl.run?.w ?? 0, dt, pl.hinge ? dropM + pl.hinge.dropM : dropM);
+  composeTarget(st, S, runM, pl.run?.w ?? 0, dt, pl.hinge ? dropM + pl.hinge.dropM : dropM, floorM);
 }
 
 /** Plan 08: the bounded height drop preparation requests (m), continuous with its weight; 0 without a locomotion profile. */

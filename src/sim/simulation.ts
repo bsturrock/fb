@@ -12,7 +12,7 @@ import {
   type SupportProfile, type SuspensionSupport,
 } from './profiles';
 import {
-  clipHeightModel, composeTarget, newSuspensionRuntime, runHeight, type ClipHeightModel, type RunHeight,
+  clipHeightModel, composeTarget, newSuspensionRuntime, runHeight, stanceFloorM, type ClipHeightModel, type RunHeight,
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
 import { advanceGait, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type ProxyPoseInput } from './pose';
@@ -638,7 +638,7 @@ export class Simulation {
         // Reset placement: the root at its height target over the ground below the spawn point (stance request in
         // force at reset, blended with the clip height when the clip plays from t = 0).
         const st0 = setup.initial.stance;
-        const h0 = clamp(st0?.heightM ?? S.standingHeightM, S.targetRangeM[0], S.targetRangeM[1]);
+        const h0 = clamp(st0?.heightM ?? S.standingHeightM, stanceFloorM(S, st0), S.targetRangeM[1]);
         sus = newSuspensionRuntime(h0);
         sus.staggerM = st0?.staggerM ?? 0;
         if (st0?.widthAddM) sus.widthAddM = st0.widthAddM;
@@ -650,7 +650,7 @@ export class Simulation {
           advanceRunPlayback(run, def.runClips, { coreP: v3(setup.initial.x, 0, setup.initial.z), forward: forwardOf(q0), supported: true, dt: 0, initSpeed: len(horiz(v0)), initDir: v0, legM: cal.legM });
           if (run.w > 0) runM = runHeight(S, def.runClips, this.heightModels, run, cal, def.solver.gravityY);
         }
-        composeTarget(sus, S, runM, run?.w ?? 0, 0);
+        composeTarget(sus, S, runM, run?.w ?? 0, 0, 0, stanceFloorM(S, st0));
         const gnd = this.physics.groundProbe(v3(setup.initial.x, 50, setup.initial.z), 100, this.probeTargets);
         y0 = (gnd ? gnd.pointWorld.y : 0) + sus.targetM;
       }

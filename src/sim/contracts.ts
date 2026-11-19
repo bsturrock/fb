@@ -2,6 +2,7 @@
 import type { Quat, Vec3 } from './vec';
 import type { ArmObs, WrapStatus } from './arms';
 import type { BlockProfile, BlockRequest, BlockState, PunchState } from './controllers/block';
+import type { HingeLimits } from './hinge';
 
 export type PlayerId = string;
 export type ArmSide = 'left' | 'right';
@@ -74,6 +75,13 @@ export interface StanceRequest {
    * drop under it (a stance whose feet are placed for its own heights is its own preparation). Absent: the drop as ever.
    */
   heightWhole?: boolean;
+  /**
+   * Plan 16 (p40): the lowest root height (m) this stance may ask, in place of the suspension's `targetRangeM[0]` while it
+   * is asked (only lower: a lineman's three-point stance, his hips about 0.65-0.7 m over the turf; every other stance keeps
+   * the range's floor). The one reader is support.ts `stanceFloorM` (the stance filter's request, the height target and
+   * the reset's placement). Absent: the range's floor.
+   */
+  lowM?: number;
 }
 
 /**
@@ -121,6 +129,11 @@ export interface FlatStance {
    * the profile's range as ever. Absent: the profile's.
    */
   dorsiDeg?: number;
+  /**
+   * Plan 16 (p40): the feet placed along his level forward (pose-runtime.ts `levelFwdOf`: through a trunk pitched near
+   * and past 90 deg, a three-point stance), not along his body's forward levelled. Absent: the body's.
+   */
+  level?: true;
 }
 
 export interface ArmIntent {
@@ -178,6 +191,17 @@ export interface PostureIntent {
    * support and the loss envelope read the legs' frame, not the pitched trunk's.
    */
   hinge?: { rad: number; dropM: number };
+  /** Plan 16 (p40): the head up (`HeadUp`); absent, the head on the trunk. */
+  headUp?: HeadUp;
+}
+
+/**
+ * Plan 16 (p40): the head up. The drawn head extends on the neck by the trunk's pitch from vertical past `freeDeg`, at
+ * most `maxDeg`: a man pitched far forward (a lineman's three-point stance) keeps his eyes ahead.
+ */
+export interface HeadUp {
+  freeDeg: number;
+  maxDeg: number;
 }
 
 export interface PlayerIntent {
@@ -205,7 +229,13 @@ export interface PlayerIntent {
    * state from it (`PlayerRuntime.block`); absent, he has none. `punch` (a block profile with a strike): the punch's
    * phase as his controller has it now, kept on that state.
    */
-  block?: { request: BlockRequest; profile: BlockProfile; punch?: PunchState };
+  block?: {
+    request: BlockRequest;
+    profile: BlockProfile;
+    punch?: PunchState;
+    /** Plan 16 (p40): the hip hinge's bounds in place of the profile's (`PreSnapPose.pace`: a stance got into slowly); absent, the profile's. */
+    hinge?: HingeLimits;
+  };
   /** Controller-reported diagnostics (phase names, aim points). Never read by mechanics. */
   debug?: Record<string, unknown>;
 }

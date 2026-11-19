@@ -9,9 +9,9 @@
 // and what holds between him and his man (a palm push either way, or their bodies touching), with hysteresis: it enters
 // at once and leaves only after `engage.lostS` with nothing holding. The feet regime and the hip hinge read it, so neither
 // follows a flickering contact.
-import type { ArmIntent, ArmSide, FlatStance, PlayerId, PlayerIntent, StanceRequest } from '../contracts';
+import type { ArmIntent, ArmSide, FlatStance, HeadUp, PlayerId, PlayerIntent, StanceRequest } from '../contracts';
 import type { BodyProfile, MotorProfile } from '../profiles';
-import { sideSignX } from '../profiles';
+import { shoulderLocal, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
 import { legForThigh, legShape, newContest, type BlockBase, type BlockContest, type ContestState, type GiveGround, type GiveState } from '../block-base';
@@ -79,6 +79,34 @@ export interface BlockStance {
   widthAddM?: number;
 }
 
+/**
+ * Plan 16 (p40): a hand's place in a pre-snap stance, in his level frame (his facing, upright): `forwardM` ahead of his
+ * shoulder on that side, `x` out from it (+ away from his midline), `upM` above the turf (the field's plane, y 0), the
+ * reach's target (the reach stops the palm's ball about its radius over its target: a palm on the turf asks about 0). Its
+ * elbow's pole (`ArmIntent.poleLocal`, x outward, mirrored per arm), if any.
+ */
+export interface PreSnapHand {
+  forwardM: number;
+  x: number;
+  upM: number;
+  pole?: Vec3;
+}
+
+/**
+ * Plan 16 (p40): a pre-snap stance's pose (`BlockProfile.preSnap`): its block stance (height, stagger, width, lean,
+ * hinge) and what a set lineman needs beyond the block's own: his feet (`flat`, in place of the profile's), the lowest
+ * root it may ask (`lowM`, StanceRequest.lowM: a three-point's hips stand below the suspension's floor), each hand's
+ * place (`hands`; a hand absent goes to the ready point) and the head up (`head`; absent, the head on the trunk).
+ */
+export interface PreSnapPose extends BlockStance {
+  /** The hip hinge's pace getting into it (in place of the block's: a deep trunk pitched fast overruns the balance). */
+  pace?: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2'>;
+  flat?: FlatStance;
+  lowM?: number;
+  hands?: Partial<Record<ArmSide, PreSnapHand>>;
+  head?: HeadUp;
+}
+
 /** A palm's aim on the other man, in his frame: height above his origin, distance off his centre line, depth from his chest's front (into him). */
 export interface HandAim {
   y: number;
@@ -139,7 +167,7 @@ export interface BlockProfile {
    * Plan 16 (p39), the pre-snap stances he can hold (`BlockRequest.stance`) and each one's pose: the block stance asked
    * until the snap (his hands at the ready point, `ready`; his feet as `flat` places them). Absent: none.
    */
-  preSnap?: Partial<Record<PreSnapKey, BlockStance>>;
+  preSnap?: Partial<Record<PreSnapKey, PreSnapPose>>;
 }
 
 /** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
@@ -473,9 +501,32 @@ export interface LeanInStance {
   strike: TrunkPose & { thighDeg: number };
   stood: TrunkPose & { thighDeg: number };
   twoPoint?: TrunkPose & { thighDeg: number };
+  /** Plan 16 (p40): the three-point stances before the snap (`ThreePointSpec`, `BlockProfile.preSnap`); absent, none. */
+  threePoint?: Partial<Record<'offense' | 'defense', ThreePointSpec>>;
   staggerM: number;
   hinge: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2'>;
   flat: Pick<FlatStance, 'coverM' | 'captureK'>;
+}
+
+/**
+ * Plan 16 (p40): a three-point stance on a lean-in (`LeanInStance.threePoint`), on its own feet: the rear foot (the down
+ * hand's side, the right: the stagger is the left foot's lead) on its ball at `pitchDeg` under the thigh at `thighDeg`
+ * below horizontal, its shin at the stance's ankle range (`ankleDeg`; absent the lean-in's) plus the pitch, the front foot
+ * `staggerM` ahead of it, each foot `widthAddM` out; a plant pitched past `stepDeg` steps. The trunk at `trunkDeg` from
+ * vertical (`leanDeg` of it whole-body lean, the rest on the hip hinge); the hands (`PreSnapHand`) and the head up. The
+ * hips' height follows from the leg (`leanInStances`), the root's from the trunk; the stance asks that root below the
+ * suspension's floor (`PreSnapPose.lowM`).
+ */
+export interface ThreePointSpec extends TrunkPose {
+  thighDeg: number;
+  pitchDeg: number;
+  stepDeg: number;
+  ankleDeg?: number;
+  staggerM: number;
+  widthAddM: number;
+  hands: Partial<Record<ArmSide, PreSnapHand>>;
+  head: HeadUp;
+  pace: Pick<HingeLimits, 'rateDegPerS' | 'accelDegPerS2'>;
 }
 
 /** The leg's geometry the lean-in is derived on: the stance geometry, the ankle's distance behind the shoe's toe tip and the shoe's length (m). */
@@ -489,6 +540,8 @@ export interface LeanInDerived {
   stood: BlockStance;
   /** The two-point set (p39; a stance with `twoPoint`). */
   twoPoint?: BlockStance;
+  /** The three-point stances (p40; a stance with `threePoint`), each with its hips' height over the ground (m). */
+  threePoint?: Partial<Record<'offense' | 'defense', PreSnapPose & { overGroundM: number }>>;
   flat: FlatStance;
   aheadM: number;
   hips: Record<'load' | 'set' | 'strike' | 'stood', { overGroundM: number; pitchDeg: number }> & { twoPoint?: { overGroundM: number; pitchDeg: number } };
@@ -547,16 +600,39 @@ export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived 
     return { leanDeg: t.leanDeg, hingeDeg: t.trunkDeg - t.leanDeg, dropM: 0, heightM: hips[k]!.overGroundM - L.hipUpM * Math.cos(r(t.trunkDeg)), staggerM: S.staggerM };
   };
   const load = stance('load');
+  // (p40: a three-point stance on its own feet, its rear foot on its ball under its thigh)
+  const three = (T: ThreePointSpec): PreSnapPose & { overGroundM: number } => {
+    const Lt = T.ankleDeg === undefined ? L : { ...L0, dorsiDeg: T.ankleDeg };
+    const pt = r(T.pitchDeg);
+    const sh = legShape(Lt.thighM, Lt.shinM, r(T.thighDeg), r(Lt.dorsiDeg) + pt);
+    const overGroundM = sh.upM + Lt.soleM * Math.cos(pt) + Lt.toeM * Math.sin(pt);
+    const heightM = overGroundM - Lt.hipUpM * Math.cos(r(T.trunkDeg));
+    // (a pitch of 0: the flat rule, both feet flat ahead of the hips, a plant stepping past `stepDeg` over the range)
+    const flat: FlatStance = T.pitchDeg > 0 ? { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: heightM, ball: { ...S.ball, pitchDeg: T.pitchDeg, stepDeg: T.stepDeg }, dorsiDeg: Lt.dorsiDeg, level: true } : { id: S.id, marginDeg: 0, stepPastDeg: T.stepDeg, ...S.flat, lowRootM: heightM, dorsiDeg: Lt.dorsiDeg, level: true };
+    return { leanDeg: T.leanDeg, hingeDeg: T.trunkDeg - T.leanDeg, dropM: 0, heightM, staggerM: T.staggerM, widthAddM: T.widthAddM, flat, lowM: heightM, hands: T.hands, head: T.head, pace: T.pace, overGroundM };
+  };
+  const tp = S.threePoint;
   return {
     stance: stance('set'),
     load,
     strike: stance('strike'),
     stood: stance('stood'),
     ...(S.twoPoint ? { twoPoint: stance('twoPoint') } : {}),
+    ...(tp ? { threePoint: { ...(tp.offense ? { offense: three(tp.offense) } : {}), ...(tp.defense ? { defense: three(tp.defense) } : {}) } } : {}),
     flat: { id: S.id, marginDeg: 0, stepPastDeg: 0, ...S.flat, lowRootM: load.heightM, ball: { ...S.ball }, ...(S.ankleDeg !== undefined ? { dorsiDeg: S.ankleDeg } : {}) },
     aheadM,
     hips,
   };
+}
+
+/** Plan 16 (p40): a lean-in's three-point stances as pre-snap poses (`BlockProfile.preSnap`). */
+function threePointPoses(d: LeanInDerived): Partial<Record<PreSnapKey, PreSnapPose>> {
+  const strip = (t: PreSnapPose & { overGroundM: number }): PreSnapPose => {
+    const { overGroundM: _o, ...rest } = t;
+    return rest;
+  };
+  const T = d.threePoint ?? {};
+  return { ...(T.offense ? { 'three-point-offense': strip(T.offense) } : {}), ...(T.defense ? { 'three-point-defense': strip(T.defense) } : {}) };
 }
 
 /**
@@ -570,7 +646,8 @@ export function leanInStances(S: LeanInStance, L0: LeanGeometry): LeanInDerived 
 export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): BlockProfile {
   const d = leanInStances(S, L);
   const w = p.stance.widthAddM ? { widthAddM: p.stance.widthAddM } : {};
-  const maxDeg = Math.max(p.hinge.maxDeg, d.stance.hingeDeg, ...(p.strike ? [d.load.hingeDeg, d.strike.hingeDeg] : []), ...(d.twoPoint ? [d.twoPoint.hingeDeg] : []));
+  const tp = Object.values(d.threePoint ?? {}).map(({ overGroundM: _o, ...t }) => t);
+  const maxDeg = Math.max(p.hinge.maxDeg, d.stance.hingeDeg, ...(p.strike ? [d.load.hingeDeg, d.strike.hingeDeg] : []), ...(d.twoPoint ? [d.twoPoint.hingeDeg] : []), ...tp.map((t) => t.hingeDeg));
   const s0 = -2 * (chestShiftM(L, S.set.trunkDeg) - chestShiftM(L, p.stance.leanDeg + p.stance.hingeDeg));
   const heelM = (deg: number) => L.shoeM * Math.sin((deg * Math.PI) / 180);
   return {
@@ -581,7 +658,7 @@ export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): B
     stance: { ...d.stance, ...w },
     hinge: { ...p.hinge, ...S.hinge, maxDeg },
     flat: d.flat,
-    ...(d.twoPoint ? { preSnap: { ...p.preSnap, 'two-point': { ...d.twoPoint, ...w } } } : {}),
+    ...(d.twoPoint || d.threePoint ? { preSnap: { ...p.preSnap, ...(d.twoPoint ? { 'two-point': { ...d.twoPoint, ...w } } : {}), ...threePointPoses(d) } } : {}),
     ...(p.strike ? { strike: { ...p.strike, loadGapM: p.strike.loadGapM - s0, load: { ...p.strike.load, closeGapM: p.strike.load.closeGapM - s0, stance: { ...d.load, ...w } }, strike: { ...p.strike.strike, stance: { ...d.strike, ...w } } } } : {}),
     ...(p.contest
       ? {
@@ -665,6 +742,55 @@ export const LEAN_IN_V2: LeanInStance = {
 export const LEAN_IN_V3: LeanInStance = { ...LEAN_IN_V2, id: 'lean-in-v3', twoPoint: { thighDeg: 50, trunkDeg: 25, leanDeg: 6 } };
 
 /**
+ * Plan 16 (p40): LEAN_IN_V3 with the three-point stances before the snap (`threePoint`, `ThreePointSpec`), authored from
+ * geometry against the reference photos (the offense FBX clip agrees: hips 0.66 m of a 0.91 m standing hip, trunk 80
+ * deg, knees 82, a wide base, the down-hand foot 5 cm back; the defense clip's hips sit below its shoulders, against the
+ * photos, and is not used). Derived on the BL body, the right hand down, the right foot back:
+ * - Offense: both feet flat ahead of the hips (the flat rule at the stance's root: shins at the ankle's 38 deg), the
+ *   thigh 33 deg below horizontal (hips 0.69 m, knees about 90), a wide base (each foot 12 cm out: 0.56 m between the
+ *   ankles), an 8 cm stagger; the trunk at 90 deg (hips level with the shoulders, the back flat); the down hand under
+ *   the shoulder and 10 cm inside it, on the turf; the off hand back by the thigh; the head up 50 deg.
+ * - Defense: the rear foot on its ball (12 deg; the heel 8 cm up) under a thigh at 52 deg (hips 0.78 m), the front foot
+ *   30 cm ahead (heel to toe), the base narrow (0.32 m); the trunk at 96 (hips 8 cm over the shoulders); the down hand
+ *   12 cm ahead of the shoulder on the turf, the off hand cocked; the head up 55.
+ * Getting set takes the hinge at 45 deg/s (90 deg/s2; `pace`): at the block's 120 and 300 the trunk overruns the
+ * balance's 240 N m and he falls past 55 deg. The feet and the yaw read his level forward (`FlatStance.level`): past
+ * 85 deg of pitch the body's own forward vanishes and the planner and yaw servo turned him round. Limits: no weight on
+ * the hand (the down arm is a reach; his centre of mass stands over his feet), so the defense's weight is not forward;
+ * a trunk past 90 deg is held only in a stance with level feet.
+ */
+export const LEAN_IN_V4: LeanInStance = {
+  ...LEAN_IN_V3,
+  id: 'lean-in-v4',
+  threePoint: {
+    offense: {
+      thighDeg: 33,
+      pitchDeg: 0,
+      stepDeg: 2,
+      staggerM: 0.08,
+      widthAddM: 0.12,
+      trunkDeg: 90,
+      leanDeg: 6,
+      hands: { right: { forwardM: 0.05, x: -0.1, upM: 0.004 }, left: { forwardM: -0.3, x: 0, upM: 0.5 } },
+      head: { freeDeg: 30, maxDeg: 50 },
+      pace: { rateDegPerS: 45, accelDegPerS2: 90 },
+    },
+    defense: {
+      thighDeg: 52,
+      pitchDeg: 12,
+      stepDeg: 18,
+      staggerM: 0.3,
+      widthAddM: 0,
+      trunkDeg: 96,
+      leanDeg: 6,
+      hands: { right: { forwardM: 0.12, x: -0.08, upM: -0.01 }, left: { forwardM: -0.1, x: 0.05, upM: 0.45 } },
+      head: { freeDeg: 30, maxDeg: 55 },
+      pace: { rateDegPerS: 45, accelDegPerS2: 90 },
+    },
+  },
+};
+
+/**
  * A fixture's block (`ControllerSpec` kind `block`): the request, from `fromS` (default 0; before it he stands where he
  * is, facing as he started, arms at rest), under `profile` (default BLOCK_V1).
  */
@@ -714,7 +840,7 @@ export interface BlockDebug {
  */
 export function advanceBlockState(
   st: BlockState | undefined,
-  req: { request: BlockRequest; profile: BlockProfile; punch?: PunchState } | undefined,
+  req: { request: BlockRequest; profile: BlockProfile; punch?: PunchState; hinge?: HingeLimits } | undefined,
   on: boolean,
   t: number,
   fault?: BlockDebug,
@@ -722,6 +848,9 @@ export function advanceBlockState(
   if (!req) return { st: undefined, change: st ? { from: st.phase, to: null } : null };
   const fresh = !st || st.target !== req.request.target;
   const s: BlockState = fresh ? { target: req.request.target, phase: 'approach', since: t, lastOnT: -Infinity, hinge: req.profile.hinge, ...(req.profile.base ? { base: req.profile.base } : {}), ...(req.profile.give ? { give: { profile: req.profile.give, excessM: 0, level: 0 } } : {}), ...(req.profile.contest ? { contest: { ...newContest(), profile: req.profile.contest } } : {}) } : st!;
+  // (p40: the hinge's bounds as asked now: a pre-snap pose's own pace, then the profile's)
+  const hb = req.hinge ?? req.profile.hinge;
+  if (s.hinge !== hb) s.hinge = hb;
   const from = fresh ? null : s.phase;
   if (on) s.lastOnT = t;
   if (req.punch) s.punch = { ...req.punch };
@@ -990,29 +1119,38 @@ export class BlockController implements Controller {
     };
   }
 
-  /** The suspension's stance request for one of his block stances (on his flat feet, the whole root height on a ball). */
-  private stanceRequest(S: BlockStance): StanceRequest {
-    const P = this.profile;
-    return { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(P.flat ? { flat: P.flat } : {}), ...(P.flat?.ball ? { heightWhole: true } : {}) };
+  /**
+   * The suspension's stance request for one of his block stances (on his flat feet, the whole root height on a ball; a
+   * pre-snap pose's own feet and floor, p40, in place of the profile's).
+   */
+  private stanceRequest(S: BlockStance & Pick<PreSnapPose, 'flat' | 'lowM'>): StanceRequest {
+    const flat = S.flat ?? this.profile.flat;
+    return { heightM: S.heightM, staggerM: S.staggerM, ...(S.widthAddM ? { widthAddM: S.widthAddM } : {}), ...(flat ? { flat } : {}), ...(flat?.ball ? { heightWhole: true } : {}), ...(S.lowM !== undefined ? { lowM: S.lowM } : {}) };
   }
 
   /**
    * Plan 16 (p39): before the snap, in his pre-snap stance `S` (`BlockProfile.preSnap`): standing where he is, facing as he
    * started, his stance (height, stagger, width, flat feet), lean and hinge asked, both hands at the ready point. He asks to
-   * block (the engaged state's request), so the hinge has his block's bounds; nothing moves him toward his man.
+   * block (the engaged state's request), so the hinge has his block's bounds; nothing moves him toward his man. (p40: a
+   * pose's own feet, floor, hands and head as it asks: a hand at its place in his level frame, `PreSnapHand`.)
    */
-  private preSnap(ctx: ControllerContext, S: BlockStance, me: ControllerContext['observed']['bodies'][string]): PlayerIntent {
+  private preSnap(ctx: ControllerContext, S: PreSnapPose, me: ControllerContext['observed']['bodies'][string]): PlayerIntent {
     const P = this.profile;
     const myBody = ctx.bodies[ctx.self];
-    const ready = (side: ArmSide): ArmIntent => ({
-      action: 'reach',
-      targetWorld: add(me.position, qRot(me.rotation, v3(sideSignX(myBody, side) * P.ready.x, P.ready.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + P.ready.forwardM))),
-    });
+    const lateral = norm(horiz(qRot(me.rotation, v3(1, 0, 0))), v3(1, 0, 0));
+    const hand = (side: ArmSide): ArmIntent => {
+      const H = S.hands?.[side];
+      const out = sideSignX(myBody, side);
+      if (!H) return { action: 'reach', targetWorld: add(me.position, qRot(me.rotation, v3(out * P.ready.x, P.ready.y, frontOf(myBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) + P.ready.forwardM))) };
+      const sh = add(me.position, qRot(me.rotation, shoulderLocal(myBody, side)));
+      const at = add(add(sh, scale(this.lastFacing, H.forwardM)), scale(lateral, out * H.x));
+      return { action: 'reach', targetWorld: v3(at.x, H.upM, at.z), ...(H.pole ? { poleLocal: v3(out * H.pole.x, H.pole.y, H.pole.z) } : {}) };
+    };
     return {
       locomotion: { desiredVelocityWorld: v3(), desiredFacingWorld: this.lastFacing, effort: 1, stance: this.stanceRequest(S) },
-      arms: { left: ready('left'), right: ready('right') },
-      posture: { leanDirWorld: this.lastFacing, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM } },
-      block: { request: { ...this.spec.request }, profile: P },
+      arms: { left: hand('left'), right: hand('right') },
+      posture: { leanDirWorld: this.lastFacing, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(S.head ? { headUp: S.head } : {}) },
+      block: { request: { ...this.spec.request }, profile: P, ...(S.pace ? { hinge: { ...P.hinge, ...S.pace } } : {}) },
       debug: { phase: 'block:set' },
     };
   }
