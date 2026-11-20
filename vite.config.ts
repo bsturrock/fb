@@ -58,7 +58,7 @@ export default defineConfig({
   // public directory (the FBX, references and build scripts must not ship).
   publicDir: false,
   plugins: [clipEdits()],
-  server: { port: 5197, strictPort: true },
+  server: { port: 5197, strictPort: true, watch: { ignored: ['**/.scratch/**', '**/evidence/**'] } },
   // scratch work (git-ignored `.scratch/`, ladder rule 10) is never part of the suite, whatever test files it holds
   test: { environment: 'node', testTimeout: 120000, setupFiles: ['tests/setup.ts'], exclude: [...configDefaults.exclude, '.scratch/**'] },
 });
