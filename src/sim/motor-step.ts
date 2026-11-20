@@ -272,6 +272,8 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   // (p42, the hit: with the hit taking the closing, his hands carry his burst while his palms are on his man)
   if (K.hit && palmOn) burstN = Infinity;
   const effort = dbg?.contestEffortBlind ? 1 : (pl.intent.block?.request.effort ?? pl.intent.locomotion.effort);
+  // (p45, `inside`: the outside man's part lost)
+  if (K.inside) st.leverage = blk.lane === 'outside' ? 1 / K.inside.leverage : 1;
   const cap = contestCapacity(K, { effort, lowM: hipY(him) - hipY(pl), feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN });
   st.pushN = cap.pushN;
   st.holdN = cap.holdN;

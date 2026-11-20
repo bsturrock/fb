@@ -5,7 +5,7 @@
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withLanes, LANES_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
-import { BASE_V2, CONTEST_V1, CONTEST_V2, type BlockContest } from '../block-base';
+import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, withInsideLeverage, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
@@ -82,6 +82,8 @@ export interface BlockSceneOpts {
   followThrough?: boolean;
   /** Plan 16 (p45): both men on the inside lane, won by who gets there (`BlockProfile.lanes`, LANES_V1), in place of their hands. */
   lanes?: boolean;
+  /** Plan 16 (p45): both men's contests with the inside lane's leverage (`BlockContest.inside`, INSIDE_LEVERAGE). */
+  insideLeverage?: boolean;
 }
 
 /**
@@ -115,7 +117,8 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const P0 = profileOf(m, def, template.body);
   const P1 = o.aimThrough ? withAimThrough(P0) : P0;
   const P2 = o.followThrough ? withFollowThrough(P1) : P1;
-  const P = o.lanes ? withLanes(P2, LANES_V1) : P2;
+  const P3 = o.lanes ? withLanes(P2, LANES_V1) : P2;
+  const P = o.insideLeverage && P3.contest ? { ...P3, id: `${P3.id}+inside-x${INSIDE_LEVERAGE}`, contest: withInsideLeverage(P3.contest, INSIDE_LEVERAGE) } : P3;
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
   // (p39: a man in a pre-snap stance is set in it from the reset)
   const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
@@ -138,7 +141,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       kind: 'block',
       request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
-      ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes ? { profile: P } : {}),
+      ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes || o.insideLeverage ? { profile: P } : {}),
     },
   };
 }

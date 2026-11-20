@@ -130,7 +130,7 @@ export function advanceGive(st: GiveState, G: GiveGround, demandNm: number, back
  * (`holdFloor` + the rest times his effort); both times how low he is against his man (lower wins: 1 + `low.perM` x his man's
  * hips' height less his, within `low.min`..`low.max`), his feet (`contestFeet`: both planted within the flat limit `set`
  * all of it, one planted and one in a step `oneFoot`, a planted foot past the limit half a foot's), how far he is stood
- * up, and his `leverage` (1: the input inside hands will set).
+ * up, and his `leverage` (1: none; p45, an outside man's less, `inside`).
  * His hold needs him anchored: a planted foot within the limit and his legs' lean within `anchorLeanDeg`.
  *
  * Stood up (`ContestState.level`, 0..1): followed from how hard he is knocked back (his centre of mass's acceleration
@@ -164,6 +164,16 @@ export interface BlockContest {
   fall: { behindM: number; outrunS: number; overLevel: number; overMps: number; overMargin: number; overS: number; leanS: number };
   /** Plan 16 (p42), the hit (`ContestHit`); absent, none: the pair's closing is the bodies' and the palm struts'. */
   hit?: ContestHit;
+  /**
+   * Plan 16 (p45): the inside lane's leverage (`BlockProfile.lanes`, `BlockState.lane`): the outside man's capacity, push
+   * and hold, over `leverage` (his `ContestState.leverage`, 1 / it), after his drive's bound; the inside man's, and both
+   * before a lane is called, as they are. His hands on top of his man's shoulders push down on them as much as back,
+   * his man's under his chest lift it: of what the outside man's legs give, part is lost. So the inside wins the hit and
+   * the drive after it between men of the same effort, the man lower (`low`) the drive's too. Why after the bound: the
+   * burst runs at both men's drive bound, which a factor before it does not reach (BL-F9-threePoint,
+   * BL-F10-twoPointVsThree). Absent: none.
+   */
+  inside?: { leverage: number };
 }
 
 /**
@@ -241,6 +251,16 @@ export interface ContestState {
 /** A fresh contest state. */
 export const newContest = (): ContestState => ({ level: 0, anchored: false, leverage: 1, pushN: 0, holdN: 0, forceN: 0, pushF: 0, holdF: 0, vPrev: null, outrunT: null, overT: null, leanT: null });
 
+/** Plan 16 (p45): a contest with the inside lane's leverage `x` (`BlockContest.inside`), under an id that names it. */
+export const withInsideLeverage = (C: BlockContest, x: number): BlockContest => ({ ...C, id: `${C.id}+inside-x${x}`, inside: { leverage: x } });
+
+/**
+ * Plan 16 (p45): the inside lane's leverage the BL men use (`BlockContest.inside`): the outside man keeps two thirds of
+ * what his legs give: in BL-F10-twoPointVsThree the inside man of the same effort knocks him back 0.56 m in the first
+ * second and drives him 0.13 m in the next three; at 2, 0.97 m and 0.6 m more.
+ */
+export const INSIDE_LEVERAGE = 1.5;
+
 /** Plan 16 (p37): the first contest (no registered fixture has it yet). */
 export const CONTEST_V1: BlockContest = {
   id: 'contest-v1',
@@ -294,17 +314,19 @@ export function contestFeet(plan: FootPlan, K: BlockContest): { share: number; s
 /**
  * A man's contest capacity (N): his push and his hold (`BlockContest`). `lowM`: his man's hips' height less his (m, +:
  * he is lower); `feet` his feet's share (`contestFeet`); `level` how far he is stood up; `anchored` (no hold without);
- * `leverage` (1: none); `driveCapN` his drive's own bound (the push never past it); `burstN` while he strikes, the force
- * his palms put on his man (N; 0 otherwise). `brakeN`: his push braking (his ordinary push, never the burst).
+ * `leverage` (1: none; at most 1, on what he has after his drive's bound: p45, `inside`); `driveCapN` his drive's own
+ * bound (the push never past it); `burstN` while he strikes, the force his palms put on his man (N; 0 otherwise).
+ * `brakeN`: his push braking (his ordinary push, never the burst).
  */
 export function contestCapacity(K: BlockContest, inp: { effort: number; lowM: number; feet: number; level: number; anchored: boolean; leverage: number; driveCapN: number; burstN: number }): { pushN: number; brakeN: number; holdN: number } {
   const e = clamp(inp.effort, 0, 1);
-  const k = clamp(1 + K.low.perM * inp.lowM, K.low.min, K.low.max) * clamp(inp.feet, 0, 1) * Math.max(0, inp.leverage);
+  const k = clamp(1 + K.low.perM * inp.lowM, K.low.min, K.low.max) * clamp(inp.feet, 0, 1);
+  const lev = clamp(inp.leverage, 0, 1);
   const L = clamp(inp.level, 0, 1);
   const own = 1 - K.stood.pushCut * L;
-  const brakeN = Math.min(K.pushN * e * k * own, Math.max(0, inp.driveCapN));
-  const pushN = Math.min(Math.max(K.pushN * e * k * own, Math.min(K.burst.pushN * e * k * own, inp.burstN)), Math.max(0, inp.driveCapN));
-  const holdN = inp.anchored ? K.holdN * (K.holdFloor + (1 - K.holdFloor) * e) * k * (1 - K.stood.holdCut * L) : 0;
+  const brakeN = Math.min(K.pushN * e * k * own, Math.max(0, inp.driveCapN)) * lev;
+  const pushN = Math.min(Math.max(K.pushN * e * k * own, Math.min(K.burst.pushN * e * k * own, inp.burstN)), Math.max(0, inp.driveCapN)) * lev;
+  const holdN = inp.anchored ? K.holdN * (K.holdFloor + (1 - K.holdFloor) * e) * k * (1 - K.stood.holdCut * L) * lev : 0;
   return { pushN: Math.max(0, pushN), brakeN: Math.max(0, brakeN), holdN: Math.max(0, holdN) };
 }
 
