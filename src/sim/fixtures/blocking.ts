@@ -67,6 +67,12 @@ export interface BlockSceneOpts {
    * would otherwise release it).
    */
   upperArm?: boolean;
+  /**
+   * Plan 16 (p45): the palm push's arm line judged against his chest as it stands in his engaged stance
+   * (`PalmPushProfile.stanceCone`, `refDeg` the men's set trunk, the shallower of the two): fired out pitched deeper, his
+   * man's palms meet his chest as they would at that stance.
+   */
+  stanceCone?: boolean;
 }
 
 /**
@@ -82,9 +88,11 @@ export const PALM_PUSH_BLOCK: PalmPushProfile = { ...PALM_PUSH_V1, bornFacingDot
  */
 const palmWidenDeg = (o: BlockSceneOpts): number =>
   Math.max(...[o.A, o.B].map((m) => (setTrunkDeg(m) !== null ? setTrunkDeg(m)! - ((m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg) : 0)));
+/** The men's set trunk (deg from vertical; the shallower of the two): a man's own stance's, or his profile's lean and hinge. */
+const setTrunkOf = (o: BlockSceneOpts): number => Math.min(...[o.A, o.B].map((m) => setTrunkDeg(m) ?? (m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg));
 function palmPushOf(o: BlockSceneOpts): PalmPushProfile {
   const more = palmWidenDeg(o);
-  const P = { ...PALM_PUSH_BLOCK, ...(o.seat ? { seat: true } : {}), ...(o.upperArm ? { ownBodyKeeps: true } : {}) };
+  const P = { ...PALM_PUSH_BLOCK, ...(o.seat ? { seat: true } : {}), ...(o.upperArm ? { ownBodyKeeps: true } : {}), ...(o.stanceCone ? { stanceCone: { refDeg: setTrunkOf(o) } } : {}) };
   if (more <= 0) return P;
   const wider = (dot: number) => Math.cos(Math.acos(dot) + (more * Math.PI) / 180);
   return { ...P, bornFacingDot: wider(P.bornFacingDot), keepFacingDot: wider(P.keepFacingDot) };
@@ -149,7 +157,7 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     title: o.title,
     notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1, on a base when its profile has one) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
     // the arm profile's id names the widened cone, the seat and the hold over his own body (one id, one set of values)
-    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}${o.upperArm ? '+own-body-keeps' : ''}`, palmPush: palmPushOf(o) },
+    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}${o.upperArm ? '+own-body-keeps' : ''}${o.stanceCone ? `+stance-cone${setTrunkOf(o)}` : ''}`, palmPush: palmPushOf(o) },
     ...(o.upperArm ? { selfClearance: withUpperArmClearance(rest.selfClearance!) } : {}),
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },

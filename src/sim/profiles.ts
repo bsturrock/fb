@@ -733,6 +733,16 @@ export interface ArmProfile {
  * it. A man pushing does not let go because his elbow comes against his ribs: under the upper arm's self-clearance
  * (`SelfClearanceProfile.upperArm`) a held arm whose elbow is pressed in by the push had no clear pose and was released,
  * then struck again on a straight arm.
+ *
+ * `stanceCone` (plan 16 p45; absent: against the surface as it stands): the arm line's cone (born, kept and its taper) is
+ * judged against his surface as it stands with his chest pitched at most `refDeg` below the horizon (the stance the cone
+ * is set for): his surface's normal turned back up about his level lateral axis by however much deeper his chest is
+ * pitched. Why: fired out of a stance his trunk is pitched 35-48 deg at contact, his chest facing the turf that much, and
+ * an upright man's palms (from shoulders above his chest) meet it 55-70 deg off its normal (facing 0.3-0.55): refused
+ * however they are aimed, until he rises 0.1-0.2 s later (BL-F10-twoPointVsThree, BL-F9-threePoint). Turned back to the
+ * stance the arms are judged as they would be on him standing in it: a palm from above is judged as one from level, a
+ * palm from below no more leniently than at his stance (the turn takes it further off), a man at or above the stance's
+ * pitch as without it.
  */
 export interface PalmPushProfile {
   stiffness: number;
@@ -747,6 +757,7 @@ export interface PalmPushProfile {
   band: { regions: ColliderRegion[]; lowM: number; highM: number; frontMinDot: number };
   seat?: boolean;
   ownBodyKeeps?: boolean;
+  stanceCone?: { refDeg: number };
 }
 
 /**

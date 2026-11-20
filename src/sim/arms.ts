@@ -19,7 +19,7 @@ import { armSelfShapes, twoBone } from './pose';
 import { armAnatomicalTwistRad, armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
 import { cullGeom, geomNear, isSupportedLeg, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
 import {
-  add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromUnitVectors, qInvRot, qRot, qSlerp,
+  add, addScaled, clamp, composePose, cross, dot, horiz, len, moveToward, norm, qAngleBetween, qFromAxisAngle, qFromUnitVectors, qInvRot, qRot, qSlerp,
   rad, relPose, round, rv, scale, smooth, sub, toLocal, toWorld, v3, vc, UP, type Pose, type Quat, type Vec3,
 } from './vec';
 
@@ -2069,6 +2069,21 @@ export class ArmSystem {
 
   // ---------------------------------------------------------------- plan 16: the palm push
   /**
+   * Plan 16 (p45, `PalmPushProfile.stanceCone`): the normal `n` (world) of the pushed man's surface as it stands with his
+   * chest pitched at most the cone's `refDeg` below the horizon: turned back up about his level lateral axis by however
+   * much deeper his chest (`tp`, his body's pose: its +z) is pitched. Without the rule, or no deeper, `n` itself.
+   */
+  private stanceNormal(tp: Pose, n: Vec3): Vec3 {
+    const C = this.profile.palmPush?.stanceCone;
+    if (!C) return n;
+    const cz = qRot(tp.q, v3(0, 0, 1));
+    const over = Math.asin(clamp(-cz.y, -1, 1)) - rad(C.refDeg);
+    const k = cross(cz, UP);
+    if (over <= 0 || len(k) < 1e-9) return n;
+    return norm(qRot(qFromAxisAngle(norm(k), over), n));
+  }
+
+  /**
    * A palm push's birth where the free palm touches (`sol.palmHit`): its band (region, height in the touched player's
    * frame, a front face), the arm line facing into the surface, reach, the near side, the elbow not collapsed. The patch is
    * the surface point under the palm-contact landmark, the rest length the shoulder's distance from it. A refusal is an
@@ -2087,7 +2102,8 @@ export class ArmSystem {
     const proj = PP.seat ? null : h.obstacle.collider.projectPoint(sol.palm, false);
     const anchor = PP.seat ? addScaled(sol.palm, h.normal, -h.distance) : proj ? vc(proj.point) : h.pointTarget;
     const L = len(sub(anchor, sW));
-    const facing = dot(norm(sub(anchor, sW), v3(0, 0, 1)), scale(h.normal, -1));
+    // (p45, `stanceCone`: against his surface as it stands at the cone's stance pitch)
+    const facing = dot(norm(sub(anchor, sW), v3(0, 0, 1)), scale(this.stanceNormal(tp, h.normal), -1));
     const yLocal = toLocal(tp, anchor).y;
     const front = qInvRot(tp.q, h.normal).z;
     const el = elbowOf(sW, sol.elbow, sol.palm);
@@ -2137,7 +2153,8 @@ export class ArmSystem {
     const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
     const L = len(sub(pW, sW));
     const n = norm(sub(pW, sW), v3(0, 0, 1));
-    const facing = -dot(n, nW);
+    // (p45, `stanceCone`: against his surface as it stands at the cone's stance pitch)
+    const facing = -dot(n, PP.stanceCone ? this.stanceNormal(this.prePose(tgt.rb), nW) : nW);
     // the rest length moves toward the request's
     const want = clamp(intent.push?.lengthM ?? P.maxReachM, P.minReachM, P.maxReachM);
     const rate = intent.push?.extendMps ?? PP.extendMps;

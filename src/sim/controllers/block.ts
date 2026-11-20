@@ -182,6 +182,15 @@ export interface BlockProfile {
   preSnap?: Partial<Record<PreSnapKey, PreSnapPose>>;
   /** Plan 16 (p43), his eyes on his man (`BlockGaze`); absent, the head on the trunk (in a pre-snap stance, its head up). */
   gaze?: BlockGaze;
+  /**
+   * Plan 16 (p45): a palm's aim (`HandAim`) is its point on his chest's front (`y` up his frame, `x` off its centre line)
+   * and `depthM` on beyond it along the line from my shoulder through it, not `depthM` into his chest along its normal.
+   * Why: a palm from above his chest (in his frame: he is pitched toward me, or lower) aimed into it along its normal meets
+   * his chest above its aim by the depth times the slant (8 cm at 55-65 deg: 11-17 cm), off the top of his chest plate
+   * (BL-F10-twoPointVsThree: the over hands' aim 0.55 m up his frame, his chest met at 0.64-0.69, outside the push's band,
+   * and slid on over his shoulders); along the line from the shoulder it meets him at its aim. Absent: along the normal.
+   */
+  aimThrough?: true;
 }
 
 /**
@@ -203,6 +212,9 @@ export const GAZE_V1: BlockGaze = { id: 'gaze-v1', maxDeg: 50 };
 
 /** Plan 16 (p43): a block profile with his eyes on his man (`BlockGaze`), under an id that names it. */
 export const withGaze = (p: BlockProfile, gaze: BlockGaze): BlockProfile => ({ ...p, id: `${p.id}+${gaze.id}`, gaze });
+
+/** Plan 16 (p45): a block profile whose palms aim through their point on his chest along the arm's line (`aimThrough`), under an id that names it. */
+export const withAimThrough = (p: BlockProfile): BlockProfile => ({ ...p, id: `${p.id}+aim-through`, aimThrough: true });
 
 /** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
 export type PunchPhase = 'load' | 'strike' | 'drive';
@@ -1201,8 +1213,16 @@ export class BlockController implements Controller {
     const hands = R.hands ?? P.hands.default;
     const aim = P.hands[hands];
     // a palm's aim on him (world): my right hand on his left side (his frame), the side across from it, `depth` into his chest
-    const aimPoint = (side: ArmSide, depth: number): Vec3 =>
-      add(him.position, qRot(him.rotation, v3(sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x, aim.y, frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1)) - depth)));
+    // (p45, `aimThrough`: the point on his chest, `depth` on beyond it along the line from my shoulder)
+    const aimPoint = (side: ArmSide, depth: number): Vec3 => {
+      const hx = sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x;
+      const front = frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1));
+      if (!P.aimThrough) return add(him.position, qRot(him.rotation, v3(hx, aim.y, front - depth)));
+      const at = add(him.position, qRot(him.rotation, v3(hx, aim.y, front)));
+      const sh = obs?.[side]?.shoulderWorld;
+      const line = sh ? sub(at, sh) : v3();
+      return addScaled(at, len(line) > 1e-6 ? norm(line) : qRot(him.rotation, v3(0, 0, -1)), depth);
+    };
     let pu: PunchState | undefined;
     const reachM = SIDES.reduce((m, side) => m + (obs?.[side] ? len(sub(aimPoint(side, 0), obs[side]!.shoulderWorld)) : Infinity), 0) / SIDES.length;
     if (K) {
@@ -1294,9 +1314,7 @@ export class BlockController implements Controller {
         continue;
       }
       // my right hand on his left side (his frame): the side across from it
-      const hx = sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x;
-      const front = frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1));
-      const targetWorld = add(him.position, qRot(him.rotation, v3(hx, aim.y, front - aim.depthM)));
+      const targetWorld = aimPoint(side, aim.depthM);
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
       arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
