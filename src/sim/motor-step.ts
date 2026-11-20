@@ -7,6 +7,7 @@ import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, des
 import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, scale, sub, UP, levelForwardOf, qFromUnitVectors } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
+import { shoulderLocal } from './profiles';
 import { hingeBalanceTorque, hipTorque } from './hinge';
 import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, hitPair, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
@@ -179,7 +180,8 @@ function blockHits(host: MotorHost, snap: Snapshot): void {
     const on = (p: (typeof ps)[number], o: (typeof ps)[number]): boolean => !!A && (['left', 'right'] as const).some((s) => A.pushOf(p.id, s)?.targetId === o.id);
     if (!on(pl, him) && !on(him, pl)) continue;
     // the punch: a man striking with his palms on his man drives them apart at up to `punchMps` times his effort
-    const punch = (p: (typeof ps)[number], o: (typeof ps)[number]): number => (H.punchMps && striking(p) && on(p, o) ? H.punchMps * clamp(p.intent.block?.request.effort ?? p.intent.locomotion.effort, 0, 1) : 0);
+    // (p45, `untilStraight`: times the share of their extension his arms still have)
+    const punch = (p: (typeof ps)[number], o: (typeof ps)[number]): number => (H.punchMps && striking(p) && on(p, o) ? H.punchMps * clamp(p.intent.block?.request.effort ?? p.intent.locomotion.effort, 0, 1) * (H.untilStraight ? extensionLeft(host, p, o) : 1) : 0);
     const a = snap.bodies[pl.id];
     const b = snap.bodies[him.id];
     const d = v3(b.position.x - a.position.x, 0, b.position.z - a.position.z);
@@ -193,6 +195,27 @@ function blockHits(host: MotorHost, snap: Snapshot): void {
     st.hitN = F;
     if (him.block.contest) him.block.contest.hitN = F;
   }
+}
+
+/**
+ * Plan 16 (p45, `ContestHit.untilStraight`): the share of their extension p's arms still have on o (0..1): of each of his
+ * palm pushes on o, from the length it landed at to the arm's reach, what is left (shoulder to patch now); the least of
+ * them (1 with none, or no arms).
+ */
+function extensionLeft(host: MotorHost, p: MotorHost['players'][number], o: MotorHost['players'][number]): number {
+  const A = host.arms;
+  if (!A) return 1;
+  const reach = A.profile.maxReachM;
+  const t = vc(p.proxy.body.translation());
+  const q = p.proxy.body.rotation();
+  let share = 1;
+  for (const s of ['left', 'right'] as const) {
+    const pu = A.pushOf(p.id, s);
+    if (!pu || pu.targetId !== o.id) continue;
+    const L = len(sub(pu.pointWorld, add(t, qRot(q, shoulderLocal(p.body, s)))));
+    share = Math.min(share, clamp((reach - L) / Math.max(1e-3, reach - pu.bornM), 0, 1));
+  }
+  return share;
 }
 
 /**

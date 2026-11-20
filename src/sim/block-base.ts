@@ -184,6 +184,15 @@ export interface ContestHit {
   winX: number;
   /** The punch: a man striking with his palms on his man drives the pair apart at up to this times his effort (m/s; absent, 0). */
   punchMps?: number;
+  /**
+   * Plan 16 (p45): the punch drives the pair apart only while his arms extend: its parting speed times the share of their
+   * extension his arms still have (from the length each palm landed at to the arm's reach, the least of his palms on his
+   * man), nothing once they are straight. Why: at `punchMps` times his effort to the end, a punch landed at 0.65 m of arm
+   * (born on the first touch, BlockProfile.aimThrough) parts the pair on past the arms' reach, the chests 0.55-0.6 m
+   * apart, and the winner's palms come off out of reach 0.17-0.26 s after the contact (`unreachable`), back on 0.2-0.3 s
+   * later (BL-F9-threePoint, BL-F10-twoPointVsThree). Absent: to the end.
+   */
+  untilStraight?: true;
 }
 
 /**

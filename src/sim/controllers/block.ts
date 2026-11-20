@@ -191,6 +191,13 @@ export interface BlockProfile {
    * and slid on over his shoulders); along the line from the shoulder it meets him at its aim. Absent: along the normal.
    */
   aimThrough?: true;
+  /**
+   * Plan 16 (p45): engaged with a palm on his man, his request toward him counts his man's own speed away from him, on
+   * top of his press and his drive or hold: a man whose man is knocked off follows him through, feet driving, and does not
+   * pull up. Why: on his press and drive alone (0.4 m/s at effort 0.5) the winner of the first collision brakes to it as
+   * his man is knocked off at 1.4-1.7 m/s; their chests part past his arms' reach. Absent: his request alone.
+   */
+  followThrough?: true;
 }
 
 /**
@@ -215,6 +222,16 @@ export const withGaze = (p: BlockProfile, gaze: BlockGaze): BlockProfile => ({ .
 
 /** Plan 16 (p45): a block profile whose palms aim through their point on his chest along the arm's line (`aimThrough`), under an id that names it. */
 export const withAimThrough = (p: BlockProfile): BlockProfile => ({ ...p, id: `${p.id}+aim-through`, aimThrough: true });
+/**
+ * Plan 16 (p45): a block profile that follows through (`followThrough`), its hit's punch parting the pair only while his
+ * arms extend (`ContestHit.untilStraight`; a profile without a hit as it is), under ids that name it.
+ */
+export const withFollowThrough = (p: BlockProfile): BlockProfile => ({
+  ...p,
+  id: `${p.id}+follow-through`,
+  followThrough: true,
+  ...(p.contest?.hit ? { contest: { ...p.contest, id: `${p.contest.id}+until-straight`, hit: { ...p.contest.hit, untilStraight: true } } } : {}),
+});
 
 /** Plan 16, the punch's phases: hands in and hips down (`load`), the arms' explosive extension (`strike`), then the drive. */
 export type PunchPhase = 'load' | 'strike' | 'drive';
@@ -1265,6 +1282,8 @@ export class BlockController implements Controller {
       along = effort * (P.pressMps + Math.max(0, extra));
       // (pushed past his base, his weight going back, he has no drive into his man)
       if (gl > 0) along *= 1 - gl;
+      // (p45, `followThrough`: and his man's own speed away from him: he does not pull up as his man is knocked off)
+      if (P.followThrough) along += Math.max(0, dot(hv, dir));
     } else {
       // closing (or engaged chest to chest, no hand on: back to arm's length)
       this.anchor = null;

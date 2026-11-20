@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -75,6 +75,11 @@ export interface BlockSceneOpts {
   stanceCone?: boolean;
   /** Plan 16 (p45): both men's palms aimed through their point on his man's chest, along the arm's line (`BlockProfile.aimThrough`). */
   aimThrough?: boolean;
+  /**
+   * Plan 16 (p45): both men following through (`BlockProfile.followThrough`), the hit's punch parting them only while
+   * the striker's arms extend (`ContestHit.untilStraight`): `withFollowThrough`.
+   */
+  followThrough?: boolean;
 }
 
 /**
@@ -106,7 +111,8 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const sign = id === 'A' ? 1 : -1;
   const sep = o.sepM ?? sepOf(o, def, template.body);
   const P0 = profileOf(m, def, template.body);
-  const P = o.aimThrough ? withAimThrough(P0) : P0;
+  const P1 = o.aimThrough ? withAimThrough(P0) : P0;
+  const P = o.followThrough ? withFollowThrough(P1) : P1;
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
   // (p39: a man in a pre-snap stance is set in it from the reset)
   const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
@@ -129,7 +135,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       kind: 'block',
       request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
-      ...(m.profile || m.athletic || m.leanIn || o.aimThrough ? { profile: P } : {}),
+      ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough ? { profile: P } : {}),
     },
   };
 }

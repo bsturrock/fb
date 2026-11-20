@@ -2059,12 +2059,12 @@ export class ArmSystem {
   }
 
   /** Plan 16: the palm push this arm holds, its patch on the pushed player as that body is now (null: none). */
-  pushOf(id: PlayerId, side: ArmSide): { id: string; targetId: PlayerId; pointWorld: Vec3; normalWorld: Vec3; restM: number; since: number } | null {
+  pushOf(id: PlayerId, side: ArmSide): { id: string; targetId: PlayerId; pointWorld: Vec3; normalWorld: Vec3; restM: number; bornM: number; since: number } | null {
     const c = this.arms.get(id)?.[side].push;
     const tgt = c ? this.player(c.targetId) : undefined;
     if (!c || !tgt) return null;
     const tp = poseOfRb(this.partBody(tgt, c.part));
-    return { id: c.id, targetId: c.targetId, pointWorld: toWorld(tp, c.pointLocal), normalWorld: qRot(tp.q, c.normalLocal), restM: c.restM, since: c.since };
+    return { id: c.id, targetId: c.targetId, pointWorld: toWorld(tp, c.pointLocal), normalWorld: qRot(tp.q, c.normalLocal), restM: c.restM, bornM: c.bornM, since: c.since };
   }
 
   // ---------------------------------------------------------------- plan 16: the palm push
