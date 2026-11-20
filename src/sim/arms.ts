@@ -1992,6 +1992,11 @@ export class ArmSystem {
     return out;
   }
 
+  /** Plan 16 (p45): an arm's palm contact point as last solved (world; null: none). */
+  palmOf(id: PlayerId, side: ArmSide): Vec3 | null {
+    return this.arms.get(id)?.[side].solve?.palm ?? null;
+  }
+
   // ---------------------------------------------------------------- observation
   obs(id: PlayerId): Partial<Record<ArmSide, ArmObs>> | undefined {
     const rec = this.arms.get(id);

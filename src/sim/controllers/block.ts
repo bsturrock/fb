@@ -27,6 +27,9 @@ export type BlockIntent = 'hold' | 'drive';
  */
 export type BlockHands = 'under' | 'over';
 
+/** Plan 16 (p45): which lane a man's hands have against his man's (`BlockLanes`). */
+export type BlockLane = 'inside' | 'outside';
+
 /**
  * What a fixture (or later a player's brain) hands the block controller: whom to block, how hard (`effort` 0..1: his
  * push and his drive), and what he does once engaged. `hands` (default the profile's) is where his palms go.
@@ -198,6 +201,8 @@ export interface BlockProfile {
    * his man is knocked off at 1.4-1.7 m/s; their chests part past his arms' reach. Absent: his request alone.
    */
   followThrough?: true;
+  /** Plan 16 (p45): the inside lane, won by who gets there (`BlockLanes`); absent, the request's placement (`hands`). */
+  lanes?: BlockLanes;
 }
 
 /**
@@ -226,6 +231,8 @@ export const withAimThrough = (p: BlockProfile): BlockProfile => ({ ...p, id: `$
  * Plan 16 (p45): a block profile that follows through (`followThrough`), its hit's punch parting the pair only while his
  * arms extend (`ContestHit.untilStraight`; a profile without a hit as it is), under ids that name it.
  */
+/** Plan 16 (p45): a block profile on the inside lane `L` (`lanes`), under an id that names it. */
+export const withLanes = (p: BlockProfile, L: BlockLanes): BlockProfile => ({ ...p, id: `${p.id}+${L.id}`, lanes: L });
 export const withFollowThrough = (p: BlockProfile): BlockProfile => ({
   ...p,
   id: `${p.id}+follow-through`,
@@ -366,6 +373,56 @@ export interface BlockFire {
  * arms avoid bodies, not other arms). Lower under hands (0.33 m) clear it to 4 cm only from a close start, and are not
  * born off centre (the arm line too steep on his chest, `notFacing`).
  */
+/**
+ * Plan 16 (p45): the inside lane, won and not assigned (`BlockProfile.lanes`, in place of the request's placement). Both
+ * men's palms aim at the centre of his chest, inside on the chest plate with the elbows in (`inside`), until the lane is
+ * called: as the first man's palm comes within `callM` of his man's chest, the man whose palms are then nearer his man's
+ * chest has the inside (he gets there first: his timing, his reach), and his man's palms go outside (`outside`: the
+ * shoulder fronts, the elbows out), his forearms outside and over the inside man's (`decideLane`). Called before the
+ * palms land, the outside man's hands go outside in the last of their flight, not through the inside man's forearms. The
+ * lane is each man's own, kept with his engaged state (`BlockState.lane`), and can change hands later (a re-punch, not
+ * built). The aims are each arm's one task (the push's target and elbow pole); the arm's source pose and its final pass
+ * are as they are.
+ */
+export interface BlockLanes {
+  id: string;
+  inside: HandAim;
+  outside: HandAim;
+  callM: number;
+}
+
+/** One man's palms against his man as the lane is called (`decideLane`): how far his nearer palm is short of his man's chest (m, along the line between them; 0 with a palm on him), and his hips' height (m). */
+export interface LaneTouch {
+  awayM: number;
+  hipM: number;
+}
+
+/**
+ * Plan 16 (p45): the lane my palms win against his (`BlockLanes`), once either man's is within `callM` of his man's
+ * chest (none before): the man whose palm is nearer his man's chest has the inside; level, the lower man; alike, none
+ * yet.
+ */
+export function decideLane(mine: LaneTouch, his: LaneTouch, callM: number): BlockLane | undefined {
+  if (Math.min(mine.awayM, his.awayM) > callM) return undefined;
+  if (mine.awayM !== his.awayM) return mine.awayM < his.awayM ? 'inside' : 'outside';
+  if (mine.hipM !== his.hipM) return mine.hipM < his.hipM ? 'inside' : 'outside';
+  return undefined;
+}
+
+/**
+ * Plan 16 (p45): the lanes the BL men use. Inside: palms low on the chest plate either side of his centre line (0.36 m
+ * up, 7 cm out), the elbows down under the shoulders, the under hands' 0.64 m of arm. Outside: palms on the front of his
+ * shoulders (0.56 m up, 15 cm out), the elbows out and a little up, over the inside man's forearms (0.58 m of arm). Called
+ * as the first palm is 0.6 m short of his man's chest, before either lands (a later call leaves the outside man's
+ * forearms through the inside man's as they go outside, BL-F10-twoPointVsThree).
+ */
+export const LANES_V1: BlockLanes = {
+  id: 'lanes-v1',
+  inside: { y: 0.36, x: 0.07, depthM: 0.08, pole: v3(0, -1, 0.1), lengthM: 0.64 },
+  outside: { y: 0.56, x: 0.15, depthM: 0.08, pole: v3(1, 0.3, 0), lengthM: 0.58 },
+  callM: 0.6,
+};
+
 export const BLOCK_V1_HANDS: BlockProfile['hands'] = {
   default: 'under',
   under: { y: 0.36, x: 0.09, depthM: 0.08, pole: v3(0.2, -1, 0.1), lengthM: 0.64 },
@@ -1016,6 +1073,8 @@ export interface BlockState {
   give?: GiveState & { profile: GiveGround };
   /** Plan 16 (p37): his contest (a profile with `contest`), kept by the motor step while he is engaged. */
   contest?: ContestState & { profile: BlockContest };
+  /** Plan 16 (p45): his lane against his man (a profile with `lanes`), once won or lost (`decideLane`); absent, not yet. */
+  lane?: BlockLane;
 }
 
 /** The engaged state's fault switches (`SimDebug.block`; tests' negative controls). */
@@ -1228,7 +1287,9 @@ export class BlockController implements Controller {
       return over > 0 ? { targetWorld: add(sh, qRot(back, sub(lp, sh))), poleLocal: pole } : { targetWorld: lp };
     };
     const hands = R.hands ?? P.hands.default;
-    const aim = P.hands[hands];
+    // (p45, `lanes`: the inside until he has lost it, from the snapshot)
+    const lane = P.lanes ? ctx.observed.block?.[ctx.self]?.lane : undefined;
+    const aim = P.lanes ? P.lanes[lane ?? 'inside'] : P.hands[hands];
     // a palm's aim on him (world): my right hand on his left side (his frame), the side across from it, `depth` into his chest
     // (p45, `aimThrough`: the point on his chest, `depth` on beyond it along the line from my shoulder)
     const aimPoint = (side: ArmSide, depth: number): Vec3 => {
@@ -1357,7 +1418,7 @@ export class BlockController implements Controller {
       arms,
       posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
       block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
-      debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}) },
+      debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}), ...(P.lanes ? { lane: lane ?? null } : {}) },
     };
   }
 

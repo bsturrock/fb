@@ -43,7 +43,7 @@ import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { advanceHinge, legOmega, legRotation, type HingeState } from './hinge';
-import { advanceBlockState, type BlockState } from './controllers/block';
+import { advanceBlockState, decideLane, type BlockState, type LaneTouch } from './controllers/block';
 import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
 import type { Part } from './free-ground';
@@ -1242,9 +1242,41 @@ export class Simulation {
       if ((this.contactObs[pl.id] ?? []).some((o) => o.other === tid)) on = true;
     }
     const r = advanceBlockState(pl.block, req, on, this.t, this.opts.debug?.block);
+    // (p45, the inside lane: won by who gets there, once, and kept with the engaged state)
+    if (r.st && req?.profile.lanes && !r.st.lane && tid && this.arms) {
+      const him = this.players.find((o) => o.id === tid);
+      const mine = him ? this.laneTouch(pl, him) : undefined;
+      const his = him ? this.laneTouch(him, pl) : undefined;
+      const lane = mine && his ? decideLane(mine, his, req.profile.lanes.callM) : undefined;
+      if (lane) {
+        r.st.lane = lane;
+        this.emit('blockLane', pl.id, { lane, target: tid, awayM: mine!.awayM, hisAwayM: his!.awayM, hipM: mine!.hipM, hisHipM: his!.hipM });
+      }
+    }
     if (r.st) pl.block = r.st;
     else delete pl.block;
     if (r.change) this.emit('blockPhase', pl.id, { from: r.change.from, to: r.change.to, target: r.st?.target ?? null });
+  }
+
+  /**
+   * Plan 16 (p45, `decideLane`): p's palms against o: how far his nearer palm is short of o's chest (along the level line
+   * from p to o, to o's torso front as his body stands; 0 with a palm push on o), and p's hips' height (his root's).
+   */
+  private laneTouch(p: PlayerRuntime, o: PlayerRuntime): LaneTouch {
+    const pt = vc(p.proxy.body.translation());
+    const ot = vc(o.proxy.body.translation());
+    const u = horiz(sub(ot, pt));
+    const n = len(u) > 1e-9 ? scale(u, 1 / len(u)) : v3(0, 0, 1);
+    const T = o.body.kind === 'upperBodyCompound' ? o.body.compound.torso : undefined;
+    const front = T ? T.center.z + T.halfExtents.z : 0;
+    let away = Infinity;
+    for (const s of ['left', 'right'] as ArmSide[]) {
+      const pu = this.arms?.pushOf(p.id, s);
+      if (pu && pu.targetId === o.id) away = 0;
+      const palm = this.arms?.palmOf(p.id, s);
+      if (palm) away = Math.min(away, Math.max(0, dot(sub(ot, palm), n) - front));
+    }
+    return { awayM: away, hipM: pt.y };
   }
 
   private advanceBrace(pl: PlayerRuntime): void {
@@ -1994,7 +2026,7 @@ export class Simulation {
     for (const pl of this.players) balance[pl.id] = this.balanceState(pl);
     // plan 16: the engaged states (absent while nobody blocks)
     let block: Snapshot['block'];
-    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}), ...(pl.block.contest ? { stood: pl.block.contest.level } : {}) };
+    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}), ...(pl.block.contest ? { stood: pl.block.contest.level } : {}), ...(pl.block.lane ? { lane: pl.block.lane } : {}) };
     return { tick: this.tick, substep, t: this.t, bodies, contacts, pairGap: { ...this.pairGap }, arms, wrap, balance, ...(block ? { block } : {}) };
   }
 
