@@ -94,7 +94,13 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    who is inside is decided by who got there (timing, reach), not set per fixture as `under|over` is now. This is
    also the answer to forearm through forearm: one man's hands inside, the other's outside. The contest's advantage
    comes from inside hands and being lower; push strength from effort rather than requested speed; the loser gives
-   ground in choppy steps and, overpowered, leans to a real fall.
+   ground in choppy steps and, overpowered, leans to a real fall. **Done in part, p45, on for `-F9`/`-F10`** (see the
+   handoff): the lane goes to whoever's palm is nearer as they close, the inside man's hands go inside with the
+   elbows in and the other's go onto his shoulders; forearms no longer cross. The outside man loses a third of his
+   capacity, so the inside man wins the hit: the loser is stood up, knocked back in a burst, anchors and gives a
+   little more. Open: the winner rises 7-8 cm into his drive stance; the outside palms sit in the top of the upper
+   arms; on the older upright scenes the outside hands never land (not flipped there); give-ground steps and the
+   lean to a fall.
 4. **Entries** (the three-point start comes **before item 3**, at the user's request: "from three point stance into
    load => explode, really getting that low to high action into the chest"): a three-point stance start (very low
    to high) and a run-in (less pronounced load, more upright), as scenes. "Stances are different for offense vs
@@ -108,8 +114,8 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    roll forward and up at contact, then short choppy steps with the feet kept under and behind him. References:
    the handoff's "To resume" 3. These poses need the knee well over the toe on a flat foot, more than the ankle's
    25 deg: the same limit that keeps the lean-in tall. Done through p44 (see the handoff): both three-points, the
-   two-point's own feet, the fire-out, the hit; left: knees out over the toes, the defense front knee at 90, weight on
-   the down hand, the pitched-trunk landing in `-F10`.
+   two-point's own feet, the fire-out, the hit, from p45 the landing on a pitched trunk; left: knees out over the
+   toes, the defense front knee at 90, weight on the down hand.
 5. **Polish** in the handoff's defect order, with the footwork and tackle queues.
 6. **Milestone:** lab review by the user after 1 and 2, again after 3 and 4.
 

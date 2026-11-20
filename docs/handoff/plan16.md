@@ -156,6 +156,52 @@ baseline: main checkout `.scratch/p33/on`.
        tips in (all three set stances, by 1.3 s; the two-point also widens in two steps at the reset); the older BL
        scenes' held palm balls 1.3-1.5 cm deep (no seat; `-F8` at the tolerance).
      - 658 tests; baseline main checkout `.scratch/p44/c-two-on` (tool PASS).
+   - **Hands on a pitched chest, the inside lane, its leverage, p45** (`501c370`, `da3b6f3`; `785172b`, `c1a29c8`;
+     `4a9ea67`, `a292cfa`; `0474e4a`, `27030bf`; on for `-F9`/`-F10` only). The p44 `-F10` hands-off gap and the
+     forearms crossing where under and over hands meet are fixed here; who wins is now the inside man, not the first
+     man on.
+     - Landing on a pitched chest (`BlockProfile.aimThrough`, `PalmPushProfile.stanceCone`): a palm aims at its point
+       on the chest front and on along the shoulder-to-point line, and the arm line's cone is judged against the chest
+       turned back up to the men's set trunk (20 deg). Both are needed: on A pitched 40-46 deg, B's palms were refused
+       (`notFacing`) for 0.25 s.
+     - Follow-through (`BlockProfile.followThrough`, `ContestHit.untilStraight`): the winner's request counts his
+       man's speed away, and the hit's punch parts the pair only while his arms still extend. Both are needed: the
+       punch-until-straight alone overpowers A (a fall).
+     - Inside lane (`BlockProfile.lanes`, `LANES_V1`, `decideLane`, `BlockState.lane`, a `blockLane` event): both
+       men aim inside (0.36 m up, 7 cm out, elbows under the shoulders) until the first palm is 0.6 m short of his
+       man's chest. Then the man whose palm is nearer has the inside (level: the lower man), and the other's palms go
+       to the front of the shoulders (0.56 m, 15 cm out, elbows out and a little up). Called later, as the palms land,
+       the outside man's hands go outside through the inside man's forearms (11.6 cm). Each man's lane is kept with
+       his engaged state, so it can change hands later; the re-punch is not built.
+     - Leverage (`BlockContest.inside`, `INSIDE_LEVERAGE` 1.5): the outside man's push, brake and hold are divided by
+       1.5 after his drive's bound. The burst runs at that bound, so a factor applied before it changes nothing.
+     - Now, both scenes:
+       - A has the inside. In `-F10` his palm is 6 cm nearer at the call (the two-point man's reach); in `-F9` it is
+         1 mm nearer, in effect a tie. His palms land 7 cm either side of B's centre line; B's land on A's shoulders,
+         13 cm out.
+       - Forearms no longer cross: at most 1.9 cm (`-F10`) and 3.4 cm for 0.12 s (`-F9`), against 2.3 and 10.6 before.
+       - A wins the hit, though B's palms land 0.02 s first. B is stood up (0.81-0.94) and his hips rise 12 cm by 0.3 s,
+         against A's 7-8. He is knocked back 0.17/0.12 m in 0.4 s and 0.56/0.29 m by 1 s (`-F10`/`-F9`), anchors at
+         1.28/1.07 s, then gives 0.13/0.09 m in 3 s. A is never stood up.
+       - Both men's palms are on for 1.93 s (`-F10`) and 1.88 s (`-F9`) of the 2 s after contact (p44: 1.10, 1.57),
+         with the chests 41-45 cm apart. Nobody falls.
+     - Defects, worst first:
+       1. The winner rises too: his hips go up 7-8 cm into his drive stance (the strike's low-to-high, drive stance
+          0.84 m), only 4-5 cm below the stood-up loser, so "the winner stays low" is not met.
+       2. B's outside palms sit 5-7 cm into the top of A's upper arms at the shoulder through the hold.
+       3. `-F9`: A's palms are out of reach 0.22-0.35 s while B is knocked back, and re-land with a forearm 3.4 cm into
+          B's.
+       4. `-F10`: B's arms fold under the hit (0.04-0.12 s, `collapsed`).
+       5. `-F9`'s lane is decided by 1 mm.
+     - **Not flipped: the eight older scenes.**
+       - The landing and follow-through flags leave who moves and who falls unchanged. `-F8`'s forearms cross more:
+         over 1 cm for 7.7 s instead of 0.3 s.
+       - The lanes break them. The lane is called at once (the men start within the call), and the outside man's palms
+         never touch his man (no refusals; likely his 0.58 m outside arm cannot reach a man held off by the inside
+         man's locked-out arms). He is run back 3-4.5 m in `-F1` and `-F3` to `-F8`, and falls in `-F2` (B overpowered,
+         1.85 s). With the leverage, `-F4` also falls (A overpowered, 1.45 s).
+       - Before the lanes go there, the outside hands must be able to land on an upright man.
+     - 664 tests; baseline main checkout `.scratch/p45/c1-on` (tool PASS).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
@@ -173,9 +219,11 @@ Lab (`cam=front` is the profile view of two men facing each other; `cam=side` sh
 - `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.45` stalemate
 - `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=0.7` defect: one man run back 4 m without his hands on
 - `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=0.3` getting set: the down hands come down in front of the knees
-- `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=3.7` the hit: palms land and hold, knock-back, anchor
+- `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=3.7` the hit: A's hands inside, B's on his shoulders, B
+  stood up and knocked back, anchors by 4.9
 - `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=0.3` the two-point set forming (wide, flat, trunk 43)
-- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=3.7` the hit, hands off 4.2-4.9, the drive to 5.6
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=3.7` the hit: inside against outside hands, B's arms
+  fold at 3.82, B knocked back and anchored by 5.1, palms on throughout
 
 ## Owner rulings (2026-11-17)
 
