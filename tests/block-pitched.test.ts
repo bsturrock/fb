@@ -4,8 +4,7 @@
 // normal and the arm line judged against it as it stands, as before p45), and with each alone. With its fault twins.
 import { describe, expect, it } from 'vitest';
 import type { FixtureDef } from '../src/sim/fixture';
-import { withAimThrough } from '../src/sim/controllers/block';
-import { BL_SCENES, blockScene, type BlockMan } from '../src/sim/fixtures/blocking';
+import { BL_SCENES, blockScene } from '../src/sim/fixtures/blocking';
 import { Simulation } from '../src/sim/simulation';
 import { captureState, resumeState, type StateCapture } from './state';
 import { FIX } from './helpers';
@@ -14,10 +13,9 @@ describe('plan 16 (p45), the palms landing on a pitched chest', () => {
   // (the snap; B's palms first meet A's chest at 3.73-3.74 s)
   const CAPTURE_S = 3.3;
   const END_S = 4.0;
-  const aimed = (m: BlockMan): BlockMan => ({ ...m, profile: withAimThrough(m.profile!) });
   function scene(cone: boolean, through: boolean): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    const d = blockScene({ ...s, id: 'BL-T-pitched', durationS: 4.4, A: aimed(s.A), B: aimed(s.B), stanceCone: true }, FIX('L3-F6-hold'));
+    const d = blockScene({ ...s, id: 'BL-T-pitched', durationS: 4.4, aimThrough: true, stanceCone: true }, FIX('L3-F6-hold'));
     // a twin keeps the capture's profile ids, its rule off
     return {
       ...d,

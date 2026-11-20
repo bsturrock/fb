@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAthletic, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -73,6 +73,8 @@ export interface BlockSceneOpts {
    * man's palms meet his chest as they would at that stance.
    */
   stanceCone?: boolean;
+  /** Plan 16 (p45): both men's palms aimed through their point on his man's chest, along the arm's line (`BlockProfile.aimThrough`). */
+  aimThrough?: boolean;
 }
 
 /**
@@ -103,7 +105,8 @@ const source = (): FixtureDef => l3f6().find((d) => d.id === 'L3-F6-hold')!;
 function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetup, def: FixtureDef): PlayerSetup {
   const sign = id === 'A' ? 1 : -1;
   const sep = o.sepM ?? sepOf(o, def, template.body);
-  const P = profileOf(m, def, template.body);
+  const P0 = profileOf(m, def, template.body);
+  const P = o.aimThrough ? withAimThrough(P0) : P0;
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
   // (p39: a man in a pre-snap stance is set in it from the reset)
   const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
@@ -126,7 +129,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       kind: 'block',
       request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
-      ...(m.profile || m.athletic || m.leanIn ? { profile: P } : {}),
+      ...(m.profile || m.athletic || m.leanIn || o.aimThrough ? { profile: P } : {}),
     },
   };
 }
@@ -204,8 +207,9 @@ const setIn = (m: BlockMan, kind: 'two-point' | 'three-point', side: 'offense' |
  * The BL scenes (A's hands under, B's over, in every one; every man on the contest, `contested`, striking with
  * BLOCK_STRIKE_V2 (before p40 V1), on the low lean-in LEAN_IN_V2, his feet behind his hips; the two set before the snap,
  * F9 and F10, on BLOCK_STRIKE_V5 and CONTEST_V2 from p43, the load on his shoulders, from p44 the landing palm seated
- * on his chest (`seat`); from p44 every scene with the upper arm in the arms' self-clearance and a held push kept over
- * his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
+ * on his chest (`seat`), from p45 the palms aimed through their point on his chest (`aimThrough`) and the arm line
+ * judged against a pitched chest as at the stance (`stanceCone`); from p44
+ * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
 export const BL_SCENES: BlockSceneOpts[] = [
@@ -224,6 +228,8 @@ export const BL_SCENES: BlockSceneOpts[] = [
     sepM: 2,
     durationS: 8,
     seat: true,
+    aimThrough: true,
+    stanceCone: true,
     upperArm: true,
   },
   {
@@ -234,6 +240,8 @@ export const BL_SCENES: BlockSceneOpts[] = [
     sepM: 2,
     durationS: 8,
     seat: true,
+    aimThrough: true,
+    stanceCone: true,
     upperArm: true,
   },
 ];

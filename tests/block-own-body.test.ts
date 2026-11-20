@@ -17,7 +17,8 @@ describe('plan 16 (p44), a held push kept over his own body', () => {
   const END_S = 4.4;
   function scene(keep: boolean): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
-    const d = blockScene({ ...s, id: 'BL-T-own-body', durationS: END_S + 0.1, seat: true, upperArm: true }, FIX('L3-F6-hold'));
+    // (the scene as at p44, the p45 landing on a pitched chest off: the captured moment is p44's)
+    const d = blockScene({ ...s, id: 'BL-T-own-body', durationS: END_S + 0.1, seat: true, upperArm: true, aimThrough: false, stanceCone: false }, FIX('L3-F6-hold'));
     return keep ? d : { ...d, armProfile: { ...d.armProfile!, palmPush: { ...d.armProfile!.palmPush!, ownBodyKeeps: undefined } } };
   }
   let cap: StateCapture | undefined;

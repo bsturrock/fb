@@ -16,7 +16,8 @@ describe('plan 16 (p44), the landing palm seated on his chest', () => {
   function scene(seat: boolean): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
     // the twin keeps the arm profile's id (the capture's), its patch at the landmark's projection
-    const d = blockScene({ ...s, id: 'BL-T-landing', durationS: 4.4, seat: true }, FIX('L3-F6-hold'));
+    // (the scene as at p44, the p45 landing on a pitched chest off: the captured moment is p44's)
+    const d = blockScene({ ...s, id: 'BL-T-landing', durationS: 4.4, seat: true, aimThrough: false, stanceCone: false }, FIX('L3-F6-hold'));
     return seat ? d : { ...d, armProfile: { ...d.armProfile!, palmPush: { ...d.armProfile!.palmPush!, seat: undefined } } };
   }
   let cap: StateCapture | undefined;
