@@ -17,7 +17,7 @@ describe('plan 16 (p46), the outside palms on the tops of the shoulders', () => 
   const END_S = 6.3;
   function scene(tops: boolean): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    const d = blockScene({ ...s, id: 'BL-T-tops', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: false, armsGive: false }, FIX('L3-F6-hold'));
+    const d = blockScene({ ...s, id: 'BL-T-tops', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: false, armsGive: false, laneTie: false }, FIX('L3-F6-hold'));
     if (tops) return d;
     // a twin: the outside palms on the fronts of his shoulders, the band as before (resumed as a variant at the lanes)
     return {

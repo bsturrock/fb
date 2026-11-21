@@ -16,7 +16,7 @@ describe('plan 16 (p45), the palms landing on a pitched chest', () => {
   function scene(cone: boolean, through: boolean): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
     // (the p45 lanes and leverage off: the captured moment is from before them, A's under hands and B's over)
-    const d = blockScene({ ...s, id: 'BL-T-pitched', durationS: 4.4, aimThrough: true, stanceCone: true, lanes: false, insideLeverage: false, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false }, FIX('L3-F6-hold'));
+    const d = blockScene({ ...s, id: 'BL-T-pitched', durationS: 4.4, aimThrough: true, stanceCone: true, lanes: false, insideLeverage: false, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false }, FIX('L3-F6-hold'));
     // a twin keeps the capture's profile ids, its rule off
     return {
       ...d,
