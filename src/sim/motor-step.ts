@@ -256,8 +256,9 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   const H = him.block?.contest;
   const margin = H ? H.pushN / Math.max(1e-6, st.pushN + st.holdN) - 1 : -1;
   advanceContest(st, K, { v, behindM: rear - dot(com, u), margin, leanRad: pl.balance.theta }, host.t, dt);
-  // (p46, `beaten`: how far the hit has him past his man, held while his man's palms are on him)
-  if (K.beaten) st.beaten = nextBeaten(st.beaten, st.level, H?.level ?? 0, !!host.arms && (['left', 'right'] as const).some((s) => host.arms!.pushOf(him.id, s)?.targetId === pl.id), dt, K.stood.releaseS);
+  // (p46, `beaten`: how far the hit has him past his man, held while his man's palms are on him; p48, `heldByPush`: while
+  // they push, not folded past their collapse)
+  if (K.beaten) st.beaten = nextBeaten(st.beaten, st.level, H?.level ?? 0, !!host.arms && (['left', 'right'] as const).some((s) => host.arms!.pushOf(him.id, s)?.targetId === pl.id && !(K.heldByPush && host.arms!.pushFolded(him.id, s))), dt, K.stood.releaseS);
   // his capacity: effort (the fault: 1 for every man), how low he is against his man (the posed hips), his feet, stood up
   const hipY = (p: typeof pl): number => (p.pose ? (p.pose.jointLandmarksWorld.leftHip.y + p.pose.jointLandmarksWorld.rightHip.y) / 2 : p.proxy.body.translation().y);
   const feet = contestFeet(pl.feet, K);

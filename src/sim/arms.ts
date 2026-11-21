@@ -2072,6 +2072,18 @@ export class ArmSystem {
     return { id: c.id, targetId: c.targetId, pointWorld: toWorld(tp, c.pointLocal), normalWorld: qRot(tp.q, c.normalLocal), restM: c.restM, bornM: c.bornM, since: c.since };
   }
 
+  /**
+   * Plan 16 (p48): whether this arm's held palm push is folded past its collapse (`PalmPushProfile.collapseFlexDeg`, its
+   * elbow as last shown): kept on at no force (`foldKeeps`), pushing nothing. False with no push.
+   */
+  pushFolded(id: PlayerId, side: ArmSide): boolean {
+    const a = this.arms.get(id)?.[side];
+    const pl = this.player(id);
+    const PP = this.profile.palmPush;
+    if (!a?.push || !a.solve || !pl || !PP) return false;
+    return elbowOf(toWorld(poseOfRb(pl.rb), shoulderLocal(pl.body, side)), a.solve.elbow, a.solve.palm).flexRad >= rad(PP.collapseFlexDeg);
+  }
+
   // ---------------------------------------------------------------- plan 16: the palm push
   /**
    * Plan 16 (p45, `PalmPushProfile.stanceCone`): the normal `n` (world) of the pushed man's surface as it stands with his

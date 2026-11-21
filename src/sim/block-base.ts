@@ -184,6 +184,16 @@ export interface BlockContest {
    */
   beaten?: true;
   /**
+   * Plan 16 (p48), with `beaten`: the hit's outcome is held only while his man's palms push on him: a palm push folded
+   * past its collapse (kept on at no force, `PalmPushProfile.foldKeeps`) does not hold it. Why: in BL-F8-hardNoHinge under
+   * the full set B wins the hit from the outside, his palms on A's shoulders at 91-99 deg of flexion, and they fold past
+   * the collapse at 1.27 s; kept on at no force they held A beaten (0.26) and B low under him (`BlockProfile.under`, hips
+   * 0.79 against A's 0.83) while A's palms, carrying the whole push, pressed down on B's chest from above: B's support load
+   * rose to 1.2-1.3 kN, his 8 deg lean outgrew his balance from 1.5 s, and he tipped forward to 21 deg and fell
+   * (`pastAnchor`) at 2.0 s, the winner of an even match. Absent: any palm push on him holds it.
+   */
+  heldByPush?: true;
+  /**
    * Plan 16 (p46): his arms give as he is stood up: his palms push with his effort times one less his stood level
    * (`withArmsGive`). Knocked back, the man the hit beat kept pushing his man off with his palms at his full effort: the
    * winner, slowed by the hit, was pushed out of his own reach while the loser's palms stayed on (BL-F9-threePoint, A's
@@ -308,6 +318,8 @@ export const withInsideLeverage = (C: BlockContest, x: number): BlockContest => 
 /** Plan 16 (p46): a contest that keeps the hit's outcome (`BlockContest.beaten`), under an id that names it. */
 export const withBeaten = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+beaten`, beaten: true });
 export const withArmsGive = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+arms-give`, armsGive: true });
+/** Plan 16 (p48): a contest whose hit's outcome is held only while his man's palms push (`BlockContest.heldByPush`), under an id that names it. */
+export const withHeldByPush = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+held-by-push`, heldByPush: true });
 export const withBurstTaper = (C: BlockContest, beaten: number): BlockContest => ({ ...C, id: `${C.id}+burst-taper${beaten}`, burstTaper: beaten });
 export const withLowUnheld = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+low-unheld`, lowUnheld: true });
 /** Plan 16 (p47): a contest whose hit's winner holds at most his push capacity of it (`ContestHit.legsHold`), under an id that names it. */
