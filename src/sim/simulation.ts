@@ -1245,13 +1245,14 @@ export class Simulation {
     // (p45, the inside lane: won by who gets there, once, and kept with the engaged state)
     if (r.st && req?.profile.lanes && !r.st.lane && tid && this.arms) {
       const him = this.players.find((o) => o.id === tid);
-      const mine = him ? this.laneTouch(pl, him) : undefined;
-      const his = him ? this.laneTouch(him, pl) : undefined;
+      const S = req.profile.lanes.onStrike;
+      const mine = him ? this.laneTouch(pl, him, S) : undefined;
+      const his = him ? this.laneTouch(him, pl, S) : undefined;
       const tie = req.profile.lanes.tie;
-      const lane = mine && his ? decideLane(mine, his, req.profile.lanes.callM, tie) : undefined;
+      const lane = mine && his ? decideLane(mine, his, req.profile.lanes.callM, tie, S) : undefined;
       if (lane) {
         r.st.lane = lane;
-        this.emit('blockLane', pl.id, { lane, target: tid, awayM: mine!.awayM, hisAwayM: his!.awayM, hipM: mine!.hipM, hisHipM: his!.hipM, ...(tie ? { drives: !!mine!.drives, hisDrives: !!his!.drives } : {}) });
+        this.emit('blockLane', pl.id, { lane, target: tid, awayM: mine!.awayM, hisAwayM: his!.awayM, hipM: mine!.hipM, hisHipM: his!.hipM, ...(tie ? { drives: !!mine!.drives, hisDrives: !!his!.drives } : {}), ...(S ? { thrown: !!mine!.thrown, hisThrown: !!his!.thrown, effort: mine!.effort ?? null, hisEffort: his!.effort ?? null } : {}) });
       }
     }
     if (r.st) pl.block = r.st;
@@ -1262,9 +1263,11 @@ export class Simulation {
   /**
    * Plan 16 (p45, `decideLane`): p's palms against o: how far his nearer palm is short of o's chest (along the level line
    * from p to o, to o's torso front as his body stands; 0 with a palm push on o), p's hips' height (his root's), and (p46)
-   * whether p drives.
+   * whether p drives; (p48) whether his strike is thrown, from this substep's snapshot (his punch as the last substep left
+   * it, the same for both men whichever is advanced first: in strike or drive; a palm on o; a profile without a strike,
+   * always), his effort and his id (`onStrike`, the call's).
    */
-  private laneTouch(p: PlayerRuntime, o: PlayerRuntime): LaneTouch {
+  private laneTouch(p: PlayerRuntime, o: PlayerRuntime, onStrike?: true): LaneTouch {
     const pt = vc(p.proxy.body.translation());
     const ot = vc(o.proxy.body.translation());
     const u = horiz(sub(ot, pt));
@@ -1272,13 +1275,18 @@ export class Simulation {
     const T = o.body.kind === 'upperBodyCompound' ? o.body.compound.torso : undefined;
     const front = T ? T.center.z + T.halfExtents.z : 0;
     let away = Infinity;
+    let on = false;
     for (const s of ['left', 'right'] as ArmSide[]) {
       const pu = this.arms?.pushOf(p.id, s);
       if (pu && pu.targetId === o.id) away = 0;
+      if (pu && pu.targetId === o.id) on = true;
       const palm = this.arms?.palmOf(p.id, s);
       if (palm) away = Math.min(away, Math.max(0, dot(sub(ot, palm), n) - front));
     }
-    return { awayM: away, hipM: pt.y, drives: p.intent.block?.request.intent === 'drive' };
+    const B = p.intent.block;
+    if (!onStrike) return { awayM: away, hipM: pt.y, drives: B?.request.intent === 'drive' };
+    const ph = this.history[this.history.length - 1]?.block?.[p.id]?.punch?.phase;
+    return { awayM: away, hipM: pt.y, drives: B?.request.intent === 'drive', thrown: on || (!!B && !B.profile.strike) || ph === 'strike' || ph === 'drive', effort: B?.request.effort ?? 0, id: p.id };
   }
 
   private advanceBrace(pl: PlayerRuntime): void {

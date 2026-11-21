@@ -452,6 +452,17 @@ export interface BlockLanes {
   callM: number;
   /** Plan 16 (p46): what counts as level at the call (`decideLane`): palms within `reachM` of each other, hips within `hipM`. Absent: any difference decides. */
   tie?: LaneTie;
+  /**
+   * Plan 16 (p48): the lane is called only once a strike is thrown (`decideLane`'s `onStrike`): a man's palms count only
+   * while his strike is thrown (his punch in its strike or its drive, as the last substep left it) or on his man, so the
+   * call waits for the first thrown palm within `callM`, and the man who got there with a strike has the inside. A true
+   * tie (both thrown, level by the tie's reach and height, both driving or both holding) goes to the man with the
+   * greater effort, then, last, to the man whose id sorts first: a stated, fixed rule, the same in either player order.
+   * Why: men set inside `callM` of each other (the older BL scenes, 1.1 m apart) had the lane called from their ready
+   * hands at rest 0.08-0.19 s in, before either struck, by palms 1e-10 m and hips 1e-7 m apart (BL-F1-even,
+   * BL-F7-hard). Absent: called from the palms wherever they are.
+   */
+  onStrike?: true;
 }
 
 /** Plan 16 (p46): the call's tie (`BlockLanes.tie`, `decideLane`), m. */
@@ -465,6 +476,10 @@ export interface LaneTouch {
   awayM: number;
   hipM: number;
   drives?: boolean;
+  /** Plan 16 (p48, `BlockLanes.onStrike`): his strike is thrown (his punch in its strike or drive) or a palm is on his man; his request's effort; his id. */
+  thrown?: boolean;
+  effort?: number;
+  id?: PlayerId;
 }
 
 /**
@@ -474,8 +489,25 @@ export interface LaneTouch {
  * the man holding (he is throwing his hands, the other catching with his; a stated rule: level reach and height leave
  * nothing in the bodies to decide it, and a millimetre of either is the substep's noise, BL-F9-threePoint at 1 mm);
  * else, both driving or both holding, as without one.
+ *
+ * Called on the strike (p48, `onStrike`, `BlockLanes.onStrike`): a man whose strike is not thrown is as far as never
+ * (`thrown`), so none until a thrown palm is within `callM`; then nearer (by more than the tie's `reachM`, any without
+ * one), lower (by more than its `hipM`), the man driving over the man holding, the greater effort, and last the man whose
+ * id sorts first. Never undefined once called: the last two are a true tie's stated rule, the same in either order.
  */
-export function decideLane(mine: LaneTouch, his: LaneTouch, callM: number, tie?: LaneTie): BlockLane | undefined {
+export function decideLane(mine: LaneTouch, his: LaneTouch, callM: number, tie?: LaneTie, onStrike?: boolean): BlockLane | undefined {
+  if (onStrike) {
+    const a = mine.thrown ? mine.awayM : Infinity;
+    const b = his.thrown ? his.awayM : Infinity;
+    if (Math.min(a, b) > callM) return undefined;
+    const by = (m: boolean): BlockLane => (m ? 'inside' : 'outside');
+    if (!(Math.abs(a - b) <= (tie?.reachM ?? 0))) return by(a < b);
+    if (Math.abs(mine.hipM - his.hipM) > (tie?.hipM ?? 0)) return by(mine.hipM < his.hipM);
+    if (!!mine.drives !== !!his.drives) return by(!!mine.drives);
+    if ((mine.effort ?? 0) !== (his.effort ?? 0)) return by((mine.effort ?? 0) > (his.effort ?? 0));
+    const [x, y] = [mine.id ?? '', his.id ?? ''];
+    return x === y ? undefined : by(x < y);
+  }
   if (Math.min(mine.awayM, his.awayM) > callM) return undefined;
   if (tie) {
     if (Math.abs(mine.awayM - his.awayM) > tie.reachM) return mine.awayM < his.awayM ? 'inside' : 'outside';
@@ -519,6 +551,8 @@ export const SHOULDER_TOPS_HIGH_M = 0.66;
  */
 export const LANE_TIE_V1: LaneTie = { reachM: 0.02, hipM: 0.01 };
 export const withLaneTie = (L: BlockLanes, T: LaneTie): BlockLanes => ({ ...L, id: `${L.id}+tie`, tie: T });
+/** Plan 16 (p48): lanes called only once a strike is thrown, with a true tie's stated rule (`BlockLanes.onStrike`), under an id that names it. */
+export const withLaneOnStrike = (L: BlockLanes): BlockLanes => ({ ...L, id: `${L.id}+on-strike`, onStrike: true });
 
 export const BLOCK_V1_HANDS: BlockProfile['hands'] = {
   default: 'under',
