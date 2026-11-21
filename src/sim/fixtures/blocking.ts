@@ -246,7 +246,7 @@ const setIn = (m: BlockMan, kind: 'two-point' | 'three-point', side: 'offense' |
  * lane won by who gets there (`lanes`, in place of A's under and B's over hands) and its leverage (`insideLeverage`), from p46
  * the winner driving from under once his hit is through (`stayLow`) and the outside palms on the tops of the shoulders
  * (`shoulderTops`), the beaten man's arms giving and kept on (`foldKeeps`, `armsGive`)
- * and the lane's call with a tie (`laneTie`); from p44
+ * and the lane's call with a tie (`laneTie`), the knock-back ended (`burstTaper`, `lowUnheld`); from p44
  * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
@@ -276,6 +276,8 @@ export const BL_SCENES: BlockSceneOpts[] = [
     foldKeeps: true,
     armsGive: true,
     laneTie: true,
+    burstTaper: true,
+    lowUnheld: true,
     upperArm: true,
   },
   {
@@ -296,6 +298,8 @@ export const BL_SCENES: BlockSceneOpts[] = [
     foldKeeps: true,
     armsGive: true,
     laneTie: true,
+    burstTaper: true,
+    lowUnheld: true,
     upperArm: true,
   },
 ];
