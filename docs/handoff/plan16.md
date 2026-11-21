@@ -256,6 +256,34 @@ baseline: main checkout `.scratch/p33/on`.
        with a stated rule for a true tie. Reproduce: worktree `.scratch/p47/mcli.ts <ids> --both --full`.
      - 678 tests; baseline main checkout `.scratch/p47/c3-f11` (tool PASS against `p46/e2-on`: `-F9`, `-F10`
        changed, `-F11` new).
+   - **p48: what the older eight needed, all flag off** (`a1b747b`..`cabe06b`; no summary changed; supersedes
+     p47's older-eight readings).
+     - `laneOnStrike` (on for `-F9`/`-F10`/`-F11`, motion identical, only ids and the lane event's payload): the
+       lane is called only once a strike is thrown, with a stated, order-independent tie rule. `-F1` on the full
+       set: called at 0.53 s, one substep after both men throw (before: 0.08 s, from hands at rest).
+     - `frame` (flag off): arms folded against his man hold him there as if his hands were on. `heldByPush` (flag
+       off): a hit's outcome is held only while the palms actually push. `strikeAtLoadGap` (flag off): a man
+       stopped at his load's close gap strikes from there (both `-F8` men stood loaded 0.61 m from a chest against
+       0.6 m of strike range, no strike for 9 s; registered `-F8` has the same standoff until 4.08 s).
+     - `-F2` under the full set: B gives 0.45 m and anchors at 0.93 s, his folded arms against A as a frame (was
+       the 4 m chase); he never re-arms, palms push 3 %. `-F8`'s fall was a defect: B's folded palms, kept on at
+       no force, still held A beaten and B low while A pressed his chest, so B tipped rigidly 8 to 21 deg and went
+       down; now nobody falls, B knocked back 0.56 m, anchors 1.52 s.
+     - **Older eight under the full set plus these four flags** (ground given, anchor after contact; registered in
+       brackets): `-F1` B 0.51 m, 0.95 s (about 0); `-F2` B 0.45 m, 0.93 s (0.51, 0.68); `-F5` B 0.47, 0.95 (0);
+       `-F6` B 0.42, 0.93 (0); `-F7` B 0.53, 1.10 (0.1); `-F8` B 0.56, 1.52 (A 0.11); `-F3` B and `-F4` A driven
+       2.40 m in 39 steps, no anchor (0.8 m). No falls, overpowered clock at most 0.13 s, palms on 97-100 % except
+       `-F2` B. Reading: six ready; `-F3`/`-F4` are not (a constant-speed drive, which the plan rules out). A flip
+       changes who wins the even scenes (the inside man now knocks the other back), so it is the user's decision.
+       Table: worktree `.scratch/p48/older8-final.txt`.
+     - **Parked: knees out over the toes** (main checkout `.scratch/p48/parked/d-knee-out/`). The shoe is rigid on
+       the shin and only pitches, so a knee turned out yaws the shoe 15-21 deg while the plant's footprint stays
+       on the body heading; the plant anchor jumps 6.9 cm when the pivot goes from toe to heel corner (a skate
+       while getting set). Ways on: (a) toe the set stance's plants out in the foot plan so the knee follows the
+       toe; (b) an ankle roll and twist in the pose and in the ragdoll's `shoeOnShin`. Now: knees 8.8 cm inside
+       the ankles in the set stances.
+     - 684 tests; baseline main checkout `.scratch/p48/c2-atgap-off` (tool PASS against `p47/c3-f11`: no summary
+       changed, three BL traces).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a

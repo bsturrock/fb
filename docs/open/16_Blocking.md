@@ -100,9 +100,10 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    capacity, so the inside man wins the hit: the loser is stood up, knocked back in a burst, anchors and gives a
    little more. **p46, same two scenes:** the winner stays low under the stood-up loser while his hands are on,
    both men's hands stay on, the knock-back is a burst that ends (anchor by 1.3 s, about 0.6 m). **p47:** the
-   outside palms ride up onto the shoulder tops. Open: the lane called at rest in the older eight (call it once a
-   strike is thrown; a rule for a true tie); `-F2`'s chase and `-F8`'s fall under the full set (the handoff's p47
-   table; the flip is the user's decision); what an inside man's hands do when the man who beat him holds him off
+   outside palms ride up onto the shoulder tops. **p48, flag off:** the lane called once a strike is thrown, folded arms
+   holding as a frame, a hit held only while the palms push, a strike from the load's gap; with them six of the
+   older eight are ready to flip (the user's decision; the handoff's p48 table). Open: `-F3`/`-F4` under the full
+   set (a steady 2.4 m drive with no anchor); a re-arm from folded arms; what an inside man's hands do when the man who beat him holds him off
    past his reach (`-F11`, a question for the user); give-ground steps and the lean to a fall.
 4. **Entries** (the three-point start comes **before item 3**, at the user's request: "from three point stance into
    load => explode, really getting that low to high action into the chest"): a three-point stance start (very low
@@ -118,7 +119,7 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    the handoff's "To resume" 3. These poses need the knee well over the toe on a flat foot, more than the ankle's
    25 deg: the same limit that keeps the lean-in tall. Done through p44 (see the handoff): both three-points, the
    two-point's own feet, the fire-out, the hit, from p45 the landing on a pitched trunk, from p47 the run-in (`BL-F11-runIn`); left: knees out over the
-   toes, the defense front knee at 90, weight on the down hand.
+   toes (parked in p48: needs toed-out plants or an ankle roll, see the handoff), the defense front knee at 90, weight on the down hand.
 5. **Polish** in the handoff's defect order, with the footwork and tackle queues.
 6. **Milestone:** lab review by the user after 1 and 2, again after 3 and 4.
 
