@@ -14,7 +14,7 @@ describe('plan 16 (p46), the low factor without the held lift', () => {
   const END_S = 6;
   const scene = (unheld: boolean): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    return blockScene({ ...s, id: 'BL-T-low-unheld', durationS: END_S + 0.1, burstTaper: true, lowUnheld: unheld, palmSlide: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-low-unheld', durationS: END_S + 0.1, burstTaper: true, lowUnheld: unheld, palmSlide: false, laneOnStrike: false }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

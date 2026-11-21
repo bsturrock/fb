@@ -14,7 +14,7 @@ describe('plan 16 (p46), the arms give as he is stood up', () => {
   const END_S = 6.3;
   const scene = (give: boolean): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
-    return blockScene({ ...s, id: 'BL-T-give-arms', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: give, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-give-arms', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: give, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false, laneOnStrike: false }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

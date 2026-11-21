@@ -16,7 +16,7 @@ describe('plan 16 (p46), a folded palm push kept on', () => {
   const END_S = 6.3;
   const scene = (keeps: boolean): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    return blockScene({ ...s, id: 'BL-T-fold', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: keeps, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-fold', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: keeps, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false, laneOnStrike: false }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {
