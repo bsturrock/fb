@@ -48,7 +48,7 @@ describe('plan 16 (p42), the hit', () => {
     const K: BlockStrike = { ...BLOCK_STRIKE_V4, strike: st };
     const m = (x: typeof s.A) => ({ ...x, profile: contested(undefined, K, C) as BlockProfile });
     // (the scene as at p42, the p45 landing on a pitched chest, follow-through, lanes and leverage off: the captured moment is p42's)
-    return blockScene({ ...s, id: 'BL-T-hit', A: m(s.A), B: m(s.B), durationS: 5.2, aimThrough: false, stanceCone: false, followThrough: false, lanes: false, insideLeverage: false, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-hit', A: m(s.A), B: m(s.B), durationS: 5.2, aimThrough: false, stanceCone: false, followThrough: false, lanes: false, insideLeverage: false, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false }, FIX('L3-F6-hold'));
   }
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

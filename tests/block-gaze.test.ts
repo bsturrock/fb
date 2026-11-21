@@ -46,7 +46,7 @@ describe('plan 16 (p43), the eyes on his man', () => {
       const G: BlockProfile = x.profile!.gaze ? x.profile! : withGaze(x.profile!, GAZE_V1);
       return { ...x, profile: gaze ? G : { ...G, gaze: undefined } };
     };
-    return blockScene({ ...s, id: 'BL-T-gaze', A: m(s.A), B: m(s.B), durationS: 4.2, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false }, base);
+    return blockScene({ ...s, id: 'BL-T-gaze', A: m(s.A), B: m(s.B), durationS: 4.2, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false }, base);
   }
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

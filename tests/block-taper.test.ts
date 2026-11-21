@@ -31,7 +31,7 @@ describe('plan 16 (p46), the burst tapers once the hit has beaten his man', () =
   const END_S = 5.6;
   const scene = (taper: boolean): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
-    return blockScene({ ...s, id: 'BL-T-burst-taper', durationS: END_S + 0.1, burstTaper: taper, lowUnheld: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-burst-taper', durationS: END_S + 0.1, burstTaper: taper, lowUnheld: false, palmSlide: false }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

@@ -27,7 +27,7 @@ describe('plan 16 (p45), the inside lane\'s leverage', () => {
   const END_S = 5.3;
   function scene(on: boolean): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    const d = blockScene({ ...s, id: 'BL-T-leverage', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false }, FIX('L3-F6-hold'));
+    const d = blockScene({ ...s, id: 'BL-T-leverage', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false }, FIX('L3-F6-hold'));
     if (on) return d;
     // a twin keeps the capture's profile ids, the leverage off
     return {
