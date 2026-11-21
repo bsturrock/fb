@@ -191,6 +191,17 @@ export interface BlockContest {
    * Absent: his effort.
    */
   armsGive?: true;
+  /**
+   * Plan 16 (p46): his burst tapers once the hit has stood his man up: in his drive, with his man beaten past him by at
+   * least this (his man's `beaten`), what his burst has over his push (`burst`) runs down to nothing over the drive's
+   * `burst.s` (`contestCapacity`'s `burstShare`). Why: the burst ran full to the end of its window and, once the man it
+   * had beaten could no longer push him out of his reach (`armsGive`), knocked him back a second time 0.25-0.35 s after
+   * the contact (the winner's push 544 N against 150 he pushed and held with): the stood level back up from 0.55 to
+   * 0.85, the overpowered clock run to 0.29-0.30 s of its 0.3 (BL-F9-threePoint in reversed order down at 0.48 s after
+   * the contact), the loser run back 1 m in 12 steps and anchored only at 1.8-2 s. An even hit (neither beaten) bursts
+   * as before. Absent: the burst full through its window.
+   */
+  burstTaper?: number;
 }
 
 /**
@@ -276,6 +287,7 @@ export const withInsideLeverage = (C: BlockContest, x: number): BlockContest => 
 /** Plan 16 (p46): a contest that keeps the hit's outcome (`BlockContest.beaten`), under an id that names it. */
 export const withBeaten = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+beaten`, beaten: true });
 export const withArmsGive = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+arms-give`, armsGive: true });
+export const withBurstTaper = (C: BlockContest, beaten: number): BlockContest => ({ ...C, id: `${C.id}+burst-taper${beaten}`, burstTaper: beaten });
 
 /**
  * Plan 16 (p46, `BlockContest.beaten`): one substep of how far the hit has him beaten, from what it was (`b0`; undefined:
@@ -294,6 +306,9 @@ export function nextBeaten(b0: number | undefined, level: number, hisLevel: numb
  * second and drives him 0.13 m in the next three; at 2, 0.97 m and 0.6 m more.
  */
 export const INSIDE_LEVERAGE = 1.5;
+
+/** Plan 16 (p46): how far his man is beaten past him when the BL men's burst starts to taper (`BlockContest.burstTaper`): half stood up past him. */
+export const BURST_TAPER_BEATEN = 0.5;
 
 /** Plan 16 (p37): the first contest (no registered fixture has it yet). */
 export const CONTEST_V1: BlockContest = {
@@ -349,17 +364,20 @@ export function contestFeet(plan: FootPlan, K: BlockContest): { share: number; s
  * A man's contest capacity (N): his push and his hold (`BlockContest`). `lowM`: his man's hips' height less his (m, +:
  * he is lower); `feet` his feet's share (`contestFeet`); `level` how far he is stood up; `anchored` (no hold without);
  * `leverage` (1: none; at most 1, on what he has after his drive's bound: p45, `inside`); `driveCapN` his drive's own
- * bound (the push never past it); `burstN` while he strikes, the force his palms put on his man (N; 0 otherwise).
+ * bound (the push never past it); `burstN` while he strikes, the force his palms put on his man (N; 0 otherwise);
+ * `burstShare` (p46, `burstTaper`) the share of what his burst has over his push that he still has (0..1; absent, all).
  * `brakeN`: his push braking (his ordinary push, never the burst).
  */
-export function contestCapacity(K: BlockContest, inp: { effort: number; lowM: number; feet: number; level: number; anchored: boolean; leverage: number; driveCapN: number; burstN: number }): { pushN: number; brakeN: number; holdN: number } {
+export function contestCapacity(K: BlockContest, inp: { effort: number; lowM: number; feet: number; level: number; anchored: boolean; leverage: number; driveCapN: number; burstN: number; burstShare?: number }): { pushN: number; brakeN: number; holdN: number } {
   const e = clamp(inp.effort, 0, 1);
   const k = clamp(1 + K.low.perM * inp.lowM, K.low.min, K.low.max) * clamp(inp.feet, 0, 1);
   const lev = clamp(inp.leverage, 0, 1);
   const L = clamp(inp.level, 0, 1);
   const own = 1 - K.stood.pushCut * L;
   const brakeN = Math.min(K.pushN * e * k * own, Math.max(0, inp.driveCapN)) * lev;
-  const pushN = Math.min(Math.max(K.pushN * e * k * own, Math.min(K.burst.pushN * e * k * own, inp.burstN)), Math.max(0, inp.driveCapN)) * lev;
+  const base = K.pushN * e * k * own;
+  const burst = Math.min(K.burst.pushN * e * k * own, inp.burstN);
+  const pushN = Math.min(inp.burstShare === undefined ? Math.max(base, burst) : Math.max(base, base + (burst - base) * inp.burstShare), Math.max(0, inp.driveCapN)) * lev;
   const holdN = inp.anchored ? K.holdN * (K.holdFloor + (1 - K.holdFloor) * e) * k * (1 - K.stood.holdCut * L) * lev : 0;
   return { pushN: Math.max(0, pushN), brakeN: Math.max(0, brakeN), holdN: Math.max(0, holdN) };
 }

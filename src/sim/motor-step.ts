@@ -278,7 +278,9 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   const effort = dbg?.contestEffortBlind ? 1 : (pl.intent.block?.request.effort ?? pl.intent.locomotion.effort);
   // (p45, `inside`: the outside man's part lost)
   if (K.inside) st.leverage = blk.lane === 'outside' ? 1 / K.inside.leverage : 1;
-  const cap = contestCapacity(K, { effort, lowM: hipY(him) - hipY(pl), feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN });
+  // (p46, `burstTaper`: his man beaten, his burst run down over his drive's window)
+  const taper = K.burstTaper !== undefined && (H?.beaten ?? 0) >= K.burstTaper && pu?.phase === 'drive' ? { burstShare: clamp(1 - (host.t - pu.since) / K.burst.s, 0, 1) } : {};
+  const cap = contestCapacity(K, { effort, lowM: hipY(him) - hipY(pl), feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN, ...taper });
   st.pushN = cap.pushN;
   st.holdN = cap.holdN;
   // (p42, `burst.mps`: bursting through his man, his push runs on to at least that speed times his effort)
