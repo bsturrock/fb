@@ -224,7 +224,8 @@ const setIn = (m: BlockMan, kind: 'two-point' | 'three-point', side: 'offense' |
  * F9 and F10, on BLOCK_STRIKE_V5 and CONTEST_V2 from p43, the load on his shoulders, from p44 the landing palm seated
  * on his chest (`seat`), from p45 the palms aimed through their point on his chest (`aimThrough`), the arm line
  * judged against a pitched chest as at the stance (`stanceCone`), the follow-through (`followThrough`) and the inside
- * lane won by who gets there (`lanes`, in place of A's under and B's over hands) and its leverage (`insideLeverage`); from p44
+ * lane won by who gets there (`lanes`, in place of A's under and B's over hands) and its leverage (`insideLeverage`), from p46
+ * the winner driving from under once his hit is through (`stayLow`); from p44
  * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
@@ -249,6 +250,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     followThrough: true,
     lanes: true,
     insideLeverage: true,
+    stayLow: true,
     upperArm: true,
   },
   {
@@ -264,6 +266,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     followThrough: true,
     lanes: true,
     insideLeverage: true,
+    stayLow: true,
     upperArm: true,
   },
 ];

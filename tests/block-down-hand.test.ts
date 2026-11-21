@@ -16,7 +16,7 @@ describe('plan 16 (p44), the down hand in front of his knee', () => {
   const SNAP = 3.3;
   function scene(L: LeanInStance): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
-    return blockScene({ ...s, id: 'BL-T-down-hand', A: { ...s.A, leanIn: L }, B: { ...s.B, leanIn: L }, durationS: SNAP - 0.05 }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-down-hand', A: { ...s.A, leanIn: L }, B: { ...s.B, leanIn: L }, durationS: SNAP - 0.05, stayLow: false }, FIX('L3-F6-hold'));
   }
   /** Per man: the deepest his down (right) arm's drawn pieces (upper arm, forearm, palm) are in his own thighs getting set (to SET_S; m), and where his right palm stands in the set (just before the snap). */
   async function run(L: LeanInStance): Promise<Record<string, { deep: number; palm: { x: number; y: number; z: number } }>> {
