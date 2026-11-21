@@ -5,7 +5,7 @@
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
 import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
-import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withInsideLeverage, type BlockContest } from '../block-base';
+import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withInsideLeverage, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
@@ -96,6 +96,8 @@ export interface BlockSceneOpts {
   laneTie?: boolean;
   /** Plan 16 (p46): both men's burst tapering once the hit has beaten his man (`BlockContest.burstTaper`, BURST_TAPER_BEATEN, `withBurstTaper`). */
   burstTaper?: boolean;
+  /** Plan 16 (p46): how low each man is read without the beaten man's held lift (`BlockContest.lowUnheld`, `withLowUnheld`). */
+  lowUnheld?: boolean;
 }
 
 /** Plan 16 (p46): the elbow's flexion a folded palm push is kept to (deg; the elbow folds to about 145): past it his forearm is against his upper arm, his palms at his own shoulders. */
@@ -137,7 +139,8 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const P4 = o.insideLeverage && P3.contest ? { ...P3, id: `${P3.id}+inside-x${INSIDE_LEVERAGE}`, contest: withInsideLeverage(P3.contest, INSIDE_LEVERAGE) } : P3;
   const P5 = o.stayLow && m.leanIn ? withUnder(P4, UNDER_V1, m.leanIn, legOf(def, template.body)) : P4;
   const P6 = o.armsGive && P5.contest ? { ...P5, id: `${P5.id}+arms-give`, contest: withArmsGive(P5.contest) } : P5;
-  const P = o.burstTaper && P6.contest ? { ...P6, id: `${P6.id}+burst-taper`, contest: withBurstTaper(P6.contest, BURST_TAPER_BEATEN) } : P6;
+  const P7 = o.burstTaper && P6.contest ? { ...P6, id: `${P6.id}+burst-taper`, contest: withBurstTaper(P6.contest, BURST_TAPER_BEATEN) } : P6;
+  const P = o.lowUnheld && P7.contest ? { ...P7, id: `${P7.id}+low-unheld`, contest: withLowUnheld(P7.contest) } : P7;
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
   // (p39: a man in a pre-snap stance is set in it from the reset)
   const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
@@ -160,7 +163,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       kind: 'block',
       request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
-      ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes || o.insideLeverage || o.stayLow || o.armsGive || o.burstTaper ? { profile: P } : {}),
+      ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes || o.insideLeverage || o.stayLow || o.armsGive || o.burstTaper || o.lowUnheld ? { profile: P } : {}),
     },
   };
 }

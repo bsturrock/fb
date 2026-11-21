@@ -280,7 +280,14 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   if (K.inside) st.leverage = blk.lane === 'outside' ? 1 / K.inside.leverage : 1;
   // (p46, `burstTaper`: his man beaten, his burst run down over his drive's window)
   const taper = K.burstTaper !== undefined && (H?.beaten ?? 0) >= K.burstTaper && pu?.phase === 'drive' ? { burstShare: clamp(1 - (host.t - pu.since) / K.burst.s, 0, 1) } : {};
-  const cap = contestCapacity(K, { effort, lowM: hipY(him) - hipY(pl), feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN, ...taper });
+  // (p46, `lowUnheld`: each man's hips less the lift his posture holds past his stood level)
+  const held = (p: typeof pl): number => {
+    const c = p.block?.contest;
+    const U = p.intent.block?.profile.under;
+    return c && U ? Math.max(0, U.lift * (c.beaten ?? 0) - c.level) * c.profile.stood.riseM : 0;
+  };
+  const lowM = K.lowUnheld ? hipY(him) - held(him) - (hipY(pl) - held(pl)) : hipY(him) - hipY(pl);
+  const cap = contestCapacity(K, { effort, lowM, feet: feet.share, level: st.level, anchored: st.anchored, leverage: st.leverage, driveCapN: drive.cap, burstN, ...taper });
   st.pushN = cap.pushN;
   st.holdN = cap.holdN;
   // (p42, `burst.mps`: bursting through his man, his push runs on to at least that speed times his effort)

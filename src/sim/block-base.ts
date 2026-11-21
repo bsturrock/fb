@@ -202,6 +202,17 @@ export interface BlockContest {
    * as before. Absent: the burst full through its window.
    */
   burstTaper?: number;
+  /**
+   * Plan 16 (p46): how low each man is (`low`) read without the hit's held lift: the beaten man's hips less what his
+   * posture holds them up by past his stood level (`BlockUnder.lift` times his `beaten`, less his level, times
+   * `stood.riseM`). Why: the posture holds the man the hit beat up for as long as his man's hands are on him
+   * (`BlockProfile.under`), and the contest read those hips as his being high: once his stood level had settled he still
+   * pushed and held with 0.8 of what he had against the winner's 1.2 (hips 10 cm apart), and was run back on after the
+   * burst, anchored only 1.45-1.55 s after the contact (BL-F9-threePoint, BL-F10-twoPointVsThree, the burst tapering).
+   * What being stood up costs him is the stood level's, which cuts his push and hold and releases; the held lift shows
+   * it. The winner's own sink under him counts. Absent: the hips as posed.
+   */
+  lowUnheld?: true;
 }
 
 /**
@@ -288,6 +299,7 @@ export const withInsideLeverage = (C: BlockContest, x: number): BlockContest => 
 export const withBeaten = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+beaten`, beaten: true });
 export const withArmsGive = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+arms-give`, armsGive: true });
 export const withBurstTaper = (C: BlockContest, beaten: number): BlockContest => ({ ...C, id: `${C.id}+burst-taper${beaten}`, burstTaper: beaten });
+export const withLowUnheld = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+low-unheld`, lowUnheld: true });
 
 /**
  * Plan 16 (p46, `BlockContest.beaten`): one substep of how far the hit has him beaten, from what it was (`b0`; undefined:
