@@ -98,9 +98,11 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    handoff): the lane goes to whoever's palm is nearer as they close, the inside man's hands go inside with the
    elbows in and the other's go onto his shoulders; forearms no longer cross. The outside man loses a third of his
    capacity, so the inside man wins the hit: the loser is stood up, knocked back in a burst, anchors and gives a
-   little more. Open: the winner rises 7-8 cm into his drive stance; the outside palms sit in the top of the upper
-   arms; on the older upright scenes the outside hands never land (not flipped there); give-ground steps and the
-   lean to a fall.
+   little more. **p46, same two scenes:** the winner stays low under the stood-up loser while his hands are on,
+   both men's hands stay on, the knock-back is a burst that ends (anchor by 1.3 s, about 0.6 m). Open: the outside
+   palms still 4 cm into the upper arms; the older eight upright scenes (the stay-low sends the inside hands out of
+   reach on an upright man; the flip is the user's decision after that is fixed); give-ground steps and the lean
+   to a fall.
 4. **Entries** (the three-point start comes **before item 3**, at the user's request: "from three point stance into
    load => explode, really getting that low to high action into the chest"): a three-point stance start (very low
    to high) and a run-in (less pronounced load, more upright), as scenes. "Stances are different for offense vs

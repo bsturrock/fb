@@ -196,12 +196,42 @@ baseline: main checkout `.scratch/p33/on`.
      - **Not flipped: the eight older scenes.**
        - The landing and follow-through flags leave who moves and who falls unchanged. `-F8`'s forearms cross more:
          over 1 cm for 7.7 s instead of 0.3 s.
-       - The lanes break them. The lane is called at once (the men start within the call), and the outside man's palms
-         never touch his man (no refusals; likely his 0.58 m outside arm cannot reach a man held off by the inside
-         man's locked-out arms). He is run back 3-4.5 m in `-F1` and `-F3` to `-F8`, and falls in `-F2` (B overpowered,
-         1.85 s). With the leverage, `-F4` also falls (A overpowered, 1.45 s).
-       - Before the lanes go there, the outside hands must be able to land on an upright man.
+       - Corrected in p46: the run-backs and falls first written here came from running the lanes without the palm
+         seat (`seat`, p44). An outside palm meets the man at a slant; unseated, its patch puts the palm ball inside
+         him and the push ends `invalidPose` one substep after landing. With `seat` the lanes alone leave all eight
+         close to their registered runs. See p46 for what the full set does.
      - 664 tests; baseline main checkout `.scratch/p45/c1-on` (tool PASS).
+   - **p46: the winner stays low, the hands stay on, the knock-back ends** (`358bf29`..`394e78e`, each flag off then
+     on for `-F9`/`-F10` only).
+     - Flags: `BlockProfile.under` (`UNDER_V1`, `BlockContest.beaten`: the winner's stance goes to a low under
+       stance by how far the hit beat his man past him, held while his palms are on; the beaten man stays up);
+       `LANES_TOPS` (outside palms on the tops of the shoulders); `PalmPushProfile.foldKeeps` (a folded push stays on
+       at no force up to 130 deg); `BlockContest.armsGive` (palm effort times 1 less the stood level);
+       `BlockLanes.tie` (`LANE_TIE_V1`: inside 2 cm of reach and 1 cm of hips the man driving beats the man holding);
+       `BlockContest.burstTaper` (once his man is beaten half way, the burst's extra over the ordinary push runs to
+       zero over the drive's window); `BlockContest.lowUnheld` (the contest does not read the beaten man's held
+       posture lift as him being high).
+     - Now, both scenes, both orders: A's hips 0.82 at 0.3 s then 0.77, trunk 27 deg, under B's 0.87 for the whole
+       hold (p45: both about 0.82 by 1 s). Both men's palms on for all of the 2 s after contact; no fold-off, no
+       out-of-reach, no forearm crossing. B knocked back 0.14-0.16 m by 0.4 s, 0.42-0.49 by 1 s, anchors at
+       1.22-1.28 s, 0.56-0.64 m at the end, 8 steps (A 4-5). Nobody falls.
+     - Why the taper and the low reading: with the hands staying on, the full burst knocked B back a second time
+       0.25-0.35 s after contact and ran him 1 m in 12 steps, with his overpowered clock at 0.29-0.30 of its 0.3 s in
+       all four runs; reversed `-F9` fell (B, 4.26 s). Decision: not accepted, the outcome was decided by noise and
+       the picture is a burst that ends. The overpowered clause is unchanged; the clock now peaks at 0.09-0.11 s
+       (`tests/block-taper.test.ts` resumes the reversed `-F9` capture both ways).
+     - Defects, worst first: (1) B's outside palms still 4.1-4.3 cm into A's upper arms (mean 2.3-2.7) while his arms
+       are folded and giving; (2) B's 8 steps, whether they read as committed; (3) `-F9`'s lane is still a tie in
+       effect, now by rule.
+     - **The eight older scenes are still not flipped and not ready** (measured before the taper and low reading;
+       re-measure before deciding). p45's set with the leverage: all near registered except `-F4` (A run back
+       1.74 m). Adding the stay-low sends the inside man's palms out of reach on an upright man (palms on 0-6 %).
+       The full `-F9`/`-F10` set: `-F2` B falls at 1.86 s, `-F3` B, `-F4` A and `-F8` A run back 3.5-3.9 m, `-F7` A
+       1.06 m. The flip is the user's decision once the stay-low holds its hands on an upright man. The lane is
+       also called at once there (the men start inside the call). Twin for the seat finding: worktree
+       `.scratch/p46/dtwin.ts`.
+     - 673 tests; baseline main checkout `.scratch/p46/e2-on` (tool PASS against `p45/c1-on`: only `-F9`/`-F10`
+       changed).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
