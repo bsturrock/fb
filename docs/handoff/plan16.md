@@ -223,15 +223,39 @@ baseline: main checkout `.scratch/p33/on`.
      - Defects, worst first: (1) B's outside palms still 4.1-4.3 cm into A's upper arms (mean 2.3-2.7) while his arms
        are folded and giving; (2) B's 8 steps, whether they read as committed; (3) `-F9`'s lane is still a tie in
        effect, now by rule.
-     - **The eight older scenes are still not flipped and not ready** (measured before the taper and low reading;
-       re-measure before deciding). p45's set with the leverage: all near registered except `-F4` (A run back
-       1.74 m). Adding the stay-low sends the inside man's palms out of reach on an upright man (palms on 0-6 %).
-       The full `-F9`/`-F10` set: `-F2` B falls at 1.86 s, `-F3` B, `-F4` A and `-F8` A run back 3.5-3.9 m, `-F7` A
-       1.06 m. The flip is the user's decision once the stay-low holds its hands on an upright man. The lane is
-       also called at once there (the men start inside the call). Twin for the seat finding: worktree
+     - The older eight under this set: superseded by p47's table below. Twin for the seat finding: worktree
        `.scratch/p46/dtwin.ts`.
      - 673 tests; baseline main checkout `.scratch/p46/e2-on` (tool PASS against `p45/c1-on`: only `-F9`/`-F10`
        changed).
+   - **p47: the outside palms on the shoulders, the run-in scene** (`73331a0`..`9efeb8a`).
+     - `PalmPushProfile.slide` (`PALM_SLIDE` 1 m/s, on for `-F9`/`-F10`): a held palm slides on to its aim, so the
+       outside palms ride up to the shoulder tops within 0.1 s. Into the upper arm: max 2.3-2.7 cm in the landing
+       frame only, mean 0.1-0.2 (before 4.1-4.3 / 2.3-2.7), past 1 cm for 0.02-0.18 s (before 1.9 s). Knock-back,
+       anchor, hips, steps as p46; overpowered clock 0.07-0.09 s; nobody falls.
+     - **`BL-F11-runIn`** (new): A runs in from 8 m at up to 3 m/s, upright (hips 0.88-0.91), onto B set in his
+       two-point, who steps up at the snap (3.3 s). `BlockProfile.runIn` (`RUN_IN_V1`: the approach no longer brakes
+       the runner before the hit) and `ContestHit.legsHold` (the hit's winner holds at most his push capacity of it;
+       without it the set man holds all 3000 N and the runner bounces back at 0.9 m/s). Contact 4.08 s at 2.6 m/s;
+       B has the inside (his palms land first) but A wins the hit: B knocked back 0.27 m by 0.4 s, 0.49 by 1 s,
+       anchors at 0.87 s, 4 steps; A drives from under. Nobody falls.
+       **Defect, a design question for the user:** B's inside palms come off 0.4 s after contact and stay off (on
+       0.40 s of 2 s), arms out straight short of A's chest: A is low and pitched behind 0.57 m of arm, his lower
+       chest 0.81-0.90 m from B's shoulders against 0.72 m of reach. Measured, none landed: inside aim at 0.56 m
+       (on 100 %, A's forearm 9.5 cm into B's upper arm), 0.46 m (25 %, 7.2 cm), lanes off (100 %, 7.7 cm, the old
+       crossing), stay-low off (no change).
+     - **The older eight under the full set, not flipped** (registered -> full set; both orders agree):
+       `-F1`, `-F5`, `-F6`, `-F7` look ready: the inside man wins, the other gives 0.3-0.5 m in 4-10 steps and
+       anchors by 0.4-1.3 s (registered: about 0, 0-2 steps). `-F3`/`-F4` (mismatch): run back 2.4 m, no anchor,
+       25-39 steps (registered 0.8 m). `-F2`: a 4 m chase, B never anchors, his palms on 3 %: his outside arms
+       fold past 130 deg under the walk-in, the push ends `collapsed`, his ready point is inside A and re-arming
+       needs 8 cm (`hold.withdrawM`), while A follows his speed (fold-keeps off: 1.06 m, anchored 2.12 s). `-F8`:
+       **B falls at 2.00 s** (`contest:pastAnchor`; he wins the hit from outside and goes under). The inside hands
+       stay on 99-100 % now (the tie rule gives the lane to the man who drives; p46's out-of-reach finding needed
+       the lane decided by noise). **The lane is called at rest** there (0.08-0.19 s, ready hands inside 0.6 m);
+       in `-F1` and `-F7` sub-millimetre differences decide it. Next: call the lane only once a strike is thrown,
+       with a stated rule for a true tie. Reproduce: worktree `.scratch/p47/mcli.ts <ids> --both --full`.
+     - 678 tests; baseline main checkout `.scratch/p47/c3-f11` (tool PASS against `p46/e2-on`: `-F9`, `-F10`
+       changed, `-F11` new).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
