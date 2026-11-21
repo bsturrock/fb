@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withHeldByPush, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -106,6 +106,8 @@ export interface BlockSceneOpts {
   frame?: boolean;
   /** Plan 16 (p48): both men's contests holding the hit's outcome only while his man's palms push (`BlockContest.heldByPush`, `withHeldByPush`). */
   heldByPush?: boolean;
+  /** Plan 16 (p48): both men striking from the load's close gap within their engaged reach (`BlockStrike.strike.atLoadGapM`, `withStrikeAtLoadGap`, STRIKE_AT_LOAD_GAP_M). */
+  strikeAtLoadGap?: boolean;
 }
 
 /** Plan 16 (p47): the BL palms' slide (`PalmPushProfile.slide`): 1 m/s (a palm landed 8-11 cm under its aim is there in 0.1 s), off the face past 5 mm. */
@@ -154,7 +156,8 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const P6 = o.armsGive && P5.contest ? { ...P5, id: `${P5.id}+arms-give`, contest: withArmsGive(P5.contest) } : P5;
   const P7 = o.burstTaper && P6.contest ? { ...P6, id: `${P6.id}+burst-taper`, contest: withBurstTaper(P6.contest, BURST_TAPER_BEATEN) } : P6;
   const P8 = o.lowUnheld && P7.contest ? { ...P7, id: `${P7.id}+low-unheld`, contest: withLowUnheld(P7.contest) } : P7;
-  const P = o.heldByPush && P8.contest ? { ...P8, id: `${P8.id}+held-by-push`, contest: withHeldByPush(P8.contest) } : P8;
+  const P9 = o.heldByPush && P8.contest ? { ...P8, id: `${P8.id}+held-by-push`, contest: withHeldByPush(P8.contest) } : P8;
+  const P = o.strikeAtLoadGap && P9.strike ? { ...P9, id: `${P9.id}+at-load-gap`, strike: withStrikeAtLoadGap(P9.strike, STRIKE_AT_LOAD_GAP_M) } : P9;
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
   // (p39: a man in a pre-snap stance is set in it from the reset)
   const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
@@ -177,7 +180,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       kind: 'block',
       request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
-      ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes || o.insideLeverage || o.stayLow || o.armsGive || o.burstTaper || o.lowUnheld || o.frame || o.heldByPush ? { profile: P } : {}),
+      ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes || o.insideLeverage || o.stayLow || o.armsGive || o.burstTaper || o.lowUnheld || o.frame || o.heldByPush || o.strikeAtLoadGap ? { profile: P } : {}),
     },
   };
 }

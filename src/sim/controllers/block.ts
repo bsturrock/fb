@@ -404,6 +404,15 @@ export interface BlockStrike {
      */
     engagedReachM?: number;
     /**
+     * Plan 16 (p48), with `engagedReachM`: loaded and within this (m) of the load's close gap (`load.closeGapM`, where his
+     * closing stops: the approach brakes him onto it, never through it), he strikes from there once his man's chest is
+     * within `engagedReachM`, as engaged. Why: two loaded men stopped at their close gaps, nothing yet between them, wait
+     * for a `contactM` neither can reach (BL-F8-hardNoHinge under the full set with the lane called on the strike: both at
+     * a 0.675 m gap, 0.61 m from his man's chest against 0.6, loaded for the whole 9 s, the lane never called). Absent: at
+     * the close gap only `contactM`'s rule.
+     */
+    atLoadGapM?: number;
+    /**
      * Plan 16 (p42): striking, his hips stay at the load's height until a palm lands (the trunk comes up to the strike's
      * as the hands go), and rise into the strike's from the landing: the hips roll up and forward at contact, not as the
      * hands leave. Absent: the strike's stance from the throw.
@@ -623,6 +632,11 @@ export const BLOCK_STRIKE_V1: BlockStrike = {
  * the fire-out deadlock; the same in BL-F8, where the man held off is run back 4.5 m without a palm on).
  */
 export const BLOCK_STRIKE_V2: BlockStrike = { ...BLOCK_STRIKE_V1, id: 'strike-v2', strike: { ...BLOCK_STRIKE_V1.strike, engagedReachM: 0.66 } };
+
+/** Plan 16 (p48): how near his load's close gap (m) a loaded man strikes from it within his engaged reach (`strike.atLoadGapM`): 2 cm, the approach's brake stopping him on it to 1 mm in BL-F8. */
+export const STRIKE_AT_LOAD_GAP_M = 0.02;
+/** Plan 16 (p48): a strike thrown from the load's close gap (`BlockStrike.strike.atLoadGapM`), under an id that names it. */
+export const withStrikeAtLoadGap = (K: BlockStrike, m: number): BlockStrike => ({ ...K, id: `${K.id}+at-load-gap${m}`, strike: { ...K.strike, atLoadGapM: m } });
 
 /**
  * Plan 16 (p41): BLOCK_STRIKE_V2 with the fire-out (`BlockFire`): out of a pre-snap stance he goes at 2 m/s, the hips
@@ -1338,7 +1352,9 @@ export function nextPunch(K: BlockStrike, punchGapM: number, pu: PunchState | un
   }
   const age = c.t - cur.since + 1e-9;
   // (p40: engaged, in his arm's reach, he throws it from there: `strike.engagedReachM`)
-  const inRange = c.reachM - closing * K.strike.leadS <= K.strike.contactM || (K.strike.engagedReachM !== undefined && c.engaged && c.reachM <= K.strike.engagedReachM);
+  // (p48: or loaded at his load's close gap, `strike.atLoadGapM`)
+  const atGap = K.strike.atLoadGapM !== undefined && c.gap <= K.load.closeGapM + K.strike.atLoadGapM;
+  const inRange = c.reachM - closing * K.strike.leadS <= K.strike.contactM || (K.strike.engagedReachM !== undefined && (c.engaged || atGap) && c.reachM <= K.strike.engagedReachM);
   if (cur.phase === 'load' && age >= K.load.minS * cur.depth && c.loaded && c.reachM >= K.strike.minReachM && inRange) return { ...cur, phase: 'strike', since: c.t };
   if (cur.phase === 'strike') {
     const onT = cur.onT ?? (c.anyOn ? c.t : undefined);
