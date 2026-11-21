@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, withArmsGive, withInsideLeverage, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -92,6 +92,8 @@ export interface BlockSceneOpts {
   foldKeeps?: boolean;
   /** Plan 16 (p46): both men's arms giving as they are stood up (`BlockContest.armsGive`, `withArmsGive`). */
   armsGive?: boolean;
+  /** Plan 16 (p46): with `lanes`, the lane's call with a tie (LANE_TIE_V1, `withLaneTie`): level reach and height, the man driving has the inside. */
+  laneTie?: boolean;
 }
 
 /** Plan 16 (p46): the elbow's flexion a folded palm push is kept to (deg; the elbow folds to about 145): past it his forearm is against his upper arm, his palms at his own shoulders. */
@@ -128,7 +130,8 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const P0 = profileOf(m, def, template.body);
   const P1 = o.aimThrough ? withAimThrough(P0) : P0;
   const P2 = o.followThrough ? withFollowThrough(P1) : P1;
-  const P3 = o.lanes ? withLanes(P2, o.shoulderTops ? LANES_TOPS : LANES_V1) : P2;
+  const L0 = o.shoulderTops ? LANES_TOPS : LANES_V1;
+  const P3 = o.lanes ? withLanes(P2, o.laneTie ? withLaneTie(L0, LANE_TIE_V1) : L0) : P2;
   const P4 = o.insideLeverage && P3.contest ? { ...P3, id: `${P3.id}+inside-x${INSIDE_LEVERAGE}`, contest: withInsideLeverage(P3.contest, INSIDE_LEVERAGE) } : P3;
   const P5 = o.stayLow && m.leanIn ? withUnder(P4, UNDER_V1, m.leanIn, legOf(def, template.body)) : P4;
   const P = o.armsGive && P5.contest ? { ...P5, id: `${P5.id}+arms-give`, contest: withArmsGive(P5.contest) } : P5;

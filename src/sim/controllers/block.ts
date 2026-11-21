@@ -429,21 +429,38 @@ export interface BlockLanes {
   inside: HandAim;
   outside: HandAim;
   callM: number;
+  /** Plan 16 (p46): what counts as level at the call (`decideLane`): palms within `reachM` of each other, hips within `hipM`. Absent: any difference decides. */
+  tie?: LaneTie;
 }
 
-/** One man's palms against his man as the lane is called (`decideLane`): how far his nearer palm is short of his man's chest (m, along the line between them; 0 with a palm on him), and his hips' height (m). */
+/** Plan 16 (p46): the call's tie (`BlockLanes.tie`, `decideLane`), m. */
+export interface LaneTie {
+  reachM: number;
+  hipM: number;
+}
+
+/** One man's palms against his man as the lane is called (`decideLane`): how far his nearer palm is short of his man's chest (m, along the line between them; 0 with a palm on him), his hips' height (m), and (p46) whether he is driving (his request's intent). */
 export interface LaneTouch {
   awayM: number;
   hipM: number;
+  drives?: boolean;
 }
 
 /**
  * Plan 16 (p45): the lane my palms win against his (`BlockLanes`), once either man's is within `callM` of his man's
  * chest (none before): the man whose palm is nearer his man's chest has the inside; level, the lower man; alike, none
- * yet.
+ * yet. With a tie (p46, `tie`): nearer by more than `reachM`; else lower by more than `hipM`; else the man driving over
+ * the man holding (he is throwing his hands, the other catching with his; a stated rule: level reach and height leave
+ * nothing in the bodies to decide it, and a millimetre of either is the substep's noise, BL-F9-threePoint at 1 mm);
+ * else, both driving or both holding, as without one.
  */
-export function decideLane(mine: LaneTouch, his: LaneTouch, callM: number): BlockLane | undefined {
+export function decideLane(mine: LaneTouch, his: LaneTouch, callM: number, tie?: LaneTie): BlockLane | undefined {
   if (Math.min(mine.awayM, his.awayM) > callM) return undefined;
+  if (tie) {
+    if (Math.abs(mine.awayM - his.awayM) > tie.reachM) return mine.awayM < his.awayM ? 'inside' : 'outside';
+    if (Math.abs(mine.hipM - his.hipM) > tie.hipM) return mine.hipM < his.hipM ? 'inside' : 'outside';
+    if (!!mine.drives !== !!his.drives) return mine.drives ? 'inside' : 'outside';
+  }
   if (mine.awayM !== his.awayM) return mine.awayM < his.awayM ? 'inside' : 'outside';
   if (mine.hipM !== his.hipM) return mine.hipM < his.hipM ? 'inside' : 'outside';
   return undefined;
@@ -474,6 +491,13 @@ export const LANES_V1: BlockLanes = {
 export const LANES_TOPS: BlockLanes = { ...LANES_V1, id: 'lanes-tops-v1', outside: { ...LANES_V1.outside, y: 0.65, x: 0.13 } };
 /** Plan 16 (p46): the palm push's band top for LANES_TOPS (m above his origin): the outside patch lands 0.62-0.63 m up, under the torso box's top (0.69). */
 export const SHOULDER_TOPS_HIGH_M = 0.66;
+
+/**
+ * Plan 16 (p46): the call's tie (`BlockLanes.tie`): palms within 2 cm of each other (half a palm ball: neither is there
+ * first), hips within 1 cm.
+ */
+export const LANE_TIE_V1: LaneTie = { reachM: 0.02, hipM: 0.01 };
+export const withLaneTie = (L: BlockLanes, T: LaneTie): BlockLanes => ({ ...L, id: `${L.id}+tie`, tie: T });
 
 export const BLOCK_V1_HANDS: BlockProfile['hands'] = {
   default: 'under',

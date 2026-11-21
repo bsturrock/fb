@@ -1247,10 +1247,11 @@ export class Simulation {
       const him = this.players.find((o) => o.id === tid);
       const mine = him ? this.laneTouch(pl, him) : undefined;
       const his = him ? this.laneTouch(him, pl) : undefined;
-      const lane = mine && his ? decideLane(mine, his, req.profile.lanes.callM) : undefined;
+      const tie = req.profile.lanes.tie;
+      const lane = mine && his ? decideLane(mine, his, req.profile.lanes.callM, tie) : undefined;
       if (lane) {
         r.st.lane = lane;
-        this.emit('blockLane', pl.id, { lane, target: tid, awayM: mine!.awayM, hisAwayM: his!.awayM, hipM: mine!.hipM, hisHipM: his!.hipM });
+        this.emit('blockLane', pl.id, { lane, target: tid, awayM: mine!.awayM, hisAwayM: his!.awayM, hipM: mine!.hipM, hisHipM: his!.hipM, ...(tie ? { drives: !!mine!.drives, hisDrives: !!his!.drives } : {}) });
       }
     }
     if (r.st) pl.block = r.st;
@@ -1260,7 +1261,8 @@ export class Simulation {
 
   /**
    * Plan 16 (p45, `decideLane`): p's palms against o: how far his nearer palm is short of o's chest (along the level line
-   * from p to o, to o's torso front as his body stands; 0 with a palm push on o), and p's hips' height (his root's).
+   * from p to o, to o's torso front as his body stands; 0 with a palm push on o), p's hips' height (his root's), and (p46)
+   * whether p drives.
    */
   private laneTouch(p: PlayerRuntime, o: PlayerRuntime): LaneTouch {
     const pt = vc(p.proxy.body.translation());
@@ -1276,7 +1278,7 @@ export class Simulation {
       const palm = this.arms?.palmOf(p.id, s);
       if (palm) away = Math.min(away, Math.max(0, dot(sub(ot, palm), n) - front));
     }
-    return { awayM: away, hipM: pt.y };
+    return { awayM: away, hipM: pt.y, drives: p.intent.block?.request.intent === 'drive' };
   }
 
   private advanceBrace(pl: PlayerRuntime): void {
