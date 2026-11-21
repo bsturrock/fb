@@ -205,6 +205,22 @@ export interface BlockProfile {
   lanes?: BlockLanes;
   /** Plan 16 (p46): the winner of the hit stays low and the man it beat stays up (`BlockUnder`); absent, neither. */
   under?: BlockUnder;
+  /** Plan 16 (p47): he runs in (`BlockRunIn`); absent, he closes at the approach's speed, braked to its gap. */
+  runIn?: BlockRunIn;
+}
+
+/**
+ * Plan 16 (p47), the run-in: closing on his man (not yet engaged), loading and striking, he goes at `mps` toward him
+ * whatever the gap: not braked to the approach's hold gap or the load's, not slowed to the load's
+ * closing speed, not stepping back when closer than the strike's least reach. He runs through the hit; engaged with a palm
+ * on, the block as ever. His load is the strike's for a man moving (`load.movingDepth`), so less pronounced, and his feet
+ * are the free locomotion's (his run) until he is engaged. Why: the approach brakes at 2.5 m/s2 to the load's gap and,
+ * loaded, closes at 0.6 m/s, so a man running in at 3 m/s met his man at 1.65 (a run-in experiment, the set man firing out
+ * of his two-point): no momentum in the hit.
+ */
+export interface BlockRunIn {
+  id: string;
+  mps: number;
 }
 
 /**
@@ -264,6 +280,11 @@ export const GAZE_V1: BlockGaze = { id: 'gaze-v1', maxDeg: 50 };
 
 /** Plan 16 (p43): a block profile with his eyes on his man (`BlockGaze`), under an id that names it. */
 export const withGaze = (p: BlockProfile, gaze: BlockGaze): BlockProfile => ({ ...p, id: `${p.id}+${gaze.id}`, gaze });
+
+/** Plan 16 (p47): the first run-in (`BlockRunIn`): 3 m/s, a lineman climbing to a second-level block. */
+export const RUN_IN_V1: BlockRunIn = { id: 'run-in-v1', mps: 3 };
+/** Plan 16 (p47): a block profile that runs in (`BlockRunIn`), under an id that names it. */
+export const withRunIn = (p: BlockProfile, R: BlockRunIn): BlockProfile => ({ ...p, id: `${p.id}+${R.id}`, runIn: R });
 
 /** Plan 16 (p45): a block profile whose palms aim through their point on his chest along the arm's line (`aimThrough`), under an id that names it. */
 export const withAimThrough = (p: BlockProfile): BlockProfile => ({ ...p, id: `${p.id}+aim-through`, aimThrough: true });
@@ -1450,6 +1471,8 @@ export class BlockController implements Controller {
       // the gap closes at that speed, his own part of it counted (he follows a man moving off, gives ground to one coming
       // on); firing, that is his own speed (p41)
       along = K && pu && pu.phase !== 'drive' && reachM < K.strike.minReachM ? -A.backMps : Math.max(-A.backMps, fire ? close : close + dot(hv, dir));
+      // (p47, `runIn`: running in, at his own speed whatever the gap)
+      if (P.runIn && phase !== 'engaged') along = P.runIn.mps;
     }
     const vel = add(scale(dir, along), across);
     // the hands: up while closing, punched on from the punch gap (or engaged), pulled back to re-arm when one came off
