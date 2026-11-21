@@ -41,7 +41,7 @@ describe('plan 16 (p46), the winner stays low', () => {
   const END_S = 6.3;
   function scene(under: boolean): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    const d = blockScene({ ...s, id: 'BL-T-under', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: false }, FIX('L3-F6-hold'));
+    const d = blockScene({ ...s, id: 'BL-T-under', durationS: END_S + 0.1, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: false, foldKeeps: false, armsGive: false }, FIX('L3-F6-hold'));
     if (under) return d;
     // a twin: the under stance off (resumed as a variant at that path; the kept outcome still kept, unread)
     return {
