@@ -183,6 +183,14 @@ export interface BlockContest {
    * Absent: none.
    */
   beaten?: true;
+  /**
+   * Plan 16 (p46): his arms give as he is stood up: his palms push with his effort times one less his stood level
+   * (`withArmsGive`). Knocked back, the man the hit beat kept pushing his man off with his palms at his full effort: the
+   * winner, slowed by the hit, was pushed out of his own reach while the loser's palms stayed on (BL-F9-threePoint, A's
+   * palms off 0.22-0.35 s; BL-F10-twoPointVsThree with folded pushes kept on). A man not stood up pushes as before.
+   * Absent: his effort.
+   */
+  armsGive?: true;
 }
 
 /**
@@ -267,6 +275,7 @@ export const withInsideLeverage = (C: BlockContest, x: number): BlockContest => 
 
 /** Plan 16 (p46): a contest that keeps the hit's outcome (`BlockContest.beaten`), under an id that names it. */
 export const withBeaten = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+beaten`, beaten: true });
+export const withArmsGive = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+arms-give`, armsGive: true });
 
 /**
  * Plan 16 (p46, `BlockContest.beaten`): one substep of how far the hit has him beaten, from what it was (`b0`; undefined:

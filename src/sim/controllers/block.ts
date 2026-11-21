@@ -1401,6 +1401,8 @@ export class BlockController implements Controller {
     const sl = P.contest ? (ctx.observed.block?.[ctx.self]?.stood ?? 0) : 0;
     // (p41, the fire-out: his punch out of his pre-snap stance until a strike lands)
     const fire = K?.fire && pu?.fire && pu.phase !== 'drive' ? K.fire : undefined;
+    // (p46, the contest's `armsGive`: his palms' effort, given as he is stood up)
+    const pushEffort = P.contest?.armsGive ? effort * (1 - sl) : effort;
     let along: number;
     if (phase === 'engaged' && handOn) {
       const mine = horiz(me.position);
@@ -1445,7 +1447,7 @@ export class BlockController implements Controller {
         if (o?.pushId || this.punchedAt[side] === null) this.punchedAt[side] = o?.pushId ? ctx.t : pu.since;
         this.wasOn[side] = !!o?.pushId;
         const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
-        arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort, extendMps: Math.max(K.strike.extendMps, this.hitMps[side]) }, ...pole };
+        arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort: pushEffort, extendMps: Math.max(K.strike.extendMps, this.hitMps[side]) }, ...pole };
         continue;
       }
       // ready: in front of his own chest
@@ -1463,7 +1465,7 @@ export class BlockController implements Controller {
       // my right hand on his left side (his frame): the side across from it
       const targetWorld = aimPoint(side, aim.depthM);
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
-      arms[side] = { action: 'push', targetWorld, push: { effort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
+      arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
     }
     // (p42, `strike.riseOnLand`: striking, he stays in the load's stance until a palm lands; the rise is from the landing)
     const low = !!K?.strike.riseOnLand && pu?.phase === 'strike' && pu.onT === undefined;
