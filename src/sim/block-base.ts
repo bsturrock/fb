@@ -174,6 +174,15 @@ export interface BlockContest {
    * BL-F10-twoPointVsThree). Absent: none.
    */
   inside?: { leverage: number };
+  /**
+   * Plan 16 (p46): the hit's outcome kept (`ContestState.beaten`): how far he is stood up past his man (his level less
+   * his man's), its peak held while his man's palms are on him, released as the stood level releases once they are off.
+   * What it is for: the stood level follows the knock (it releases 0.3 s after he stops being knocked back), while the
+   * man the hit beat stays beaten as long as his man's hands are on him (they are under his chest; the re-punch that
+   * would win them back is not built). The block's posture reads it (`BlockProfile.under`); his capacity does not.
+   * Absent: none.
+   */
+  beaten?: true;
 }
 
 /**
@@ -246,6 +255,8 @@ export interface ContestState {
   down?: ContestDown;
   /** Plan 16 (p42, a contest with `hit`): the hit's force on him last substep (N, along the line; absent or 0: none). */
   hitN?: number;
+  /** Plan 16 (p46, a contest with `beaten`): how far the hit has him beaten (0..1; absent: not yet kept). */
+  beaten?: number;
 }
 
 /** A fresh contest state. */
@@ -253,6 +264,20 @@ export const newContest = (): ContestState => ({ level: 0, anchored: false, leve
 
 /** Plan 16 (p45): a contest with the inside lane's leverage `x` (`BlockContest.inside`), under an id that names it. */
 export const withInsideLeverage = (C: BlockContest, x: number): BlockContest => ({ ...C, id: `${C.id}+inside-x${x}`, inside: { leverage: x } });
+
+/** Plan 16 (p46): a contest that keeps the hit's outcome (`BlockContest.beaten`), under an id that names it. */
+export const withBeaten = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+beaten`, beaten: true });
+
+/**
+ * Plan 16 (p46, `BlockContest.beaten`): one substep of how far the hit has him beaten, from what it was (`b0`; undefined:
+ * none yet), his stood level and his man's, and whether his man's palms are on him: his level past his man's, its peak
+ * held while those palms are on him, released at `releaseS` toward it once they are off.
+ */
+export function nextBeaten(b0: number | undefined, level: number, hisLevel: number, held: boolean, dt: number, releaseS: number): number {
+  const past = Math.max(0, level - hisLevel);
+  const b = b0 ?? 0;
+  return held ? Math.max(b, past) : Math.max(past, b * Math.exp(-dt / releaseS));
+}
 
 /**
  * Plan 16 (p45): the inside lane's leverage the BL men use (`BlockContest.inside`): the outside man keeps two thirds of

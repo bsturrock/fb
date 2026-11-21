@@ -14,7 +14,7 @@ import type { BodyProfile, MotorProfile } from '../profiles';
 import { shoulderLocal, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
-import { legForThigh, legShape, newContest, type BlockBase, type BlockContest, type ContestState, type GiveGround, type GiveState } from '../block-base';
+import { legForThigh, legShape, newContest, withBeaten, type BlockBase, type BlockContest, type ContestState, type GiveGround, type GiveState } from '../block-base';
 import type { Controller, ControllerContext } from './base';
 import { clamp, cross, dot, horiz, len, levelForwardOf, norm, qFromAxisAngle, qInvRot, qRot, rad, scale, sub, add, addScaled, v3, type Vec3 } from '../vec';
 
@@ -203,7 +203,47 @@ export interface BlockProfile {
   followThrough?: true;
   /** Plan 16 (p45): the inside lane, won by who gets there (`BlockLanes`); absent, the request's placement (`hands`). */
   lanes?: BlockLanes;
+  /** Plan 16 (p46): the winner of the hit stays low and the man it beat stays up (`BlockUnder`); absent, neither. */
+  under?: BlockUnder;
 }
+
+/**
+ * Plan 16 (p46): the winner stays low (`BlockProfile.under`, on a contest that keeps the hit's outcome,
+ * `BlockContest.beaten`). Once his hit is through (in his drive, the contest's `burst.s` into it; a block without a
+ * strike, at once), the man whose man the hit beat more than him drives from under: his stance goes from the drive's to
+ * `stance` by how far his man is beaten past him over `span` (0..1, from the snapshot: `beaten` of each), so his hips
+ * sink low behind his hands and his trunk comes in while his man is up. The man the hit beat stays up: his stood-up
+ * posture (the contest's stood stance, `BlockContest.stood`) at least `lift` times how far he is beaten, for as long as it
+ * holds (his man's palms on him), not only while he is knocked. Posture only: the contest's capacities are as they are
+ * (being lower counts there through the hips, `BlockContest.low`, so the man under drives the stood-up man on). Why: the
+ * strike's rise (hips up into the strike's stance from the landing) and the drive's stance are both men's, so the winner
+ * rose 7-8 cm with the loser and ended 4-5 cm under him at 0.3 s after contact, and level with him once the stood level
+ * had released by 1 s (BL-F9-threePoint, BL-F10-twoPointVsThree). Why not during the hit: a stance that sinks while the
+ * strike's rise still carries his hips up (0.7-0.8 m/s) unloads his suspension, and with it his drive's traction, for the
+ * rest of the burst (the loser knocked back 0.04-0.07 m in 0.4 s in place of 0.12-0.17).
+ */
+export interface BlockUnder {
+  id: string;
+  stance: BlockStance;
+  span: number;
+  lift: number;
+}
+
+/** Plan 16 (p46): the winner's stance driving from under (`BlockUnder`), over the lean-in's planted feet: its thigh's slope below horizontal and its trunk (`withUnder`). */
+export interface UnderSpec extends TrunkPose {
+  id: string;
+  thighDeg: number;
+  span: number;
+  lift: number;
+}
+
+/**
+ * Plan 16 (p46): the first under stance. On the BL body over the lean-in's planted feet (the lean-in's ankle): the thigh
+ * 48 deg below horizontal, hips 0.767 m over the ground (the set stance's 0.815, the load's 0.754), the rear foot on its
+ * ball at 7.6 deg; the trunk at 28 deg (the set stance's 20), 8 of it lean. Full under once his man is beaten half way
+ * past him; the beaten man held at 0.6 of the stood-up stance's rise per unit beaten (about 5-6 cm of hips).
+ */
+export const UNDER_V1: UnderSpec = { id: 'under-v1', thighDeg: 48, trunkDeg: 28, leanDeg: 8, span: 0.5, lift: 0.6 };
 
 /**
  * Plan 16 (p43), his eyes on his man (`BlockProfile.gaze`): in his pre-snap stance and blocking, the head on his man's
@@ -887,6 +927,21 @@ export function withLeanIn(p: BlockProfile, S: LeanInStance, L: LeanGeometry): B
 }
 
 /**
+ * Plan 16 (p46): a block profile on its lean-in `S` (the one `withLeanIn` derived it on, leg `L`) whose winner stays low
+ * (`BlockUnder`): the under stance `U` over the lean-in's planted feet (`standOver` at the stance's ankle, the root the
+ * hips' height less the hip's over the origin at its trunk; the profile's width), its contest keeping the hit's outcome
+ * (`withBeaten`), under ids that name both. A profile without a contest is returned as it is.
+ */
+export function withUnder(p: BlockProfile, U: UnderSpec, S: LeanInStance, L0: LeanGeometry): BlockProfile {
+  if (!p.contest) return p;
+  const r = (d: number) => (d * Math.PI) / 180;
+  const L = S.ankleDeg === undefined ? L0 : { ...L0, dorsiDeg: S.ankleDeg };
+  const o = standOver(L, leanInStances(S, L0).aheadM, r(U.thighDeg));
+  const stance: BlockStance = { leanDeg: U.leanDeg, hingeDeg: U.trunkDeg - U.leanDeg, dropM: 0, heightM: o.overGroundM - L.hipUpM * Math.cos(r(U.trunkDeg)), staggerM: S.staggerM, ...(p.stance.widthAddM ? { widthAddM: p.stance.widthAddM } : {}) };
+  return { ...p, id: `${p.id}+${U.id}`, under: { id: U.id, stance, span: U.span, lift: U.lift }, contest: withBeaten(p.contest), hinge: { ...p.hinge, maxDeg: Math.max(p.hinge.maxDeg, stance.hingeDeg) } };
+}
+
+/**
  * Plan 16 (p38): the lean-in, the user's A (two men inclined into each other, a line from the helmet down the back to the
  * hips and on to feet behind the hips). Derived on the BL body (thigh 0.43, shin 0.45, the ankle's 25 deg):
  * - The load: the thigh 64 deg below horizontal, the rear foot on its ball at 10 deg (heel 5 cm up), its flat footprint's
@@ -1404,11 +1459,19 @@ export class BlockController implements Controller {
     const SL = low ? punchPose(P, { ...pu!, phase: 'load' }) : S01;
     const S00 = low ? { ...S01, heightM: SL.heightM, dropM: SL.dropM } : S01;
     // (p41, the fire-out: loaded, the trunk at the fire's, low)
-    const S0 = fire && pu?.phase === 'load' ? { ...S00, hingeDeg: Math.max(0, fire.trunkDeg - S00.leanDeg) } : S00;
+    const S0f = fire && pu?.phase === 'load' ? { ...S00, hingeDeg: Math.max(0, fire.trunkDeg - S00.leanDeg) } : S00;
+    // (p46, `under`: once his hit is through, driving from under by how far it beat his man past him; the man it beat held
+    // up by it)
+    const U = P.under;
+    const beat = (id: PlayerId): number => (U ? (ctx.observed.block?.[id]?.beaten ?? 0) : 0);
+    const through = !K || (pu?.phase === 'drive' && ctx.t - pu.since + 1e-9 >= (P.contest?.burst.s ?? 0));
+    const uw = U && through ? clamp((beat(R.target) - beat(ctx.self)) / U.span, 0, 1) : 0;
+    const S0 = uw > 0 ? { ...S0f, leanDeg: S0f.leanDeg + (U!.stance.leanDeg - S0f.leanDeg) * uw, hingeDeg: S0f.hingeDeg + (U!.stance.hingeDeg - S0f.hingeDeg) * uw, dropM: S0f.dropM + (U!.stance.dropM - S0f.dropM) * uw, heightM: S0f.heightM + (U!.stance.heightM - S0f.heightM) * uw } : S0f;
+    const slU = U ? Math.max(sl, U.lift * beat(ctx.self)) : sl;
     // (p36, giving ground: stood up by how far he is pushed past his base; p37, the contest: by how hard he is knocked back,
     // hips up and trunk up)
     const S1 = gl > 0 ? { ...S0, heightM: S0.heightM + gl * P.give!.riseM } : S0;
-    const S = sl > 0 ? { ...S1, heightM: S1.heightM + sl * P.contest!.stood.riseM, hingeDeg: Math.max(0, S1.hingeDeg - sl * P.contest!.stood.trunkDeg) } : S1;
+    const S = slU > 0 ? { ...S1, heightM: S1.heightM + slU * P.contest!.stood.riseM, hingeDeg: Math.max(0, S1.hingeDeg - slU * P.contest!.stood.trunkDeg) } : S1;
     // (p41, firing: his feet's frame level, as in the stance he comes out of)
     const stance = this.stanceRequest(fire && P.flat ? { ...S, flat: { ...P.flat, level: true } } : S);
     // (p43: his eyes on his man, the neck's range his pre-snap stance's)
@@ -1418,7 +1481,7 @@ export class BlockController implements Controller {
       arms,
       posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
       block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
-      debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}), ...(P.lanes ? { lane: lane ?? null } : {}) },
+      debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}), ...(P.lanes ? { lane: lane ?? null } : {}), ...(U ? { under: uw } : {}) },
     };
   }
 

@@ -9,7 +9,7 @@ import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
 import { shoulderLocal } from './profiles';
 import { hingeBalanceTorque, hipTorque } from './hinge';
-import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, hitPair, limitToBase, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
+import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, hitPair, limitToBase, nextBeaten, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
 
 /** What the motor step reads from the simulation. */
 export type MotorHost = Pick<
@@ -233,6 +233,8 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   const dt = host.physics.dt;
   if (blk.phase !== 'engaged' || !supported || !pl.sus?.active || !pl.feet || !him || him.rag) {
     st.level *= Math.exp(-dt / K.stood.releaseS);
+    // (p46, `beaten`: released with it)
+    if (K.beaten && st.beaten !== undefined) st.beaten = nextBeaten(st.beaten, st.level, 0, false, dt, K.stood.releaseS);
     st.vPrev = null;
     st.outrunT = st.overT = st.leanT = null;
     st.forceN = st.pushF = st.holdF = 0;
@@ -254,6 +256,8 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   const H = him.block?.contest;
   const margin = H ? H.pushN / Math.max(1e-6, st.pushN + st.holdN) - 1 : -1;
   advanceContest(st, K, { v, behindM: rear - dot(com, u), margin, leanRad: pl.balance.theta }, host.t, dt);
+  // (p46, `beaten`: how far the hit has him past his man, held while his man's palms are on him)
+  if (K.beaten) st.beaten = nextBeaten(st.beaten, st.level, H?.level ?? 0, !!host.arms && (['left', 'right'] as const).some((s) => host.arms!.pushOf(him.id, s)?.targetId === pl.id), dt, K.stood.releaseS);
   // his capacity: effort (the fault: 1 for every man), how low he is against his man (the posed hips), his feet, stood up
   const hipY = (p: typeof pl): number => (p.pose ? (p.pose.jointLandmarksWorld.leftHip.y + p.pose.jointLandmarksWorld.rightHip.y) / 2 : p.proxy.body.translation().y);
   const feet = contestFeet(pl.feet, K);
