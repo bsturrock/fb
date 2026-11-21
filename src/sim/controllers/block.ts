@@ -463,6 +463,18 @@ export const LANES_V1: BlockLanes = {
   callM: 0.6,
 };
 
+/**
+ * Plan 16 (p46): LANES_V1 with the outside palms on the tops of his shoulders (0.65 m up, 13 cm out: the top front of
+ * the shoulder pads, beside his neck), over the inside man's upper arms. On the fronts of the shoulders (LANES_V1, 0.56
+ * m) the inside man's arms, reaching out level to his man's chest from shoulders the same width, fill the space in
+ * front of them: the outside palms sat 5-7 cm into the top of his upper arms and the forearms 5-7 cm through them
+ * (BL-F10-twoPointVsThree, BL-F9-threePoint). The patch is then above the palm push's band (PALM_PUSH_V1 to 0.58 m): a
+ * scene on these lanes raises it (`SHOULDER_TOPS_HIGH_M`).
+ */
+export const LANES_TOPS: BlockLanes = { ...LANES_V1, id: 'lanes-tops-v1', outside: { ...LANES_V1.outside, y: 0.65, x: 0.13 } };
+/** Plan 16 (p46): the palm push's band top for LANES_TOPS (m above his origin): the outside patch lands 0.62-0.63 m up, under the torso box's top (0.69). */
+export const SHOULDER_TOPS_HIGH_M = 0.66;
+
 export const BLOCK_V1_HANDS: BlockProfile['hands'] = {
   default: 'under',
   under: { y: 0.36, x: 0.09, depthM: 0.08, pole: v3(0.2, -1, 0.1), lengthM: 0.64 },
