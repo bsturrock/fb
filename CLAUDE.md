@@ -42,6 +42,13 @@ uncommitted stack of changes cannot be judged or bisected, and cost 17 rounds wi
 9. **No experiment hooks in committed source** (`process.env.*`, `globalThis.*` switches).
 10. **Storage.** No copies of the tree; never copy `.scratch/` or `node_modules`. Check results go to
     `.scratch/<work>/<step>/`, under about 20 MB each; nothing durable in `/tmp`.
+11. **One headless browser, closed by whoever opened it.** Agents taking stills left about 50 Chrome copies running
+    (2026-11-20). Before launching: `pgrep -fl remote-debugging-port`; if one of ours is up, reuse it or kill it, never
+    start a second. Launch headless only (`--headless`, own `--user-data-dir` under `.scratch/`, own
+    `--remote-debugging-port`), record the PID, and kill that PID in the same script (`trap ... EXIT`), so no browser
+    outlives the command that needed it. Never open the Chrome app (`open -a`), never leave a browser for a later
+    step, never kill a Chrome without `--remote-debugging-port` (that is the user's own). A final report states the
+    `pgrep` count, which must be 0; whoever dispatched the agent checks it again.
 
 ## Working with the user
 
