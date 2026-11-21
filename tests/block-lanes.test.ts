@@ -34,7 +34,7 @@ describe('plan 16 (p45), the inside lane', () => {
   function scene(mode: Mode): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
     // (the p45 leverage off: the lanes as they first came)
-    const d = blockScene({ ...s, id: 'BL-T-lanes', durationS: END_S + 0.1, lanes: true, insideLeverage: false, stayLow: false }, FIX('L3-F6-hold'));
+    const d = blockScene({ ...s, id: 'BL-T-lanes', durationS: END_S + 0.1, lanes: true, insideLeverage: false, stayLow: false, shoulderTops: false }, FIX('L3-F6-hold'));
     if (mode === 'lanes') return d;
     // a twin: the lanes off (the request's hands), or called as the first palm lands
     return {

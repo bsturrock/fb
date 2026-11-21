@@ -19,7 +19,7 @@ describe('plan 16 (p44), the two-point set on its own feet', () => {
   const SET_S = 1.5;
   function scene(L: LeanInStance): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    return blockScene({ ...s, id: 'BL-T-two-point', A: { ...s.A, leanIn: L }, durationS: SNAP - 0.05, stayLow: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-two-point', A: { ...s.A, leanIn: L }, durationS: SNAP - 0.05, stayLow: false, shoulderTops: false }, FIX('L3-F6-hold'));
   }
   interface SetShape {
     trunkDeg: number;
