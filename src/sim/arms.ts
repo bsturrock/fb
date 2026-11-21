@@ -11,7 +11,7 @@
 //    thinnest obstacle (~0.26 m) in one substep (> 15 m/s at 1/60 s), outside every fixture.
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
-import type { ArmProfile, ArmSetup, BodyProfile, FallLinkProfile, JointRangeProfile, RagdollProfile, RetentionMode, RideHoldProfile, SelfClearanceProfile } from './profiles';
+import type { ArmProfile, ArmSetup, BodyProfile, FallLinkProfile, JointRangeProfile, PalmPushProfile, RagdollProfile, RetentionMode, RideHoldProfile, SelfClearanceProfile } from './profiles';
 import type { ArmDebug } from './debug';
 import { landmarkWorld, poseOfRb, type BornPair, type Ragdoll } from './ragdoll';
 import { shoulderLocal, sideSignX } from './profiles';
@@ -2153,9 +2153,11 @@ export class ArmSystem {
     }
     const rbT = this.partBody(tgt, c.part);
     const tp = this.prePose(rbT);
-    const pW = toWorld(tp, c.pointLocal);
     const nW = qRot(tp.q, c.normalLocal);
     const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
+    // (p47, `slide`: the patch slides on his surface toward where the arm's line to its target meets it)
+    if (PP.slide && intent.targetWorld) this.slidePatch(PP, c, tp, tgt, sW, intent.targetWorld, obstacles, dt);
+    const pW = toWorld(tp, c.pointLocal);
     const L = len(sub(pW, sW));
     const n = norm(sub(pW, sW), v3(0, 0, 1));
     // (p45, `stanceCone`: against his surface as it stands at the cone's stance pitch)
@@ -2199,6 +2201,38 @@ export class ArmSystem {
     a.obstructed = false;
     a.poseErrorM = 0;
     return { F, n, p: pW, target: tgt.id, id: c.id, rbT };
+  }
+
+  /**
+   * Plan 16 (p47, `PalmPushProfile.slide`): one substep of a held patch sliding on the surface it was born on, in the plane
+   * through it along that surface (the patch keeps its seat, the palm ball resting on him as it landed), toward where the
+   * line from the shoulder `sW` through the arm's target `target` meets that plane, at most `slide.mps` (m/s). It stays
+   * where it is when the line does not go into the surface, or the step would take it outside the band's height (his body's
+   * frame) or off the face (the palm no longer the same distance from his part).
+   */
+  private slidePatch(PP: PalmPushProfile, c: PushPatch, tp: Pose, tgt: ArmHostPlayer, sW: Vec3, target: Vec3, obstacles: Obstacle[], dt: number): void {
+    const S = PP.slide!;
+    const pW = toWorld(tp, c.pointLocal);
+    const nW = qRot(tp.q, c.normalLocal);
+    const ld = sub(target, sW);
+    const den = dot(ld, nW);
+    if (den >= -1e-6) return;
+    const want = addScaled(sW, ld, dot(sub(pW, sW), nW) / den);
+    const d = sub(want, pW);
+    const gap = len(d);
+    if (gap < 1e-6) return;
+    const next = addScaled(pW, d, Math.min(gap, S.mps * dt) / gap);
+    const y = toLocal(this.prePose(tgt.rb), next).y;
+    if (y < PP.band.lowM || y > PP.band.highM) return;
+    const o = obstacles.find((x) => x.playerId === c.targetId && x.part === c.part && !x.self && PP.band.regions.includes(x.region));
+    const off = (p: Vec3): number | null => {
+      const pr = o?.collider.projectPoint(p, false);
+      return pr ? len(sub(p, vc(pr.point))) : null;
+    };
+    const d0 = off(pW);
+    const d1 = off(next);
+    if (d0 === null || d1 === null || Math.abs(d1 - d0) > S.seatTolM) return;
+    c.pointLocal = toLocal(tp, next);
   }
 
   /** A held palm push after the solve: the palm on its patch against the solved bodies, or its end. True: it holds. */

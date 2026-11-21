@@ -750,6 +750,15 @@ export interface ArmProfile {
  * flexion, the men closing at 3 m/s) and fold past 100 deg within 0.01-0.04 s under the inside man's hit; ended there,
  * they came off and went back on 0.07-0.11 s later (BL-F10-twoPointVsThree, BL-F9-threePoint), the palms flicking off
  * and on.
+ *
+ * `slide` (plan 16 p47; absent: the patch stays where it was born): a held patch slides on the surface it was born on,
+ * keeping its seat (in the plane through it along that surface), toward where the line from the shoulder through the
+ * arm's target meets that plane, at most `mps`; never outside the band's height, nor off the face (the palm's distance
+ * from the part changing by more than `seatTolM`). Why: a palm is born where it first touches, and a palm whose aim
+ * changes in its last 0.05 s of flight (the inside lane called as the palms close, the outside man's hands sent up to the
+ * tops of the shoulders) lands on the way there and stays: 8-11 cm under its aim, on the upper chest just inside where
+ * the inside man's upper arms leave his shoulders, 4.1-4.3 cm into them (2.3-2.7 on average, over 1 cm for 1.9 of the
+ * 2 s after contact; BL-F9-threePoint, BL-F10-twoPointVsThree). The hand rides up onto the shoulder once it is on.
  */
 export interface PalmPushProfile {
   stiffness: number;
@@ -766,6 +775,7 @@ export interface PalmPushProfile {
   ownBodyKeeps?: boolean;
   stanceCone?: { refDeg: number };
   foldKeeps?: { maxFlexDeg: number };
+  slide?: { mps: number; seatTolM: number };
 }
 
 /**
