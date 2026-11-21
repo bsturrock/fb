@@ -242,6 +242,14 @@ export interface ContestHit {
    * later (BL-F9-threePoint, BL-F10-twoPointVsThree). Absent: to the end.
    */
   untilStraight?: true;
+  /**
+   * Plan 16 (p47): the winner's legs hold at most his push capacity of the hit (N), the rest of his part on him as on the
+   * other man; absent, all his part whatever the hit. Why: a man running in at 2.6 m/s into a man set in his stance hit
+   * with the cap's 3000 N; the set man, the larger push capacity (his feet planted, the runner's in his stride), held all
+   * of it, so the runner stopped dead in 0.1 s and was driven back at 0.9-1.2 m/s while the set man did not move (a
+   * run-in experiment): the runner's momentum went nowhere.
+   */
+  legsHold?: true;
 }
 
 /**
@@ -257,6 +265,8 @@ export function hitPair(H: ContestHit, massKg: number, closingMps: number, punch
   const win = (x: number, y: number): number => (x > y && y > 0 ? clamp((x / y - 1) / H.winX, 0, 1) : x > y ? 1 : 0);
   const wa = pushB === undefined ? 0 : win(pushA, pushB);
   const wb = pushB === undefined ? 0 : win(pushB, pushA);
+  // (p47, `legsHold`: what his legs hold is at most his push capacity)
+  if (H.legsHold) return { F, onA: -(F - Math.min(F * wa, pushA)), onB: F - Math.min(F * wb, pushB ?? 0) };
   return { F, onA: -F * (1 - wa), onB: F * (1 - wb) };
 }
 
@@ -300,6 +310,8 @@ export const withBeaten = (C: BlockContest): BlockContest => ({ ...C, id: `${C.i
 export const withArmsGive = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+arms-give`, armsGive: true });
 export const withBurstTaper = (C: BlockContest, beaten: number): BlockContest => ({ ...C, id: `${C.id}+burst-taper${beaten}`, burstTaper: beaten });
 export const withLowUnheld = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+low-unheld`, lowUnheld: true });
+/** Plan 16 (p47): a contest whose hit's winner holds at most his push capacity of it (`ContestHit.legsHold`), under an id that names it. */
+export const withLegsHold = (C: BlockContest): BlockContest => ({ ...C, id: `${C.id}+legs-hold`, hit: { ...C.hit!, legsHold: true } });
 
 /**
  * Plan 16 (p46, `BlockContest.beaten`): one substep of how far the hit has him beaten, from what it was (`b0`; undefined:
