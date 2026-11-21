@@ -2176,7 +2176,8 @@ export class ArmSystem {
     const sol = this.solveArm(pl, a, ownerPose, a.palmLocal, obstacles, undefined, shown, !!PP.ownBodyKeeps);
     const el = elbowOf(sW, sol.elbow, sol.palm);
     if (!sol.valid && !K?.pushPalmAtRest) end = 'invalidPose';
-    else if (el.flexRad >= rad(PP.collapseFlexDeg)) end = 'collapsed';
+    // (p46, `foldKeeps`: folded past the collapse, kept at no force to its own bound)
+    else if (el.flexRad >= rad(PP.foldKeeps?.maxFlexDeg ?? PP.collapseFlexDeg)) end = 'collapsed';
     if (end) {
       this.endPush(pl, a, end, ownerPose);
       return null;

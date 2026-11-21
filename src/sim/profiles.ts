@@ -743,6 +743,13 @@ export interface ArmProfile {
  * stance the arms are judged as they would be on him standing in it: a palm from above is judged as one from level, a
  * palm from below no more leniently than at his stance (the turn takes it further off), a man at or above the stance's
  * pitch as without it.
+ *
+ * `foldKeeps` (plan 16 p46; absent: a held push ends as its elbow folds past `collapseFlexDeg`): past it the push is kept
+ * at no force (its taper's end) until the elbow folds past `maxFlexDeg`; the palm stays on him while the arm gives under
+ * a hit, and pushes again as it opens. Why: an outside man's palms land bent on his man's shoulders (80-86 deg of
+ * flexion, the men closing at 3 m/s) and fold past 100 deg within 0.01-0.04 s under the inside man's hit; ended there,
+ * they came off and went back on 0.07-0.11 s later (BL-F10-twoPointVsThree, BL-F9-threePoint), the palms flicking off
+ * and on.
  */
 export interface PalmPushProfile {
   stiffness: number;
@@ -758,6 +765,7 @@ export interface PalmPushProfile {
   seat?: boolean;
   ownBodyKeeps?: boolean;
   stanceCone?: { refDeg: number };
+  foldKeeps?: { maxFlexDeg: number };
 }
 
 /**

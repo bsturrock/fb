@@ -88,7 +88,12 @@ export interface BlockSceneOpts {
   stayLow?: boolean;
   /** Plan 16 (p46): with `lanes`, the outside palms on the tops of his shoulders (LANES_TOPS), the palm push's band raised to them (SHOULDER_TOPS_HIGH_M). */
   shoulderTops?: boolean;
+  /** Plan 16 (p46): a palm push folded past its collapse kept on, at no force, to FOLD_KEEPS_DEG (`PalmPushProfile.foldKeeps`). */
+  foldKeeps?: boolean;
 }
+
+/** Plan 16 (p46): the elbow's flexion a folded palm push is kept to (deg; the elbow folds to about 145): past it his forearm is against his upper arm, his palms at his own shoulders. */
+export const FOLD_KEEPS_DEG = 130;
 
 /**
  * The palm push the BL men use: PALM_PUSH_V1 with a wider cone for the arm line (born from 0.6, kept to 0.45; V1 0.8 and
@@ -107,7 +112,7 @@ const palmWidenDeg = (o: BlockSceneOpts): number =>
 const setTrunkOf = (o: BlockSceneOpts): number => Math.min(...[o.A, o.B].map((m) => setTrunkDeg(m) ?? (m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg));
 function palmPushOf(o: BlockSceneOpts): PalmPushProfile {
   const more = palmWidenDeg(o);
-  const P = { ...PALM_PUSH_BLOCK, ...(o.seat ? { seat: true } : {}), ...(o.upperArm ? { ownBodyKeeps: true } : {}), ...(o.stanceCone ? { stanceCone: { refDeg: setTrunkOf(o) } } : {}), ...(o.shoulderTops ? { band: { ...PALM_PUSH_BLOCK.band, highM: SHOULDER_TOPS_HIGH_M } } : {}) };
+  const P = { ...PALM_PUSH_BLOCK, ...(o.seat ? { seat: true } : {}), ...(o.upperArm ? { ownBodyKeeps: true } : {}), ...(o.stanceCone ? { stanceCone: { refDeg: setTrunkOf(o) } } : {}), ...(o.shoulderTops ? { band: { ...PALM_PUSH_BLOCK.band, highM: SHOULDER_TOPS_HIGH_M } } : {}), ...(o.foldKeeps ? { foldKeeps: { maxFlexDeg: FOLD_KEEPS_DEG } } : {}) };
   if (more <= 0) return P;
   const wider = (dot: number) => Math.cos(Math.acos(dot) + (more * Math.PI) / 180);
   return { ...P, bornFacingDot: wider(P.bornFacingDot), keepFacingDot: wider(P.keepFacingDot) };
@@ -177,7 +182,7 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     title: o.title,
     notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1, on a base when its profile has one) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
     // the arm profile's id names the widened cone, the seat and the hold over his own body (one id, one set of values)
-    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}${o.upperArm ? '+own-body-keeps' : ''}${o.stanceCone ? `+stance-cone${setTrunkOf(o)}` : ''}${o.shoulderTops ? `+band-top${SHOULDER_TOPS_HIGH_M}` : ''}`, palmPush: palmPushOf(o) },
+    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}${o.upperArm ? '+own-body-keeps' : ''}${o.stanceCone ? `+stance-cone${setTrunkOf(o)}` : ''}${o.shoulderTops ? `+band-top${SHOULDER_TOPS_HIGH_M}` : ''}${o.foldKeeps ? `+fold-keeps${FOLD_KEEPS_DEG}` : ''}`, palmPush: palmPushOf(o) },
     ...(o.upperArm ? { selfClearance: withUpperArmClearance(rest.selfClearance!) } : {}),
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },
