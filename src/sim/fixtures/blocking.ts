@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -102,6 +102,8 @@ export interface BlockSceneOpts {
   palmSlide?: boolean;
   /** Plan 16 (p48): with `lanes`, the lane called only once a strike is thrown, with a true tie's stated rule (`BlockLanes.onStrike`, `withLaneOnStrike`). */
   laneOnStrike?: boolean;
+  /** Plan 16 (p48): both men's arms against his man holding them there as their hands on (`BlockProfile.frame`, `withFrame`). */
+  frame?: boolean;
 }
 
 /** Plan 16 (p47): the BL palms' slide (`PalmPushProfile.slide`): 1 m/s (a palm landed 8-11 cm under its aim is there in 0.1 s), off the face past 5 mm. */
@@ -140,7 +142,8 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const sep = o.sepM ?? sepOf(o, def, template.body);
   const P0 = profileOf(m, def, template.body);
   const P1 = o.aimThrough ? withAimThrough(P0) : P0;
-  const P2 = o.followThrough ? withFollowThrough(P1) : P1;
+  const P2f = o.followThrough ? withFollowThrough(P1) : P1;
+  const P2 = o.frame ? withFrame(P2f) : P2f;
   const L0 = o.shoulderTops ? LANES_TOPS : LANES_V1;
   const L1 = o.laneTie ? withLaneTie(L0, LANE_TIE_V1) : L0;
   const P3 = o.lanes ? withLanes(P2, o.laneOnStrike ? withLaneOnStrike(L1) : L1) : P2;

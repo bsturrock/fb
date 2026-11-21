@@ -201,6 +201,15 @@ export interface BlockProfile {
    * his man is knocked off at 1.4-1.7 m/s; their chests part past his arms' reach. Absent: his request alone.
    */
   followThrough?: true;
+  /**
+   * Plan 16 (p48): engaged with a palm or forearm against his man and no push on (his arms folded between the chests, a
+   * push ended as it folded), he holds or drives as with his hands on: his arms are a frame, and he does not back off to
+   * arm's length. Why: a man whose man has come on into his chest cannot get there while his man follows him, and backed
+   * off at his back-off speed with his palms against his man, never clear enough to re-arm: in BL-F2-walkIn under the full
+   * set B's outside palms fold under A's walk-in and end at 1.71 s; B backs off at 0.5 m/s with A's helmet in his chest and
+   * A following, 4 m in 7 s, his palms on 3 % of the time, and never anchors. Absent: only a palm push holds him there.
+   */
+  frame?: true;
   /** Plan 16 (p45): the inside lane, won by who gets there (`BlockLanes`); absent, the request's placement (`hands`). */
   lanes?: BlockLanes;
   /** Plan 16 (p46): the winner of the hit stays low and the man it beat stays up (`BlockUnder`); absent, neither. */
@@ -292,6 +301,8 @@ export const withAimThrough = (p: BlockProfile): BlockProfile => ({ ...p, id: `$
  * Plan 16 (p45): a block profile that follows through (`followThrough`), its hit's punch parting the pair only while his
  * arms extend (`ContestHit.untilStraight`; a profile without a hit as it is), under ids that name it.
  */
+/** Plan 16 (p48): a block profile whose arms against his man hold him there as his hands on (`frame`), under an id that names it. */
+export const withFrame = (p: BlockProfile): BlockProfile => ({ ...p, id: `${p.id}+frame`, frame: true });
 /** Plan 16 (p45): a block profile on the inside lane `L` (`lanes`), under an id that names it. */
 export const withLanes = (p: BlockProfile, L: BlockLanes): BlockProfile => ({ ...p, id: `${p.id}+${L.id}`, lanes: L });
 export const withFollowThrough = (p: BlockProfile): BlockProfile => ({
@@ -1483,7 +1494,9 @@ export class BlockController implements Controller {
     // (p46, the contest's `armsGive`: his palms' effort, given as he is stood up)
     const pushEffort = P.contest?.armsGive ? effort * (1 - sl) : effort;
     let along: number;
-    if (phase === 'engaged' && handOn) {
+    // (p48, `frame`: his arms against his man hold him there as his hands on)
+    const framed = !!P.frame && SIDES.some((side) => obs?.[side]?.touchingTarget === R.target);
+    if (phase === 'engaged' && (handOn || framed)) {
       const mine = horiz(me.position);
       if (!this.anchor || dot(sub(mine, this.anchor), dir) > 0) this.anchor = mine;
       const given = Math.max(0, dot(sub(this.anchor, mine), dir));
