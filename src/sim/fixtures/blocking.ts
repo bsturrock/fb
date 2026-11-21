@@ -4,8 +4,8 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
-import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withInsideLeverage, withLowUnheld, type BlockContest } from '../block-base';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
 import { mirrorZ } from './handoff-contact';
@@ -241,6 +241,13 @@ const drive = (effort: number, hands: 'under' | 'over', profile?: BlockProfile, 
  * the two-point set on its own feet).
  */
 const setIn = (m: BlockMan, kind: 'two-point' | 'three-point', side: 'offense' | 'defense', snapS: number): BlockMan => ({ ...m, profile: withGaze(m.profile ?? BLOCK_V1, GAZE_V1), leanIn: kind === 'two-point' ? LEAN_IN_V6 : LEAN_IN_V5, stance: { kind, side }, fromS: snapS });
+/**
+ * Plan 16 (p47): a man set in his stance who steps up into a man running at him: BLOCK_STRIKE_V5 with its fire-out at
+ * 0.7 m/s (a short step and the punch, not the line's 2 m/s charge out of his stance).
+ */
+export const BLOCK_STRIKE_STEP_UP: BlockStrike = { ...BLOCK_STRIKE_V5, id: 'strike-v5-step-up', fire: { ...BLOCK_STRIKE_V5.fire!, mps: 0.7 } };
+/** Plan 16 (p47): a BL man running in (RUN_IN_V1) from `fromS`, on the lean-in V6, his eyes on his man. */
+const runningIn = (m: BlockMan, fromS: number): BlockMan => ({ ...m, profile: withGaze(withRunIn(m.profile ?? BLOCK_V1, RUN_IN_V1), GAZE_V1), leanIn: LEAN_IN_V6, fromS });
 
 /**
  * The BL scenes (A's hands under, B's over, in every one; every man on the contest, `contested`, striking with
@@ -293,6 +300,29 @@ export const BL_SCENES: BlockSceneOpts[] = [
     A: setIn(drive(0.5, 'under', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'two-point', 'offense', 3.3),
     B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3),
     sepM: 2,
+    durationS: 8,
+    seat: true,
+    aimThrough: true,
+    stanceCone: true,
+    followThrough: true,
+    lanes: true,
+    insideLeverage: true,
+    stayLow: true,
+    shoulderTops: true,
+    foldKeeps: true,
+    armsGive: true,
+    laneTie: true,
+    burstTaper: true,
+    lowUnheld: true,
+    palmSlide: true,
+    upperArm: true,
+  },
+  {
+    id: 'BL-F11-runIn',
+    title: 'Run-in: A starts 8 m from B at 1.5 s and runs in at up to 3 m/s; B, set in the two-point from the reset, steps up into him at the snap (3.3 s); A drives, B holds, both at effort 0.5, 8 s',
+    A: runningIn(drive(0.5, 'under', undefined, BLOCK_STRIKE_V5, withLegsHold(CONTEST_V2)), 1.5),
+    B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_STEP_UP, withLegsHold(CONTEST_V2)), 'two-point', 'defense', 3.3),
+    sepM: 8,
     durationS: 8,
     seat: true,
     aimThrough: true,
