@@ -9,14 +9,14 @@ import { BL_SCENES, blockScene } from '../src/sim/fixtures/blocking';
 import { Simulation } from '../src/sim/simulation';
 import { dot, len, norm, sub, v3 } from '../src/sim/vec';
 import { captureState, resumeState, type StateCapture } from './state';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 describe('plan 16 (p48), the arms against his man a frame', () => {
   const CAPTURE_S = 1.6;
   const END_S = 4;
   const scene = (frame: boolean): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F2-walkIn')!;
-    return blockScene({ ...s, id: 'BL-T-frame', durationS: END_S + 0.1, seat: true, aimThrough: true, stanceCone: true, followThrough: true, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: true, laneTie: true, burstTaper: true, lowUnheld: true, palmSlide: true, laneOnStrike: true, upperArm: true, frame }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, ...WITHOUT_NEWER, id: 'BL-T-frame', durationS: END_S + 0.1, seat: true, aimThrough: true, stanceCone: true, followThrough: true, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: true, laneTie: true, burstTaper: true, lowUnheld: true, palmSlide: true, laneOnStrike: true, upperArm: true, frame }, FIX('L3-F6-hold'));
   };
   const caps = new Map<boolean, StateCapture>();
   async function captured(rev: boolean): Promise<StateCapture> {
