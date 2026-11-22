@@ -307,10 +307,11 @@ export const withFrame = (p: BlockProfile): BlockProfile => ({ ...p, id: `${p.id
  * Plan 16 (p49): how far the BL men's set stances toe their plants out (deg, per stance; `withToeOut`). The two-point set
  * at 20 brings his knees over his ankles (8.7 cm inside them straight); the defense three-point at 10 puts them 3 cm
  * outside. Deeper the plants do not hold: past 10 in the defense three-point and past 5 in the offense three-point (hips
- * 0.71 m) the planted feet slide off their anchors as he sinks into the stance (9-50 cm in BL-F9-threePoint at 10-20),
- * so the offense three-point gains 2.5 cm only (knees 6 cm inside his ankles).
+ * 0.71 m) the planted feet slide off their anchors as he sinks into the stance (9-50 cm in BL-F9-threePoint at 10-20).
+ * The offense three-point is not toed out: at 5 its knees came 2.5 cm out only (6 cm inside the ankles) and his hip,
+ * already folded past its range at the snap, folded 5 deg further (36 deg past it, BL-F9-threePoint A at 3.3 s).
  */
-export const TOE_OUT_DEG: Partial<Record<PreSnapKey, number>> = { 'two-point': 20, 'three-point-defense': 10, 'three-point-offense': 5 };
+export const TOE_OUT_DEG: Partial<Record<PreSnapKey, number>> = { 'two-point': 20, 'three-point-defense': 10 };
 /**
  * Plan 16 (p49): a block profile whose pre-snap stances (`preSnap`) toe his plants out by `deg` (each stance's flat feet,
  * its own or the profile's, with `FlatStance.toeOutDeg`; a stance with neither as it is), under ids that name it. His

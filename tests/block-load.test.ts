@@ -20,7 +20,7 @@ describe('plan 16 (p43), the load on his shoulders', () => {
     // the twin keeps the strike's id (the capture's), its load in his own frame
     const K: BlockStrike = onShoulders ? BLOCK_STRIKE_V5 : { ...BLOCK_STRIKE_V5, load: { ...BLOCK_STRIKE_V5.load, onShoulders: undefined } };
     const m = (x: typeof s.A) => ({ ...x, profile: withGaze(contested(undefined, K, CONTEST_V2), GAZE_V1) });
-    return blockScene({ ...s, id: 'BL-T-load', A: m(s.A), B: m(s.B), durationS: 3.7, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false, laneOnStrike: false, frame: false, heldByPush: false, strikeAtLoadGap: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, id: 'BL-T-load', A: m(s.A), B: m(s.B), durationS: 3.7, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false, laneOnStrike: false, frame: false, heldByPush: false, strikeAtLoadGap: false, toeOut: false }, FIX('L3-F6-hold'));
   }
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

@@ -165,6 +165,8 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   // (p39: a man in a pre-snap stance is set in it from the reset)
   const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
   const S0 = pre ?? (set ? P.stance : undefined);
+  // (p49, `toeOut`: a pre-snap stance toed out is his reset's flat feet, so the reset's plants are toed out as it asks)
+  const flat0 = pre?.flat?.toeOutDeg ? pre.flat : P.flat;
   return {
     ...template,
     id,
@@ -176,8 +178,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
       ...(m.walkInMps ? { velocity: v3(0, 0, sign * m.walkInMps) } : {}),
       // set in his stance's height, feet square: a reset into the stagger slides the rear plant 5.8 cm on the first
       // substep (p31); the stance request staggers them from there
-      // (p49, `toeOut`: on his pre-snap stance's flat feet, so the reset's plants are toed out as the stance asks)
-      ...(S0 ? { stance: { heightM: S0.heightM, staggerM: 0, ...(S0.widthAddM ? { widthAddM: S0.widthAddM } : {}), ...((o.toeOut ? (pre?.flat ?? P.flat) : P.flat) ? { flat: o.toeOut ? (pre?.flat ?? P.flat) : P.flat } : {}) } } : {}),
+      ...(S0 ? { stance: { heightM: S0.heightM, staggerM: 0, ...(S0.widthAddM ? { widthAddM: S0.widthAddM } : {}), ...(flat0 ? { flat: flat0 } : {}) } } : {}),
     },
     arms: { enabled: { left: true, right: true }, mode: { left: 'forearmClamp', right: 'forearmClamp' }, acquisition: false, closeEffortScale: 1 },
     controller: {
@@ -306,7 +307,7 @@ export const NEWER_SET = {
  * and the lane's call with a tie (`laneTie`), the knock-back ended (`burstTaper`, `lowUnheld`), from p47 the held palms sliding on to
  * their aim (`palmSlide`), from p48 the lane called only once a strike is thrown (`laneOnStrike`), from p49 the folded arms against
  * his man a frame (`frame`), the hit held only while the palms push (`heldByPush`) and the strike from the load's gap
- * (`strikeAtLoadGap`): `NEWER_SET`, from p49 on BL-F1-even, BL-F2-walkIn, BL-F5-offCentre (so BL-F6), BL-F7-hard and BL-F8-hardNoHinge too; from p44
+ * (`strikeAtLoadGap`) and, set, their plants toed out (`toeOut`): `NEWER_SET` but the toe-out, from p49 on BL-F1-even, BL-F2-walkIn, BL-F5-offCentre (so BL-F6), BL-F7-hard and BL-F8-hardNoHinge too; from p44
  * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
@@ -326,6 +327,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     sepM: 2,
     durationS: 8,
     ...NEWER_SET,
+    toeOut: true,
   },
   {
     id: 'BL-F10-twoPointVsThree',
@@ -335,6 +337,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     sepM: 2,
     durationS: 8,
     ...NEWER_SET,
+    toeOut: true,
   },
   {
     id: 'BL-F11-runIn',
@@ -344,6 +347,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     sepM: 8,
     durationS: 8,
     ...NEWER_SET,
+    toeOut: true,
   },
 ];
 

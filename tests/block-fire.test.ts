@@ -57,7 +57,7 @@ describe('plan 16 (p41), the fire-out', () => {
     const o = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
     const K = noHip ? { ...BLOCK_STRIKE_V3, fire: { ...BLOCK_STRIKE_V3.fire!, pace: { ...BLOCK_STRIKE_V3.fire!.pace, hipNm: undefined } } } : BLOCK_STRIKE_V3;
     const m = (x: typeof o.A) => ({ ...x, profile: contested(undefined, K) as BlockProfile });
-    return blockScene({ ...o, id: 'BL-T-fire', A: m(o.A), B: m(o.B), durationS: 4.3, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false, laneOnStrike: false, frame: false, heldByPush: false, strikeAtLoadGap: false }, FIX('L3-F6-hold'));
+    return blockScene({ ...o, id: 'BL-T-fire', A: m(o.A), B: m(o.B), durationS: 4.3, stayLow: false, shoulderTops: false, foldKeeps: false, armsGive: false, laneTie: false, burstTaper: false, lowUnheld: false, palmSlide: false, laneOnStrike: false, frame: false, heldByPush: false, strikeAtLoadGap: false, toeOut: false }, FIX('L3-F6-hold'));
   }
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {
