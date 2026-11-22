@@ -17,7 +17,7 @@ describe('plan 16 (p47), a held palm slides on to its aim', () => {
   const END_S = 6.3;
   function scene(slide: boolean, highM?: number): FixtureDef {
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    const d = blockScene({ ...s, id: 'BL-T-slide', durationS: END_S + 0.1, palmSlide: slide, laneOnStrike: false }, FIX('L3-F6-hold'));
+    const d = blockScene({ ...s, id: 'BL-T-slide', durationS: END_S + 0.1, palmSlide: slide, laneOnStrike: false, frame: false, heldByPush: false, strikeAtLoadGap: false }, FIX('L3-F6-hold'));
     if (highM === undefined) return d;
     const P = d.armProfile!.palmPush!;
     return { ...d, armProfile: { ...d.armProfile!, palmPush: { ...P, band: { ...P.band, highM } } } };

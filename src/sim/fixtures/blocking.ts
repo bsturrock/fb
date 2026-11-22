@@ -271,7 +271,9 @@ const runningIn = (m: BlockMan, fromS: number): BlockMan => ({ ...m, profile: wi
  * the winner driving from under once his hit is through (`stayLow`) and the outside palms on the tops of the shoulders
  * (`shoulderTops`), the beaten man's arms giving and kept on (`foldKeeps`, `armsGive`)
  * and the lane's call with a tie (`laneTie`), the knock-back ended (`burstTaper`, `lowUnheld`), from p47 the held palms sliding on to
- * their aim (`palmSlide`), from p48 the lane called only once a strike is thrown (`laneOnStrike`); from p44
+ * their aim (`palmSlide`), from p48 the lane called only once a strike is thrown (`laneOnStrike`), from p49 the folded arms against
+ * his man a frame (`frame`), the hit held only while the palms push (`heldByPush`) and the strike from the load's gap
+ * (`strikeAtLoadGap`); from p44
  * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
@@ -305,6 +307,9 @@ export const BL_SCENES: BlockSceneOpts[] = [
     lowUnheld: true,
     palmSlide: true,
     laneOnStrike: true,
+    frame: true,
+    heldByPush: true,
+    strikeAtLoadGap: true,
     upperArm: true,
   },
   {
@@ -329,6 +334,9 @@ export const BL_SCENES: BlockSceneOpts[] = [
     lowUnheld: true,
     palmSlide: true,
     laneOnStrike: true,
+    frame: true,
+    heldByPush: true,
+    strikeAtLoadGap: true,
     upperArm: true,
   },
   {
@@ -353,6 +361,9 @@ export const BL_SCENES: BlockSceneOpts[] = [
     lowUnheld: true,
     palmSlide: true,
     laneOnStrike: true,
+    frame: true,
+    heldByPush: true,
+    strikeAtLoadGap: true,
     upperArm: true,
   },
 ];

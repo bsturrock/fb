@@ -44,7 +44,7 @@ describe('plan 16 (p48), the lane called once a strike is thrown', () => {
   const scene = (onStrike: boolean): FixtureDef => {
     const { id: _i, title: _t, A: _a, B: _b, sepM: _s, durationS: _d, ...set } = BL_SCENES.find((x) => x.id === 'BL-F9-threePoint')!;
     const f1 = BL_SCENES.find((x) => x.id === 'BL-F1-even')!;
-    return blockScene({ ...f1, ...set, id: 'BL-T-lane-strike', durationS: 1, laneOnStrike: onStrike }, FIX('L3-F6-hold'));
+    return blockScene({ ...f1, ...set, id: 'BL-T-lane-strike', durationS: 1, laneOnStrike: onStrike, frame: false, heldByPush: false, strikeAtLoadGap: false }, FIX('L3-F6-hold'));
   };
   interface Out {
     lanes: Record<string, { lane: string; t: number }>;
