@@ -250,6 +250,8 @@ export interface BlockHandFight {
   swipe?: HandSwipe;
   /** Plan 16 (p50): a hand knocked off his man by a swipe (`HandKnock`); absent, a knock only ends its push. */
   knock?: HandKnock;
+  /** Plan 16 (p50): the re-fit of a knocked hand (`HandRefit`); absent, a knocked hand goes back on as the block's own hands do. */
+  refit?: HandRefit;
   /**
    * Plan 16 (p50): what a hand knocked off his man costs him in the contest once its knock is over and until it is back on
    * him (a share of his capacity, his `ContestState.leverage`); absent, nothing. While knocked it costs its knock's `cut`.
@@ -290,6 +292,22 @@ export interface HandKnock {
   dropDeg: number;
   cut: number;
   opens?: boolean;
+  /**
+   * Plan 16 (p50, with `refit`): the hand driven `offM` off his man too, along the line from his man to him (knocked down
+   * and out along his man's front, a palm stays on him and could not go back on: the arms' own withdrawal rule); absent, none.
+   */
+  offM?: number;
+}
+
+/**
+ * Plan 16 (p50), the re-fit (`BlockHandFight.refit`): his knocked hand, its knock over, goes straight back up onto his
+ * man at its own lane's aim (the inside lane's: his chest plate), its push extending at `extendMps`, while his other hand
+ * stays home; on him again, it is at home. Not on him by `s` (s), it goes back on as the block's own hands do (from the
+ * ready point).
+ */
+export interface HandRefit {
+  s: number;
+  extendMps: number;
 }
 
 /** Plan 16 (p50): the first hand fight (`BlockHandFight`): each hand's own state, nothing asked of it yet. */
@@ -308,14 +326,21 @@ export const HANDS_V2: BlockHandFight = {
   offCut: 0.3,
 };
 
+/**
+ * Plan 16 (p50): HANDS_V2 and the re-fit (`HandRefit`): the knocked hand, driven 12 cm off his man as well, straight back
+ * on at its aim within 0.4 s, its push extending at 3 m/s (the strike's pace).
+ */
+export const HANDS_V3: BlockHandFight = { ...HANDS_V2, id: 'hands-v3', knock: { ...HANDS_V2.knock!, offM: 0.12 }, refit: { s: 0.4, extendMps: 3 } };
+
 /** Plan 16 (p50): a block profile with the hand fight `H` (`handFight`), under an id that names it. */
 export const withHandFight = (p: BlockProfile, H: BlockHandFight): BlockProfile => ({ ...p, id: `${p.id}+${H.id}`, handFight: H });
 
 /**
  * Plan 16 (p50): what one hand is doing (`HandState.doing`): at home (on his man, or on its way to him as the block's own
- * hands go), striking with his punch, swiping at his man's arm (`HandSwipe`), or knocked off him (`HandKnock`).
+ * hands go), striking with his punch, swiping at his man's arm (`HandSwipe`), knocked off him (`HandKnock`), or going
+ * straight back on him after a knock (`HandRefit`).
  */
-export type HandDoing = 'home' | 'striking' | 'swiping' | 'knocked';
+export type HandDoing = 'home' | 'striking' | 'swiping' | 'knocked' | 'refitting';
 
 /** Plan 16 (p50): where a hand is on his man (`HandState.where`): on his chest (the inside lane), on his shoulder (the outside). */
 export type HandWhere = 'chest' | 'shoulder';
@@ -404,6 +429,9 @@ export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchStat
   // (p50: knocked, by a knock his state has that he has not taken yet, then for the knock's time)
   if (F?.knock && was?.knock && was.knock.t > (prev?.knockT ?? -Infinity)) return { doing: 'knocked', since: was.knock.t, ...keep, knockT: was.knock.t };
   if (F?.knock && prev?.doing === 'knocked' && t - prev.since < F.knock.s - 1e-9) return { doing: 'knocked', since: prev.since, ...keep };
+  // (p50, `refit`: its knock over, straight back on; on him, or past the re-fit's time, at home)
+  if (F?.refit && prev?.doing === 'knocked') return { doing: 'refitting', since: t, ...keep };
+  if (F?.refit && prev?.doing === 'refitting' && !was?.on && t - prev.since < F.refit.s - 1e-9) return { doing: 'refitting', since: prev.since, ...keep };
   // (p50: swiping, the raise over his arm then the chop through it; done, at home)
   const S = F?.swipe;
   if (S && prev?.doing === 'swiping' && prev.swipe) {
@@ -1744,7 +1772,7 @@ export class BlockController implements Controller {
     const F = this.profile.handFight!;
     if (hi.doing === 'knocked') {
       const k = prev?.knock;
-      return k && F.knock ? addScaled(k.palmW, k.dirW, F.knock.m) : null;
+      return k && F.knock ? addScaled(addScaled(k.palmW, k.dirW, F.knock.m), dir, -(F.knock.offM ?? 0)) : null;
     }
     const w = hi.swipe;
     if (!w) return null;
@@ -1899,6 +1927,15 @@ export class BlockController implements Controller {
       const out = sideSignX(myBody, side);
       const o = obs?.[side];
       const hi = handIntents?.[side];
+      if (hi?.doing === 'refitting' && HF?.refit) {
+        // (straight back on at its aim; the block's own hands count its punch from the re-fit)
+        if (this.punchedAt[side] === null) this.punchedAt[side] = ctx.t;
+        this.wasOn[side] = !!o?.pushId;
+        const aim = aimOf(side);
+        const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
+        arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: HF.refit.extendMps }, ...pole };
+        continue;
+      }
       if (hi && (hi.doing === 'swiping' || hi.doing === 'knocked')) {
         // (the block's own hands take it back from the ready point once it is done)
         this.punchedAt[side] = null;
