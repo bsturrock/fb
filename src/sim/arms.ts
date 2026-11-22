@@ -2285,6 +2285,18 @@ export class ArmSystem {
     return true;
   }
 
+  /**
+   * Plan 16 (p50, the hand fight): his palm push on arm `side` knocked off him (a swipe met the arm): it ends, reason
+   * `knocked`, and the arm must leave the body it pushed before it pushes again. True: it held one.
+   */
+  knock(id: PlayerId, side: ArmSide): boolean {
+    const pl = this.player(id);
+    const a = this.arms.get(id)?.[side];
+    if (!pl || !a?.push) return false;
+    this.endPush(pl, a, 'knocked', poseOfRb(pl.rb));
+    return true;
+  }
+
   /** Ends an arm's palm push; the arm must then leave the body it pushed by `hold.withdrawM` before it pushes again (`disarm`). */
   private endPush(pl: ArmHostPlayer, a: ArmRt, reason: string, ownerPose: Pose, disarm = true): void {
     const c = a.push;

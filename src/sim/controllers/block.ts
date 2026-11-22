@@ -50,6 +50,22 @@ export interface BlockRequest {
    * snap as without one.
    */
   stance?: PreSnapStance;
+  /**
+   * Plan 16 (p50), the hand fight (a profile with `handFight.swipe`): the swipes he is asked for (`SwipeRequest`), each
+   * once, in order per hand. Absent: none.
+   */
+  swipes?: SwipeRequest[];
+}
+
+/**
+ * Plan 16 (p50): a swipe asked of a blocker (`BlockRequest.swipes`): from `atS` (s), once he is engaged with his punch
+ * through and that hand at home, his hand `hand` chops down and out through his man's arm `at` (absent: the one across
+ * from it, on the same side of the field: my right hand at his left arm). Whether it meets the arm is the arms' own.
+ */
+export interface SwipeRequest {
+  atS: number;
+  hand: ArmSide;
+  at?: ArmSide;
 }
 
 /** Plan 16 (p39): a lineman's pre-snap stance and his side of the ball. */
@@ -230,16 +246,76 @@ export interface BlockProfile {
  */
 export interface BlockHandFight {
   id: string;
+  /** Plan 16 (p50): the swipe (`HandSwipe`, asked by `BlockRequest.swipes`); absent, none. */
+  swipe?: HandSwipe;
+  /** Plan 16 (p50): a hand knocked off his man by a swipe (`HandKnock`); absent, a knock only ends its push. */
+  knock?: HandKnock;
+  /**
+   * Plan 16 (p50): what a hand knocked off his man costs him in the contest once its knock is over and until it is back on
+   * him (a share of his capacity, his `ContestState.leverage`); absent, nothing. While knocked it costs its knock's `cut`.
+   */
+  offCut?: number;
+}
+
+/**
+ * Plan 16 (p50), the swipe (`BlockHandFight.swipe`): his hand leaves his man and goes up over the arm it is for, to `aboveM`
+ * over the point `alongF` of the way down that forearm from its elbow to its wrist and `outM` out from between them (the
+ * raise: until within `tolM` of it, at most `raiseS`), then chops down and out through it, to `downM` under that point and
+ * `throughOutM` out (the chop: the point fixed as it begins; until within `tolM`, at most `chopS`). The chop meets the arm
+ * when his palm's ball comes within `hitTolM` of that forearm's capsule as shown (the simulation's, `handContacts`):
+ * that hand of his man is knocked. Then his hand is at home again (the block's own hands put it back on).
+ */
+export interface HandSwipe {
+  alongF: number;
+  aboveM: number;
+  outM: number;
+  downM: number;
+  throughOutM: number;
+  tolM: number;
+  raiseS: number;
+  chopS: number;
+  hitTolM: number;
+}
+
+/**
+ * Plan 16 (p50), a knocked hand (`BlockHandFight.knock`): his palm push on that hand ends (reason `knocked`) and for `s`
+ * (s) the hand is driven on from where the chop met it, `m` along the chop's line off his forearm. With his push ended
+ * (the support he leaned on gone) his trunk drops `dropDeg` more onto the hinge, the hand costs him `cut` of his
+ * capacity in the contest (`ContestState.leverage`), and (`opens`) the man whose swipe knocked it drives into the opening
+ * until it is back on him: his contest bursts as a strike's does (`BlockContest.burst`). Then it is at home again.
+ */
+export interface HandKnock {
+  m: number;
+  s: number;
+  dropDeg: number;
+  cut: number;
+  opens?: boolean;
 }
 
 /** Plan 16 (p50): the first hand fight (`BlockHandFight`): each hand's own state, nothing asked of it yet. */
 export const HANDS_V1: BlockHandFight = { id: 'hands-v1' };
 
+/**
+ * Plan 16 (p50): the swipe and the knock (`BlockHandFight`). The chop goes for the middle of his forearm from 9 cm over it,
+ * through to 16 cm under it and 14 cm out (raise at most 0.14 s, chop at most 0.16 s: at the arm's 4 m/s, the swipe takes
+ * about 0.1-0.3 s), riding his arm down once it meets it; a knocked hand is driven 20 cm on for 0.15 s, his trunk 6 deg
+ * further over. A knocked hand costs him half his capacity, then until it is back on his man 30 %.
+ */
+export const HANDS_V2: BlockHandFight = {
+  id: 'hands-v2',
+  swipe: { alongF: 0.55, aboveM: 0.09, outM: 0.02, downM: 0.16, throughOutM: 0.14, tolM: 0.04, raiseS: 0.14, chopS: 0.16, hitTolM: 0.015 },
+  knock: { m: 0.2, s: 0.15, dropDeg: 6, cut: 0.5, opens: true },
+  offCut: 0.3,
+};
+
 /** Plan 16 (p50): a block profile with the hand fight `H` (`handFight`), under an id that names it. */
 export const withHandFight = (p: BlockProfile, H: BlockHandFight): BlockProfile => ({ ...p, id: `${p.id}+${H.id}`, handFight: H });
 
-/** Plan 16 (p50): what one hand is doing (`HandState.doing`): at home (on his man, or on its way to him as the block's own hands go), or striking with his punch. */
-export type HandDoing = 'home' | 'striking';
+/**
+ * Plan 16 (p50): what one hand is doing (`HandState.doing`): at home (on his man, or on its way to him as the block's own
+ * hands go), striking with his punch, swiping at his man's arm (`HandSwipe`), or knocked off him (`HandKnock`).
+ */
+export type HandDoing = 'home' | 'striking' | 'swiping' | 'knocked';
 
 /** Plan 16 (p50): where a hand is on his man (`HandState.where`): on his chest (the inside lane), on his shoulder (the outside). */
 export type HandWhere = 'chest' | 'shoulder';
@@ -255,21 +331,118 @@ export interface HandState extends HandIntent {
   pushing: boolean;
   where: HandWhere | null;
   lane?: BlockLane;
+  /** Plan 16 (p50): the last knock this hand took (`HandKnockFact`, the simulation's: a swipe met this arm); absent, none. */
+  knock?: HandKnockFact;
+  /** Plan 16 (p50): swiping, when its chop last met his man's arm (s, the simulation's); absent, never. */
+  hit?: number;
 }
 
-/** Plan 16 (p50): a hand's state as his controller has it (`PlayerIntent.block.hands`): what it is doing, since when (s). */
+/**
+ * Plan 16 (p50): a knock (`HandState.knock`): when (s), the chop's line off his forearm (unit, world), his palm where it
+ * met him, by whom, whether it ended his palm push on him (`ended`: the support he leaned on lost; a hand not on him is
+ * only driven aside); when the hand was first back on his man after it (`backT`; absent, not yet).
+ */
+export interface HandKnockFact {
+  t: number;
+  dirW: Vec3;
+  palmW: Vec3;
+  by: PlayerId;
+  ended: boolean;
+  backT?: number;
+}
+
+/**
+ * Plan 16 (p50): a hand's state as his controller has it (`PlayerIntent.block.hands`): what it is doing, since when (s);
+ * how many of its swipes he has begun (`swipes`; absent none), the swipe it is in (`swipe`), the last knock it took
+ * (`knockT`, its time).
+ */
 export interface HandIntent {
   doing: HandDoing;
   since: number;
+  swipes?: number;
+  swipe?: HandSwipeState;
+  knockT?: number;
+}
+
+/**
+ * Plan 16 (p50): a swipe under way (`HandIntent.swipe`): its request (`n`, of this hand's), his man's arm it is for, its
+ * stage (the raise over it, the chop through it) and since when (s); the chop's end point (world, fixed as it begins).
+ */
+export interface HandSwipeState {
+  n: number;
+  at: ArmSide;
+  stage: 'raise' | 'chop';
+  stageT: number;
+  throughW?: Vec3;
+  /** Plan 16 (p50): once the chop met his arm, his palm off that forearm's point as it met it (world): the chop rides his arm down from there. */
+  rideW?: Vec3;
+}
+
+/**
+ * Plan 16 (p50): what a hand's next decision reads besides its last state (`nextHand`): the hand fight, the swipe due now
+ * for it (its request's index and his man's arm; given only when he may begin it), and, swiping, how far his palm is from
+ * the raise's point (m) and from the chop's end, and where the chop would end if it began now (world).
+ */
+export interface HandStep {
+  fight: BlockHandFight;
+  due?: { n: number; at: ArmSide };
+  raiseLeftM?: number;
+  chopLeftM?: number;
+  throughW?: Vec3;
+  /** the chop met his arm: his palm off that forearm's point now (world), to ride it from */
+  rideW?: Vec3;
 }
 
 /**
  * Plan 16 (p50): one decision of what a hand is doing (`HandIntent`) from what it did (`prev`, the last substep's state;
  * undefined: none yet) and his punch now: striking while his punch is in its strike, else home. `since` is when it began.
  */
-export function nextHand(prev: HandIntent | undefined, pu: PunchState | undefined, t: number): HandIntent {
+export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchState | undefined, t: number, H?: HandStep): HandIntent {
+  const keep = { ...(prev?.swipes ? { swipes: prev.swipes } : {}), ...(prev?.knockT !== undefined ? { knockT: prev.knockT } : {}) };
+  const F = H?.fight;
+  const was = prev as HandState | undefined;
+  // (p50: knocked, by a knock his state has that he has not taken yet, then for the knock's time)
+  if (F?.knock && was?.knock && was.knock.t > (prev?.knockT ?? -Infinity)) return { doing: 'knocked', since: was.knock.t, ...keep, knockT: was.knock.t };
+  if (F?.knock && prev?.doing === 'knocked' && t - prev.since < F.knock.s - 1e-9) return { doing: 'knocked', since: prev.since, ...keep };
+  // (p50: swiping, the raise over his arm then the chop through it; done, at home)
+  const S = F?.swipe;
+  if (S && prev?.doing === 'swiping' && prev.swipe) {
+    const w = prev.swipe;
+    if (w.stage === 'raise') {
+      if ((H!.raiseLeftM ?? Infinity) <= S.tolM || t - w.stageT >= S.raiseS - 1e-9) return { doing: 'swiping', since: prev.since, ...keep, swipe: { n: w.n, at: w.at, stage: 'chop', stageT: t, ...(H!.throughW ? { throughW: H!.throughW } : {}) } };
+      return { doing: 'swiping', since: prev.since, ...keep, swipe: w };
+    }
+    const met = was?.hit !== undefined && was.hit >= prev.since;
+    const ride = met && !w.rideW && H!.rideW ? { ...w, rideW: H!.rideW } : w;
+    if (!((!met && (H!.chopLeftM ?? Infinity) <= S.tolM) || t - w.stageT >= S.chopS - 1e-9)) return { doing: 'swiping', since: prev.since, ...keep, swipe: ride };
+  } else if (S && H?.due) return { doing: 'swiping', since: t, ...keep, swipes: H.due.n + 1, swipe: { n: H.due.n, at: H.due.at, stage: 'raise', stageT: t } };
   const doing: HandDoing = pu?.phase === 'strike' ? 'striking' : 'home';
-  return { doing, since: prev && prev.doing === doing ? prev.since : t };
+  return { doing, since: prev && prev.doing === doing ? prev.since : t, ...keep };
+}
+
+/**
+ * Plan 16 (p50, `HandKnock.opens`): his man `his` has a hand knocked off him by `me`'s swipe (its push ended) and not yet
+ * back on him: the opening `me` drives into.
+ */
+export function openedBy(me: PlayerId, his: Record<ArmSide, HandState> | undefined, F: BlockHandFight | undefined): boolean {
+  return !!F?.knock?.opens && !!his && SIDES.some((s) => !his[s].on && his[s].knock?.by === me && his[s].knock!.ended && his[s].knock!.backT === undefined);
+}
+
+/**
+ * Plan 16 (p50): his capacity's share his hands leave him in the contest (`BlockHandFight`; 1 without one): each knocked
+ * hand's `knock.cut` off it, each hand knocked off him and not yet back on `offCut`.
+ */
+export function handsLeverage(H: Record<ArmSide, HandState> | undefined, F: BlockHandFight | undefined): number {
+  // (a knock that ended no push costs nothing: no support was on it)
+  if (!H || !F) return 1;
+  let x = 1;
+  for (const s of SIDES) {
+    const h = H[s];
+    if (!h.knock?.ended) continue;
+    if (h.doing === 'knocked' && F.knock) x *= 1 - F.knock.cut;
+    else if (h.knock.backT === undefined && !h.on && F.offCut !== undefined) x *= 1 - F.offCut;
+  }
+  return x;
 }
 
 /** Plan 16 (p50): what holds of one hand on his man this substep (`advanceHands`): its palm push on him, and that push folded past its collapse. */
@@ -291,7 +464,7 @@ export function advanceHands(prev: Record<ArmSide, HandState> | undefined, inten
     const i = intents?.[side] ?? nextHand(was, undefined, t);
     const L = was?.lane ?? (uncalled ? undefined : lane);
     const f = facts[side];
-    return { doing: i.doing, since: i.since, on: f.on, pushing: f.on && !f.folded, where: f.on ? (L === 'outside' ? 'shoulder' : 'chest') : null, ...(L ? { lane: L } : {}) };
+    return { ...i, on: f.on, pushing: f.on && !f.folded, where: f.on ? (L === 'outside' ? 'shoulder' : 'chest') : null, ...(L ? { lane: L } : {}), ...(was?.knock ? { knock: f.on && was.knock.backT === undefined && t > was.knock.t ? { ...was.knock, backT: t } : was.knock } : {}), ...(was?.hit !== undefined ? { hit: was.hit } : {}) };
   };
   return { left: one('left'), right: one('right') };
 }
@@ -1368,6 +1541,10 @@ export interface BlockDebug {
   fireFree?: boolean;
   /** Plan 16 (p50) fault, the hand fight: his hands are never given his lane (`HandState.lane`), so each aims inside whatever the call. */
   handsLaneUncalled?: boolean;
+  /** Plan 16 (p50) fault, the swipe: its chop never meets his man's arm (`handContacts`), so no hand is knocked. */
+  swipeMisses?: boolean;
+  /** Plan 16 (p50) fault, the knock: a knocked hand costs him nothing in the contest (`handsLeverage`) and opens nothing to his man (`openedBy`). */
+  knockFree?: boolean;
 }
 
 /**
@@ -1517,6 +1694,70 @@ export class BlockController implements Controller {
     this.lastFacing = v3(Math.sin(y), 0, Math.cos(y));
   }
 
+  /**
+   * Plan 16 (p50), the hand fight: what his hand `side` does now (`nextHand`) from its last state, his punch and what he
+   * observes: the swipe due for it (`BlockRequest.swipes`, the next of this hand's once its time has come, given while he
+   * is engaged with his punch through and the hand at home) and, swiping, his palm against the swipe's points.
+   */
+  private handNow(ctx: ControllerContext, side: ArmSide, prev: HandState | undefined, pu: PunchState | undefined, phase: BlockPhase, dir: Vec3, mine: Vec3, his: Vec3): HandIntent {
+    const F = this.profile.handFight!;
+    const R = this.spec.request;
+    const S = F.swipe;
+    if (!S) return nextHand(prev, pu, ctx.t, { fight: F });
+    const mineReq = (R.swipes ?? []).filter((w) => w.hand === side).sort((a, b) => a.atS - b.atS);
+    const n = prev?.swipes ?? 0;
+    const req = mineReq[n];
+    const free = phase === 'engaged' && (!this.profile.strike || pu?.phase === 'drive') && (prev?.doing ?? 'home') === 'home';
+    const due = req && free && ctx.t + 1e-9 >= req.atS ? { n, at: req.at ?? (side === 'right' ? 'left' : 'right') } : undefined;
+    const w = prev?.doing === 'swiping' ? prev.swipe : undefined;
+    const palm = ctx.observed.arms[ctx.self]?.[side]?.palmContactWorld;
+    const pts = w ? this.swipePoints(ctx, w.at, dir, mine, his) : null;
+    return nextHand(prev, pu, ctx.t, {
+      fight: F,
+      ...(due ? { due } : {}),
+      ...(w && palm && pts ? { raiseLeftM: len(sub(pts.above, palm)), throughW: pts.through, rideW: sub(palm, pts.on) } : {}),
+      ...(w?.throughW && palm ? { chopLeftM: len(sub(w.throughW, palm)) } : {}),
+    });
+  }
+
+  /**
+   * Plan 16 (p50, `HandSwipe`): the swipe's points on his man's arm `at` as observed: over its forearm's point and out
+   * from between the two men (the raise), and under and out of it (the chop's end). Null: that arm unobserved.
+   */
+  private swipePoints(ctx: ControllerContext, at: ArmSide, dir: Vec3, mine: Vec3, his: Vec3): { on: Vec3; above: Vec3; through: Vec3 } | null {
+    const S = this.profile.handFight!.swipe!;
+    const a = ctx.observed.arms[this.spec.request.target]?.[at];
+    if (!a) return null;
+    const f = addScaled(a.elbowWorld, sub(a.wristWorld, a.elbowWorld), S.alongF);
+    const lat = v3(dir.z, 0, -dir.x);
+    const mid = scale(add(mine, his), 0.5);
+    const off = dot(sub(f, mid), lat);
+    const out = scale(lat, off >= 0 ? 1 : -1);
+    return { on: f, above: add(addScaled(f, out, S.outM), v3(0, S.aboveM, 0)), through: add(addScaled(f, out, S.throughOutM), v3(0, -S.downM, 0)) };
+  }
+
+  /**
+   * Plan 16 (p50): a hand's target while the hand fight has its arm: swiping, the raise's point over his man's arm, then the
+   * chop's end; knocked, driven on from where the chop met it along the chop's line (`HandKnock.m`). Null: none observed.
+   */
+  private handTarget(ctx: ControllerContext, hi: HandIntent, prev: HandState | undefined, dir: Vec3, mine: Vec3, his: Vec3): Vec3 | null {
+    const F = this.profile.handFight!;
+    if (hi.doing === 'knocked') {
+      const k = prev?.knock;
+      return k && F.knock ? addScaled(k.palmW, k.dirW, F.knock.m) : null;
+    }
+    const w = hi.swipe;
+    if (!w) return null;
+    // (met: on his forearm's point as it is driven, his palm where it met it, pressed on down the chop's line)
+    if (w.stage === 'chop' && w.rideW) {
+      const p = this.swipePoints(ctx, w.at, dir, mine, his);
+      const k = (ctx.observed.block?.[this.spec.request.target]?.hands?.[w.at] as HandState | undefined)?.knock;
+      return p ? addScaled(add(p.on, w.rideW), k?.dirW ?? norm(sub(p.through, p.on)), 0.03) : w.throughW ?? null;
+    }
+    if (w.stage === 'chop' && w.throughW) return w.throughW;
+    return this.swipePoints(ctx, w.at, dir, mine, his)?.above ?? null;
+  }
+
   decide(ctx: ControllerContext): PlayerIntent {
     const P = this.profile;
     const R = this.spec.request;
@@ -1651,10 +1892,20 @@ export class BlockController implements Controller {
     const vel = add(scale(dir, along), across);
     // the hands: up while closing, punched on from the punch gap (or engaged), pulled back to re-arm when one came off
     const punch = phase === 'engaged' || gap <= P.punchGapM;
+    // (p50, `handFight`: what each hand is doing, for his engaged state; a swipe or a knocked hand takes its arm)
+    const handIntents = HF ? { left: this.handNow(ctx, 'left', wasHands?.left, pu, phase, dir, me.position, him.position), right: this.handNow(ctx, 'right', wasHands?.right, pu, phase, dir, me.position, him.position) } : undefined;
     const arms: Partial<Record<ArmSide, ArmIntent>> = {};
     for (const side of SIDES) {
       const out = sideSignX(myBody, side);
       const o = obs?.[side];
+      const hi = handIntents?.[side];
+      if (hi && (hi.doing === 'swiping' || hi.doing === 'knocked')) {
+        // (the block's own hands take it back from the ready point once it is done)
+        this.punchedAt[side] = null;
+        this.wasOn[side] = false;
+        arms[side] = { action: 'reach', targetWorld: this.handTarget(ctx, hi, wasHands?.[side], dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position };
+        continue;
+      }
       // the strike's load and strike: both arms together (the drive is the block's own hands, below)
       if (K && pu?.phase !== 'drive') {
         if (pu?.phase !== 'strike') {
@@ -1713,12 +1964,10 @@ export class BlockController implements Controller {
     const stance = this.stanceRequest(fire && P.flat ? { ...S, flat: { ...P.flat, level: true } } : S);
     // (p43: his eyes on his man, the neck's range his pre-snap stance's)
     const gaze = this.gazeOn(ctx, R.stance ? P.preSnap?.[preSnapKey(R.stance)] : undefined, him);
-    // (p50, `handFight`: what each hand is doing, for his engaged state)
-    const handIntents = HF ? { left: nextHand(wasHands?.left, pu, ctx.t), right: nextHand(wasHands?.right, pu, ctx.t) } : undefined;
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
-      posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
+      posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(HF?.knock && SIDES.some((side) => handIntents?.[side].doing === 'knocked' && wasHands?.[side]?.knock?.ended) ? S.hingeDeg + HF.knock.dropDeg : S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
       block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(handIntents ? { hands: handIntents } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
       debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}), ...(P.lanes ? { lane: lane ?? null } : {}), ...(U ? { under: uw } : {}) },
     };

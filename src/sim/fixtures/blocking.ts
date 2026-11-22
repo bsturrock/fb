@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHands, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withHeldByPush, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -29,6 +29,8 @@ export interface BlockMan {
    * the reset when his profile has it (`BlockProfile.preSnap`).
    */
   stance?: PreSnapStance;
+  /** Plan 16 (p50): the swipes asked of him (`BlockRequest.swipes`; under the scene's `handFight` with a swipe). */
+  swipes?: SwipeRequest[];
 }
 
 /**
@@ -110,8 +112,8 @@ export interface BlockSceneOpts {
   strikeAtLoadGap?: boolean;
   /** Plan 16 (p49): both men's pre-snap stances toeing their plants out by TOE_OUT_DEG (`withToeOut`, `FlatStance.toeOutDeg`), the reset's plants too. */
   toeOut?: boolean;
-  /** Plan 16 (p50): both men's hands each with its own state in the hand fight (`BlockProfile.handFight`, HANDS_V1, `withHandFight`). */
-  handFight?: boolean;
+  /** Plan 16 (p50): both men's hands each with its own state in the hand fight (`BlockProfile.handFight`, `withHandFight`): true, HANDS_V1; or the hand fight given. */
+  handFight?: boolean | BlockHandFight;
 }
 
 /** Plan 16 (p47): the BL palms' slide (`PalmPushProfile.slide`): 1 m/s (a palm landed 8-11 cm under its aim is there in 0.1 s), off the face past 5 mm. */
@@ -163,7 +165,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const P9 = o.heldByPush && P8.contest ? { ...P8, id: `${P8.id}+held-by-push`, contest: withHeldByPush(P8.contest) } : P8;
   const P10 = o.strikeAtLoadGap && P9.strike ? { ...P9, id: `${P9.id}+at-load-gap`, strike: withStrikeAtLoadGap(P9.strike, STRIKE_AT_LOAD_GAP_M) } : P9;
   const P11 = o.toeOut ? withToeOut(P10, TOE_OUT_DEG) : P10;
-  const P = o.handFight ? withHandFight(P11, HANDS_V1) : P11;
+  const P = o.handFight ? withHandFight(P11, o.handFight === true ? HANDS_V1 : o.handFight) : P11;
   const set = (m.fromS ?? 0) <= 0 && !m.walkInMps;
   // (p39: a man in a pre-snap stance is set in it from the reset)
   const pre = m.stance && !m.walkInMps ? P.preSnap?.[preSnapKey(m.stance)] : undefined;
@@ -186,7 +188,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
     arms: { enabled: { left: true, right: true }, mode: { left: 'forearmClamp', right: 'forearmClamp' }, acquisition: false, closeEffortScale: 1 },
     controller: {
       kind: 'block',
-      request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}) },
+      request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}), ...(m.swipes ? { swipes: m.swipes } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
       ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes || o.insideLeverage || o.stayLow || o.armsGive || o.burstTaper || o.lowUnheld || o.frame || o.heldByPush || o.strikeAtLoadGap || o.toeOut || o.handFight ? { profile: P } : {}),
     },

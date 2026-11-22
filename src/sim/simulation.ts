@@ -15,7 +15,7 @@ import {
   clipHeightModel, composeTarget, newSuspensionRuntime, runHeight, stanceFloorM, type ClipHeightModel, type RunHeight,
   type HeightCalibration, type SuspensionRuntime,
 } from './support';
-import { advanceGait, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type ProxyPoseInput } from './pose';
+import { advanceGait, armShapes, type GaitState, type PhysicalPose, type PoseClearance, type PoseMemory, type ProxyPoseInput } from './pose';
 import { newCarrierBrace, stepBrace, type BraceBody, type BraceSelf, type CarrierBraceState } from './brace';
 import { advanceIdle, advanceLoco, IDLE_POSE_RECORD, idlePhase, idleTarget, newLocoState, sampleIdle, type LocoState } from './locomotion';
 import { type SimDebug } from './debug';
@@ -36,7 +36,7 @@ import {
 } from './run-clip';
 import { RuleObserver, type EndingKind, type RuleEnding, type RuleTraceRow } from './rules';
 import type { ArmSide } from './contracts';
-import { type Pose, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg, qInvRot } from './vec';
+import { type Pose, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, addScaled, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg, qInvRot } from './vec';
 import { fixtureExport, limitReportOf, recordTrace, summaryOf } from './sim-evidence';
 import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
@@ -1064,6 +1064,8 @@ export class Simulation {
       this.rampWalkRequest(pl, decided);
       this.idleSway(pl);
     }
+    // plan 16 (p50), the hand fight: a swipe's chop meeting his man's arm as the two are shown, after every man's decision
+    if (this.players.some((p) => p.block?.hands && p.intent.block?.profile.handFight?.swipe)) this.handContacts();
     // 4. clear application-owned force/torque accumulators (once, before any contribution)
     for (const pl of this.players)
       for (const b of this.activeBodies(pl)) {
@@ -1259,11 +1261,58 @@ export class Simulation {
     if (r.st && req?.profile.handFight) {
       const A = this.arms;
       const fact = (s: ArmSide) => ({ on: !!A && !!tid && A.pushOf(pl.id, s)?.targetId === tid, folded: !!A && A.pushFolded(pl.id, s) });
-      r.st.hands = advanceHands(r.st.hands, req.hands, { left: fact('left'), right: fact('right') }, r.st.lane, this.t, !!this.opts.debug?.block?.handsLaneUncalled);
+      const was = r.st.hands;
+      r.st.hands = advanceHands(was, req.hands, { left: fact('left'), right: fact('right') }, r.st.lane, this.t, !!this.opts.debug?.block?.handsLaneUncalled);
+      for (const s of ['left', 'right'] as ArmSide[]) {
+        const h = r.st.hands[s];
+        const w = was?.[s];
+        if (h.doing === 'swiping' && w?.doing !== 'swiping') this.emit('handSwipe', pl.id, { hand: s, at: h.swipe!.at, n: h.swipe!.n, target: tid ?? null });
+        if (w?.doing === 'swiping' && h.doing !== 'swiping') this.emit('handSwipeEnd', pl.id, { hand: s, at: w.swipe!.at, n: w.swipe!.n, hit: w.hit !== undefined && w.hit >= w.since, heldS: round(this.t - w.since, 4) });
+      }
     }
     if (r.st) pl.block = r.st;
     else delete pl.block;
     if (r.change) this.emit('blockPhase', pl.id, { from: r.change.from, to: r.change.to, target: r.st?.target ?? null });
+  }
+
+  /**
+   * Plan 16 (p50, the hand fight, `HandSwipe`): every chop under way against the arm it is for, as both men are shown (the
+   * last solve's poses), the men in id order (the same whichever is advanced first): his palm's ball within `hitTolM` of
+   * that forearm's capsule meets it. The swiping hand's state takes the hit; his man's arm is knocked (`ArmSystem.knock`:
+   * his palm push on it ends) and, with the hand fight, his hand's state the knock (`HandKnockFact`: the chop's line off
+   * his forearm, his palm where it met him).
+   */
+  private handContacts(): void {
+    const R = this.def.ragdoll;
+    if (!R || this.opts.debug?.block?.swipeMisses) return;
+    for (const p of [...this.players].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+      const H = p.block?.hands;
+      const S = p.intent.block?.profile.handFight?.swipe;
+      const him = p.block ? this.players.find((o) => o.id === p.block!.target) : undefined;
+      if (!H || !S || !p.pose || p.rag || !him?.pose || him.rag) continue;
+      const L = p.pose.jointLandmarksWorld;
+      const M = him.pose.jointLandmarksWorld;
+      for (const side of ['left', 'right'] as ArmSide[]) {
+        const h = H[side];
+        const w = h.swipe;
+        if (h.doing !== 'swiping' || !w || w.stage !== 'chop' || (h.hit !== undefined && h.hit >= h.since)) continue;
+        const palm = armShapes(R, side, L[`${side}Shoulder`], L[`${side}Elbow`], L[`${side}Wrist`], L[`${side}Palm`])[2];
+        const fa = armShapes(R, w.at, M[`${w.at}Shoulder`], M[`${w.at}Elbow`], M[`${w.at}Wrist`], M[`${w.at}Palm`])[1];
+        if (palm.kind !== 'ball' || fa.kind !== 'capsule') continue;
+        const ab = sub(fa.b, fa.a);
+        const u = clamp(dot(sub(palm.c, fa.a), ab) / Math.max(1e-12, dot(ab, ab)), 0, 1);
+        const gapM = len(sub(palm.c, addScaled(fa.a, ab, u))) - palm.r - fa.r;
+        if (gapM > S.hitTolM) continue;
+        h.hit = this.t;
+        const axis = norm(ab, v3(1, 0, 0));
+        const chop = w.throughW ? sub(w.throughW, palm.c) : v3(0, -1, 0);
+        const dirW = norm(sub(chop, scale(axis, dot(chop, axis))), v3(0, -1, 0));
+        const ended = this.arms?.knock(him.id, w.at) ?? false;
+        const k = him.block?.hands?.[w.at];
+        if (k && him.block?.target === p.id) k.knock = { t: this.t, dirW, palmW: { ...M[`${w.at}Palm`] }, by: p.id, ended };
+        this.emit('handKnock', p.id, { hand: side, target: him.id, at: w.at, n: w.n, pushEnded: ended, gapM: round(gapM, 4) });
+      }
+    }
   }
 
   /**
