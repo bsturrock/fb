@@ -1,7 +1,7 @@
 // Shared runtime contracts: identities, intents, snapshots, contacts, events.
 import type { Quat, Vec3 } from './vec';
 import type { ArmObs, WrapStatus } from './arms';
-import type { BlockProfile, BlockRequest, BlockState, PunchState } from './controllers/block';
+import type { BlockProfile, BlockRequest, BlockState, HandIntent, PunchState } from './controllers/block';
 import type { HingeLimits } from './hinge';
 
 export type PlayerId = string;
@@ -255,6 +255,8 @@ export interface PlayerIntent {
     punch?: PunchState;
     /** Plan 16 (p40): the hip hinge's bounds in place of the profile's (`PreSnapPose.pace`: a stance got into slowly); absent, the profile's. */
     hinge?: HingeLimits;
+    /** Plan 16 (p50, a block profile with `handFight`): what each hand is doing as his controller has it now, kept on that state (`BlockState.hands`). */
+    hands?: Record<ArmSide, HandIntent>;
   };
   /** Controller-reported diagnostics (phase names, aim points). Never read by mechanics. */
   debug?: Record<string, unknown>;
@@ -341,7 +343,7 @@ export interface Snapshot {
   /** Gate 3 balance state per player (free-rotation stance; zeros under the locked legacy stance). */
   balance: Record<PlayerId, BalanceState>;
   /** Plan 16: every blocking player's engaged state (absent while nobody blocks). */
-  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since' | 'punch' | 'lane'> & { /** Plan 16 (p36): his giving ground's level (a profile with `give`). */ give?: number; /** Plan 16 (p37): how far the contest has him stood up (a profile with `contest`). */ stood?: number; /** Plan 16 (p46): how far the hit has him beaten (a contest with `beaten`). */ beaten?: number }>;
+  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since' | 'punch' | 'lane' | 'hands'> & { /** Plan 16 (p36): his giving ground's level (a profile with `give`). */ give?: number; /** Plan 16 (p37): how far the contest has him stood up (a profile with `contest`). */ stood?: number; /** Plan 16 (p46): how far the hit has him beaten (a contest with `beaten`). */ beaten?: number }>;
 }
 
 /**

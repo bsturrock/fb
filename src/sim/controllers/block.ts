@@ -216,6 +216,84 @@ export interface BlockProfile {
   under?: BlockUnder;
   /** Plan 16 (p47): he runs in (`BlockRunIn`); absent, he closes at the approach's speed, braked to its gap. */
   runIn?: BlockRunIn;
+  /** Plan 16 (p50): the hand fight, each hand with its own state (`BlockHandFight`, `BlockState.hands`); absent, none. */
+  handFight?: BlockHandFight;
+}
+
+/**
+ * Plan 16 (p50), the hand fight (`BlockProfile.handFight`): each of his hands has its own state (`HandState`,
+ * `BlockState.hands`), kept with his engaged state. Each hand's lane is his own lane's (the inside lane's call,
+ * `BlockLanes`, gives both of his hands theirs), and his arms aim each hand by its own lane; what each hand is doing is
+ * his controller's (home, or striking with his punch). With nothing more asked of the hands than that, he blocks exactly
+ * as without it: the state wraps the lane and the strike, so the moves that act on one hand (a swipe, a re-fit, a
+ * re-punch for the inside) can be built on it.
+ */
+export interface BlockHandFight {
+  id: string;
+}
+
+/** Plan 16 (p50): the first hand fight (`BlockHandFight`): each hand's own state, nothing asked of it yet. */
+export const HANDS_V1: BlockHandFight = { id: 'hands-v1' };
+
+/** Plan 16 (p50): a block profile with the hand fight `H` (`handFight`), under an id that names it. */
+export const withHandFight = (p: BlockProfile, H: BlockHandFight): BlockProfile => ({ ...p, id: `${p.id}+${H.id}`, handFight: H });
+
+/** Plan 16 (p50): what one hand is doing (`HandState.doing`): at home (on his man, or on its way to him as the block's own hands go), or striking with his punch. */
+export type HandDoing = 'home' | 'striking';
+
+/** Plan 16 (p50): where a hand is on his man (`HandState.where`): on his chest (the inside lane), on his shoulder (the outside). */
+export type HandWhere = 'chest' | 'shoulder';
+
+/**
+ * Plan 16 (p50), one hand's state in the hand fight (`BlockState.hands`). His controller's part (`HandIntent`): what it is
+ * doing and since when (s). The simulation's part, from what holds: `on`, a palm push of this hand on his man; `pushing`,
+ * on and not folded past its collapse (kept on at no force); `where` it is on him (null: off him); its `lane` (absent:
+ * not yet called).
+ */
+export interface HandState extends HandIntent {
+  on: boolean;
+  pushing: boolean;
+  where: HandWhere | null;
+  lane?: BlockLane;
+}
+
+/** Plan 16 (p50): a hand's state as his controller has it (`PlayerIntent.block.hands`): what it is doing, since when (s). */
+export interface HandIntent {
+  doing: HandDoing;
+  since: number;
+}
+
+/**
+ * Plan 16 (p50): one decision of what a hand is doing (`HandIntent`) from what it did (`prev`, the last substep's state;
+ * undefined: none yet) and his punch now: striking while his punch is in its strike, else home. `since` is when it began.
+ */
+export function nextHand(prev: HandIntent | undefined, pu: PunchState | undefined, t: number): HandIntent {
+  const doing: HandDoing = pu?.phase === 'strike' ? 'striking' : 'home';
+  return { doing, since: prev && prev.doing === doing ? prev.since : t };
+}
+
+/** Plan 16 (p50): what holds of one hand on his man this substep (`advanceHands`): its palm push on him, and that push folded past its collapse. */
+export interface HandFacts {
+  on: boolean;
+  folded: boolean;
+}
+
+/**
+ * Plan 16 (p50): one substep of a blocker's hands (`BlockState.hands`, a profile with `handFight`) from what they were
+ * (`prev`; undefined: none yet), what his controller asks of each (`intents`; absent, as `nextHand` with no punch), what
+ * holds of each (`facts`) and his lane (`lane`, the call's; absent: not yet). A hand's lane is his once called, and kept;
+ * on, it is on his chest (inside, or a placement without lanes) or his shoulder (outside). `uncalled` (the fault,
+ * `BlockDebug.handsLaneUncalled`): no hand is given his lane.
+ */
+export function advanceHands(prev: Record<ArmSide, HandState> | undefined, intents: Partial<Record<ArmSide, HandIntent>> | undefined, facts: Record<ArmSide, HandFacts>, lane: BlockLane | undefined, t: number, uncalled = false): Record<ArmSide, HandState> {
+  const one = (side: ArmSide): HandState => {
+    const was = prev?.[side];
+    const i = intents?.[side] ?? nextHand(was, undefined, t);
+    const L = was?.lane ?? (uncalled ? undefined : lane);
+    const f = facts[side];
+    return { doing: i.doing, since: i.since, on: f.on, pushing: f.on && !f.folded, where: f.on ? (L === 'outside' ? 'shoulder' : 'chest') : null, ...(L ? { lane: L } : {}) };
+  };
+  return { left: one('left'), right: one('right') };
 }
 
 /**
@@ -1270,6 +1348,8 @@ export interface BlockState {
   contest?: ContestState & { profile: BlockContest };
   /** Plan 16 (p45): his lane against his man (a profile with `lanes`), once won or lost (`decideLane`); absent, not yet. */
   lane?: BlockLane;
+  /** Plan 16 (p50): each of his hands' own state (a profile with `handFight`, `HandState`); absent without one. */
+  hands?: Record<ArmSide, HandState>;
 }
 
 /** The engaged state's fault switches (`SimDebug.block`; tests' negative controls). */
@@ -1286,6 +1366,8 @@ export interface BlockDebug {
   contestNoFall?: boolean;
   /** Plan 16 (p41) fault: a fire-out's feet are the free locomotion's (the walking start ramp and the run clip), as before p41. */
   fireFree?: boolean;
+  /** Plan 16 (p50) fault, the hand fight: his hands are never given his lane (`HandState.lane`), so each aims inside whatever the call. */
+  handsLaneUncalled?: boolean;
 }
 
 /**
@@ -1487,9 +1569,14 @@ export class BlockController implements Controller {
     // (p45, `lanes`: the inside until he has lost it, from the snapshot)
     const lane = P.lanes ? ctx.observed.block?.[ctx.self]?.lane : undefined;
     const aim = P.lanes ? P.lanes[lane ?? 'inside'] : P.hands[hands];
+    // (p50, `handFight`: each hand's own state from the snapshot, and its aim by its own lane)
+    const HF = P.handFight;
+    const wasHands = HF && ctx.observed.block?.[ctx.self]?.target === R.target ? ctx.observed.block[ctx.self].hands : undefined;
+    const aimOf = (side: ArmSide): HandAim => (HF && P.lanes ? P.lanes[wasHands?.[side]?.lane ?? 'inside'] : aim);
     // a palm's aim on him (world): my right hand on his left side (his frame), the side across from it, `depth` into his chest
     // (p45, `aimThrough`: the point on his chest, `depth` on beyond it along the line from my shoulder)
     const aimPoint = (side: ArmSide, depth: number): Vec3 => {
+      const aim = aimOf(side);
       const hx = sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x;
       const front = frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1));
       if (!P.aimThrough) return add(him.position, qRot(him.rotation, v3(hx, aim.y, front - depth)));
@@ -1580,6 +1667,7 @@ export class BlockController implements Controller {
         // striking: a palm in flight since the strike began (the drive's re-arm counts from it)
         if (o?.pushId || this.punchedAt[side] === null) this.punchedAt[side] = o?.pushId ? ctx.t : pu.since;
         this.wasOn[side] = !!o?.pushId;
+        const aim = aimOf(side);
         const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
         arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort: pushEffort, extendMps: Math.max(K.strike.extendMps, this.hitMps[side]) }, ...pole };
         continue;
@@ -1597,6 +1685,7 @@ export class BlockController implements Controller {
         continue;
       }
       // my right hand on his left side (his frame): the side across from it
+      const aim = aimOf(side);
       const targetWorld = aimPoint(side, aim.depthM);
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
       arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
@@ -1624,11 +1713,13 @@ export class BlockController implements Controller {
     const stance = this.stanceRequest(fire && P.flat ? { ...S, flat: { ...P.flat, level: true } } : S);
     // (p43: his eyes on his man, the neck's range his pre-snap stance's)
     const gaze = this.gazeOn(ctx, R.stance ? P.preSnap?.[preSnapKey(R.stance)] : undefined, him);
+    // (p50, `handFight`: what each hand is doing, for his engaged state)
+    const handIntents = HF ? { left: nextHand(wasHands?.left, pu, ctx.t), right: nextHand(wasHands?.right, pu, ctx.t) } : undefined;
     return {
       locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
       arms,
       posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
-      block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
+      block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(handIntents ? { hands: handIntents } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
       debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}), ...(P.lanes ? { lane: lane ?? null } : {}), ...(U ? { under: uw } : {}) },
     };
   }

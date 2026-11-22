@@ -43,7 +43,7 @@ import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { advanceHinge, legOmega, legRotation, type HingeState } from './hinge';
-import { advanceBlockState, decideLane, type BlockState, type LaneTouch } from './controllers/block';
+import { advanceBlockState, advanceHands, decideLane, type BlockState, type HandState, type LaneTouch } from './controllers/block';
 import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
 import type { Part } from './free-ground';
@@ -1255,6 +1255,12 @@ export class Simulation {
         this.emit('blockLane', pl.id, { lane, target: tid, awayM: mine!.awayM, hisAwayM: his!.awayM, hipM: mine!.hipM, hisHipM: his!.hipM, ...(tie ? { drives: !!mine!.drives, hisDrives: !!his!.drives } : {}), ...(S ? { thrown: !!mine!.thrown, hisThrown: !!his!.thrown, effort: mine!.effort ?? null, hisEffort: his!.effort ?? null } : {}) });
       }
     }
+    // (p50, the hand fight: each hand's own state, his controller's part and what holds of it, its lane his)
+    if (r.st && req?.profile.handFight) {
+      const A = this.arms;
+      const fact = (s: ArmSide) => ({ on: !!A && !!tid && A.pushOf(pl.id, s)?.targetId === tid, folded: !!A && A.pushFolded(pl.id, s) });
+      r.st.hands = advanceHands(r.st.hands, req.hands, { left: fact('left'), right: fact('right') }, r.st.lane, this.t, !!this.opts.debug?.block?.handsLaneUncalled);
+    }
     if (r.st) pl.block = r.st;
     else delete pl.block;
     if (r.change) this.emit('blockPhase', pl.id, { from: r.change.from, to: r.change.to, target: r.st?.target ?? null });
@@ -2036,7 +2042,7 @@ export class Simulation {
     for (const pl of this.players) balance[pl.id] = this.balanceState(pl);
     // plan 16: the engaged states (absent while nobody blocks)
     let block: Snapshot['block'];
-    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}), ...(pl.block.contest ? { stood: pl.block.contest.level } : {}), ...(pl.block.contest?.beaten !== undefined ? { beaten: pl.block.contest.beaten } : {}), ...(pl.block.lane ? { lane: pl.block.lane } : {}) };
+    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}), ...(pl.block.contest ? { stood: pl.block.contest.level } : {}), ...(pl.block.contest?.beaten !== undefined ? { beaten: pl.block.contest.beaten } : {}), ...(pl.block.lane ? { lane: pl.block.lane } : {}), ...(pl.block.hands ? { hands: { left: { ...pl.block.hands.left }, right: { ...pl.block.hands.right } } as Record<ArmSide, HandState> } : {}) };
     return { tick: this.tick, substep, t: this.t, bodies, contacts, pairGap: { ...this.pairGap }, arms, wrap, balance, ...(block ? { block } : {}) };
   }
 
