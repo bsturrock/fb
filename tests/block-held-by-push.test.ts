@@ -9,14 +9,14 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { BL_SCENES, blockScene } from '../src/sim/fixtures/blocking';
 import { Simulation } from '../src/sim/simulation';
 import { captureState, resumeState, type StateCapture } from './state';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 describe('plan 16 (p48), the hit held only while the palms push', () => {
   const CAPTURE_S = 1.2;
   const END_S = 3;
   const scene = (held: boolean): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F8-hardNoHinge')!;
-    return blockScene({ ...s, id: 'BL-T-held-by-push', durationS: END_S + 0.1, seat: true, aimThrough: true, stanceCone: true, followThrough: true, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: true, laneTie: true, burstTaper: true, lowUnheld: true, palmSlide: true, laneOnStrike: false, upperArm: true, heldByPush: held }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, ...WITHOUT_NEWER, id: 'BL-T-held-by-push', durationS: END_S + 0.1, seat: true, aimThrough: true, stanceCone: true, followThrough: true, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: true, laneTie: true, burstTaper: true, lowUnheld: true, palmSlide: true, laneOnStrike: false, upperArm: true, heldByPush: held }, FIX('L3-F6-hold'));
   };
   const caps = new Map<boolean, StateCapture>();
   async function captured(rev: boolean): Promise<StateCapture> {

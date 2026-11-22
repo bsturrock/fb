@@ -7,7 +7,7 @@ import { BLOCK_STRIKE_V2, nextPunch, STRIKE_AT_LOAD_GAP_M, withStrikeAtLoadGap, 
 import type { FixtureDef } from '../src/sim/fixture';
 import { BL_SCENES, blockScene } from '../src/sim/fixtures/blocking';
 import { Simulation } from '../src/sim/simulation';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 describe('plan 16 (p48), the strike from the load gap', () => {
   // (BL-F8-hardNoHinge's: the lean-in's close gap, 0.675 m)
@@ -28,7 +28,7 @@ describe('plan 16 (p48), the strike from the load gap', () => {
   // BL-F8-hardNoHinge under the full set of the newer runs, the lane called on the strike
   const scene = (atGap: boolean): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F8-hardNoHinge')!;
-    return blockScene({ ...s, id: 'BL-T-strike-load-gap', durationS: 3, seat: true, aimThrough: true, stanceCone: true, followThrough: true, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: true, laneTie: true, burstTaper: true, lowUnheld: true, palmSlide: true, laneOnStrike: true, upperArm: true, strikeAtLoadGap: atGap }, FIX('L3-F6-hold'));
+    return blockScene({ ...s, ...WITHOUT_NEWER, id: 'BL-T-strike-load-gap', durationS: 3, seat: true, aimThrough: true, stanceCone: true, followThrough: true, lanes: true, insideLeverage: true, stayLow: true, shoulderTops: true, foldKeeps: true, armsGive: true, laneTie: true, burstTaper: true, lowUnheld: true, palmSlide: true, laneOnStrike: true, upperArm: true, strikeAtLoadGap: atGap }, FIX('L3-F6-hold'));
   };
   interface Out {
     /** each man's first strike (s), and his lane's call (s) */
