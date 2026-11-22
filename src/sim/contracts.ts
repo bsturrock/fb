@@ -134,6 +134,14 @@ export interface FlatStance {
    * and past 90 deg, a three-point stance), not along his body's forward levelled. Absent: the body's.
    */
   level?: true;
+  /**
+   * Plan 16 (p49): his plants toed out by this (deg, each foot's toe turned away from his midline off his facing) while
+   * he stands in this stance: the plants the reset takes and every step's landing. The knee follows the foot (its pole
+   * is the plant's heading), so in a wide set stance it comes out over the foot instead of inside the ankle. A stance
+   * without it (his block's, after the snap) lands its steps along his facing, so each foot turns back straight as it
+   * steps. Absent: along his facing.
+   */
+  toeOutDeg?: number;
 }
 
 export interface ArmIntent {

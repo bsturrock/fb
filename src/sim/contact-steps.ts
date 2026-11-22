@@ -129,6 +129,22 @@ const G = 9.81;
 const other = (s: ArmSide): ArmSide => (s === 'left' ? 'right' : 'left');
 const hz = (a: Vec3): Vec3 => v3(a.x, 0, a.z);
 const headingNow = (inp: FootPlanInput): number => headingOf(qRot(inp.core.q, v3(0, 0, 1)));
+/**
+ * Plan 16 (p49, `FootPlanInput.flat.toeOutRad`): the turn (rad) that toes foot `s` out from heading `h`: its toe away from
+ * his midline (`sideSign` along `rightW`); 0 without a toe-out.
+ */
+export function toeOutOf(inp: FootPlanInput, s: ArmSide, h: number): number {
+  const t = inp.flat?.toeOutRad;
+  if (!t) return 0;
+  // (a heading grows toward its own lateral (cos h, 0, -sin h): out is the side whose lateral points away from the midline)
+  return Math.sign(inp.sideSign[s] * (inp.rightW.x * Math.cos(h) - inp.rightW.z * Math.sin(h))) * t;
+}
+
+/** Foot `s`'s landing heading: his facing, toed out under a stance that asks it (plan 16 p49, `toeOutOf`). */
+const landHeading = (inp: FootPlanInput, s: ArmSide): number => {
+  const h = headingNow(inp);
+  return h + toeOutOf(inp, s, h);
+};
 const stepTime = (plan: FootPlan, inp: FootPlanInput, L: number): number => {
   const M = plan.profile.steps!;
   return clamp(L / (M.stepMps + M.travelK * len(hz(inp.vel))), M.minS, M.maxS);
@@ -231,7 +247,7 @@ function aimOf(plan: FootPlan, s: ArmSide, inp: FootPlanInput, aheadS: number, l
   const L = len(off);
   const outrun = L > rMax;
   const want = outrun ? v3(hip.x + (off.x * rMax) / L, sole, hip.z + (off.z * rMax) / L) : support;
-  const h = headingNow(inp);
+  const h = landHeading(inp, s);
   const c = v3(Math.sin(h) * plan.shoe.centerFoot.z, 0, Math.cos(h) * plan.shoe.centerFoot.z);
   const o = plan.feet[other(s)];
   const at = o.mode === 'planted' ? o.heelW! : (o.dest ?? o.target);
@@ -370,7 +386,7 @@ function begin(plan: FootPlan, s: ArmSide, inp: FootPlanInput, ev: FootEvent[], 
   f.durS = T;
   f.dest = aim;
   f.stepM = L;
-  f.destHeadingRad = headingNow(inp);
+  f.destHeadingRad = landHeading(inp, s);
   plan.lastStep = s;
   ev.push({ type: 'footSwing', side: s, data: { mode: 'swing', source: 'step', reason: why, durS: round(T, 4), stepM: round(L, 4) } });
 }
@@ -417,7 +433,7 @@ export function advanceContactStep(plan: FootPlan, s: ArmSide, inp: FootPlanInpu
   }
   // the foot turns to the body's heading over the time left, so it is on it at touchdown (FootDebug.stepsTurnRate, a
   // fault: at most the swing's yaw rate, as before)
-  f.destHeadingRad = headingNow(inp);
+  f.destHeadingRad = landHeading(inp, s);
   const dh = wrapPi(f.destHeadingRad - f.headingRad);
   const turn = rad(P.swing.maxYawRateDegPerS) * dt;
   f.headingRad += inp.debug?.stepsTurnRate ? clamp(dh, -turn, turn) : dh * Math.min(1, dt / left);

@@ -4,10 +4,11 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { PlayerId, SegmentId } from './contracts';
 import { ARM_G2, DEFAULT_POSE_PROFILE, hipLocal, sideSignX, type JointRangeProfile } from './profiles';
-import { buildProxyPose, legRequestLocal, poseLimbShapes, type PoseClearance, type PoseShape, type ProxyPoseInput } from './pose';
+import { buildProxyPose, legRequestLocal, poseLimbShapes, type FootRequest, type PoseClearance, type PoseShape, type ProxyPoseInput } from './pose';
 import { CARRY_ARM } from './carry';
 import { idleStanceFade, idleTarget, idleWeight, idleWidthAddM, sampleIdle, type LocomotionProfile } from './locomotion';
 import { initFeet, observeFeet, planFeet, releaseFeet, type FootEvent, type FootPlanInput } from './footwork';
+import { toeOutOf } from './contact-steps';
 import { bodyParts, groundFor, type Part } from './free-ground';
 import { colliderWorldPose, externalFromColliders, ragdollPose, SEGMENTS, type ExternalShape } from './ragdoll';
 import { boxSeg, cullGeom, geomNear, LEG_HULL_EPS_M, solvedImpulses, trunkContact, trunkPieces, type CullGeom, type LegHull, type TrunkHit } from './physics';
@@ -132,7 +133,7 @@ export function updatePoses(host: PoseHost, dt: number): void {
     if (fp && poseIn.ground) {
       poseIn.ground.fixedGait = true;
       ftIn = host.footInput(pl, poseIn, sampled, dt, parts);
-      poseIn.feet = fp.initialized ? planFeet(fp, ftIn, ev) : {};
+      poseIn.feet = fp.initialized ? planFeet(fp, ftIn, ev) : toedReset(ftIn);
     }
     const oldIn = host.opts.transitionAudit && ftIn ? auditInput(host, pl, poseIn, ftIn) : null;
     pl.pose = buildProxyPose(poseIn);
@@ -673,7 +674,7 @@ export function footInputOf(host: PoseHost, pl: PlayerRuntime, inp: ProxyPoseInp
       return v3(c.x, 0, c.z);
     }),
     ...(host.def.jointRange ? { heelLift: true } : {}),
-    ...(flat ? { flat: { maxShinRad: flat.maxShinRad, aimShinRad: flat.rangeRad, coverM: pl.sus!.flat!.coverM, captureK: pl.sus!.flat!.captureK, ...(pl.sus!.flat!.ball ? { aheadCoverM: pl.sus!.flat!.ball.aheadCoverM, landAheadM: flat.landAheadM } : {}) } } : {}),
+    ...(flat ? { flat: { maxShinRad: flat.maxShinRad, aimShinRad: flat.rangeRad, coverM: pl.sus!.flat!.coverM, captureK: pl.sus!.flat!.captureK, ...(pl.sus!.flat!.ball ? { aheadCoverM: pl.sus!.flat!.ball.aheadCoverM, landAheadM: flat.landAheadM } : {}), ...(pl.sus!.flat!.toeOutDeg ? { toeOutRad: (pl.sus!.flat!.toeOutDeg * Math.PI) / 180 } : {}) } } : {}),
     ...(parts ? { ground: groundFor(parts, pl.id, gy + soleM + R.lengths.shin), legs: R, ...(host.def.jointRange ? { range: { profile: jointRangeOf(host, pl)!, sideX: { left: sideSignX(pl.body, 'left'), right: sideSignX(pl.body, 'right') } } } : {}) } : {}),
     ...(host.opts.debug?.foot ? { debug: host.opts.debug.foot } : {}),
   };
@@ -745,6 +746,19 @@ function ballOf(pl: PlayerRuntime, core: { p: Vec3; q: Quat }, R: ProxyPoseInput
   const at = (pitchDeg: number) => ballAheadM(thigh, shin, nowM, rangeRad, deg(pitchDeg), soleM, toeM);
   const leanAt = (pitchDeg: number) => shinForAnkleRad(thigh, shin, at(pitchDeg), nowM - soleM);
   return { shiftM, needM, maxShinRad: leanAt(B.stepDeg), rangeRad: leanAt(B.pitchDeg), landAheadM: Math.max(0, at(B.landDeg) - at(B.pitchDeg)) };
+}
+
+/**
+ * Plan 16 (p49): the reset's legs under a stance whose plants are toed out (`FlatStance.toeOutDeg`): each on its ordinary
+ * request with its knee pole on the toed heading, so the reset already shows the feet the plants take (`initFeet`), not
+ * straight feet turned out on the next substep. Without a toe-out, none (the ordinary legs).
+ */
+function toedReset(inp: FootPlanInput): Record<ArmSide, FootRequest> | Record<string, never> {
+  if (!inp.flat?.toeOutRad) return {};
+  const f = qRot(inp.core.q, v3(0, 0, 1));
+  const h = Math.atan2(f.x, f.z);
+  const req = (s: ArmSide): FootRequest => ({ kind: 'offset', offsetW: v3(), headingRad: h + toeOutOf(inp, s, h), poleW: 1 });
+  return { left: req('left'), right: req('right') };
 }
 
 /** The pair's shift ahead for a flat stance (flatOf), 0 without one. */

@@ -29,7 +29,7 @@
 // releases both. A still body takes at most one settle step per foot (no marching). Plan 15 (`FootworkProfile.steps`):
 // with no clip weight the contact stepping model (contact-steps.ts) has the feet instead of the reactive steps.
 import type { ArmSide } from './contracts';
-import { advanceContactStep, stepFeet, type ContactFoot, type StepModelProfile } from './contact-steps';
+import { advanceContactStep, stepFeet, toeOutOf, type ContactFoot, type StepModelProfile } from './contact-steps';
 import type { FootDebug } from './debug';
 import type { FreeGround } from './free-ground';
 import type { JointRangeProfile, RagdollProfile } from './profiles';
@@ -590,9 +590,10 @@ export interface FootPlanInput {
    * past `maxShinRad` steps when its aim's is within `aimShinRad` (the ankle's range), its turn or not; with both feet down a step needs a gain past
    * `coverM` (in place of the model's), and its want leads the hips by `captureK` times the capture point's lead (the
    * model's 1). Plan 16 (p38, the lean-in): a plant further ahead of its want (along its heading) than `aheadCoverM` steps, its turn or not, and
-   * the shin's forced step lands `landAheadM` further ahead (m, along his heading). Absent: the model as it is.
+   * the shin's forced step lands `landAheadM` further ahead (m, along his heading). Plan 16 (p49): every plant toed out by
+   * `toeOutRad` (`FlatStance.toeOutDeg`; `toeOutOf`). Absent: the model as it is.
    */
-  flat?: { maxShinRad: number; aimShinRad: number; coverM: number; captureK: number; aheadCoverM?: number; landAheadM?: number };
+  flat?: { maxShinRad: number; aimShinRad: number; coverM: number; captureK: number; aheadCoverM?: number; landAheadM?: number; toeOutRad?: number };
   /** Plan 13e: the other players' cores (world, horizontal: y 0), what can hold a leg off its home. */
   others?: Vec3[];
   /** Plan 15 (`FootworkProfile.steps`): this player's free ground, the other players' footprints and parts (free-ground.ts). */
@@ -1459,7 +1460,11 @@ export function initFeet(plan: FootPlan, pose: PhysicalPose, inp: FootPlanInput,
     // a proposal: the first solve with the plant request confirms or fails it (observeFeet)
     if (inp.supported && onGround && clipStance && reachable) {
       const c = inp.clip?.contact[s];
-      const heading = inp.clip ? inp.clip.headingRad : headingOf(norm(hz(qRot(q, v3(0, 0, 1))), v3(0, 0, 1)));
+      // (plan 16 p49, a stance with its plants toed out: the reset's on the toed heading off his facing, as the reset's legs
+      // were posed, pose-runtime.ts `toedReset`)
+      const facing = headingOf(qRot(inp.core.q, v3(0, 0, 1)));
+      const toe = toeOutOf(inp, s, facing);
+      const heading = inp.clip ? inp.clip.headingRad : toe ? facing + toe : headingOf(norm(hz(qRot(q, v3(0, 0, 1))), v3(0, 0, 1)));
       proposePlant(plan, f, inp, heading, c ? clamp(c.rollF, 0, 1) : 0, c ? c.toeZ : inp.toeM);
     }
   }

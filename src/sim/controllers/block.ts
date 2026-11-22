@@ -303,6 +303,29 @@ export const withAimThrough = (p: BlockProfile): BlockProfile => ({ ...p, id: `$
  */
 /** Plan 16 (p48): a block profile whose arms against his man hold him there as his hands on (`frame`), under an id that names it. */
 export const withFrame = (p: BlockProfile): BlockProfile => ({ ...p, id: `${p.id}+frame`, frame: true });
+/**
+ * Plan 16 (p49): how far the BL men's set stances toe their plants out (deg, per stance; `withToeOut`). The two-point set
+ * at 20 brings his knees over his ankles (8.7 cm inside them straight); the defense three-point at 10 puts them 3 cm
+ * outside. Deeper the plants do not hold: past 10 in the defense three-point and past 5 in the offense three-point (hips
+ * 0.71 m) the planted feet slide off their anchors as he sinks into the stance (9-50 cm in BL-F9-threePoint at 10-20),
+ * so the offense three-point gains 2.5 cm only (knees 6 cm inside his ankles).
+ */
+export const TOE_OUT_DEG: Partial<Record<PreSnapKey, number>> = { 'two-point': 20, 'three-point-defense': 10, 'three-point-offense': 5 };
+/**
+ * Plan 16 (p49): a block profile whose pre-snap stances (`preSnap`) toe his plants out by `deg` (each stance's flat feet,
+ * its own or the profile's, with `FlatStance.toeOutDeg`; a stance with neither as it is), under ids that name it. His
+ * block's own stance (`flat`, after the snap) is not toed out.
+ */
+export function withToeOut(p: BlockProfile, deg: Partial<Record<PreSnapKey, number>>): BlockProfile {
+  if (!p.preSnap) return p;
+  const pre: NonNullable<BlockProfile['preSnap']> = {};
+  for (const [k, S] of Object.entries(p.preSnap) as [PreSnapKey, PreSnapPose][]) {
+    const F = S.flat ?? p.flat;
+    const d = deg[k];
+    pre[k] = F && d ? { ...S, flat: { ...F, id: `${F.id}+toe-out${d}`, toeOutDeg: d } } : S;
+  }
+  return { ...p, id: `${p.id}+toe-out`, preSnap: pre };
+}
 /** Plan 16 (p45): a block profile on the inside lane `L` (`lanes`), under an id that names it. */
 export const withLanes = (p: BlockProfile, L: BlockLanes): BlockProfile => ({ ...p, id: `${p.id}+${L.id}`, lanes: L });
 export const withFollowThrough = (p: BlockProfile): BlockProfile => ({
