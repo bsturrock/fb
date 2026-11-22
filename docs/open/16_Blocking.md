@@ -124,6 +124,8 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
 6. **Milestone:** lab review by the user after 1 and 2, again after 3 and 4.
 
 Later, on the user's word: the dynamic block (re-punch for inside position, hand sweeps, re-establishing).
+Later (user, 2026-11-22, after looking at p46-p48: "looks good"): blocking from angles, not always straight on
+(every scene now has the two men square to each other on one line).
 
 Each is flag off first, then on, full-checked (`CLAUDE.md`). Later, when blocking meets a ball carrier: a blocker role
 and the rules (`progressStopped`).
