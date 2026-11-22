@@ -101,9 +101,9 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    little more. **p46, same two scenes:** the winner stays low under the stood-up loser while his hands are on,
    both men's hands stay on, the knock-back is a burst that ends (anchor by 1.3 s, about 0.6 m). **p47:** the
    outside palms ride up onto the shoulder tops. **p48, flag off:** the lane called once a strike is thrown, folded arms
-   holding as a frame, a hit held only while the palms push, a strike from the load's gap; with them six of the
-   older eight are ready to flip (the user's decision; the handoff's p48 table). Open: `-F3`/`-F4` under the full
-   set (a steady 2.4 m drive with no anchor); a re-arm from folded arms; what an inside man's hands do when the man who beat him holds him off
+   holding as a frame, a hit held only while the palms push, a strike from the load's gap; **p49:** six of the older eight
+   flipped to that set (the handoff's p49 entry). Open: `-F3`/`-F4` under the full
+   set (a steady 2.4 m drive with no anchor; parked, see item 7); a re-arm from folded arms; what an inside man's hands do when the man who beat him holds him off
    past his reach (`-F11`, a question for the user); give-ground steps and the lean to a fall.
 4. **Entries** (the three-point start comes **before item 3**, at the user's request: "from three point stance into
    load => explode, really getting that low to high action into the chest"): a three-point stance start (very low
@@ -119,13 +119,35 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    the handoff's "To resume" 3. These poses need the knee well over the toe on a flat foot, more than the ankle's
    25 deg: the same limit that keeps the lean-in tall. Done through p44 (see the handoff): both three-points, the
    two-point's own feet, the fire-out, the hit, from p45 the landing on a pitched trunk, from p47 the run-in (`BL-F11-runIn`); left: knees out over the
-   toes (parked in p48: needs toed-out plants or an ankle roll, see the handoff), the defense front knee at 90, weight on the down hand.
+   toes (p49: the two-point and the defense three-point toed out; the offense three-point needs an ankle roll), the defense front knee at 90, weight on the down hand.
 5. **Polish** in the handoff's defect order, with the footwork and tackle queues.
 6. **Milestone:** lab review by the user after 1 and 2, again after 3 and 4.
 
-Later, on the user's word: the dynamic block (re-punch for inside position, hand sweeps, re-establishing).
-Later (user, 2026-11-22, after looking at p46-p48: "looks good"): blocking from angles, not always straight on
-(every scene now has the two men square to each other on one line).
+7. **The continuous hand fight** (user, 2026-11-22: research first, then design agreed, pass-rush scenes first).
+   Today one hit decides a block. Research: main checkout `.scratch/research/block-shedding.md` (techniques;
+   sub-second timings there are estimates) and `.scratch/research/film/blocks-frame-log.md` (six one-on-one reps
+   at 10 fps from one practice video; private reference, never commit). What they give: the rusher defeats the
+   hands first (swipe, chop, club), then clears (rip under, swim over); each move answers a blocker's state (lean,
+   hands wide or high, feet stopped); a punch takes 0.1-0.2 s, a swipe takes the hands off 0.1-0.4 s, a re-fit
+   about 0.1 s, arm-over to clear 0.3-0.5 s; exchanges cluster in the first 0.5 s and again at 1.5-2 s with a
+   lock between; no static lock lasts past about 2 s; the loss comes from the arm going over the shoulder, not
+   from a lost push. Design:
+   - Each hand has its own state: on or off; where (chest inside, shoulder outside, on an arm); pushing or not.
+   - The defender beats a hand, then clears past that shoulder. The blocker re-fits a knocked hand inside, keeps
+     one hand home while the other strikes, sinks and hops back against a bull rush, re-punches to win the inside.
+   - A beaten blocker turns his hips and rides his man past; he is lost for good bent past about 45 deg with his
+     hips behind his feet and his hands trailing. A rep ends on separation or with the blocker still on.
+   - Moves are requested per scene; choosing them waits for the player brains.
+   Steps: (a) per-hand states, a swipe and a re-fit, straight on, in a pass-rush scene; (b) the re-punch, the
+   inside changing hands; (c) rip and swim around a shoulder (the defender off the blocker's centre line: the
+   first of blocking from angles); (d) the beaten blocker's recovery and the final loss. It should also give
+   `-F11`'s beaten inside man and `-F2`'s folded arms something to do, and the mismatch drive (`-F3`/`-F4`,
+   parked in p49) its time structure.
+
+Later (user, 2026-11-22): blocking from angles, not always straight on (every scene now has the two men square to
+each other on one line). And, from an earlier version of the sim: a blocker engaged on one man reaches a hand out
+to another defender who comes near; double teams; switching off one man to block another. These need angles and
+the player brains.
 
 Each is flag off first, then on, full-checked (`CLAUDE.md`). Later, when blocking meets a ball carrier: a blocker role
 and the rules (`progressStopped`).

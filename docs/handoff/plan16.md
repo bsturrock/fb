@@ -284,6 +284,30 @@ baseline: main checkout `.scratch/p33/on`.
        the ankles in the set stances.
      - 684 tests; baseline main checkout `.scratch/p48/c2-atgap-off` (tool PASS against `p47/c3-f11`: no summary
        changed, three BL traces).
+   - **p49: six older scenes on the newer set, toed-out set stances** (`4960a2a`..`6df5764`; the user's seventh
+     look, "looks good", taken as the go for the flips).
+     - `NEWER_SET` (`fixtures/blocking.ts`; tests on the older scenes spread `WITHOUT_NEWER` from
+       `tests/helpers.ts`) is the full `-F9` set with `frame`, `heldByPush`, `strikeAtLoadGap`. On for `-F1`,
+       `-F2`, `-F5`, `-F6`, `-F7`, `-F8`, `-F9`, `-F10`, `-F11`; `-F3`/`-F4` still run the older set.
+     - Flipped scenes now: the lane is called at the strike, the inside man wins, the other gives 0.42-0.56 m and
+       anchors 0.93-1.52 s after contact in 6-10 steps (registered: standoffs, 0-0.1 m), palms on 97-100 %, no
+       forearm crossing (was 3.6-5.0 cm). Nobody falls in either order; overpowered clock at most 0.13 s (`-F1`).
+       `-F2`: B's arms fold at the hit and stay folded as a frame (palms on 3 %), and from 1.90 s the chests touch
+       (15 N s first touch); the re-fit of the hand fight is the fix.
+     - Toe-out (`FlatStance.toeOutDeg`, `withToeOut`, `BlockSceneOpts.toeOut`): two-point 20 deg (knee from 8.7 cm
+       inside the ankle to 0.6 outside, still 7.2 inside the toe; 0 steps getting set, was 2), defense three-point
+       10 deg (knee 2.9 cm outside the ankle; 2 steps, was 4); no plant jump; the first step after the snap lands
+       straight. The offense three-point is not toed: his hip is already 31 deg past its range at the snap (older
+       defect) and folds further; he needs an ankle roll/twist or more hip twist range at deep flexion.
+     - **Parked: `-F3`/`-F4` under the newer set** (main checkout `.scratch/p49/parked/c-mismatch/`). The contest
+       has no time structure: the hold is a damper (zero at rest), the driver's request stays 0.8 m/s ahead, the
+       capacity ratio is about 5.4 (effort 2.5, lower 1.44, inside 1.5), so the pair settles at 0.25 m/s for 2.4 m.
+       Pushing only between steps pulses the speed but never anchors him. Needs: a static anchor for a set loser,
+       the push arriving in strides, committed steps back (6 cm now), and for a true mismatch a route to a fall
+       (a steady drive never stands him up, so the overpowered clause never runs; that changes who falls: the
+       user's decision).
+     - 686 tests; baseline main checkout `.scratch/p49/d2-toe-on` (tool PASS against `p48/c2-atgap-off`: nine BL
+       scenes changed, same results and end representations).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
