@@ -262,6 +262,35 @@ export const BLOCK_STRIKE_STEP_UP: BlockStrike = { ...BLOCK_STRIKE_V5, id: 'stri
 const runningIn = (m: BlockMan, fromS: number): BlockMan => ({ ...m, profile: withGaze(withRunIn(m.profile ?? BLOCK_V1, RUN_IN_V1), GAZE_V1), leanIn: LEAN_IN_V6, fromS });
 
 /**
+ * Plan 16 (p49): the set the newer scenes run (BL-F9-threePoint, BL-F10-twoPointVsThree, BL-F11-runIn: every flag of p44 to
+ * p48), and the older scenes as each is turned onto it: the palm seated, aimed through, judged at the stance, followed
+ * through; the inside lane, its leverage and its tie, called on the strike; the winner low, the outside palms on the
+ * shoulder tops, the beaten man's arms giving and kept on, the knock-back ended, the held palms sliding; the folded arms a
+ * frame, the hit held only while the palms push, the strike from the load's gap; the upper arm in the self-clearance.
+ */
+export const NEWER_SET = {
+  seat: true,
+  aimThrough: true,
+  stanceCone: true,
+  followThrough: true,
+  lanes: true,
+  insideLeverage: true,
+  stayLow: true,
+  shoulderTops: true,
+  foldKeeps: true,
+  armsGive: true,
+  laneTie: true,
+  burstTaper: true,
+  lowUnheld: true,
+  palmSlide: true,
+  laneOnStrike: true,
+  frame: true,
+  heldByPush: true,
+  strikeAtLoadGap: true,
+  upperArm: true,
+} as const satisfies Partial<BlockSceneOpts>;
+
+/**
  * The BL scenes (A's hands under, B's over, in every one; every man on the contest, `contested`, striking with
  * BLOCK_STRIKE_V2 (before p40 V1), on the low lean-in LEAN_IN_V2, his feet behind his hips; the two set before the snap,
  * F9 and F10, on BLOCK_STRIKE_V5 and CONTEST_V2 from p43, the load on his shoulders, from p44 the landing palm seated
@@ -273,12 +302,12 @@ const runningIn = (m: BlockMan, fromS: number): BlockMan => ({ ...m, profile: wi
  * and the lane's call with a tie (`laneTie`), the knock-back ended (`burstTaper`, `lowUnheld`), from p47 the held palms sliding on to
  * their aim (`palmSlide`), from p48 the lane called only once a strike is thrown (`laneOnStrike`), from p49 the folded arms against
  * his man a frame (`frame`), the hit held only while the palms push (`heldByPush`) and the strike from the load's gap
- * (`strikeAtLoadGap`); from p44
+ * (`strikeAtLoadGap`): `NEWER_SET`, from p49 on BL-F1-even too; from p44
  * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
 export const BL_SCENES: BlockSceneOpts[] = [
-  { id: 'BL-F1-even', title: 'Even match, standing: both hold at effort 0.5 from 1.1 m apart, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), durationS: 9, upperArm: true },
+  { id: 'BL-F1-even', title: 'Even match, standing: both hold at effort 0.5 from 1.1 m apart, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), durationS: 9, ...NEWER_SET },
   { id: 'BL-F2-walkIn', title: 'Even match, A walks in at 1.5 m/s from 3 m onto B, who sets at 1 s; both hold at effort 0.5, 9 s', A: { ...hold(0.5, 'under'), walkInMps: 1.5 }, B: { ...hold(0.5, 'over'), fromS: 1 }, sepM: 3, durationS: 9, upperArm: true },
   { id: 'BL-F3-blockerDrives', title: 'Blocker stronger: A drives at effort 1, B holds at effort 0.4, 9 s', A: drive(1, 'under'), B: hold(0.4, 'over'), durationS: 9, upperArm: true },
   { id: 'BL-F4-defenderStronger', title: 'Defender stronger: B drives at effort 1, A drives at effort 0.4, 9 s', A: drive(0.4, 'under'), B: drive(1, 'over'), durationS: 9, upperArm: true },
@@ -292,25 +321,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3),
     sepM: 2,
     durationS: 8,
-    seat: true,
-    aimThrough: true,
-    stanceCone: true,
-    followThrough: true,
-    lanes: true,
-    insideLeverage: true,
-    stayLow: true,
-    shoulderTops: true,
-    foldKeeps: true,
-    armsGive: true,
-    laneTie: true,
-    burstTaper: true,
-    lowUnheld: true,
-    palmSlide: true,
-    laneOnStrike: true,
-    frame: true,
-    heldByPush: true,
-    strikeAtLoadGap: true,
-    upperArm: true,
+    ...NEWER_SET,
   },
   {
     id: 'BL-F10-twoPointVsThree',
@@ -319,25 +330,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3),
     sepM: 2,
     durationS: 8,
-    seat: true,
-    aimThrough: true,
-    stanceCone: true,
-    followThrough: true,
-    lanes: true,
-    insideLeverage: true,
-    stayLow: true,
-    shoulderTops: true,
-    foldKeeps: true,
-    armsGive: true,
-    laneTie: true,
-    burstTaper: true,
-    lowUnheld: true,
-    palmSlide: true,
-    laneOnStrike: true,
-    frame: true,
-    heldByPush: true,
-    strikeAtLoadGap: true,
-    upperArm: true,
+    ...NEWER_SET,
   },
   {
     id: 'BL-F11-runIn',
@@ -346,25 +339,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
     B: setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_STEP_UP, withLegsHold(CONTEST_V2)), 'two-point', 'defense', 3.3),
     sepM: 8,
     durationS: 8,
-    seat: true,
-    aimThrough: true,
-    stanceCone: true,
-    followThrough: true,
-    lanes: true,
-    insideLeverage: true,
-    stayLow: true,
-    shoulderTops: true,
-    foldKeeps: true,
-    armsGive: true,
-    laneTie: true,
-    burstTaper: true,
-    lowUnheld: true,
-    palmSlide: true,
-    laneOnStrike: true,
-    frame: true,
-    heldByPush: true,
-    strikeAtLoadGap: true,
-    upperArm: true,
+    ...NEWER_SET,
   },
 ];
 

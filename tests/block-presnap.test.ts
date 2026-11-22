@@ -6,7 +6,7 @@ import type { FixtureDef } from '../src/sim/fixture';
 import { BL_SCENES, blockScene, legOf } from '../src/sim/fixtures/blocking';
 import { Simulation } from '../src/sim/simulation';
 import { qRot, v3 } from '../src/sim/vec';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 const L = legOf(FIX('L3-F6-hold'), FIX('L3-F6-hold').players.find((p) => p.id === 'D')!.body);
 const TWO: PreSnapStance = { kind: 'two-point', side: 'offense' };
@@ -77,7 +77,7 @@ async function held(def: FixtureDef, snapS: number): Promise<Held> {
 const fromSet = (stance: PreSnapStance | undefined): FixtureDef => {
   const o = BL_SCENES.find((x) => x.id === 'BL-F1-even')!;
   const m = (x: typeof o.A) => ({ ...x, leanIn: LEAN_IN_V3, fromS: 1, ...(stance ? { stance } : {}) });
-  return blockScene({ ...o, A: m(o.A), B: m(o.B), sepM: 0.92, durationS: 1.4 }, FIX('L3-F6-hold'));
+  return blockScene({ ...o, ...WITHOUT_NEWER, A: m(o.A), B: m(o.B), sepM: 0.92, durationS: 1.4 }, FIX('L3-F6-hold'));
 };
 
 describe('plan 16 (p39), the pre-snap stance held until the snap', () => {

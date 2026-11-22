@@ -11,7 +11,7 @@ import { BL_SCENES, blockScene, contested } from '../src/sim/fixtures/blocking';
 import { Simulation } from '../src/sim/simulation';
 import { dot, norm, sub, v3, type Vec3 } from '../src/sim/vec';
 import { drawnShapes } from './visible';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 const OFF: PreSnapStance = { kind: 'three-point', side: 'offense' };
 const DEF: PreSnapStance = { kind: 'three-point', side: 'defense' };
@@ -20,7 +20,7 @@ type Fault = 'pace' | 'lowM' | 'level';
 function scene(fault?: Fault): FixtureDef {
   const o = BL_SCENES.find((x) => x.id === 'BL-F1-even')!;
   const m = (x: typeof o.A, stance: PreSnapStance) => ({ ...x, profile: contested(undefined, BLOCK_STRIKE_V2), leanIn: LEAN_IN_V4, stance, fromS: 99 });
-  const def = blockScene({ ...o, id: 'BL-T-threePoint', A: m(o.A, OFF), B: m(o.B, DEF), sepM: 2, durationS: 3.5 }, FIX('L3-F6-hold'));
+  const def = blockScene({ ...o, ...WITHOUT_NEWER, id: 'BL-T-threePoint', A: m(o.A, OFF), B: m(o.B, DEF), sepM: 2, durationS: 3.5 }, FIX('L3-F6-hold'));
   if (!fault) return def;
   const strip = (p: PreSnapPose): PreSnapPose => {
     if (fault === 'pace') return { ...p, pace: undefined };

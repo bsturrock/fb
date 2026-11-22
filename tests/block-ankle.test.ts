@@ -13,7 +13,7 @@ import { BL_SCENES, blockScene, type BlockMan } from '../src/sim/fixtures/blocki
 import { jointRangeOf } from '../src/sim/pose-runtime';
 import { Simulation, type PlayerRuntime } from '../src/sim/simulation';
 import { qRot, v3 } from '../src/sim/vec';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 import { HUMAN_RANGES, jointAngles } from './visible';
 
 const SIDES: ArmSide[] = ['left', 'right'];
@@ -55,7 +55,7 @@ const AT38: LeanInStance = { ...LEAN_IN_V1, id: 'lean-in-v1-a38', ankleDeg: 38, 
 function scene(S: LeanInStance, strip: boolean, durationS: number): FixtureDef {
   const o = BL_SCENES.find((x) => x.id === 'BL-F1-even')!;
   const on = (m: BlockMan): BlockMan => ({ ...m, leanIn: S });
-  const def = blockScene({ ...o, A: on(o.A), B: on(o.B), durationS }, FIX('L3-F6-hold'));
+  const def = blockScene({ ...o, ...WITHOUT_NEWER, A: on(o.A), B: on(o.B), durationS }, FIX('L3-F6-hold'));
   if (!strip) return def;
   const off = <T extends { flat?: object }>(x: T): T => {
     if (!x.flat) return x;

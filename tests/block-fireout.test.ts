@@ -7,7 +7,7 @@ import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, LEAN_IN_V3, nextPunch, type BlockStri
 import type { FixtureDef } from '../src/sim/fixture';
 import { BL_SCENES, blockScene, contested } from '../src/sim/fixtures/blocking';
 import { Simulation } from '../src/sim/simulation';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 const TWO: PreSnapStance = { kind: 'two-point', side: 'offense' };
 
@@ -36,7 +36,7 @@ describe('plan 16 (p40), the fire-out deadlock: engaged, in reach, he strikes', 
   async function fire(K: BlockStrike): Promise<Fire> {
     const o = BL_SCENES.find((x) => x.id === 'BL-F1-even')!;
     const m = (x: typeof o.A) => ({ ...x, profile: contested(undefined, K), leanIn: LEAN_IN_V3, stance: TWO, fromS: 1 });
-    const def: FixtureDef = blockScene({ ...o, id: 'BL-T-fireout', A: m(o.A), B: m(o.B), sepM: 1.1, durationS: 3 }, FIX('L3-F6-hold'));
+    const def: FixtureDef = blockScene({ ...o, ...WITHOUT_NEWER, id: 'BL-T-fireout', A: m(o.A), B: m(o.B), sepM: 1.1, durationS: 3 }, FIX('L3-F6-hold'));
     const r: Fire = { strikeT: {}, loadedEngagedS: { A: 0, B: 0 }, landed: { A: false, B: false }, fell: false };
     const since: Record<string, number | null> = { A: null, B: null };
     let sim!: Simulation;

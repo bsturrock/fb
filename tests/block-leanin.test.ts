@@ -15,7 +15,7 @@ import type { FootPlan } from '../src/sim/footwork';
 import { Simulation } from '../src/sim/simulation';
 import { prepDropM } from '../src/sim/support-runtime';
 import { dot, norm, qFromAxisAngle, v3, type Vec3 } from '../src/sim/vec';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 const deg = (d: number) => (d * Math.PI) / 180;
 const toDeg = (r: number) => (r * 180) / Math.PI;
@@ -152,7 +152,7 @@ describe('plan 16 (p38), the lean-in stance (LEAN_IN_V1 on the BL body)', () => 
 const sceneOn = (id: string, stance: 'lean' | 'athletic', durationS: number): FixtureDef => {
   const o = BL_SCENES.find((x) => x.id === id)!;
   const on = (m: BlockMan): BlockMan => (stance === 'lean' ? { ...m, athletic: undefined, leanIn: LEAN_IN_V1 } : { ...m, leanIn: undefined, athletic: ATHLETIC_V2 });
-  return blockScene({ ...o, A: on(o.A), B: on(o.B), durationS }, FIX('L3-F6-hold'));
+  return blockScene({ ...o, ...WITHOUT_NEWER, A: on(o.A), B: on(o.B), durationS }, FIX('L3-F6-hold'));
 };
 
 interface KnockedBack {
@@ -259,7 +259,7 @@ async function rise(def: FixtureDef): Promise<Rise> {
 
 const onStance = (id: string, S: LeanInStance, durationS: number): FixtureDef => {
   const o = BL_SCENES.find((x) => x.id === id)!;
-  return blockScene({ ...o, A: { ...o.A, athletic: undefined, leanIn: S }, B: { ...o.B, athletic: undefined, leanIn: S }, durationS }, FIX('L3-F6-hold'));
+  return blockScene({ ...o, ...WITHOUT_NEWER, A: { ...o.A, athletic: undefined, leanIn: S }, B: { ...o.B, athletic: undefined, leanIn: S }, durationS }, FIX('L3-F6-hold'));
 };
 
 describe('plan 16 (p39), the low lean-in: load low, explode up', () => {

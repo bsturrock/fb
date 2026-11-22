@@ -1,8 +1,15 @@
 import { expect } from 'vitest';
 import { breathe } from './runs';
+import { NEWER_SET, type BlockSceneOpts } from '../src/sim/fixtures/blocking';
 
 // The simulation runs (tests/runs.ts, no vitest import) and the vitest-side table helpers below.
 export * from './runs';
+
+/**
+ * Plan 16 (p49): the newer BL set (`NEWER_SET`) held off but the upper arm, as the older BL scenes ran before each was
+ * turned onto it: a test that builds its own scene on an older one keeps its construction (spread after the scene's opts).
+ */
+export const WITHOUT_NEWER: Partial<BlockSceneOpts> = Object.fromEntries(Object.keys(NEWER_SET).filter((k) => k !== 'upperArm').map((k) => [k, false]));
 
 /**
  * Plan 13b: a table test. Runs `check` on every row, yielding a macrotask between rows (the 10a A1 starvation), and

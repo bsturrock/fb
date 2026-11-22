@@ -17,7 +17,7 @@ import type { FootRequest, PhysicalPose } from '../src/sim/pose';
 import { JOINT_RANGE_V3 } from '../src/sim/profiles';
 import { Simulation } from '../src/sim/simulation';
 import { add, qRot, v3, type Vec3 } from '../src/sim/vec';
-import { FIX } from './helpers';
+import { FIX, WITHOUT_NEWER } from './helpers';
 
 const SIDES: ArmSide[] = ['left', 'right'];
 /** The viewer's bar: a planted heel no more than this up (m), a foot pitched no more than this (deg). */
@@ -34,7 +34,7 @@ const scene = (id: string, flat: FlatStance | null, durationS: number): FixtureD
     const u = unflat(m);
     return { ...u, profile: flat ? withFlat(u.profile!, flat, STAGGER_M) : u.profile };
   };
-  return blockScene({ ...o, A: on(o.A), B: on(o.B), durationS }, FIX('L3-F6-hold'));
+  return blockScene({ ...o, ...WITHOUT_NEWER, A: on(o.A), B: on(o.B), durationS }, FIX('L3-F6-hold'));
 };
 
 interface Feet {
