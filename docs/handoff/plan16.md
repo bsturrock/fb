@@ -308,6 +308,34 @@ baseline: main checkout `.scratch/p33/on`.
        user's decision).
      - 686 tests; baseline main checkout `.scratch/p49/d2-toe-on` (tool PASS against `p48/c2-atgap-off`: nine BL
        scenes changed, same results and end representations).
+   - **p50: the hand fight, step a** (plan item 7; `96b0c00`..`3bc13cd`; no existing scene changed).
+     - Per-hand state: `BlockState.hands`, one `HandState` per side (`advanceHands`, in the snapshot as
+       `block[id].hands`): doing (home, striking, swiping, knocked, refitting), on, pushing, where, lane, the last
+       knock. Flag `BlockProfile.handFight` (`withHandFight`, `HANDS_V1`..`V3`, `BlockSceneOpts.handFight`). Each
+       hand's lane is still the man's lane.
+     - Swipe: a request per scene, `BlockRequest.swipes {atS, hand}`. The hand rises 9 cm over the middle of his
+       man's forearm and chops to 16 cm under and 14 cm out; contact is geometric (`Simulation.handContacts`,
+       palm within 1.5 cm of the forearm capsule, men in id order); a hit ends the push (`ArmSystem.knock`,
+       reason `knocked`) and rides the arm down; a chop that meets nothing is a miss.
+     - Cost of a knocked pushing hand: the hand driven 20 cm along the chop and 12 cm off his man for 0.15 s, the
+       trunk 6 deg further over, his contest capacity halved while knocked and 30 % down until the hand is back on
+       (`handsLeverage`); the swiper bursts into the opening until then (`openedBy`; the cut alone moved about
+       50 N net). Re-fit: the knocked hand pushes straight at its lane's aim at 3 m/s, the other stays home;
+       after 0.4 s it falls back to the ready point.
+     - **`BL-F12-passRush`** (new; A two-point blocker, B rushing at effort 0.55, swipes at about 4.25 and 5.55 s;
+       both orders the same): each swipe meets the arm 0.05 s in and is over in 0.2 s; A's hand is off
+       0.21-0.23 s and re-fits. Exchange 1 lands while B is still being driven back from the hit (he gains
+       nothing); exchange 2 gains B 5 cm and turns A 1 deg. Nobody falls; overpowered clock 0.05 s.
+     - Defects, worst first: (1) the gain is small and the knocked shoulder does not give (0.3 cm; trunk 5 deg);
+       (2) the swipe reads as a tap: no wind-up, 0.2 s in all; (3) B's chopping palm 5 cm into A's arm for 0.2 s
+       (arms do not collide); (4) at rusher effort 0.65 or more A's hands come off past his reach after the hit
+       and never return (existing; B's outside arms hold his chest out of reach; the `-F11` defect), so the scene
+       sits at 0.55; (5) the swiper's own hand returns through the ready point (0.27 s).
+     - For step b: a rule that changes one hand's lane, and the inside leverage counted per hand (`contestDrive`
+       reads the man's lane). For step c: the swipe's path, contact and ride generalised to over/under the arm,
+       a lateral move request, a contest rule for "past him"; `openedBy` is the window.
+     - 693 tests; baseline main checkout `.scratch/p50/a4-passrush` (tool PASS against `p49/d2-toe-on`: only the
+       new scene).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
