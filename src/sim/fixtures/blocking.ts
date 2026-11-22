@@ -302,7 +302,7 @@ export const NEWER_SET = {
  * and the lane's call with a tie (`laneTie`), the knock-back ended (`burstTaper`, `lowUnheld`), from p47 the held palms sliding on to
  * their aim (`palmSlide`), from p48 the lane called only once a strike is thrown (`laneOnStrike`), from p49 the folded arms against
  * his man a frame (`frame`), the hit held only while the palms push (`heldByPush`) and the strike from the load's gap
- * (`strikeAtLoadGap`): `NEWER_SET`, from p49 on BL-F1-even, BL-F2-walkIn and BL-F5-offCentre (so BL-F6) too; from p44
+ * (`strikeAtLoadGap`): `NEWER_SET`, from p49 on BL-F1-even, BL-F2-walkIn, BL-F5-offCentre (so BL-F6) and BL-F7-hard too; from p44
  * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
@@ -312,7 +312,7 @@ export const BL_SCENES: BlockSceneOpts[] = [
   { id: 'BL-F3-blockerDrives', title: 'Blocker stronger: A drives at effort 1, B holds at effort 0.4, 9 s', A: drive(1, 'under'), B: hold(0.4, 'over'), durationS: 9, upperArm: true },
   { id: 'BL-F4-defenderStronger', title: 'Defender stronger: B drives at effort 1, A drives at effort 0.4, 9 s', A: drive(0.4, 'under'), B: drive(1, 'over'), durationS: 9, upperArm: true },
   { id: 'BL-F5-offCentre', title: 'Off centre by half a man: B 0.25 m to the side, both hold at effort 0.5, 9 s', A: hold(0.5, 'under'), B: hold(0.5, 'over'), offsetX: 0.25, durationS: 9, ...NEWER_SET },
-  { id: 'BL-F7-hard', title: 'Harder: both drive at effort 1 asking 1.4 m/s, 9 s (the stance holds it)', A: drive(1, 'under', BLOCK_V1_HARD), B: drive(1, 'over', BLOCK_V1_HARD), durationS: 9, upperArm: true },
+  { id: 'BL-F7-hard', title: 'Harder: both drive at effort 1 asking 1.4 m/s, 9 s (the stance holds it)', A: drive(1, 'under', BLOCK_V1_HARD), B: drive(1, 'over', BLOCK_V1_HARD), durationS: 9, ...NEWER_SET },
   { id: 'BL-F8-hardNoHinge', title: 'Harder without the hip hinge: both drive at effort 1 asking 1.4 m/s, 9 s (the push at shoulder height tips them)', A: drive(1, 'under', BLOCK_V1_HARD_NO_HINGE), B: drive(1, 'over', BLOCK_V1_HARD_NO_HINGE), durationS: 9, upperArm: true },
   {
     id: 'BL-F9-threePoint',
