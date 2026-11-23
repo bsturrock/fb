@@ -1,11 +1,32 @@
 # Plan 16 handoff: blocking, the rough first slice (in progress)
 
 Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `model-integration`, both pushed.
-State on 2026-11-17: the palm push, the block controller with its engaged state, the `BL` scenes and the base
-(standing against a hard push from the planted feet) are in; the user has had a first lab look ("as a start this looks
-ok"; the picture of a block that came from it is at the top of the plan). The punch as a timed strike is in. 601/601
-tests; the 414 earlier fixtures' summaries and traces are byte-identical to before the plan. Current full-check
-baseline: main checkout `.scratch/p33/on`.
+
+## Now (2026-11-22, after p50)
+
+- **What a block is.** Twelve `BL` scenes. A man sets (two-point, three-point offense or defense, or runs in),
+  loads, fires out low and strikes; the inside lane goes to whoever gets there with a strike; the inside man wins the
+  hit, stays low and drives while the other is stood up, knocked back 0.4-0.6 m in a burst and anchors by 0.9-1.5 s;
+  both men's palms stay on, at arm's length. Nobody falls in any scene. `-F12-passRush` adds the first hand fight:
+  the rusher swipes a blocker's hand off twice and the blocker re-fits it.
+- **What runs where.** `NEWER_SET` (`fixtures/blocking.ts`) on `-F1`, `-F2`, `-F5` to `-F12`; `-F3`/`-F4` (mismatch)
+  on the older set, their flip parked (p49). The hand fight (`HANDS_V3`) only in `-F12`.
+- **Baseline:** main checkout `.scratch/p50/a4-passrush`, 693 tests. All non-BL fixtures byte-identical to before
+  the plan.
+- **Waiting on the user:** his look at `-F12` (links below). Open questions with him: what a beaten inside man's
+  hands do when held off past his reach (`-F11`); whether a truly overpowered man in a mismatch should end in a
+  fall (`-F3`/`-F4`).
+- **Next, in order** (plan item 7): make the swipe read (a wind-up, the knocked shoulder and chest giving, real
+  ground gained; p50 defects 1-3); hands that come off past reach and never return (`-F11`, and `-F12` above rusher
+  effort 0.55); then step b, the re-punch (one hand's lane changing); c, rip and swim around a shoulder (the first
+  of the angles); d, the beaten blocker's recovery and the final loss. After that the mismatch's time structure
+  (p49 parked) and the offense three-point's knees (ankle roll).
+- **Working practice.** One builder at a time, in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`;
+  check results in the main checkout's `.scratch/pNN/`; the lab on port 5180 runs from the worktree and picks up
+  commits on reload. Research for item 7: main checkout `.scratch/research/` (film frames are private reference,
+  never commit). Full checks take about 7 min under the machine's usual outside load.
+
+The numbered entries below are the history of each step, oldest first; the latest (p46-p50) are at the end of 6.
 
 ## To resume
 
@@ -341,23 +362,24 @@ baseline: main checkout `.scratch/p33/on`.
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
      0.725 m target, and the suspension only pushes up; find what lifts it, with a twin capture. (2) No weight on
      the down hand (the arm only reaches). (3) Defense front knee 75 deg. (4) (done, p44) The two-point has no feet of
-     its own (5c). (5) Getting set takes 2.3 s. One builder at a time in the worktree
-   `/Users/brandon/.claude-wt/football-sim-7-ladder`; check results in the main checkout's `.scratch/p38/` onward. The lab on port 5180 runs from the worktree and picks up commits on reload.
+     its own (5c). (5) Getting set takes 2.3 s.
 
-Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back):
+Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back; `&order=rev` runs the
+players in reversed order):
 
-- `?fixture=BL-F1-even&cam=front&speed=0.25&t=0.3` load, strike, the jolt at about 0.5, flat feet, planted
-- `?fixture=BL-F2-walkIn&cam=front&speed=0.25&t=1.3` the walk-in's hit knocks the set man back three steps
-- `?fixture=BL-F3-blockerDrives&cam=front&speed=0.25&t=0.45` knocked, anchors, driven (steps at 0.83, 1.32, 3.15)
-- `?fixture=BL-F4-defenderStronger&cam=front&speed=0.25&t=0.45` the weaker man knocked
-- `?fixture=BL-F7-hard&cam=front&speed=0.25&t=0.45` stalemate
-- `?fixture=BL-F8-hardNoHinge&cam=front&speed=0.25&t=0.7` defect: one man run back 4 m without his hands on
-- `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=0.3` getting set: the down hands come down in front of the knees
-- `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=3.7` the hit: A's hands inside, B's on his shoulders, B
-  stood up and knocked back, anchors by 4.9
-- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=0.3` the two-point set forming (wide, flat, trunk 43)
-- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=3.7` the hit: inside against outside hands, B's arms
-  fold at 3.82, B knocked back and anchored by 5.1, palms on throughout
+- `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=4.2` the first swipe and re-fit (`&t=5.5` the second; `cam=side`
+  for both)
+- `?fixture=BL-F12-passRush&cam=side&speed=0.25&t=3.9` defect: the blocker's hands briefly off past his reach
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=2.5` the set stances, toed out
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=3.6` the hit: the winner low, hands on, burst then anchor
+- `?fixture=BL-F9-threePoint&cam=front&speed=0.25&t=3.6` the same from two three-points
+- `?fixture=BL-F11-runIn&cam=side&speed=0.25&t=3.9` the run-in hit (`cam=front&t=4.5`: the set man's hands off,
+  the open question)
+- `?fixture=BL-F7-hard&cam=side&speed=0.25&t=0.4` the hard drive, now with a winner
+- `?fixture=BL-F8-hardNoHinge&cam=side&speed=0.25&t=1.0` the strike from the load's gap
+- `?fixture=BL-F2-walkIn&cam=side&speed=0.25&t=1.8` defect: folded arms as a frame, the chests touching
+- `?fixture=BL-F3-blockerDrives&cam=side&speed=0.25&t=2` the mismatch on the older set (its newer-set conveyor is
+  parked)
 
 ## Owner rulings (2026-11-17)
 
@@ -454,6 +476,27 @@ cover plus lead whatever the speed; a planted foot cannot step while the other s
 
 ## Tracked defects (polish order by look)
 
+**Current (after p50), worst first.** Each step's own list is in its entry above.
+
+1. The swipe reads as a tap (0.2 s, no wind-up) and costs little: 5 cm, the knocked shoulder does not give (p50).
+2. Hands that come off past reach and never return: `-F11`'s beaten inside man; `-F12` above rusher effort 0.55
+   (the outside man's longer arms hold the other's chest out of reach).
+3. `-F3`/`-F4` on the newer set: a steady 2.4 m drive with no anchor (parked, p49; the contest has no time
+   structure).
+4. `-F2`: the set man's arms fold at the hit and stay folded as a frame; the chests touch from 1.90 s. No re-arm
+   from folded arms.
+5. The offense three-point's knees 8.8 cm inside his ankles, and his hip 31 deg past its range at the snap; the
+   two-point's knees 7.2 cm inside the toes.
+6. Palms and the swiping hand into the other man's arm: 5 cm for 0.2 s per swipe, up to 2.7 cm on landing (arms do
+   not collide with arms).
+7. Men set from the reset step 2-4 times in the first 1.5 s (`-F9`).
+8. With the L3 rules on, `progressStopped` would end a block 0.7 s after contact, and `Role` is `runner | defender`
+   with `runner` implying the ball. Both wait until blocking meets a ball carrier.
+
+**History.** The lists below are from 2026-11-17/18. Most are fixed or superseded: forearms crossing (lanes, p45),
+`-F8`'s run-back and fall (p48), the force contest (p37), the toe stance (p34-p39). Not rechecked since: the
+closing-speed cap's missing test (6), the staggered start's foot slide (6), the drawn palm off the chest (7).
+
 From the contest (2026-11-18), ahead of the older list below, parts of which describe the toe stance it replaced:
 
 - The first collision in `-F3`/`-F4` is modest (11-14 cm at up to 0.5 m/s, with 13 cm more in the next second): a
@@ -511,4 +554,8 @@ the L2 traces.
 - Probes and stills (worktree): `.scratch/p29/` (before), `.scratch/p30/` (palm push in the probe scenes),
   `.scratch/p31/` (BL), `.scratch/p32/` (the base; `stills/`, and `lab/vite.probe.config.ts` for the harder-push and
   feet-together scenes). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
-- Main checkout `.scratch` is 219 MB after pruning plan 15's check results; what is left is from plans before 15.
+- Full checks p34-p50 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
+  `.scratch/p50/a4-passrush`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
+  (superseded by p49's toe-out), `p49/parked/c-mismatch/`.
+- Main checkout `.scratch` was 219 MB after pruning plan 15's check results; prune p33-p45 check dirs once p50 is
+  accepted (keep the latest baseline and parked patches).
