@@ -512,8 +512,10 @@ export const HANDS_V5: BlockHandFight = { ...HANDS_V4, id: 'hands-v5', body: { s
 /**
  * Plan 16 (p52): HANDS_V5 with the re-punch (`HandRePunch`): the hand drawn back in 0.18 s, bowed 14 cm out and 6 cm back,
  * to 30 cm under the shoulder, 12 cm ahead and 4 cm in, the elbow down and back; punched in 0.16 s through 12 cm under his
- * man's forearm's middle and 4 cm in onto his chest plate 46 cm up (the inside lane's 36 is past the reach of a man held
- * off at arm's length by a pitched man's long arms), its push extending at 3 m/s, at most 9 m/s; landing within 0.12 s
+ * man's forearm's middle and 4 cm in onto his chest plate 46 cm up and 10 cm out (the inside lane's 36 is past the reach of
+ * a man held off at arm's length by a pitched man's long arms; at its 7 cm out, the arm line from a man's left shoulder to
+ * a man turned by his first re-punch faced his chest at 0.55, under the push's 0.6, and the hand stayed off him), its push
+ * extending at 3 m/s, at most 9 m/s; landing within 0.12 s
  * more; the way clear of his upper arm by 10 cm; his man's hand washed up, out and back off him as the arms come within
  * 4 cm (the forearms meet as the punch arrives: met at contact, the punching forearm went 7 cm into his before his moved);
  * his shoulder 8 deg back and his trunk 5 deg over as it loads, 12 deg through as it punches, the dip held until it lands.
@@ -523,7 +525,7 @@ export const HANDS_V6: BlockHandFight = {
   id: 'hands-v6',
   rePunch: {
     loadS: 0.18,
-    aim: { y: 0.46, x: 0.07, depthM: 0.08, pole: v3(0, -1, 0.1), lengthM: 0.64 },
+    aim: { y: 0.46, x: 0.1, depthM: 0.08, pole: v3(0, -1, 0.1), lengthM: 0.64 },
     load: { downM: 0.3, fwdM: 0.12, inM: 0.04, outM: 0.14, backM: 0.06, pole: v3(0, -1, -0.5) },
     punchS: 0.16,
     pass: { alongF: 0.5, downM: 0.12, inM: 0.04 },

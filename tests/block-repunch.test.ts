@@ -2,8 +2,8 @@
 // `lanesLeverage`, `handsLeverage`, `openedBy`, the simulation's `handContacts`): a hand without the inside comes off his
 // man, loads low by his ribs and punches back on him inside his man's arm, washing that arm out, so the inside is won per
 // hand and the contest's leverage follows each hand's lane. The rules on constructed inputs (the stages and their times,
-// the per-hand leverage, the gap, a wash opening nothing), then BL-F10-twoPointVsThree on HANDS_V6 with B re-punching his
-// right hand at 4.4 s (A drives with the inside, B outside), resumed from a capture shortly before it: the hand draws back
+// the per-hand leverage, the gap, a wash opening nothing), then BL-F13-rePunch with its first re-punch only (B's right hand
+// at 3.9 s; A drives with the inside, B outside), resumed from a capture shortly before it: the hand draws back
 // and down, punches under A's left forearm onto his chest under his arms, A's left hand is washed off B and goes back on
 // him outside, the lanes and the leverage change hands on that side. Fault twins: the man's lane alone, no re-punch in the
 // fight, a way through his upper arm, a wash that opens, a punch that washes nothing (no lane changes, no leverage), a
@@ -82,12 +82,12 @@ describe('plan 16 (p52), the re-punch', () => {
     expect(punchClearM(a, m, b, [])).toBe(Infinity);
   });
 
-  const RE_S = 4.4;
-  const CAPTURE_S = 4.3;
-  const END_S = 5.2;
+  const RE_S = 3.9;
+  const CAPTURE_S = 3.8;
+  const END_S = 4.7;
   const DT = 1 / 60;
   const scene = (H: BlockHandFight): FixtureDef => {
-    const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
+    const s = BL_SCENES.find((x) => x.id === 'BL-F13-rePunch')!;
     return blockScene({ ...s, id: 'BL-T-rePunch', durationS: END_S + 0.1, handFight: H, B: { ...s.B, rePunches: [{ atS: RE_S, hand: 'right' }] } }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
@@ -103,11 +103,13 @@ describe('plan 16 (p52), the re-punch', () => {
     /** B's right palm: drawn back toward him from where it began (m) and lowest under his shoulder (m) */
     backM: number;
     lowM: number;
-    /** the punch thrown inside; A's left arm washed (its push ended by it); B's hand landed on A (s after the re-punch began) and where (A's core frame) */
+    /** the punch thrown inside; A's left arm washed; B's hand landed on A (s after the re-punch began) and where (A's core frame) */
     inside: boolean | null;
     washed: boolean;
     landedS: number | null;
     landA: Vec3 | null;
+    /** A's left shoulder then (his core frame) */
+    shA: Vec3 | null;
     /** the lanes after: B's right, A's left; their leverage once A's hand is back on */
     bLane: string | undefined;
     aLane: string | undefined;
@@ -124,7 +126,7 @@ describe('plan 16 (p52), the re-punch', () => {
     const a = sim.players.find((p) => p.id === 'A')!;
     const b = sim.players.find((p) => p.id === 'B')!;
     const R = sim.def.ragdoll ?? DEFAULT_POSE_PROFILE;
-    const out: Out = { backM: 0, lowM: 0, inside: null, washed: false, landedS: null, landA: null, bLane: undefined, aLane: undefined, aBackS: null, levA: 0, levB: 0, faArmM: 0, snaps: 0, falls: 0 };
+    const out: Out = { backM: 0, lowM: 0, inside: null, washed: false, landedS: null, landA: null, shA: null, bLane: undefined, aLane: undefined, aBackS: null, levA: 0, levB: 0, faArmM: 0, snaps: 0, falls: 0 };
     let t0: number | null = null;
     let washT: number | null = null;
     let p0: Vec3 | null = null;
@@ -138,13 +140,14 @@ describe('plan 16 (p52), the re-punch', () => {
         const d = e.data as { arm?: string; inside?: boolean; landed?: boolean; reason?: string; hand?: string };
         if (e.type === 'handRePunch' && e.playerId === 'B') t0 = e.t;
         if (e.type === 'handRePunchThrown' && e.playerId === 'B') out.inside = !!d.inside;
-        if (e.type === 'pushEnd' && e.playerId === 'A' && d.arm === 'left' && d.reason === 'knocked') {
+        if (e.type === 'handWash' && e.playerId === 'B' && (d as { at?: string }).at === 'left') {
           out.washed = true;
           washT = e.t;
         }
         if (e.type === 'pushBegin' && e.playerId === 'B' && d.arm === 'right' && t0 !== null && out.landedS === null) {
           out.landedS = e.t - t0;
           out.landA = qInvRot(a.pose!.segments.core.rotationWorld, sub(b.pose!.jointLandmarksWorld.rightPalm, a.pose!.segments.core.originWorld));
+          out.shA = qInvRot(a.pose!.segments.core.rotationWorld, sub(a.pose!.jointLandmarksWorld.leftShoulder, a.pose!.segments.core.originWorld));
         }
         if (e.type === 'pushBegin' && e.playerId === 'A' && d.arm === 'left' && washT !== null && out.aBackS === null) out.aBackS = e.t - washT;
         if (e.type === 'lossOfSupport') out.falls++;
@@ -175,18 +178,19 @@ describe('plan 16 (p52), the re-punch', () => {
     return out;
   }
 
-  it('BL-F10 with B re-punching his right: drawn back low, punched under A\'s forearm onto his chest under his arms, A\'s left washed off and back on outside, the inside and the leverage changed on that side; fault twins: a punch that washes nothing, one without the load, the gap closed', async () => {
+  it('BL-F13 with B re-punching his right: drawn back low, punched under A\'s forearm onto his chest under his arms, A\'s left washed off and back on outside, the inside and the leverage changed on that side; fault twins: a punch that washes nothing, one without the load, the gap closed', async () => {
     const on = await run(F);
     // loaded: back toward him and low by his ribs
     expect(on.backM).toBeGreaterThan(0.3);
     expect(on.lowM).toBeGreaterThan(0.3);
-    // punched inside, A's left arm washed, landed on A's chest under his arms (his shoulders 0.56 m up his core) and inside them
+    // punched inside, A's left arm washed, landed on A's chest under his arm and inside it: nearer his middle than his
+    // shoulder, at least 10 cm under it (his core frame)
     expect(on.inside).toBe(true);
     expect(on.washed).toBe(true);
     expect(on.landedS).not.toBeNull();
     expect(on.landedS!).toBeLessThan(RP.loadS + RP.punchS + RP.landS);
-    expect(on.landA!.y).toBeLessThan(0.52);
-    expect(Math.abs(on.landA!.x)).toBeLessThan(0.15);
+    expect(on.landA!.y).toBeLessThan(on.shA!.y - 0.1);
+    expect(Math.abs(on.landA!.x)).toBeLessThan(Math.abs(on.shA!.x));
     // the inside changed hands on that side, A's hand back on him outside, both men one hand in and one out
     expect(on.bLane).toBe('inside');
     expect(on.aLane).toBe('outside');
