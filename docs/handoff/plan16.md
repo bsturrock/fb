@@ -2,36 +2,38 @@
 
 Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `model-integration`, both pushed.
 
-## Now (2026-11-24, after p52)
+## Now (2026-11-24, after p53)
 
 - **What a block is.** Thirteen `BL` scenes. A man sets (two-point, three-point offense or defense, or runs in),
   loads, fires out low and strikes; the inside lane goes to whoever gets there with a strike; the inside man wins the
   hit, stays low and drives while the other is stood up, knocked back 0.4-0.6 m in a burst and anchors by 0.9-1.5 s;
   both men's palms stay on, at arm's length. Nobody falls in any scene. `-F12-passRush` adds the first hand fight:
   the rusher swipes a blocker's hand off twice and the blocker re-fits it; since p51 each swipe is a wound-up chop
-  with the trunk in it, and the knocked hand is carried off and the shoulder gives. `-F13-rePunch` (p52) adds the
-  re-punch: the outside man takes one hand off, loads it low by his ribs and punches it back inside his man's arm,
-  washing that arm out; the inside is won one hand at a time and the inside man's drive stops.
+  with the trunk in it, and the knocked hand is carried off and the shoulder gives. `-F13-rePunch` (p52, reworked in
+  p53) has the re-punch with sides: the blocker (offense) holds with his hands inside on the rusher's chest; the
+  rusher (defense) re-punches through one of his arms onto his chest, breaking that hold, standing him up (which
+  breaks the other) and driving him back half a metre; the blocker re-punches inside onto the chest, both holds come
+  back and the rusher stops. Twice.
 - **What runs where.** `NEWER_SET` (`fixtures/blocking.ts`) on `-F1`, `-F2`, `-F5` to `-F13`; `-F3`/`-F4` (mismatch)
-  on the older set, their flip parked (p49). The hand fight `HANDS_V5` only in `-F12`, `HANDS_V6` (with the
-  re-punch) only in `-F13`.
-- **Baseline:** main checkout `.scratch/p52/b-scene`, 706 tests. All non-BL fixtures byte-identical to before
+  on the older set, their flip parked (p49). The hand fight `HANDS_V5` only in `-F12`, `HANDS_V7` (the re-punch with
+  sides: holds, strikes) only in `-F13`; `HANDS_V6` (p52's symmetric re-punch) is flag-only, read by one test.
+- **Baseline:** main checkout `.scratch/p53/b-scene`, 714 tests. All non-BL fixtures byte-identical to before
   the plan.
-- **Waiting on the user:** his look at the p51 swipe in `-F12` and the p52 re-punch in `-F13` (links below). Open
-  questions with him: what a beaten inside man's
-  hands do when held off past his reach (`-F11`); whether a truly overpowered man in a mismatch should end in a
-  fall (`-F3`/`-F4`).
+- **Waiting on the user:** his look at the p53 sides in `-F13` (links below). Open questions with him: what a
+  beaten inside man's hands do when held off past his reach (`-F11`); whether a truly overpowered man in a mismatch
+  should end in a fall (`-F3`/`-F4`).
 - **Next, in order** (plan item 7): hands that come off past reach and never return (`-F11`, and `-F12` above
-  rusher effort 0.55); the outside palm off the facemask, now by the inside man's elbows in (p52 found the outside
-  aim alone cannot do it); c, rip and swim around a shoulder (the first of the angles); d, the beaten blocker's
-  recovery and the final loss (with it a re-punch can turn the drive back, not only stop it). After that the
-  mismatch's time structure (p49 parked) and the offense three-point's knees (ankle roll).
+  rusher effort 0.55; the hold does not fix it, p53); the outside palm off the facemask, by the inside man's elbows
+  in (p52 found the outside aim alone cannot do it); c, rip and swim around a shoulder (the first of the angles;
+  where the hold's front rule and `holding` first matter); d, the beaten blocker's recovery and the final loss (with
+  it a re-punch can turn the drive back, not only stop it). After that the mismatch's time structure (p49 parked)
+  and the offense three-point's knees (ankle roll).
 - **Working practice.** One builder at a time, in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`;
   check results in the main checkout's `.scratch/pNN/`; the lab on port 5180 runs from the worktree and picks up
   commits on reload. Research for item 7: main checkout `.scratch/research/` (film frames are private reference,
   never commit). Full checks take about 7 min under the machine's usual outside load.
 
-The numbered entries below are the history of each step, oldest first; the latest (p46-p52) are at the end of 6.
+The numbered entries below are the history of each step, oldest first; the latest (p46-p53) are at the end of 6.
 
 ## To resume
 
@@ -458,6 +460,82 @@ The numbered entries below are the history of each step, oldest first; the lates
      - 706 tests; baseline main checkout `.scratch/p52/b-scene` (tool PASS against `p52/a-flagoff`, itself PASS and
        byte-identical against `p51/e-passrush`: only the new scene). Stills: main checkout `.scratch/p52/stills/f13/`
        (profile 3.88-7.5 s, oblique 4.22/4.68/4.84/7.5 s; `F10-` the same times without), `before/` (p51's ends).
+   - **p53: the hands have a side** (plan item 7; user 2026-11-24 after p52: "The repunches should be (defense trying
+     to push oline back / break their grip) and (offense trying to reestablish a good hold on their inside chest)";
+     `bed6c24` plan, `2586d7f` flag off, `95d0aa0` the scene; only `-F13` changed).
+     - Sides: `BlockRequest.side`, else the stance's (`blockSide`). `HANDS_V7` = `HANDS_V6` + `sides`
+       (`HandSides {hold, strike}`) + the wash mostly out.
+     - **The hold** (`HandHold`, `nextHold`, `Simulation.advanceSides`). An offense hand on his man's chest plate
+       (within 17 cm of his centre line and no higher than 0.58 m up his frame: the shoulder tops are outside), not
+       folded, his man within 35 deg of his heading and facing him within 45, has a hold, formed once per push. It
+       ends at once when its push ends (a knock, a wash, past his reach) or he is stood up past 0.5; it is given up
+       0.12 s after its other conditions end and is kept until then, counted as holding (`BlockState.holdingS`, the
+       snapshot's and the summary's `holding`; a meter, nothing reads it). While it holds, its push may pull
+       (`PushRequest.hold`, `arms.ts pushStep`): past 6 cm over the push's rest length (near his full reach), the
+       strut's spring and damper in tension, at most 300 N at effort 1. Control is leverage only (`sidedLeverage`,
+       read by `contestDrive` under `sides`): the defense man is cut per hold on him (two 1/L, one 1/sqrt(L), none 1;
+       L = 1.5), the offense man per hand of his man's on him inside. The defense's hands never hold.
+     - **The strike** (`HandStrike`, `motor-step.ts struckNow`). The defense's re-punch landed (`handStrike`) makes
+       his contest strike for 0.25 s: its burst and the hit's parting (`blockHits`), so the blocker is knocked back
+       and stood up, which breaks his other hold. Either man's re-punch landed puts him back under (his `beaten` cut
+       to his stood level's excess over his man's); without it a man held beaten by the hit cannot answer.
+     - **The wash** (`HANDS_V7`): up 0.2, out 1, back 0.4. `HANDS_V6`'s carried a three-point man's arm on the
+       shoulder top back over his shoulder to straight up (a 97-134 rad/s shoulder snap); the washed elbow is turned
+       from the pole its pose had (`HandKnockFact.poleL`, `ArmSystem.poleOf`).
+     - **`BL-F13-rePunch`** (reworked): the pass-rush set (A two-point offense holds at 0.5, B three-point defense
+       rushes at 0.6, snap 3.3 s, 10 s). A's hit puts both his hands inside on B's chest holding him (3.78 s; off
+       past reach in the hit's parting at 4.0, holding again at 4.25); B at 1/L and stalled. Per move
+       (back = drawn back from where it was; under = below his shoulder at the load; jerk = largest frame-to-frame
+       change of palm velocity; off = hand off his man; landing in his man's core frame where the push takes hold, x
+       from his centre line, his shoulder at 23 cm):
+
+       | move | back | under | path | top speed | jerk | off | landing x / up | his hand back on |
+       |---|---|---|---|---|---|---|---|---|
+       | B right 5.0 s | 0.42 m | 0.36 m | 1.00 m | 8.1 m/s | 211 m/s^2 | 0.31 s | 13 / 42 cm | 0.90 s |
+       | A right 5.7 s | 0.59 | 0.31 | 1.08 | 7.4 | 241 | off from 5.35 | 20 / 60 | 0.25 |
+       | A left 6.3 s | 0.42 | 0.34 | 1.00 | 7.4 | 206 | 0.30 | 14 / 40 | 0.24 |
+       | B left 7.2 s | 0.42 | 0.37 | 0.99 | 7.5 | 166 | 0.31 | 14 / 45 | 0.48 |
+       | A left 7.9 s | 0.58 | 0.31 | 1.12 | 7.6 | 245 | off from 7.66 | 20 / 58 | 0.25 |
+       | A right 8.5 s | 0.45 | 0.34 | 1.05 | 7.4 | 121 | 0.32 | 12 / 40 | 0.24 |
+
+       B's right goes through A's left arm (washed 0.25 s in, that hold off with its push) and strikes his chest at
+       5.32 s: A stood up to 0.97 (hips 0.78 to 0.89 m), his right hold broken (stood, 5.35), driven back 0.49 m by
+       6.3 s. A's right re-punch inside B's left arm (washed) holds at 6.05 s, his left inside B's right (washed) at
+       6.61: B back at 1/L and stopped, A's hips back to 0.78, A pushes him back 6 cm to 7.2 s. Again: B's left
+       (washes A's right 7.47, strikes 7.52) breaks A's left hold (stood, 7.56), A to 0.57 and driven back 0.47 m by
+       8.8 s; A's left holds at 8.25 (off past reach 8.35, on again 8.45), his right at 8.82; B stopped (0.5 cm on
+       from 8.8 s to the end). Holds, per hand: A left 3.78-4.00, 4.25-5.26 (washed), 6.61-7.56 (stood), 8.25-8.35,
+       8.45-end; A right 3.78-4.00, 4.25-5.35 (stood), 6.05-7.47 (washed), 8.82-end. `holding` 0 for both. Nobody
+       falls, no snap; the same in both orders (diverging slightly after 7.0 s: no 8.35 off). Palm into his arm at
+       most 3.7 cm (A's left at 6.3), forearm into his forearm at most 6 cm for one frame (A's right at 8.5).
+     - Holding, constructed (`tests/block-sides.test.ts`, the scene's set with nobody re-punching, the front
+       narrowed to 1 deg, B shoved sideways at 5.0 s): both holds given up after their 0.12 s, `holding` 0.24 s
+       (two hands); the twin that never gives up, 0.87 s.
+     - **The hands off past reach** (`-F11`, `-F12`, p52's defect 2): the hold does not fix it. A strike or the hit
+       stands the blocker up past 0.5, which breaks his holds, and parts the men past reach; the 300 N pull begins
+       only near full reach. In this set at 0.6 the hands come back by themselves after the hit (0.25 s); an offense
+       re-punch brings back a hand lost past reach (A's right, 5.35 to 6.05 s). At rusher effort 0.65 and up A
+       loses the hit and his hands hang off for the rest of the rep, as before.
+     - Not moved: `-F12` stays on `HANDS_V5` (no clear gain: its subject is the swipe, which ends a hold at once,
+       and its off-past-reach defect is unchanged). `HANDS_V6`'s symmetric re-punch is now flag-only, read only by
+       p52's test (`tests/block-repunch.test.ts`, on `-F10` with B re-punching); cleanup later.
+     - Defects, worst first: (1) after A's restore B only stops (A pushes him back 6 cm); turning the drive back
+       is step d; (2) A's washed left in the first exchange is back on B only 0.9 s later, outside, while he is
+       driven back (the others 0.24-0.48 s); (3) A's first re-punch of each exchange lands high and wide (20 cm out,
+       58-60 cm up, by the inside of B's shoulder) and holds only when the push settles inside the frame 0.05-0.35 s
+       later; (4) a hold has no look of its own (the hand cannot grip; what reads is the hand staying on and the
+       man not getting off); (5) the 8.25 s hold goes off past reach after 0.1 s (A still being driven back); (6)
+       forearm into forearm up to 6 cm for one frame, palm into arm up to 3.7 cm.
+     - What step c needs from it: the hold's front (35 deg) and square (45 deg) never fail in a straight-on scene
+       (both men track each other within about 2 deg), so `holding` stays 0 everywhere; rip and swim put the
+       defender off the blocker's centre line, where a hold must be given up (or counts as holding), and his hand
+       on the blocker's arm is a defense hand that ends a hold (a knock, as the swipe's). The strike is the defense's
+       tool there too (a club is a strike on the shoulder).
+     - Visible columns: as p52's `-F13` (no snap, no impossible joint beyond the set's own hip flexion); the shallow
+       own arm-trunk overlap 11.75 s of 20 player-s (p52 8.1 of 16; `-F12` 7.47 of 16): six loads by the ribs.
+     - 714 tests; baseline main checkout `.scratch/p53/b-scene` (tool PASS against `p53/a-flagoff`: only `-F13`
+       changed, no run worse; `a-flagoff` PASS and byte-identical against `p52/b-scene`). Stills: main checkout
+       `.scratch/p53/stills/f13/` (profile 4.5-9.9 s, oblique 5.25/6.0/9.9 s; the man on the left in profile is B).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
@@ -468,10 +546,11 @@ The numbered entries below are the history of each step, oldest first; the lates
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back; `&order=rev` runs the
 players in reversed order):
 
-- `?fixture=BL-F13-rePunch&cam=front&speed=0.25&t=3.85` the first re-punch: load by the ribs (4.0), punch under
-  A's left forearm (4.15), land and wash (4.22); `&t=4.45` the second (land 4.84); `&t=7.5` the end, B's hands inside
-  (`cam=oblique&t=4.2` the washed arm going up and out)
-- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=4.5` the same rep without the re-punch: A drives on
+- `?fixture=BL-F13-rePunch&cam=front&speed=0.25&t=4.9` (B on the left) B attacks: load (5.1), through A's left
+  arm onto his chest (5.3), A stood up and driven back (5.5-6.3); `&t=5.6` A restores: his right inside (load 5.8,
+  lands 6.0), his left (6.3-6.6), B stopped (7.0); `&t=7.1` the second exchange (B's strike 7.5, A's left 8.2,
+  right 8.8); `&t=9.9` the end (`cam=oblique&t=5.25` B's punch through A's arm)
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=4.5` p52's symmetric re-punch's set without it: A drives on
 - `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=4.2` the first swipe: wind-up, chop, re-fit (`&t=5.5` the
   second; `cam=side&t=4.3` the elbow out at the wind-up's top)
 - `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=7.5` the end of the rep: the outside palm on the shoulder top
@@ -583,26 +662,28 @@ cover plus lead whatever the speed; a planted foot cannot step while the other s
 
 ## Tracked defects (polish order by look)
 
-**Current (after p52), worst first.** Each step's own list is in its entry above.
+**Current (after p53), worst first.** Each step's own list is in its entry above.
 
 1. The swipe costs little: the knocked shoulder gives (8 deg) but no ground follows, B gains 0.5 cm on the second
-   swipe; the swiper's trunk never visibly loads back (p51). The re-punch stops the drive but cannot turn it back:
-   the hit's `beaten` holds the loser stood up while the winner's palms are on him (p52; step d).
+   swipe; the swiper's trunk never visibly loads back (p51). A re-punch stops a drive but cannot turn it back
+   (p52's held `beaten`; p53's restore stops the rusher and pushes him back 6 cm; step d).
 2. The outside palm on the top of the other man's shoulder beside his neck reads as a hand at the facemask in
    profile (`LANES_TOPS`, p46). The aim alone cannot fix it (p52, parked); the inside man's elbows in first.
 3. Hands that come off past reach and never return: `-F11`'s beaten inside man; `-F12` above rusher effort 0.55
-   (the outside man's longer arms hold the other's chest out of reach).
+   (the outside man's longer arms hold the other's chest out of reach). The hold does not change it (p53).
 4. `-F3`/`-F4` on the newer set: a steady 2.4 m drive with no anchor (parked, p49; the contest has no time
    structure).
 5. `-F2`: the set man's arms fold at the hit and stay folded as a frame; the chests touch from 1.90 s. No re-arm
    from folded arms.
 6. The offense three-point's knees 8.8 cm inside his ankles, and his hip 31 deg past its range at the snap; the
    two-point's knees 7.2 cm inside the toes.
-7. Palms and the swiping hand into the other man's arm: up to 4 cm for 3 frames per swipe, up to 2.7 cm on landing;
-   the re-punching forearm meets his up to 5 cm for 1-2 frames (arms do not collide with arms).
-8. Men set from the reset step 2-4 times in the first 1.5 s (`-F9`).
-9. With the L3 rules on, `progressStopped` would end a block 0.7 s after contact, and `Role` is `runner | defender`
-   with `runner` implying the ball. Both wait until blocking meets a ball carrier.
+7. Palms and the swiping hand into the other man's arm: up to 4 cm for 3 frames per swipe, up to 3.7 cm on landing;
+   the re-punching forearm meets his up to 6 cm for 1-2 frames (arms do not collide with arms).
+8. A hold has no look of its own (the hand cannot grip); the offense's re-punch, first of an exchange, lands high
+   and wide by the inside of the shoulder and holds only when its push settles (p53).
+9. Men set from the reset step 2-4 times in the first 1.5 s (`-F9`).
+10. With the L3 rules on, `progressStopped` would end a block 0.7 s after contact, and `Role` is `runner | defender`
+    with `runner` implying the ball. Both wait until blocking meets a ball carrier.
 
 **History.** The lists below are from 2026-11-17/18. Most are fixed or superseded: forearms crossing (lanes, p45),
 `-F8`'s run-back and fall (p48), the force contest (p37), the toe stance (p34-p39). Not rechecked since: the
@@ -665,8 +746,8 @@ the L2 traces.
 - Probes and stills (worktree): `.scratch/p29/` (before), `.scratch/p30/` (palm push in the probe scenes),
   `.scratch/p31/` (BL), `.scratch/p32/` (the base; `stills/`, and `lab/vite.probe.config.ts` for the harder-push and
   feet-together scenes). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
-- Full checks p34-p52 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
-  `.scratch/p52/b-scene`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
+- Full checks p34-p53 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
+  `.scratch/p53/b-scene`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
   (superseded by p49's toe-out), `p49/parked/c-mismatch/`, `p52/parked/part1/` (evidence only).
 - Main checkout `.scratch` was 219 MB after pruning plan 15's check results; prune p33-p45 check dirs once p50 is
   accepted (keep the latest baseline and parked patches).
