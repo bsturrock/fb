@@ -2,31 +2,32 @@
 
 Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `model-integration`, both pushed.
 
-## Now (2026-11-22, after p50)
+## Now (2026-11-24, after p51)
 
 - **What a block is.** Twelve `BL` scenes. A man sets (two-point, three-point offense or defense, or runs in),
   loads, fires out low and strikes; the inside lane goes to whoever gets there with a strike; the inside man wins the
   hit, stays low and drives while the other is stood up, knocked back 0.4-0.6 m in a burst and anchors by 0.9-1.5 s;
   both men's palms stay on, at arm's length. Nobody falls in any scene. `-F12-passRush` adds the first hand fight:
-  the rusher swipes a blocker's hand off twice and the blocker re-fits it.
+  the rusher swipes a blocker's hand off twice and the blocker re-fits it; since p51 each swipe is a wound-up chop
+  with the trunk in it, and the knocked hand is carried off and the shoulder gives.
 - **What runs where.** `NEWER_SET` (`fixtures/blocking.ts`) on `-F1`, `-F2`, `-F5` to `-F12`; `-F3`/`-F4` (mismatch)
-  on the older set, their flip parked (p49). The hand fight (`HANDS_V3`) only in `-F12`.
-- **Baseline:** main checkout `.scratch/p50/a4-passrush`, 693 tests. All non-BL fixtures byte-identical to before
+  on the older set, their flip parked (p49). The hand fight (`HANDS_V5`) only in `-F12`.
+- **Baseline:** main checkout `.scratch/p51/e-passrush`, 702 tests. All non-BL fixtures byte-identical to before
   the plan.
-- **Waiting on the user:** his look at `-F12` (links below). Open questions with him: what a beaten inside man's
+- **Waiting on the user:** his look at the p51 swipe in `-F12` (links below). Open questions with him: what a beaten inside man's
   hands do when held off past his reach (`-F11`); whether a truly overpowered man in a mismatch should end in a
   fall (`-F3`/`-F4`).
-- **Next, in order** (plan item 7): make the swipe read (a wind-up, the knocked shoulder and chest giving, real
-  ground gained; p50 defects 1-3); hands that come off past reach and never return (`-F11`, and `-F12` above rusher
-  effort 0.55); then step b, the re-punch (one hand's lane changing); c, rip and swim around a shoulder (the first
-  of the angles); d, the beaten blocker's recovery and the final loss. After that the mismatch's time structure
-  (p49 parked) and the offense three-point's knees (ankle roll).
+- **Next, in order** (plan item 7): hands that come off past reach and never return (`-F11`, and `-F12` above
+  rusher effort 0.55); the outside palm on the front of the shoulder pad instead of its top beside the neck (p51's
+  end-of-rep finding, its own flag-off step); then step b, the re-punch (one hand's lane changing); c, rip and swim
+  around a shoulder (the first of the angles); d, the beaten blocker's recovery and the final loss. After that the
+  mismatch's time structure (p49 parked) and the offense three-point's knees (ankle roll).
 - **Working practice.** One builder at a time, in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`;
   check results in the main checkout's `.scratch/pNN/`; the lab on port 5180 runs from the worktree and picks up
   commits on reload. Research for item 7: main checkout `.scratch/research/` (film frames are private reference,
   never commit). Full checks take about 7 min under the machine's usual outside load.
 
-The numbered entries below are the history of each step, oldest first; the latest (p46-p50) are at the end of 6.
+The numbered entries below are the history of each step, oldest first; the latest (p46-p51) are at the end of 6.
 
 ## To resume
 
@@ -357,6 +358,57 @@ The numbered entries below are the history of each step, oldest first; the lates
        a lateral move request, a contest rule for "past him"; `openedBy` is the window.
      - 693 tests; baseline main checkout `.scratch/p50/a4-passrush` (tool PASS against `p49/d2-toe-on`: only the
        new scene).
+   - **p51: the swipe made fluid** (plan item 7; user 2026-11-24 on `-F12`: "the chops are ok but a bit robotic and
+     short; more fluid, larger motions"; `9cd27ed`, `609012f`, `28e765a`, `d882f15`; only `-F12` changed).
+     - The swipe as one move (`HandSwipe.arc`, `SwipeArc`, `HANDS_V4`): every part an eased curve (minimum jerk) in the
+       swiper's level frame at his shoulder. Wind-up 0.14 s to 20 cm over the shoulder, 15 cm ahead and 4 cm out (by
+       his ear, the elbow out); chop 0.18 s through a point 10 cm over the middle of his man's forearm (held once met)
+       to 50 cm under the shoulder, 22 cm out and 35 cm ahead; then back onto his man along a curve that lands along
+       the shoulder's line (`HandRefit.path`, 0.17 s), never through the ready point. The knock is along the line to
+       the follow-through's end. A request carries its own palm top speed (`ArmIntent.speedMps`: the arc 10 m/s, the
+       carry 9; the arm's everyday 4 m/s would cut it) and its own twist rate (`ArmIntent.twistRadPs`, the arc 50
+       rad/s against the joint range's 12: the hand passing close in front of his shoulder turns the upper arm about
+       itself fast, and at 12 the twist window flipped the elbow over or under the shoulder in one frame, 4 shoulder
+       snaps of 65-130 rad/s in `-F12`).
+     - The knocked hand carried 30 cm over 0.15 s, fastest as struck (`HandKnock.carry`), and re-fitted along the
+       same kind of curve from where it is.
+     - The body (`HandBody`, `handsBody`, `HANDS_V5`): the swiper's trunk turns with the swing ahead of the hand (6
+       deg back, 10 through by the chop's middle), dips 6 deg onto the hinge and leans 4 deg to that side; the knocked
+       man falls into the side his hand left (16 deg forward, 8 deg down), all eased back over 0.17 s. Asked of the
+       facing and the lean; the yaw controller follows late and at about a third (time constant about 0.27 s).
+       Larger values made landings late and pushes refused (`notFacing`, `collapsed`; one hand off 0.84 s).
+     - In `-F12` (V3 against V5, first swipe / second): the hand's rise over its start 0 against 0.23 / 0.28 m;
+       contact 0.05 s in at 4.0 / 3.4 m/s against 0.237 s in (the chop's middle) at 7.7 m/s; on under the shoulder
+       0.19-0.20 against 0.45-0.50 m; path to back on 0.57 / 0.52 against 1.8 / 1.9 m; off 0.27 / 0.26 against 0.44
+       s; the ready point 2 / 1 steps against 0; the palm's largest frame-to-frame change of velocity 269 / 228
+       against 153 / 158 m/s^2. Palm into the arm 5.3 / 3.4 cm for 0.17 s against 4.3 cm for 0.05 s / 0.8 cm.
+       Knocked hand carried 0.18 / 0.16 against 0.25 m, its largest change 143 / 156 against 66 m/s^2, back on
+       0.21-0.23 against 0.23-0.24 s after the knock. Swinging shoulder forward 5.1 / 5.8 against 9.7 / 9.3 deg,
+       down 1.8 / 0.2 against 4.4 / 3.1 cm; knocked shoulder forward 1.6 / 1.4 against 8.4 / 7.8 deg (most 0.26 s
+       after the knock, half back 0.2 s later), down 7.5 / 1.3 against 7.1 / 2.6 cm. B's ground over the 0.5 s after
+       each swipe -5.5 / +5.2 against -6.9 / +0.5 cm (his own hand is off longer). No shoulder snap (B's fastest
+       joint 32 rad/s, V3 31). Nobody falls; both orders the same.
+     - End of the rep (the still the user sent: chest-close, arms tangled, a hand at the facemask): not the hand
+       fight. `-F10` without it ends the same: B's outside-lane palms sit on the tops of A's shoulders beside his
+       neck (`LANES_TOPS`, p46), the palm 0.39 m from A's head centre at neck height, which in profile reads as a
+       hand at the facemask; the heads 0.80 m apart; the forearms 6 cm apart (they cross only in projection).
+       Proposed step: the outside aim on the front-top of the shoulder pad (lower and further out, about 0.60 m up
+       and 0.16 m out) with the elbow out, now that lanes keep the inside man's arms level; flag off, then BL,
+       judged on arm overlap (the p46 reason for the tops).
+     - Defects, worst first: (1) the swiper's trunk never visibly loads back (the 0.07 s back phase is shorter than
+       the yaw's lag; the forward turn shows); (2) the knocked man's give is a turn of 8 deg and 3-7 cm of shoulder:
+       no ground follows, the contest's cost is unchanged, and B now gains less ground on the second swipe (0.5
+       against 5.2 cm) because his own hand is off longer; (3) the palm still passes up to 4 cm into the arm for 3
+       frames at contact (arms do not collide); (4) the hand off 0.44 s, at the top of the film's range; (5) from
+       the front the rising forearm crosses his facemask in projection at 4.33 s (beside the helmet from behind);
+       (6) the outside palm at the shoulder top beside the neck (above, older).
+     - For step b (the re-punch): `HandRefit.path` is the eased way onto a new aim; a lane change can reuse it with
+       its own aim. For step c (rip and swim): `SwipeArc`'s frame and timing take an over or under path, and
+       `ArmIntent.twistRadPs` any fast move past the shoulder; `handsBody` is where the trunk's dip and turn for a
+       rip go.
+     - 702 tests; baseline main checkout `.scratch/p51/e-passrush` (tool PASS against `p51/d-elbow-off`: only the
+       one scene, no visible column worse). Stills: main checkout `.scratch/p51/stills/before/`,
+       `after/` (`s1_` the first swipe, `s2_` the second, `end_` the end of the rep).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
@@ -367,8 +419,10 @@ The numbered entries below are the history of each step, oldest first; the lates
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back; `&order=rev` runs the
 players in reversed order):
 
-- `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=4.2` the first swipe and re-fit (`&t=5.5` the second; `cam=side`
-  for both)
+- `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=4.2` the first swipe: wind-up, chop, re-fit (`&t=5.5` the
+  second; `cam=side&t=4.3` the elbow out at the wind-up's top)
+- `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=7.5` the end of the rep: the outside palm on the shoulder top
+  beside the neck (p51's finding)
 - `?fixture=BL-F12-passRush&cam=side&speed=0.25&t=3.9` defect: the blocker's hands briefly off past his reach
 - `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=2.5` the set stances, toed out
 - `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=3.6` the hit: the winner low, hands on, burst then anchor
@@ -476,21 +530,24 @@ cover plus lead whatever the speed; a planted foot cannot step while the other s
 
 ## Tracked defects (polish order by look)
 
-**Current (after p50), worst first.** Each step's own list is in its entry above.
+**Current (after p51), worst first.** Each step's own list is in its entry above.
 
-1. The swipe reads as a tap (0.2 s, no wind-up) and costs little: 5 cm, the knocked shoulder does not give (p50).
-2. Hands that come off past reach and never return: `-F11`'s beaten inside man; `-F12` above rusher effort 0.55
+1. The swipe costs little: the knocked shoulder gives (8 deg) but no ground follows, B gains 0.5 cm on the second
+   swipe; the swiper's trunk never visibly loads back (p51).
+2. The outside palm on the top of the other man's shoulder beside his neck reads as a hand at the facemask in
+   profile (`LANES_TOPS`, p46; fix step proposed in p51).
+3. Hands that come off past reach and never return: `-F11`'s beaten inside man; `-F12` above rusher effort 0.55
    (the outside man's longer arms hold the other's chest out of reach).
-3. `-F3`/`-F4` on the newer set: a steady 2.4 m drive with no anchor (parked, p49; the contest has no time
+4. `-F3`/`-F4` on the newer set: a steady 2.4 m drive with no anchor (parked, p49; the contest has no time
    structure).
-4. `-F2`: the set man's arms fold at the hit and stay folded as a frame; the chests touch from 1.90 s. No re-arm
+5. `-F2`: the set man's arms fold at the hit and stay folded as a frame; the chests touch from 1.90 s. No re-arm
    from folded arms.
-5. The offense three-point's knees 8.8 cm inside his ankles, and his hip 31 deg past its range at the snap; the
+6. The offense three-point's knees 8.8 cm inside his ankles, and his hip 31 deg past its range at the snap; the
    two-point's knees 7.2 cm inside the toes.
-6. Palms and the swiping hand into the other man's arm: 5 cm for 0.2 s per swipe, up to 2.7 cm on landing (arms do
-   not collide with arms).
-7. Men set from the reset step 2-4 times in the first 1.5 s (`-F9`).
-8. With the L3 rules on, `progressStopped` would end a block 0.7 s after contact, and `Role` is `runner | defender`
+7. Palms and the swiping hand into the other man's arm: up to 4 cm for 3 frames per swipe, up to 2.7 cm on landing
+   (arms do not collide with arms).
+8. Men set from the reset step 2-4 times in the first 1.5 s (`-F9`).
+9. With the L3 rules on, `progressStopped` would end a block 0.7 s after contact, and `Role` is `runner | defender`
    with `runner` implying the ball. Both wait until blocking meets a ball carrier.
 
 **History.** The lists below are from 2026-11-17/18. Most are fixed or superseded: forearms crossing (lanes, p45),
@@ -554,8 +611,8 @@ the L2 traces.
 - Probes and stills (worktree): `.scratch/p29/` (before), `.scratch/p30/` (palm push in the probe scenes),
   `.scratch/p31/` (BL), `.scratch/p32/` (the base; `stills/`, and `lab/vite.probe.config.ts` for the harder-push and
   feet-together scenes). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
-- Full checks p34-p50 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
-  `.scratch/p50/a4-passrush`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
+- Full checks p34-p51 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
+  `.scratch/p51/e-passrush`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
   (superseded by p49's toe-out), `p49/parked/c-mismatch/`.
 - Main checkout `.scratch` was 219 MB after pruning plan 15's check results; prune p33-p45 check dirs once p50 is
   accepted (keep the latest baseline and parked patches).
