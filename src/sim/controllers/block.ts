@@ -257,6 +257,24 @@ export interface BlockHandFight {
    * him (a share of his capacity, his `ContestState.leverage`); absent, nothing. While knocked it costs its knock's `cut`.
    */
   offCut?: number;
+  /** Plan 16 (p51): the body in the hand fight (`HandBody`); absent, the hands move alone. */
+  body?: HandBody;
+}
+
+/**
+ * Plan 16 (p51), the body in the hand fight (`BlockHandFight.body`). The swiper's trunk turns with his swing, ahead of
+ * his hand as a thrower's does: his swinging shoulder back `swing.backDeg` over the wind-up's first half, then forward
+ * through to `swing.thruDeg` by the chop's middle (`SwipeArc`), his trunk `swing.dipDeg` further over onto the hinge
+ * and leaned `swing.rollDeg` to that side with it, held to the chop's end, then back to none over the re-fit's path time
+ * (`HandRefit.path.s`) as his hand goes back on. These are what is asked of his facing and lean, which follow late.
+ * The knocked man, the support he leaned on gone from that side, falls into it: that shoulder forward `knock.turnDeg` and
+ * down (his body leaned `knock.rollDeg` to that side), as his hand is carried (`HandKnock.carry`), then back to none over
+ * the same time. Turned is his facing turned about the vertical, leaned his balance's lean (the two added); no force of
+ * its own: what it does to the contest is what his body's motion does.
+ */
+export interface HandBody {
+  swing: { backDeg: number; thruDeg: number; dipDeg: number; rollDeg: number };
+  knock: { turnDeg: number; rollDeg: number };
 }
 
 /**
@@ -419,6 +437,56 @@ export const curveAt = (a: Vec3, q: Vec3, b: Vec3, s: number): Vec3 => add(add(s
 /** Plan 16 (p51): the pull of a quadratic curve from `a` to `b` that passes through `m` at its middle. */
 export const curveThrough = (a: Vec3, m: Vec3, b: Vec3): Vec3 => sub(scale(m, 2), scale(add(a, b), 0.5));
 
+/**
+ * Plan 16 (p51): HANDS_V4 with the body in it (`HandBody`), as asked: the swiper's swinging shoulder 6 deg back, then 10
+ * deg through, his trunk 6 deg further over and 4 deg to that side; the knocked man's shoulder 16 deg forward and 8 deg
+ * down. His body follows late and less (in the pass rush about 3 deg more through than without, the knocked shoulder
+ * about 6 deg more forward, half of it back by the time his hand is on again).
+ */
+export const HANDS_V5: BlockHandFight = { ...HANDS_V4, id: 'hands-v5', body: { swing: { backDeg: 6, thruDeg: 10, dipDeg: 6, rollDeg: 4 }, knock: { turnDeg: 16, rollDeg: 8 } } };
+
+/**
+ * Plan 16 (p51, `HandBody`): what his hands ask of his body now: his turn (deg; + his right shoulder forward, his heading
+ * turned to his left), his trunk's extra hinge (deg) and his lean to his right (deg; + his right side down), from his
+ * hands' intents now and their states (a knock his state has that ended a push). Nothing without the body.
+ */
+export function handsBody(F: BlockHandFight, hands: Partial<Record<ArmSide, HandIntent>>, was: Partial<Record<ArmSide, HandState>> | undefined, t: number): { turnDeg: number; dipDeg: number; rollDeg: number } {
+  const out = { turnDeg: 0, dipDeg: 0, rollDeg: 0 };
+  const Bd = F.body;
+  if (!Bd) return out;
+  const A = F.swipe?.arc;
+  const back = F.refit?.path?.s ?? 0;
+  const W = Bd.swing;
+  for (const side of SIDES) {
+    const h = hands[side];
+    const sg = side === 'right' ? 1 : -1;
+    // the swing, the trunk ahead of the hand: back over the wind-up's first half, then through by the chop's middle (where
+    // the hand meets his man's arm), held to the chop's end, then back to none
+    if (A && h?.doing === 'swiping' && h.swipe) {
+      const s = t - h.since;
+      const tb = A.windS / 2;
+      const e = s < tb ? 0 : easeMinJerk((s - tb) / (A.windS / 2 + A.chopS / 2));
+      out.turnDeg += sg * (s < tb ? -W.backDeg * easeMinJerk(s / tb) : -W.backDeg + (W.backDeg + W.thruDeg) * e);
+      out.dipDeg += W.dipDeg * e;
+      out.rollDeg += sg * W.rollDeg * e;
+    } else if (h?.swungT !== undefined && back > 0 && t - h.swungT < back) {
+      const r = 1 - easeMinJerk((t - h.swungT) / back);
+      out.turnDeg += sg * W.thruDeg * r;
+      out.dipDeg += W.dipDeg * r;
+      out.rollDeg += sg * W.rollDeg * r;
+    }
+    // the knock: into the side it left, as the hand is carried, then back to none
+    const k = was?.[side]?.knock;
+    if (k?.ended && F.knock && t >= k.t) {
+      const u = (t - k.t) / F.knock.s;
+      const c = u < 1 ? 1 - (1 - u) ** 3 : back > 0 ? 1 - easeMinJerk((t - k.t - F.knock.s) / back) : 0;
+      out.turnDeg += sg * Bd.knock.turnDeg * c;
+      out.rollDeg += sg * Bd.knock.rollDeg * c;
+    }
+  }
+  return out;
+}
+
 /** Plan 16 (p50): a block profile with the hand fight `H` (`handFight`), under an id that names it. */
 export const withHandFight = (p: BlockProfile, H: BlockHandFight): BlockProfile => ({ ...p, id: `${p.id}+${H.id}`, handFight: H });
 
@@ -476,6 +544,8 @@ export interface HandIntent {
   knockT?: number;
   /** Plan 16 (p51, `HandRefit.path`): re-fitting, where his palm was as the re-fit began (his level frame from that shoulder: x his left, y up, z forward; m). */
   fromL?: Vec3;
+  /** Plan 16 (p51, `HandBody`): when his last swipe's chop ended (s), kept from then. */
+  swungT?: number;
 }
 
 /**
@@ -519,7 +589,7 @@ export interface HandStep {
  * undefined: none yet) and his punch now: striking while his punch is in its strike, else home. `since` is when it began.
  */
 export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchState | undefined, t: number, H?: HandStep): HandIntent {
-  const keep = { ...(prev?.swipes ? { swipes: prev.swipes } : {}), ...(prev?.knockT !== undefined ? { knockT: prev.knockT } : {}) };
+  const keep = { ...(prev?.swipes ? { swipes: prev.swipes } : {}), ...(prev?.knockT !== undefined ? { knockT: prev.knockT } : {}), ...(prev?.swungT !== undefined ? { swungT: prev.swungT } : {}) };
   const F = H?.fight;
   const was = prev as HandState | undefined;
   // (p50: knocked, by a knock his state has that he has not taken yet, then for the knock's time)
@@ -540,7 +610,11 @@ export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchStat
     const met = was?.hit !== undefined && was.hit >= prev.since;
     const sw = met && !w.hitOnW && H?.onW ? { ...w, hitOnW: H.onW } : w;
     if (t - w.stageT < A.chopS - 1e-9) return { doing: 'swiping', since: prev.since, ...keep, swipe: sw };
-    if (F!.refit?.path) return { doing: 'refitting', since: t, ...keep, ...(H?.palmL ? { fromL: H.palmL } : {}) };
+    // (p51, `body`: when it ended, for the body's way back)
+    const swung = F!.body ? { swungT: t } : {};
+    if (F!.refit?.path) return { doing: 'refitting', since: t, ...keep, ...swung, ...(H?.palmL ? { fromL: H.palmL } : {}) };
+    const doing: HandDoing = pu?.phase === 'strike' ? 'striking' : 'home';
+    return { doing, since: t, ...keep, ...swung };
   } else if (S && prev?.doing === 'swiping' && prev.swipe) {
     const w = prev.swipe;
     if (w.stage === 'raise') {
@@ -2163,10 +2237,16 @@ export class BlockController implements Controller {
     const stance = this.stanceRequest(fire && P.flat ? { ...S, flat: { ...P.flat, level: true } } : S);
     // (p43: his eyes on his man, the neck's range his pre-snap stance's)
     const gaze = this.gazeOn(ctx, R.stance ? P.preSnap?.[preSnapKey(R.stance)] : undefined, him);
+    const hinged = HF?.knock && SIDES.some((side) => handIntents?.[side].doing === 'knocked' && wasHands?.[side]?.knock?.ended) ? S.hingeDeg + HF.knock.dropDeg : S.hingeDeg;
+    // (p51, `body`: his trunk turned, hinged and leaned with his hands)
+    const HB = HF?.body && handIntents ? handsBody(HF, handIntents, wasHands, ctx.t) : null;
+    const leftOf = v3(dir.z, 0, -dir.x);
+    const facing = HB ? add(scale(dir, Math.cos(rad(HB.turnDeg))), scale(leftOf, Math.sin(rad(HB.turnDeg)))) : dir;
+    const leanV = HB ? add(scale(dir, rad(S.leanDeg)), scale(leftOf, -rad(HB.rollDeg))) : null;
     return {
-      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: dir, effort, yawEffort: 1, stance },
+      locomotion: { desiredVelocityWorld: vel, desiredFacingWorld: facing, effort, yawEffort: 1, stance },
       arms,
-      posture: { leanDirWorld: dir, leanRad: rad(S.leanDeg), hinge: { rad: rad(HF?.knock && SIDES.some((side) => handIntents?.[side].doing === 'knocked' && wasHands?.[side]?.knock?.ended) ? S.hingeDeg + HF.knock.dropDeg : S.hingeDeg), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
+      posture: { leanDirWorld: leanV ? norm(leanV, dir) : dir, leanRad: leanV ? len(leanV) : rad(S.leanDeg), hinge: { rad: rad(HB ? hinged + HB.dipDeg : hinged), dropM: S.dropM }, ...(gaze ? { gaze } : {}) },
       block: { request: { ...R }, profile: P, ...(pu ? { punch: pu } : {}), ...(handIntents ? { hands: handIntents } : {}), ...(fire ? { hinge: { ...P.hinge, ...fire.pace } } : K?.strike.hipNm && pu && pu.phase !== 'load' ? { hinge: { ...P.hinge, hipNm: K.strike.hipNm } } : {}) },
       debug: { phase: `block:${phase}`, gap, along, hands, ...(K ? { punch: pu?.phase ?? null, reachM } : {}), ...(fire ? { fire: true } : {}), ...(P.lanes ? { lane: lane ?? null } : {}), ...(U ? { under: uw } : {}) },
     };
