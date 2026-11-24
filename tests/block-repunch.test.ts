@@ -2,8 +2,9 @@
 // `lanesLeverage`, `handsLeverage`, `openedBy`, the simulation's `handContacts`): a hand without the inside comes off his
 // man, loads low by his ribs and punches back on him inside his man's arm, washing that arm out, so the inside is won per
 // hand and the contest's leverage follows each hand's lane. The rules on constructed inputs (the stages and their times,
-// the per-hand leverage, the gap, a wash opening nothing), then BL-F13-rePunch with its first re-punch only (B's right hand
-// at 3.9 s; A drives with the inside, B outside), resumed from a capture shortly before it: the hand draws back
+// the per-hand leverage, the gap, a wash opening nothing), then p52's re-punch scene (BL-F10's even rep on HANDS_V6, B
+// re-punching his right hand at 3.9 s; A drives with the inside, B outside; BL-F13 is p53's since), resumed from a capture
+// shortly before it: the hand draws back
 // and down, punches under A's left forearm onto his chest under his arms, A's left hand is washed off B and goes back on
 // him outside, the lanes and the leverage change hands on that side. Fault twins: the man's lane alone, no re-punch in the
 // fight, a way through his upper arm, a wash that opens, a punch that washes nothing (no lane changes, no leverage), a
@@ -87,7 +88,8 @@ describe('plan 16 (p52), the re-punch', () => {
   const END_S = 4.7;
   const DT = 1 / 60;
   const scene = (H: BlockHandFight): FixtureDef => {
-    const s = BL_SCENES.find((x) => x.id === 'BL-F13-rePunch')!;
+    // (p52's BL-F13: BL-F10 on the hand fight, B re-punching)
+    const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
     return blockScene({ ...s, id: 'BL-T-rePunch', durationS: END_S + 0.1, handFight: H, B: { ...s.B, rePunches: [{ atS: RE_S, hand: 'right' }] } }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
@@ -178,7 +180,7 @@ describe('plan 16 (p52), the re-punch', () => {
     return out;
   }
 
-  it('BL-F13 with B re-punching his right: drawn back low, punched under A\'s forearm onto his chest under his arms, A\'s left washed off and back on outside, the inside and the leverage changed on that side; fault twins: a punch that washes nothing, one without the load, the gap closed', async () => {
+  it('BL-F10 on HANDS_V6 with B re-punching his right: drawn back low, punched under A\'s forearm onto his chest under his arms, A\'s left washed off and back on outside, the inside and the leverage changed on that side; fault twins: a punch that washes nothing, one without the load, the gap closed', async () => {
     const on = await run(F);
     // loaded: back toward him and low by his ribs
     expect(on.backM).toBeGreaterThan(0.3);

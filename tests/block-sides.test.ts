@@ -4,8 +4,8 @@
 // may pull, and his man loses leverage per hold); the defense's re-punch landed is a strike (his contest strikes and the
 // hit runs: the blocker knocked back and stood up, which breaks his holds); either man's re-punch landed has him back
 // under. The rules on constructed inputs (a hold's forming, keeping, breaking and giving up; the frame and the front;
-// the leverage by holds against the lanes'), then the pass-rush set (A two-point offense holds at 0.5 with his hands
-// inside, B three-point defense rushes at 0.6, his hands outside), resumed from captures: B's re-punch breaks A's grip
+// the leverage by holds against the lanes'), then BL-F13-rePunch (the pass-rush set: A two-point offense holds at 0.5 with
+// his hands inside, B three-point defense rushes at 0.6, his hands outside), its first exchange resumed from captures: B's re-punch breaks A's grip
 // and drives him back; A's re-punches put his holds back and stop B; a hold kept on a man leaving the front is counted
 // as holding. Fault twins: a hold for the defense, a patch on the shoulder top, a push whose hold ended, the lanes'
 // leverage, no pull, no strike, no re-load, no control, a hold never given up.
@@ -88,12 +88,12 @@ describe('plan 16 (p53), the hands have a side', () => {
     expect(sidedLeverage('defense', his({}, {}), L)).not.toBeCloseTo(lanesLeverage(mine, L), 3);
   });
 
-  // the pass-rush set: B rushes at 0.6 and re-punches his right at 5.0 s; A re-punches his right at 5.7 and his left at 6.3
-  const s12 = BL_SCENES.find((x) => x.id === 'BL-F12-passRush')!;
+  // BL-F13's first exchange: B re-punches his right at 5.0 s; A re-punches his right at 5.7 and his left at 6.3
+  const s13 = BL_SCENES.find((x) => x.id === 'BL-F13-rePunch')!;
   const DT = 1 / 60;
   // (`still`: nobody re-punches)
   const scene = (H: BlockHandFight, still = false): FixtureDef =>
-    blockScene({ ...s12, id: still ? 'BL-T-sidesStill' : 'BL-T-sides', durationS: 7.1, handFight: H, A: { ...s12.A, rePunches: still ? [] : [{ atS: 5.7, hand: 'right' }, { atS: 6.3, hand: 'left' }] }, B: { ...s12.B, effort: 0.6, swipes: [], rePunches: still ? [] : [{ atS: 5.0, hand: 'right' }] } }, FIX('L3-F6-hold'));
+    blockScene({ ...s13, id: still ? 'BL-T-sidesStill' : 'BL-T-sides', durationS: 7.1, handFight: H, ...(still ? { A: { ...s13.A, rePunches: [] }, B: { ...s13.B, rePunches: [] } } : {}) }, FIX('L3-F6-hold'));
   const caps = new Map<string, StateCapture>();
   async function captured(at: number, still: boolean): Promise<StateCapture> {
     const c = caps.get(`${at}:${still}`);
@@ -231,7 +231,7 @@ describe('plan 16 (p53), the hands have a side', () => {
   it("a hold's push pulls as his man is parted past its slack, at most its tension at the push's effort; fault twin: no tension", async () => {
     const r = await run(3.9, 4.1);
     expect(r.pullN).toBeGreaterThan(50);
-    expect(r.pullN).toBeLessThanOrEqual(HD.tensionN * s12.A.effort + 1e-6);
+    expect(r.pullN).toBeLessThanOrEqual(HD.tensionN * s13.A.effort + 1e-6);
     expect((await run(3.9, 4.1, { H: { ...F, sides: { ...F.sides!, hold: { ...HD, tensionN: 0 } } } })).pullN).toBeLessThanOrEqual(1e-9);
   }, 300_000);
 

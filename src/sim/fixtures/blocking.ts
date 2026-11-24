@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V5, HANDS_V6, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type RePunchRequest, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V5, HANDS_V7, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type RePunchRequest, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withHeldByPush, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -369,14 +369,14 @@ export const BL_SCENES: BlockSceneOpts[] = [
   },
   {
     id: 'BL-F13-rePunch',
-    title: "Re-punch: BL-F10's two-point set against the three-point defender (A drives, B holds, both at effort 0.5, 8 s), A winning the inside; B on the hand fight with the re-punch takes his right hand off A at 3.9 s, loads it low by his ribs and punches it back inside A's left arm onto his chest, washing that arm out, then his left at 4.5 s inside A's right (p52): the inside changes hands one hand at a time and A's drive stops",
-    A: setIn(drive(0.5, 'under', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'two-point', 'offense', 3.3),
-    B: { ...setIn(hold(0.5, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3), rePunches: [{ atS: 3.9, hand: 'right' }, { atS: 4.5, hand: 'left' }] },
+    title: "Re-punch with sides: the pass-rush set (A in the two-point set holds at effort 0.5, B in the three-point defense rushes at 0.6, 2 m apart, the snap at 3.3 s; 10 s), A's hands inside on B's chest holding him; B (defense) re-punches his right at 5.0 s through A's left arm onto his chest, breaking that hold, and the strike stands A up, breaks his other hold and drives him back; A (offense) re-punches his right at 5.7 s and his left at 6.3 s inside B's arms onto his chest, both holds back, and B stops; again, B's left at 7.2 s, A's left at 7.9 s and right at 8.5 s (p53)",
+    A: { ...setIn(hold(0.5, 'under', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'two-point', 'offense', 3.3), rePunches: [{ atS: 5.7, hand: 'right' }, { atS: 6.3, hand: 'left' }, { atS: 7.9, hand: 'left' }, { atS: 8.5, hand: 'right' }] },
+    B: { ...setIn(drive(0.6, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3), rePunches: [{ atS: 5.0, hand: 'right' }, { atS: 7.2, hand: 'left' }] },
     sepM: 2,
-    durationS: 8,
+    durationS: 10,
     ...NEWER_SET,
     toeOut: true,
-    handFight: HANDS_V6,
+    handFight: HANDS_V7,
   },
 ];
 
