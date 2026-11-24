@@ -295,6 +295,8 @@ export function limitReportOf(host: EvidenceHost, pl: PlayerRuntime): Record<str
 }
 
 export function summaryOf(host: EvidenceHost): Record<string, unknown> {
+  // (plan 16 p53: a hand fight with sides, each blocker's hands' holds kept outside a hold's conditions, s; absent without)
+  const holders = host.players.filter((pl) => pl.block?.holdingS !== undefined);
   return {
     fixtureId: host.def.id,
     result: host.result,
@@ -309,5 +311,6 @@ export function summaryOf(host: EvidenceHost): Record<string, unknown> {
         return [pl.id, { p: rv(b.translation(), 3), v: rv(k.v, 3), speed: round(len(horiz(k.v)), 3), rep: pl.representation }];
       }),
     ),
+    ...(holders.length ? { holding: Object.fromEntries(holders.map((pl) => [pl.id, round(pl.block!.holdingS!, 4)])) } : {}),
   };
 }

@@ -60,7 +60,17 @@ export interface BlockRequest {
    * once, in order per hand. Absent: none.
    */
   rePunches?: RePunchRequest[];
+  /**
+   * Plan 16 (p53): his side of the ball (`blockSide`; absent, his pre-snap stance's). Under a hand fight with sides
+   * (`BlockHandFight.sides`) the offense's hands hold and the defense's strike.
+   */
+  side?: BlockSide;
 }
+
+/** Plan 16 (p53): a blocker's side of the ball. */
+export type BlockSide = 'offense' | 'defense';
+/** Plan 16 (p53): his side (`BlockRequest.side`, else his pre-snap stance's; undefined: neither). */
+export const blockSide = (R: BlockRequest): BlockSide | undefined => R.side ?? R.stance?.side;
 
 /**
  * Plan 16 (p50): a swipe asked of a blocker (`BlockRequest.swipes`): from `atS` (s), once he is engaged with his punch
@@ -279,6 +289,69 @@ export interface BlockHandFight {
    * counted per hand (`lanesLeverage`); absent, none, and the leverage his own lane's.
    */
   rePunch?: HandRePunch;
+  /**
+   * Plan 16 (p53): the hands have a side (`HandSides`, the man's `blockSide`): the offense's hands hold, the defense's
+   * re-punch strikes; with it the contest's inside leverage is counted from the holds and the defense's hands inside
+   * (`sidedLeverage`). Absent, the re-punch as p52's (either man's for the inside).
+   */
+  sides?: HandSides;
+}
+
+/**
+ * Plan 16 (p53), the hands have a side (`BlockHandFight.sides`; user, 2026-11-24: the defense's re-punch is to push the
+ * lineman back and break his grip, the offense's to re-establish a good hold on the inside of the chest). The re-punch's
+ * way, its wash and its lanes are p52's (`HandRePunch`) for both; what it is for, and what it does, is the man's side's:
+ * - the offense's hand on his man's chest inside his frame, his man in front of him and square, has a hold (`HandHold`);
+ * - the defense's re-punch, landed, is a strike (`HandStrike`): his contest bursts through it as a strike's does, so the
+ *   blocker is knocked back and stood up; its way through the blocker's arm washes that hand off (its hold with it); a
+ *   blocker stood up past the hold's `breakLevel` loses every hold he has;
+ * - the offense's re-punch, the same way (loaded tight to his ribs, inside onto the chest plate), from a hand whose hold
+ *   was broken or that never had one, holds again as it lands (a new push);
+ * - either man's re-punch landed has him back under: his load and punch reset how far he is beaten (the contest's
+ *   `beaten`) to what his stood level has over his man's then.
+ * The defense's hands never hold.
+ */
+export interface HandSides {
+  hold: HandHold;
+  strike: HandStrike;
+}
+
+/**
+ * Plan 16 (p53), the offense's hold (`HandSides.hold`, NFL Rule 12-1-3: a grip on the chest plate inside the frame with
+ * the defender square in front is the legal block; it becomes holding when he gets off the blocker's centre and the hands
+ * keep him). A hand has a hold (`HandState.hold`) while: his man is offense, his hand's palm push is on his man and
+ * pushing (not folded), the patch inside his man's frame
+ * (in his man's body frame within `frameM` of his centre line and no higher than `topM`: the chest plate, not the shoulder
+ * tops), his man in front of him (within `frontDeg` of his heading) and square to him (facing him within `squareDeg`), and
+ * he is not stood up past `breakLevel` (his contest's level). It forms on a push as those hold (once per push: a hold
+ * ended does not form again on the same push; a new push, re-fitted or re-punched, holds again). It ends at once when
+ * the push ends (a knock, a wash, past his reach) or he is stood up past `breakLevel` (broken); when the other conditions
+ * end it is given up `letGoS` later, and kept until then: a hold kept outside them is holding, counted
+ * (`BlockState.holdingS`, the snapshot's and the summary's `holding`; no penalty, no behaviour).
+ * While it holds, his push may pull (`PushRequest.hold`): past its rest length by more than `slackM`, the strut's spring
+ * and damper in tension, at most `tensionN` times his push's effort: the hand stays on and resists his man separating or
+ * slipping off. And it controls his man in the contest: his man's capacity's share is the inside leverage's
+ * (`BlockContest.inside`) 1 / sqrt(L) per hold on him (two 1 / L, one 1 / sqrt(L), none 1), in place of the lanes'.
+ */
+export interface HandHold {
+  frameM: number;
+  topM: number;
+  frontDeg: number;
+  squareDeg: number;
+  breakLevel: number;
+  letGoS: number;
+  tensionN: number;
+  slackM: number;
+}
+
+/**
+ * Plan 16 (p53), the defense's strike (`HandSides.strike`): his re-punch landed on the blocker (`BlockState.struckT`), for
+ * `s` seconds his contest is striking (as his punch's strike and its burst: his push to the burst's, carried by the hit
+ * while his palms are on; its force-velocity line run on to the burst's speed), so the blocker is knocked back, and by
+ * that stood up. No force of its own.
+ */
+export interface HandStrike {
+  s: number;
 }
 
 /**
@@ -539,6 +612,89 @@ export const HANDS_V6: BlockHandFight = {
   },
 };
 
+/**
+ * Plan 16 (p53): HANDS_V6 with the hands' sides (`HandSides`). The hold: the patch within 17 cm of his man's centre line
+ * and no higher than 0.58 m up his frame (the chest plate; the shoulder tops, 0.62-0.65, are outside it), his man within
+ * 35 deg of his heading and facing him within 45, broken stood up past 0.5, given up 0.12 s after its conditions end;
+ * its pull past 6 cm over its rest (near his full reach) at most 300 N at effort 1. The strike: his contest striking for 0.25 s from the landing
+ * (the contest's burst window). The wash mostly out (up 0.2, out 1, back 0.4: p52's up 0.5, out 0.5, back 0.7 carried the
+ * three-point man's arm, on the blocker's shoulder top, back over his own shoulder to straight up, where its twist turns
+ * over in a frame).
+ */
+export const HANDS_V7: BlockHandFight = {
+  ...HANDS_V6,
+  id: 'hands-v7',
+  rePunch: { ...HANDS_V6.rePunch!, wash: { up: 0.2, out: 1, back: 0.4 } },
+  sides: {
+    hold: { frameM: 0.17, topM: 0.58, frontDeg: 35, squareDeg: 45, breakLevel: 0.5, letGoS: 0.12, tensionN: 300, slackM: 0.06 },
+    strike: { s: 0.25 },
+  },
+};
+
+/**
+ * Plan 16 (p53, `HandHold`): his man in front of him and square to him: his man's centre (`hisP`, world) within
+ * `frontDeg` of his heading `myFwd` (horizontal) from `myP`, his man's heading `hisFwd` within `squareDeg` of facing him.
+ */
+export function squareInFront(H: HandHold, myP: Vec3, myFwd: Vec3, hisP: Vec3, hisFwd: Vec3): boolean {
+  const u = norm(horiz(sub(hisP, myP)), myFwd);
+  return dot(u, norm(horiz(myFwd), myFwd)) >= Math.cos(rad(H.frontDeg)) - 1e-12 && -dot(u, norm(horiz(hisFwd), hisFwd)) >= Math.cos(rad(H.squareDeg)) - 1e-12;
+}
+
+/** Plan 16 (p53, `HandHold`): a patch inside his man's frame, as a point in his man's body frame (x lateral, y up from his origin). */
+export const inFrame = (H: HandHold, local: Vec3): boolean => Math.abs(local.x) <= H.frameM && local.y <= H.topM;
+
+/** Plan 16 (p53, `HandHold`): what one hand's hold reads besides its last state: its push on his man (`id`; absent, none), folded, and the patch inside his frame. */
+export interface HoldFacts {
+  on: boolean;
+  folded: boolean;
+  push?: string;
+  inFrame: boolean;
+}
+
+/** Plan 16 (p53, `HandHold`): what every hand of his reads: the rule, his side offense, his man square in front, his stood level. */
+export interface HoldMan {
+  rule: HandHold;
+  offense: boolean;
+  front: boolean;
+  level: number;
+}
+
+/** Plan 16 (p53): why a hold ended (`nextHold`): its push ended or changed, he was stood up past the break, or he gave it up. */
+export type HoldEnd = 'off' | 'stood' | 'givenUp';
+
+/**
+ * Plan 16 (p53, `HandHold`): one substep of a hand's hold (`HandState.hold`, `holdEnded`) from its last state `was`, its
+ * facts `f` and his `M`, at `t`: kept while its conditions hold; ended at once when its push ends or changes or he is
+ * stood up past the break; when the other conditions end, kept (`kept`: outside them) until `letGoS` after, then given up;
+ * formed on a push whose hold has not ended, as its conditions hold and he is not stood past the break (`began`). `keeps`
+ * (the fault, `BlockDebug.holdKeeps`): never given up.
+ */
+export function nextHold(was: Pick<HandState, 'hold' | 'holdEnded'> | undefined, f: HoldFacts, M: HoldMan, t: number, keeps = false): { hold?: HandHoldState; holdEnded?: string; began?: true; ended?: HoldEnd; kept?: true } {
+  const legal = M.offense && f.on && !f.folded && f.inFrame && M.front;
+  const h = was?.hold;
+  const done = was?.holdEnded;
+  if (h) {
+    if (!f.on || f.push !== h.push) return { holdEnded: h.push, ended: 'off' };
+    if (M.level >= M.rule.breakLevel) return { holdEnded: h.push, ended: 'stood' };
+    if (legal) return { hold: { since: h.since, push: h.push } };
+    const offT = h.offT ?? t;
+    if (!keeps && t - offT >= M.rule.letGoS - 1e-9) return { holdEnded: h.push, ended: 'givenUp' };
+    return { hold: { since: h.since, push: h.push, offT }, kept: true };
+  }
+  if (legal && f.push !== undefined && f.push !== done && M.level < M.rule.breakLevel) return { hold: { since: t, push: f.push }, ...(done !== undefined ? { holdEnded: done } : {}), began: true };
+  return done !== undefined ? { holdEnded: done } : {};
+}
+
+/**
+ * Plan 16 (p53, `HandSides`): his capacity's share by the inside, counted from his man's hands `his` (`L` the inside
+ * leverage): a man on defense loses 1 / sqrt(L) per hold of his man's on him; a man on offense, per hand of his man's on
+ * him inside (on, its lane the inside: a strike's hand locked out on his chest). Two 1 / L, one 1 / sqrt(L), none 1.
+ */
+export function sidedLeverage(side: BlockSide, his: Record<ArmSide, HandState> | undefined, L: number): number {
+  const n = his ? SIDES.filter((s) => (side === 'defense' ? !!his[s].hold : his[s].on && his[s].lane === 'inside')).length : 0;
+  return n === 2 ? 1 / L : n === 1 ? 1 / Math.sqrt(L) : 1;
+}
+
 /** Plan 16 (p52, `HandRePunch`): the load's point (world) in a level frame at the loading shoulder. */
 export const rePunchLoad = (L: LevelFrame, RP: HandRePunch): Vec3 => add(addScaled(addScaled(L.sh, L.out, -RP.load.inM), L.fwd, RP.load.fwdM), v3(0, -RP.load.downM, 0));
 
@@ -663,6 +819,17 @@ export interface HandState extends HandIntent {
   knock?: HandKnockFact;
   /** Plan 16 (p50): swiping, when its chop last met his man's arm (s, the simulation's); absent, never. */
   hit?: number;
+  /** Plan 16 (p53, `HandHold`): this hand's hold on his man (the simulation's); absent, none. */
+  hold?: HandHoldState;
+  /** Plan 16 (p53, `HandHold`): the push whose hold last ended (it does not form again on that push); absent, none yet. */
+  holdEnded?: string;
+}
+
+/** Plan 16 (p53, `HandHold`): a hold (`HandState.hold`): since when (s), on which palm push (its id), and when its conditions ended while it is kept (s; absent, they hold). */
+export interface HandHoldState {
+  since: number;
+  push: string;
+  offT?: number;
 }
 
 /**
@@ -679,6 +846,8 @@ export interface HandKnockFact {
   backT?: number;
   /** Plan 16 (p52): a re-punch's wash (`HandRePunch`), which opens nothing to the man who washed it (`openedBy`); absent, a swipe's knock. */
   wash?: true;
+  /** Plan 16 (p53, a hand fight with sides): the elbow pole a washed arm's pose had at the wash (owner-local), its carry's elbow turned from it; absent, from the inside lane's (p52's). */
+  poleL?: Vec3;
 }
 
 /**
@@ -1923,6 +2092,10 @@ export interface BlockState {
   lane?: BlockLane;
   /** Plan 16 (p50): each of his hands' own state (a profile with `handFight`, `HandState`); absent without one. */
   hands?: Record<ArmSide, HandState>;
+  /** Plan 16 (p53, `HandHold`): how long his hands have kept holds outside a hold's conditions (s, summed over his hands; a hand fight with sides); absent without one. */
+  holdingS?: number;
+  /** Plan 16 (p53, `HandStrike`): when his last strike landed (a defense re-punch on his man, s); absent, none. */
+  struckT?: number;
 }
 
 /** The engaged state's fault switches (`SimDebug.block`; tests' negative controls). */
@@ -1947,6 +2120,14 @@ export interface BlockDebug {
   knockFree?: boolean;
   /** Plan 16 (p52) fault, the re-punch: a punch inside washes nothing (`handContacts`): his man's hand stays and no lane changes. */
   rePunchNoWash?: boolean;
+  /** Plan 16 (p53) faults, the hold: a hold is never given up (`nextHold`'s `keeps`), so it keeps a man leaving his frame for as long as its push lasts. */
+  holdKeeps?: boolean;
+  /** The holds control nothing in the contest (`sidedLeverage`): the leverage the lanes', as p52's. */
+  holdNoControl?: boolean;
+  /** Plan 16 (p53) fault, the strike: a defense re-punch's landing is no strike (his contest does not burst through it, no hit). */
+  strikeFree?: boolean;
+  /** Plan 16 (p53) fault, the re-load: a re-punch landed leaves how far he is beaten as it was. */
+  reloadFree?: boolean;
 }
 
 /**
@@ -2466,7 +2647,7 @@ export class BlockController implements Controller {
         // (p52: a washed hand's elbow turned from the inside lane's to its new lane's over the carry, so neither the wash nor
         // the re-fit onto that lane swings it round at once)
         const wk = hi.doing === 'knocked' ? wasHands?.[side]?.knock : undefined;
-        const p0 = P.lanes?.inside.pole;
+        const p0 = wk?.poleL ? v3(out * wk.poleL.x, wk.poleL.y, wk.poleL.z) : P.lanes?.inside.pole;
         const p1 = aimOf(side).pole;
         const wu = wk?.wash && HF?.knock ? easeMinJerk((ctx.t - wk.t) / HF.knock.s) : 0;
         const wp = wk?.wash && p0 && p1 ? add(scale(p0, 1 - wu), scale(p1, wu)) : undefined;
@@ -2506,7 +2687,11 @@ export class BlockController implements Controller {
       const aim = aimOf(side);
       const targetWorld = aimPoint(side, aim.depthM);
       const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
-      arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM }, ...pole };
+      // (p53, `sides`: a hand with a hold on him, as his engaged state has it, may pull: at most the hold's tension at his
+      // push's effort)
+      const HH = HF?.sides?.hold;
+      const held = HH && wasHands?.[side]?.hold ? { hold: { capN: HH.tensionN * pushEffort, slackM: HH.slackM } } : {};
+      arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, ...held }, ...pole };
     }
     // (p42, `strike.riseOnLand`: striking, he stays in the load's stance until a palm lands; the rise is from the landing)
     const low = !!K?.strike.riseOnLand && pu?.phase === 'strike' && pu.onT === undefined;

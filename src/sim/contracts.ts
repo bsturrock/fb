@@ -184,6 +184,11 @@ export interface PushRequest {
   effort?: number;
   lengthM?: number;
   extendMps?: number;
+  /**
+   * Plan 16 (p53, a hold, controllers/block.ts `HandHold`): the push may pull: past its rest length by more than `slackM`,
+   * its spring and damper in tension, at most `capN` (N). Absent: it never pulls.
+   */
+  hold?: { capN: number; slackM: number };
 }
 
 /** Gate 3 balance observation (radians; displayed degrees are derived separately). */
@@ -354,7 +359,7 @@ export interface Snapshot {
   /** Gate 3 balance state per player (free-rotation stance; zeros under the locked legacy stance). */
   balance: Record<PlayerId, BalanceState>;
   /** Plan 16: every blocking player's engaged state (absent while nobody blocks). */
-  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since' | 'punch' | 'lane' | 'hands'> & { /** Plan 16 (p36): his giving ground's level (a profile with `give`). */ give?: number; /** Plan 16 (p37): how far the contest has him stood up (a profile with `contest`). */ stood?: number; /** Plan 16 (p46): how far the hit has him beaten (a contest with `beaten`). */ beaten?: number }>;
+  block?: Record<PlayerId, Pick<BlockState, 'target' | 'phase' | 'since' | 'punch' | 'lane' | 'hands'> & { /** Plan 16 (p36): his giving ground's level (a profile with `give`). */ give?: number; /** Plan 16 (p37): how far the contest has him stood up (a profile with `contest`). */ stood?: number; /** Plan 16 (p46): how far the hit has him beaten (a contest with `beaten`). */ beaten?: number; /** Plan 16 (p53): how long his hands have kept holds outside a hold's conditions (s; a hand fight with sides, `BlockState.holdingS`). */ holding?: number }>;
 }
 
 /**

@@ -7,7 +7,7 @@ import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, des
 import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, scale, sub, UP, levelForwardOf, qFromUnitVectors } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
-import { handsLeverage, lanesLeverage, openedBy } from './controllers/block';
+import { blockSide, handsLeverage, lanesLeverage, openedBy, sidedLeverage } from './controllers/block';
 import { shoulderLocal } from './profiles';
 import { hingeBalanceTorque, hipTorque } from './hinge';
 import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, hitPair, limitToBase, nextBeaten, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
@@ -164,10 +164,11 @@ export function applyMotors(host: MotorHost, snap: Snapshot): void {
 function blockHits(host: MotorHost, snap: Snapshot): void {
   const ps = host.players;
   for (const pl of ps) if (pl.block?.contest?.profile.hit) pl.block.contest.hitN = 0;
+  // (p53, the hand fight's `sides`: a defense re-punch landed, his strike, for its time)
   const striking = (p: (typeof ps)[number]): boolean => {
     const pu = p.block?.punch;
     const K = p.block?.contest?.profile;
-    return !!pu && (pu.phase === 'strike' || (pu.phase === 'drive' && !!K && host.t - pu.since < K.burst.s));
+    return struckNow(host, p) || (!!pu && (pu.phase === 'strike' || (pu.phase === 'drive' && !!K && host.t - pu.since < K.burst.s)));
   };
   for (const pl of ps) {
     const st = pl.block?.contest;
@@ -196,6 +197,16 @@ function blockHits(host: MotorHost, snap: Snapshot): void {
     st.hitN = F;
     if (him.block.contest) him.block.contest.hitN = F;
   }
+}
+
+/**
+ * Plan 16 (p53, `HandStrike`): his defense re-punch landed on his man less than the strike's time ago (a hand fight with
+ * sides; the fault `strikeFree`: never), so his contest strikes (`contestDrive`) and his hit runs (`blockHits`).
+ */
+function struckNow(host: MotorHost, p: MotorHost['players'][number]): boolean {
+  const S = p.intent.block?.profile.handFight?.sides?.strike;
+  const T = p.block?.struckT;
+  return !!S && T !== undefined && !host.opts.debug?.block?.strikeFree && host.t - T < S.s - 1e-9;
 }
 
 /**
@@ -269,7 +280,10 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   const pu = blk.punch;
   // (p50, the hand fight's `knock.opens`: his swipe has his man's hand knocked off him, and he drives into the opening)
   const opening = !!blk.hands && !dbg?.knockFree && openedBy(pl.id, him.block?.hands, pl.intent.block?.profile.handFight);
-  const striking = opening || (!!pu && (pu.phase === 'strike' || (pu.phase === 'drive' && host.t - pu.since < K.burst.s)));
+  // (p53, the hand fight's `sides`: his defense re-punch landed on his man, a strike for its time)
+  const SD = pl.intent.block?.profile.handFight?.sides;
+  const struck = struckNow(host, pl);
+  const striking = opening || struck || (!!pu && (pu.phase === 'strike' || (pu.phase === 'drive' && host.t - pu.since < K.burst.s)));
   let burstN = 0;
   let palmOn = false;
   if (striking && host.arms) for (const side of ['left', 'right'] as const) {
@@ -282,13 +296,16 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   const effort = dbg?.contestEffortBlind ? 1 : (pl.intent.block?.request.effort ?? pl.intent.locomotion.effort);
   // (p45, `inside`: the outside man's part lost)
   // (p52, the hand fight's `rePunch`: counted per hand, by each hand's lane)
-  if (K.inside) st.leverage = blk.hands && pl.intent.block?.profile.handFight?.rePunch ? lanesLeverage(blk.hands, K.inside.leverage) : blk.lane === 'outside' ? 1 / K.inside.leverage : 1;
+  // (p53, `sides`: counted from his man's holds on him (defense) or his man's hands inside on him (offense))
+  const side = SD && !dbg?.holdNoControl && pl.intent.block ? blockSide(pl.intent.block.request) : undefined;
+  if (K.inside) st.leverage = blk.hands && side ? sidedLeverage(side, him.block?.hands, K.inside.leverage) : blk.hands && pl.intent.block?.profile.handFight?.rePunch ? lanesLeverage(blk.hands, K.inside.leverage) : blk.lane === 'outside' ? 1 / K.inside.leverage : 1;
   // (p50, the hand fight: what his hands off his man cost him)
   if (blk.hands && !dbg?.knockFree) {
     st.leverage = (K.inside ? st.leverage : 1) * handsLeverage(blk.hands, pl.intent.block?.profile.handFight);
   }
   // (p46, `burstTaper`: his man beaten, his burst run down over his drive's window)
-  const taper = !opening && K.burstTaper !== undefined && (H?.beaten ?? 0) >= K.burstTaper && pu?.phase === 'drive' ? { burstShare: clamp(1 - (host.t - pu.since) / K.burst.s, 0, 1) } : {};
+  // (p53, a strike: run down over the strike's own time from its landing)
+  const taper = struck && K.burstTaper !== undefined && (H?.beaten ?? 0) >= K.burstTaper ? { burstShare: clamp(1 - (host.t - blk.struckT!) / SD!.strike.s, 0, 1) } : !opening && K.burstTaper !== undefined && (H?.beaten ?? 0) >= K.burstTaper && pu?.phase === 'drive' ? { burstShare: clamp(1 - (host.t - pu.since) / K.burst.s, 0, 1) } : {};
   // (p46, `lowUnheld`: each man's hips less the lift his posture holds past his stood level)
   const held = (p: typeof pl): number => {
     const c = p.block?.contest;

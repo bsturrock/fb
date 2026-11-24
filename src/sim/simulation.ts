@@ -36,14 +36,14 @@ import {
 } from './run-clip';
 import { RuleObserver, type EndingKind, type RuleEnding, type RuleTraceRow } from './rules';
 import type { ArmSide } from './contracts';
-import { type Pose, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, addScaled, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg, qInvRot } from './vec';
+import { type Pose, type Vec3, v3, vc, rad, qFromYaw, isFiniteVec, round, rv, horiz, len, type Quat, add, addScaled, cross, norm, qFromAxisAngle, qMul, qRot, sub, forwardOf, dot, clamp, UP, deg, scale, toWorld, clampLen, neg, qInvRot, levelForwardOf } from './vec';
 import { fixtureExport, limitReportOf, recordTrace, summaryOf } from './sim-evidence';
 import { auditPlayback } from './transition-audit';
 import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { advanceHinge, legOmega, legRotation, type HingeState } from './hinge';
-import { advanceBlockState, advanceHands, decideLane, type BlockState, type HandRePunch, type HandState, type LaneTouch } from './controllers/block';
+import { advanceBlockState, advanceHands, blockSide, decideLane, inFrame, nextHold, squareInFront, type BlockState, type HandRePunch, type HandSides, type HandState, type LaneTouch } from './controllers/block';
 import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
 import type { Part } from './free-ground';
@@ -1273,10 +1273,60 @@ export class Simulation {
         if (h.rePunch?.stage === 'punch' && w?.rePunch?.stage === 'load') this.emit('handRePunchThrown', pl.id, { hand: s, n: h.rePunch.n, inside: !!h.rePunch.inside });
         if (w?.doing === 'repunching' && h.doing !== 'repunching') this.emit('handRePunchEnd', pl.id, { hand: s, n: w.rePunch!.n, landed: h.doing === 'home', lane: h.lane ?? null, heldS: round(this.t - w.since, 4) });
       }
+      // (p53, the hands' sides: the defense's re-punch landed is his strike; the offense's hands' holds)
+      const SD = req.profile.handFight.sides;
+      if (SD) this.advanceSides(pl, r.st, req, was, SD);
     }
     if (r.st) pl.block = r.st;
     else delete pl.block;
     if (r.change) this.emit('blockPhase', pl.id, { from: r.change.from, to: r.change.to, target: r.st?.target ?? null });
+  }
+
+  /**
+   * Plan 16 (p53, `HandSides`): one substep of a blocker's sides in the hand fight, after his hands' own (`advanceHands`).
+   * A re-punch of his that ended on his man puts him back under (his contest's `beaten` cut to his stood level's excess
+   * over his man's); on defense it is his strike (`BlockState.struckT`). On offense, each hand's hold
+   * (`nextHold`): his man square in front of him (their bodies as they stand), the patch inside his man's frame (his
+   * body's frame), his stood level; a hold kept outside its
+   * conditions counts in his `holdingS`. Events: `handStrike`, `handHold`, `handHoldEnd`.
+   */
+  private advanceSides(pl: PlayerRuntime, st: BlockState, req: NonNullable<PlayerRuntime['intent']['block']>, was: BlockState['hands'], SD: HandSides): void {
+    const H = st.hands!;
+    const side = blockSide(req.request);
+    const him = this.players.find((o) => o.id === st.target);
+    st.holdingS ??= 0;
+    for (const s of ['left', 'right'] as ArmSide[]) if (was?.[s]?.doing === 'repunching' && H[s].doing === 'home') {
+      // (a re-punch landed: his load and punch have him back under, how far he is beaten only what his stood level has
+      // over his man's now)
+      const C = st.contest;
+      if (C?.beaten !== undefined && !this.opts.debug?.block?.reloadFree) C.beaten = Math.max(0, C.level - (him?.block?.contest?.level ?? 0));
+      if (side !== 'defense') continue;
+      st.struckT = this.t;
+      this.emit('handStrike', pl.id, { hand: s, target: st.target });
+    }
+    if (side !== 'offense') return;
+    const A = this.arms;
+    if (!him || !A) return;
+    const me = pl.proxy.body;
+    const hb = him.proxy.body;
+    const hq = hb.rotation();
+    const ht = vc(hb.translation());
+    const front = squareInFront(SD.hold, vc(me.translation()), levelForwardOf(me.rotation()), ht, levelForwardOf(hq));
+    const M = { rule: SD.hold, offense: true, front, level: st.contest?.level ?? 0 };
+    for (const s of ['left', 'right'] as ArmSide[]) {
+      const pu2 = A.pushOf(pl.id, s);
+      const mine = pu2?.targetId === st.target ? pu2 : null;
+      const f = { on: H[s].on, folded: H[s].on && !H[s].pushing, ...(mine ? { push: mine.id } : {}), inFrame: !!mine && inFrame(SD.hold, qInvRot(hq, sub(mine.pointWorld, ht))) };
+      const o = nextHold(was?.[s], f, M, this.t, !!this.opts.debug?.block?.holdKeeps);
+      const h = H[s];
+      if (o.hold) h.hold = o.hold;
+      else delete h.hold;
+      if (o.holdEnded !== undefined) h.holdEnded = o.holdEnded;
+      else delete h.holdEnded;
+      if (o.began) this.emit('handHold', pl.id, { hand: s, target: st.target, push: o.hold!.push });
+      if (o.ended) this.emit('handHoldEnd', pl.id, { hand: s, target: st.target, why: o.ended, heldS: round(this.t - was![s].hold!.since, 4) });
+      if (o.kept) st.holdingS += this.physics.dt;
+    }
   }
 
   /**
@@ -1360,7 +1410,10 @@ export class Simulation {
     const ended = this.arms?.knock(him.id, at) ?? false;
     const k = him.block?.hands?.[at];
     if (k && him.block?.target === p.id) {
-      k.knock = { t: this.t, dirW, palmW: { ...M[`${at}Palm`] }, by: p.id, ended, wash: true };
+      // (p53, a hand fight with sides: the washed arm's elbow turned from the pole its pose had)
+      const pole = him.intent.block?.profile.handFight?.sides ? this.arms?.poleOf(him.id, at) : null;
+      const from = pole ? { poleL: pole } : {};
+      k.knock = { t: this.t, dirW, palmW: { ...M[`${at}Palm`] }, by: p.id, ended, wash: true, ...from };
       k.lane = 'outside';
     }
     this.emit('handWash', p.id, { hand: side, target: him.id, at, n: w.n, pushEnded: ended, landed, gapM: Number.isFinite(gapM) ? round(gapM, 4) : null });
@@ -2142,7 +2195,7 @@ export class Simulation {
     for (const pl of this.players) balance[pl.id] = this.balanceState(pl);
     // plan 16: the engaged states (absent while nobody blocks)
     let block: Snapshot['block'];
-    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}), ...(pl.block.contest ? { stood: pl.block.contest.level } : {}), ...(pl.block.contest?.beaten !== undefined ? { beaten: pl.block.contest.beaten } : {}), ...(pl.block.lane ? { lane: pl.block.lane } : {}), ...(pl.block.hands ? { hands: { left: { ...pl.block.hands.left }, right: { ...pl.block.hands.right } } as Record<ArmSide, HandState> } : {}) };
+    for (const pl of this.players) if (pl.block) (block ??= {})[pl.id] = { target: pl.block.target, phase: pl.block.phase, since: pl.block.since, ...(pl.block.punch ? { punch: { ...pl.block.punch } } : {}), ...(pl.block.give ? { give: pl.block.give.level } : {}), ...(pl.block.contest ? { stood: pl.block.contest.level } : {}), ...(pl.block.contest?.beaten !== undefined ? { beaten: pl.block.contest.beaten } : {}), ...(pl.block.lane ? { lane: pl.block.lane } : {}), ...(pl.block.hands ? { hands: { left: { ...pl.block.hands.left }, right: { ...pl.block.hands.right } } as Record<ArmSide, HandState> } : {}), ...(pl.block.holdingS !== undefined ? { holding: pl.block.holdingS } : {}) };
     return { tick: this.tick, substep, t: this.t, bodies, contacts, pairGap: { ...this.pairGap }, arms, wrap, balance, ...(block ? { block } : {}) };
   }
 

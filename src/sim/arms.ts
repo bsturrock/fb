@@ -2003,6 +2003,12 @@ export class ArmSystem {
     return this.arms.get(id)?.[side].solve?.palm ?? null;
   }
 
+  /** Plan 16 (p53): the elbow pole an arm's pose was last solved with (owner-local); null without one. */
+  poleOf(id: PlayerId, side: ArmSide): Vec3 | null {
+    const p = this.arms.get(id)?.[side].poleLocal;
+    return p ? { ...p } : null;
+  }
+
   // ---------------------------------------------------------------- observation
   obs(id: PlayerId): Partial<Record<ArmSide, ArmObs>> | undefined {
     const rec = this.arms.get(id);
@@ -2211,7 +2217,12 @@ export class ArmSystem {
     const cap = (clamp(intent.push?.effort ?? 1, 0, 1) * PP.elbowTorqueNm) / Math.max(el.leverM, 1e-3);
     const taper = smooth((el.flexRad - rad(PP.collapseFlexDeg)) / (rad(PP.giveFlexDeg) - rad(PP.collapseFlexDeg))) * smooth((facing - PP.keepFacingDot) / (PP.bornFacingDot - PP.keepFacingDot));
     const engage = clamp((this.host.t - c.since) / PP.engageS, 0, 1);
-    const F = engage * taper * Math.min(cap, raw);
+    // (p53, a hold, `PushRequest.hold`: pushing nothing, the strut past its rest by more than the slack pulls, spring and
+    // damper in tension, at most the hold's cap; the grip's, so neither the elbow's extension limit nor its tapers)
+    const Hd = intent.push?.hold;
+    const ext = Hd && raw <= 0 ? L - c.restM - Hd.slackM : 0;
+    const pull = ext > 0 ? Math.min(Hd!.capN, Math.max(0, PP.stiffness * ext + PP.damping * sep)) : 0;
+    const F = pull > 0 ? -engage * pull : engage * taper * Math.min(cap, raw);
     a.palmLocal = toLocal(ownerPose, shown);
     a.wantedLocal = { ...a.palmLocal };
     a.phase = 'push';
