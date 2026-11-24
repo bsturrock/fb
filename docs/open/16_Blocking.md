@@ -146,6 +146,26 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
      chose the re-punch (b) first and no pass-protection set before angles exist.
    - The swipe (user, 2026-11-24, after p50): "a bit robotic and short: more fluid, larger motions". Done in p51;
      the same bar applies to every later hand move (wind-up, long eased arc, follow-through, the body in it).
+   - **The two sides want different things from their hands (user, 2026-11-24, after p52).** The defense's
+     re-punch is to push the lineman back and break his grip; the offense's is to re-establish a good hold on the
+     inside of the chest. p52's re-punch is symmetric (either man "wins the inside"); p53 gives the hands a side.
+   - **How much a lineman may hold** (NFL Rule 12-1-3, 12-1-6, 12-1-7; the video rulebook's wording, the rest from
+     officiating guides). The test is *material restriction*, not hand position: a blocker may not use hands or
+     arms to restrict a defender or change his path (grab or tackle, hook, jerk, twist, turn, pull to the ground),
+     inside the frame or outside it. In practice a grip on the chest plate with the hands inside the frame, the
+     blocker's feet staying in front and the defender still square to him, is the legal, normal block; cloth in
+     the hands is not a foul by itself. It becomes holding when the defender gets off the blocker's centre (a
+     shoulder past, turning away, separating) and the hands keep him: so the hold must let go, or be re-fitted
+     inside, the moment he is leaving. Not holding: a defender's rip that pins the blocker's arm; no effort to get
+     away. The defender may push, pull and ward off a blocker with his hands on the way to the ball or runner
+     (push-pull, club, arm-over are legal); he may not hold a blocker who is not in his way. Neither side may
+     thrust or keep a hand on the face, neck or helmet (so the outside palm beside the neck, parked in p52, is a
+     foul as well as a look).
+     For the sim: the offense's inside hand *has a hold* (it resists the defender separating or slipping off, as
+     well as pushing); a hold exists only inside the frame with the defender in front, is broken by the defender's
+     hands (chop, club, a strike that stands the blocker up), and is given up when the defender is past; a hold
+     kept outside those conditions is recorded as holding, for the rules later. The defense's hands never hold:
+     they strike to move him back and to break holds.
    Steps: (a) per-hand states, a swipe and a re-fit, straight on, in a pass-rush scene (p50-p51); (b) the
    re-punch, the inside changing hands (p52, `-F13-rePunch`; it stops the drive, turning it back needs (d)); (c) rip and swim around a shoulder (the defender off the blocker's centre line: the
    first of blocking from angles); (d) the beaten blocker's recovery and the final loss. It should also give
