@@ -2,32 +2,36 @@
 
 Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `model-integration`, both pushed.
 
-## Now (2026-11-24, after p51)
+## Now (2026-11-24, after p52)
 
-- **What a block is.** Twelve `BL` scenes. A man sets (two-point, three-point offense or defense, or runs in),
+- **What a block is.** Thirteen `BL` scenes. A man sets (two-point, three-point offense or defense, or runs in),
   loads, fires out low and strikes; the inside lane goes to whoever gets there with a strike; the inside man wins the
   hit, stays low and drives while the other is stood up, knocked back 0.4-0.6 m in a burst and anchors by 0.9-1.5 s;
   both men's palms stay on, at arm's length. Nobody falls in any scene. `-F12-passRush` adds the first hand fight:
   the rusher swipes a blocker's hand off twice and the blocker re-fits it; since p51 each swipe is a wound-up chop
-  with the trunk in it, and the knocked hand is carried off and the shoulder gives.
-- **What runs where.** `NEWER_SET` (`fixtures/blocking.ts`) on `-F1`, `-F2`, `-F5` to `-F12`; `-F3`/`-F4` (mismatch)
-  on the older set, their flip parked (p49). The hand fight (`HANDS_V5`) only in `-F12`.
-- **Baseline:** main checkout `.scratch/p51/e-passrush`, 702 tests. All non-BL fixtures byte-identical to before
+  with the trunk in it, and the knocked hand is carried off and the shoulder gives. `-F13-rePunch` (p52) adds the
+  re-punch: the outside man takes one hand off, loads it low by his ribs and punches it back inside his man's arm,
+  washing that arm out; the inside is won one hand at a time and the inside man's drive stops.
+- **What runs where.** `NEWER_SET` (`fixtures/blocking.ts`) on `-F1`, `-F2`, `-F5` to `-F13`; `-F3`/`-F4` (mismatch)
+  on the older set, their flip parked (p49). The hand fight `HANDS_V5` only in `-F12`, `HANDS_V6` (with the
+  re-punch) only in `-F13`.
+- **Baseline:** main checkout `.scratch/p52/b-scene`, 706 tests. All non-BL fixtures byte-identical to before
   the plan.
-- **Waiting on the user:** his look at the p51 swipe in `-F12` (links below). Open questions with him: what a beaten inside man's
+- **Waiting on the user:** his look at the p51 swipe in `-F12` and the p52 re-punch in `-F13` (links below). Open
+  questions with him: what a beaten inside man's
   hands do when held off past his reach (`-F11`); whether a truly overpowered man in a mismatch should end in a
   fall (`-F3`/`-F4`).
 - **Next, in order** (plan item 7): hands that come off past reach and never return (`-F11`, and `-F12` above
-  rusher effort 0.55); the outside palm on the front of the shoulder pad instead of its top beside the neck (p51's
-  end-of-rep finding, its own flag-off step); then step b, the re-punch (one hand's lane changing); c, rip and swim
-  around a shoulder (the first of the angles); d, the beaten blocker's recovery and the final loss. After that the
+  rusher effort 0.55); the outside palm off the facemask, now by the inside man's elbows in (p52 found the outside
+  aim alone cannot do it); c, rip and swim around a shoulder (the first of the angles); d, the beaten blocker's
+  recovery and the final loss (with it a re-punch can turn the drive back, not only stop it). After that the
   mismatch's time structure (p49 parked) and the offense three-point's knees (ankle roll).
 - **Working practice.** One builder at a time, in the worktree `/Users/brandon/.claude-wt/football-sim-7-ladder`;
   check results in the main checkout's `.scratch/pNN/`; the lab on port 5180 runs from the worktree and picks up
   commits on reload. Research for item 7: main checkout `.scratch/research/` (film frames are private reference,
   never commit). Full checks take about 7 min under the machine's usual outside load.
 
-The numbered entries below are the history of each step, oldest first; the latest (p46-p51) are at the end of 6.
+The numbered entries below are the history of each step, oldest first; the latest (p46-p52) are at the end of 6.
 
 ## To resume
 
@@ -409,6 +413,51 @@ The numbered entries below are the history of each step, oldest first; the lates
      - 702 tests; baseline main checkout `.scratch/p51/e-passrush` (tool PASS against `p51/d-elbow-off`: only the
        one scene, no visible column worse). Stills: main checkout `.scratch/p51/stills/before/`,
        `after/` (`s1_` the first swipe, `s2_` the second, `end_` the end of the rep).
+   - **p52: the outside palm (parked) and step b, the re-punch** (plan item 7; `c9265b2`, `74449b3`; only the new
+     scene).
+     - **Parked: the outside palm on the front of the shoulder pad** (main checkout `.scratch/p52/parked/part1/`,
+       `NOTE.txt`, grids and stills; no source patch). The palm-to-head gap in profile stays 13-17 cm for any aim on
+       his chest (y 0.54-0.65 x 0.13-0.22 in `-F10`), so the read barely moves; lower or wider aims put the palm into
+       his upper arm (up to 11 cm, for about 4 s of the rep); the pad top (y 0.66-0.68) stands him up (pitch 26 to 18
+       deg) and y 0.70 or more holds no push; across BL, y 0.65 x 0.23 loses every hold in `-F7` and puts the palm in
+       his arm for 4-7.5 s in `-F1`/`-F5`/`-F6`. Why: the inside man's upper arms run level across the front of his own
+       pad and his chin is over his upper chest; the pad top beside the neck is the only clear patch. Proposed: the
+       inside man's elbows in (the inside lane's pole tighter, upper arms angled down), then the outside aim down
+       onto the cleared pad, judged in the lab.
+     - The re-punch (`HandRePunch`, `HANDS_V6`; `BlockRequest.rePunches {atS, hand}`, per scene, no selection). Load
+       0.18 s: off his man along an eased curve bowed 14 cm out and 6 cm back to 30 cm under his shoulder, 12 cm
+       ahead, 4 cm in, elbow down and back; his shoulder 8 deg back, trunk 5 deg over. Punch 0.16 s (landing within
+       0.12 s more): up and in along a curve through 12 cm under his man's forearm's middle onto his chest plate 46
+       cm up and 10 cm out, 12 deg through, the dip held until it lands, eased back over the re-fit's time. Top
+       palm speed 9 m/s. The gap: as the punch begins its way must keep 10 cm from his man's upper arm (`punchClearM`);
+       closed, it goes onto his own lane's aim and nothing changes hands. The wash (`Simulation.rePunchContact`):
+       the punching palm or forearm within 4 cm of his man's forearm on that side, or landing, knocks that arm up,
+       out and back off him (`HandKnockFact.wash`, opening nothing: a wash that opened the knock's burst felled the
+       washed man stiff, `contest:overpowered`), its elbow eased onto the outside lane's over the carry (without
+       it, an 83 rad/s shoulder snap at the re-fit); his lane outside, the puncher's inside.
+     - Leverage per hand (`lanesLeverage`, read by `contestDrive` under `rePunch`): both hands outside 1/1.5, one
+       each 1/sqrt(1.5) for both men, none 1; a hand off to re-punch costs the existing off cut (0.3). No force of
+       its own.
+     - **`BL-F13-rePunch`** (new; `-F10`'s even rep, A drives with the inside, B holds; B re-punches his right at 3.9
+       s and his left at 4.5 s). Right / left: drawn back 0.47 / 0.46 m and down to 0.41 / 0.40 m under his
+       shoulder, path 1.14 / 1.10 m, top speed 8.2 / 7.6 m/s, off A 0.31 / 0.33 s, washed 0.26 / 0.25 s in, landed
+       0.41 / 0.42 m up A's core, 18 / 12 cm out (inside his arm: his shoulder at 23 cm); the palm's largest
+       frame-to-frame change of velocity 362 / 296 m/s^2, at the landing (the palm stopping on his chest); palm into
+       his arm 0 / 1.4 cm, forearm into his forearm 0.5 / 1.4 cm for one frame. A's hand back on him outside 0.27 /
+       0.31 s after the wash. A's drive: from 4.9 s to the end -0.2 cm (`-F10`: +12.2 cm). Nobody falls, no snap,
+       the same in both orders; visible columns as `-F10` but the own arm-trunk overlap 8.1 s against 7.45 (the
+       loaded hand by his ribs).
+     - Defects, worst first: (1) the drive stops but does not turn back: B stays stood up by the hit (`beaten` 0.9,
+       held while A's palms are on him), recovery is step d; at B effort 0.55-0.6 A is walked back 5-6 cm over 2.6
+       s; (2) the first wash meets A's left just after both his pushes ended past his reach in the drive (4.125 s,
+       the `-F12` defect), so it ends no push and A's shoulder does not give for it (the second does); (3) the
+       right lands wide on A's turned chest (18 cm out, 5 cm inside his shoulder); (4) with the punch 12 cm under
+       his forearm the forearms still meet up to 5 cm for 1-2 frames when his arm sits lower (F10's rep at 4.4 s:
+       4.9 cm); deeper passes are worse (the punching forearm sweeps up into his); (5) `-F1`-style hold against
+       hold: the drive does not move either way after it.
+     - 706 tests; baseline main checkout `.scratch/p52/b-scene` (tool PASS against `p52/a-flagoff`, itself PASS and
+       byte-identical against `p51/e-passrush`: only the new scene). Stills: main checkout `.scratch/p52/stills/f13/`
+       (profile 3.88-7.5 s, oblique 4.22/4.68/4.84/7.5 s; `F10-` the same times without), `before/` (p51's ends).
    - **Left from before p41, worst first:** (1) (done, see above) no low-to-high fire-out: out of the stance he stands up to hips 0.90 m and creeps
      in at 0.35-0.43 m/s for 1.2 s before the punch. A faster, loaded fire-out is parked (worktree
      `.scratch/p40/parked/fire-out-v3.patch`): the root climbs to 0.92 m while the trunk comes up, against a
@@ -419,10 +468,14 @@ The numbered entries below are the history of each step, oldest first; the lates
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back; `&order=rev` runs the
 players in reversed order):
 
+- `?fixture=BL-F13-rePunch&cam=front&speed=0.25&t=3.85` the first re-punch: load by the ribs (4.0), punch under
+  A's left forearm (4.15), land and wash (4.22); `&t=4.45` the second (land 4.84); `&t=7.5` the end, B's hands inside
+  (`cam=oblique&t=4.2` the washed arm going up and out)
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=4.5` the same rep without the re-punch: A drives on
 - `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=4.2` the first swipe: wind-up, chop, re-fit (`&t=5.5` the
   second; `cam=side&t=4.3` the elbow out at the wind-up's top)
 - `?fixture=BL-F12-passRush&cam=front&speed=0.25&t=7.5` the end of the rep: the outside palm on the shoulder top
-  beside the neck (p51's finding)
+  beside the neck (p51's finding; p52 parked the aim fix)
 - `?fixture=BL-F12-passRush&cam=side&speed=0.25&t=3.9` defect: the blocker's hands briefly off past his reach
 - `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=2.5` the set stances, toed out
 - `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=3.6` the hit: the winner low, hands on, burst then anchor
@@ -530,12 +583,13 @@ cover plus lead whatever the speed; a planted foot cannot step while the other s
 
 ## Tracked defects (polish order by look)
 
-**Current (after p51), worst first.** Each step's own list is in its entry above.
+**Current (after p52), worst first.** Each step's own list is in its entry above.
 
 1. The swipe costs little: the knocked shoulder gives (8 deg) but no ground follows, B gains 0.5 cm on the second
-   swipe; the swiper's trunk never visibly loads back (p51).
+   swipe; the swiper's trunk never visibly loads back (p51). The re-punch stops the drive but cannot turn it back:
+   the hit's `beaten` holds the loser stood up while the winner's palms are on him (p52; step d).
 2. The outside palm on the top of the other man's shoulder beside his neck reads as a hand at the facemask in
-   profile (`LANES_TOPS`, p46; fix step proposed in p51).
+   profile (`LANES_TOPS`, p46). The aim alone cannot fix it (p52, parked); the inside man's elbows in first.
 3. Hands that come off past reach and never return: `-F11`'s beaten inside man; `-F12` above rusher effort 0.55
    (the outside man's longer arms hold the other's chest out of reach).
 4. `-F3`/`-F4` on the newer set: a steady 2.4 m drive with no anchor (parked, p49; the contest has no time
@@ -544,8 +598,8 @@ cover plus lead whatever the speed; a planted foot cannot step while the other s
    from folded arms.
 6. The offense three-point's knees 8.8 cm inside his ankles, and his hip 31 deg past its range at the snap; the
    two-point's knees 7.2 cm inside the toes.
-7. Palms and the swiping hand into the other man's arm: up to 4 cm for 3 frames per swipe, up to 2.7 cm on landing
-   (arms do not collide with arms).
+7. Palms and the swiping hand into the other man's arm: up to 4 cm for 3 frames per swipe, up to 2.7 cm on landing;
+   the re-punching forearm meets his up to 5 cm for 1-2 frames (arms do not collide with arms).
 8. Men set from the reset step 2-4 times in the first 1.5 s (`-F9`).
 9. With the L3 rules on, `progressStopped` would end a block 0.7 s after contact, and `Role` is `runner | defender`
    with `runner` implying the ball. Both wait until blocking meets a ball carrier.
@@ -611,8 +665,8 @@ the L2 traces.
 - Probes and stills (worktree): `.scratch/p29/` (before), `.scratch/p30/` (palm push in the probe scenes),
   `.scratch/p31/` (BL), `.scratch/p32/` (the base; `stills/`, and `lab/vite.probe.config.ts` for the harder-push and
   feet-together scenes). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
-- Full checks p34-p51 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
-  `.scratch/p51/e-passrush`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
-  (superseded by p49's toe-out), `p49/parked/c-mismatch/`.
+- Full checks p34-p52 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
+  `.scratch/p52/b-scene`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
+  (superseded by p49's toe-out), `p49/parked/c-mismatch/`, `p52/parked/part1/` (evidence only).
 - Main checkout `.scratch` was 219 MB after pruning plan 15's check results; prune p33-p45 check dirs once p50 is
   accepted (keep the latest baseline and parked patches).

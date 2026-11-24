@@ -146,8 +146,8 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
      chose the re-punch (b) first and no pass-protection set before angles exist.
    - The swipe (user, 2026-11-24, after p50): "a bit robotic and short: more fluid, larger motions". Done in p51;
      the same bar applies to every later hand move (wind-up, long eased arc, follow-through, the body in it).
-   Steps: (a) per-hand states, a swipe and a re-fit, straight on, in a pass-rush scene; (b) the re-punch, the
-   inside changing hands; (c) rip and swim around a shoulder (the defender off the blocker's centre line: the
+   Steps: (a) per-hand states, a swipe and a re-fit, straight on, in a pass-rush scene (p50-p51); (b) the
+   re-punch, the inside changing hands (p52, `-F13-rePunch`; it stops the drive, turning it back needs (d)); (c) rip and swim around a shoulder (the defender off the blocker's centre line: the
    first of blocking from angles); (d) the beaten blocker's recovery and the final loss. It should also give
    `-F11`'s beaten inside man and `-F2`'s folded arms something to do, and the mismatch drive (`-F3`/`-F4`,
    parked in p49) its time structure.
