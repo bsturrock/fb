@@ -166,6 +166,12 @@ export interface ArmIntent {
    * move that carries its own timing (the hand fight's swipe along its arc) asks for more than the arm's everyday reach.
    */
   speedMps?: number;
+  /**
+   * Plan 16 (p51): the upper arm's top twist rate for this request (rad/s; absent: the joint range's
+   * `ShoulderTwistProfile.maxRateRadPs`). A ballistic strike (the hand fight's swipe) turns the shoulder faster than an
+   * everyday reach; held to the everyday rate, the twist window turns the elbow about the shoulder-to-palm line instead.
+   */
+  twistRadPs?: number;
 }
 
 /**

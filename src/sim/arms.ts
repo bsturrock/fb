@@ -213,6 +213,8 @@ interface ArmRt {
   poleLocal: Vec3;
   /** Contact motion polish 1.1: the request's elbow pole (`ArmIntent.poleLocal`), tried first; absent without one. */
   poleHint?: Vec3;
+  /** Plan 16 (p51): the request's own top twist rate (`ArmIntent.twistRadPs`); absent without one. */
+  twistRadPs?: number;
   prevElbowLocal: Vec3;
   prevWristLocal: Vec3;
   prevWantedElbowLocal: Vec3;
@@ -549,7 +551,8 @@ export class ArmSystem {
         const prev = a.solve && len(sub(a.prevWristLocal, a.prevElbowLocal)) > 1e-9 ? twM(J!.shoulder, { x: 0, y: 0, z: 0, w: 1 }, shoulderLocal(pl.body, a.side), a.prevElbowLocal, a.prevWristLocal, a.sx) : null;
         this.twAnchor.set(key, (anchor = { substep: this.twSubstep, rad: prev }));
       }
-      wins.push(twistWindow(J!.shoulder, TW, anchor.rad, this.host.dt));
+      // (plan 16, p51: a request's own top rate, `ArmIntent.twistRadPs`)
+      wins.push(twistWindow(J!.shoulder, a.twistRadPs !== undefined ? { ...TW, maxRateRadPs: a.twistRadPs } : TW, anchor.rad, this.host.dt));
     } else wins.push(null);
     // fitted poles often land on the same elbow (the window's edge): each elbow is judged once
     const tried: Vec3[] = [];
@@ -772,6 +775,8 @@ export class ArmSystem {
         if (!kept) {
           if (intent.poleLocal) a.poleHint = { ...intent.poleLocal };
           else if (a.poleHint) delete a.poleHint;
+          if (intent.twistRadPs !== undefined) a.twistRadPs = intent.twistRadPs;
+          else if (a.twistRadPs !== undefined) delete a.twistRadPs;
         }
         const prevAction = a.action;
         a.action = intent.action;

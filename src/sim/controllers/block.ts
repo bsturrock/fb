@@ -324,6 +324,13 @@ export interface SwipeArc {
   mps: number;
   /** (m: about a palm's and a forearm's thickness, so the palm meets the arm's top, not its middle) */
   skimM: number;
+  /**
+   * The upper arm's top twist rate through the swipe (rad/s, `ArmIntent.twistRadPs`; a ballistic strike's, under a
+   * thrower's). The hand passes close in front of his shoulder, which turns the upper arm about itself fast; held to the
+   * everyday rate (the joint range's 12) the twist window turned the elbow about the shoulder-to-palm line instead, over
+   * or under it in one frame (a snap of the shoulder, 65-130 rad/s).
+   */
+  twistRadPs: number;
 }
 
 /**
@@ -401,7 +408,7 @@ export const HANDS_V3: BlockHandFight = { ...HANDS_V2, id: 'hands-v3', knock: { 
 export const HANDS_V4: BlockHandFight = {
   ...HANDS_V3,
   id: 'hands-v4',
-  swipe: { ...HANDS_V3.swipe!, arc: { windS: 0.14, windUpM: 0.2, windFwdM: 0.15, windOutM: 0.04, liftM: 0.06, chopS: 0.18, thruDownM: 0.5, thruOutM: 0.22, thruFwdM: 0.35, mps: 10, skimM: 0.1 } },
+  swipe: { ...HANDS_V3.swipe!, arc: { windS: 0.14, windUpM: 0.2, windFwdM: 0.15, windOutM: 0.04, liftM: 0.06, chopS: 0.18, thruDownM: 0.5, thruOutM: 0.22, thruFwdM: 0.35, mps: 10, skimM: 0.1, twistRadPs: 50 } },
   knock: { ...HANDS_V3.knock!, m: 0.3, s: 0.15, carry: { mps: 9 } },
   refit: { ...HANDS_V3.refit!, path: { s: 0.17, bowM: 0.06, mps: 10 } },
 };
@@ -2174,9 +2181,10 @@ export class BlockController implements Controller {
         // (the block's own hands take it back from the ready point once it is done)
         this.punchedAt[side] = null;
         this.wasOn[side] = false;
-        // (p51: the arc's and the carried knock's own pace)
+        // (p51: the arc's and the carried knock's own pace; the arc's own twist rate)
         const mps = hi.doing === 'swiping' ? HF?.swipe?.arc?.mps : HF?.knock?.carry?.mps;
-        arms[side] = { action: 'reach', targetWorld: this.handTarget(ctx, side, hi, wasHands?.[side], dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position, ...(mps !== undefined ? { speedMps: mps } : {}) };
+        const arc = hi.doing === 'swiping' ? HF?.swipe?.arc : undefined;
+        arms[side] = { action: 'reach', targetWorld: this.handTarget(ctx, side, hi, wasHands?.[side], dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position, ...(mps !== undefined ? { speedMps: mps } : {}), ...(arc ? { twistRadPs: arc.twistRadPs } : {}) };
         continue;
       }
       // the strike's load and strike: both arms together (the drive is the block's own hands, below)
