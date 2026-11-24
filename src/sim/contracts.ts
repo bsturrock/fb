@@ -161,6 +161,11 @@ export interface ArmIntent {
   poleLocal?: Vec3;
   /** Plan 16, the palm push's request (action `push`; absent: effort 1 at the arm's full reach). */
   push?: PushRequest;
+  /**
+   * Plan 16 (p51): the free palm's top speed for this request (m/s; absent: the arm profile's `maxEndpointSpeedMps`). A
+   * move that carries its own timing (the hand fight's swipe along its arc) asks for more than the arm's everyday reach.
+   */
+  speedMps?: number;
 }
 
 /**

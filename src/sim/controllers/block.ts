@@ -277,6 +277,35 @@ export interface HandSwipe {
   raiseS: number;
   chopS: number;
   hitTolM: number;
+  /** Plan 16 (p51): the swipe as one fluid move along its own timed arc (`SwipeArc`), in place of the raise and chop above; absent, those. */
+  arc?: SwipeArc;
+}
+
+/**
+ * Plan 16 (p51), the swipe as one fluid move (`HandSwipe.arc`). Each part is a curve whose time is eased in and out
+ * (minimum jerk: no constant-speed straight runs, no instant turns), its points in his level frame (his body's heading,
+ * upright) at that shoulder. The wind-up (`windS`): the hand leaves his man, lifted `liftM` over the straight way, and
+ * loads `windUpM` over his shoulder, `windFwdM` ahead of it and `windOutM` out from it (up by his ear, the elbow up and
+ * out). The chop (`chopS`): from there down over the point on his man's forearm (`HandSwipe.alongF`; `skimM` over it, on
+ * the side the chop comes from) at its middle, where it is fastest, and on past it to the follow-through's end,
+ * `thruDownM` under his shoulder, `thruOutM` out from it and `thruFwdM` ahead; the forearm's point is the live one until
+ * the chop meets it, then held where it met, and the knock it gives is along the line to the follow-through's end. Then the
+ * hand goes back onto his man as a re-fit does (`HandRefit.path`). While it moves the palm's top speed is `mps` (the curve
+ * sets its pace; the arm's everyday top speed would cut it).
+ */
+export interface SwipeArc {
+  windS: number;
+  windUpM: number;
+  windFwdM: number;
+  windOutM: number;
+  liftM: number;
+  chopS: number;
+  thruDownM: number;
+  thruOutM: number;
+  thruFwdM: number;
+  mps: number;
+  /** (m: about a palm's and a forearm's thickness, so the palm meets the arm's top, not its middle) */
+  skimM: number;
 }
 
 /**
@@ -297,6 +326,12 @@ export interface HandKnock {
    * and out along his man's front, a palm stays on him and could not go back on: the arms' own withdrawal rule); absent, none.
    */
   offM?: number;
+  /**
+   * Plan 16 (p51): the hand carried along its knock as a struck thing is: fastest as the chop meets it, slowing to rest at
+   * the knock's end (the way covered 1 - (1 - u)^3 of the whole at u of its time), its palm's top speed `mps`; absent, it
+   * goes for the knock's end point at the arm's own pace.
+   */
+  carry?: { mps: number };
 }
 
 /**
@@ -308,6 +343,13 @@ export interface HandKnock {
 export interface HandRefit {
   s: number;
   extendMps: number;
+  /**
+   * Plan 16 (p51): the way back on as one eased curve (minimum jerk over `s` seconds) from where the hand was as the re-fit
+   * began to its aim, coming in along the line from his shoulder to the aim as a punch lands and bowed `bowM` out to his
+   * side, its palm's top speed `mps`; a swipe's own hand comes back the same way from its follow-through (`SwipeArc`).
+   * Absent, straight at the aim at the arm's pace.
+   */
+  path?: { s: number; bowM: number; mps: number };
 }
 
 /** Plan 16 (p50): the first hand fight (`BlockHandFight`): each hand's own state, nothing asked of it yet. */
@@ -331,6 +373,51 @@ export const HANDS_V2: BlockHandFight = {
  * on at its aim within 0.4 s, its push extending at 3 m/s (the strike's pace).
  */
 export const HANDS_V3: BlockHandFight = { ...HANDS_V2, id: 'hands-v3', knock: { ...HANDS_V2.knock!, offM: 0.12 }, refit: { s: 0.4, extendMps: 3 } };
+
+/**
+ * Plan 16 (p51): HANDS_V3 with the swipe as one fluid move (`SwipeArc`): a 0.14 s wind-up to 20 cm over the shoulder, 15
+ * cm ahead of it and 4 cm out, a 0.18 s chop over his man's forearm at its fastest and on to 50 cm under the shoulder, 22
+ * cm out and 35 cm ahead, then back onto him along an eased curve in 0.17 s (`HandRefit.path`); the knocked hand carried
+ * 30 cm over 0.15 s, fastest as it is struck (`HandKnock.carry`), and re-fitted along the same kind of curve.
+ */
+export const HANDS_V4: BlockHandFight = {
+  ...HANDS_V3,
+  id: 'hands-v4',
+  swipe: { ...HANDS_V3.swipe!, arc: { windS: 0.14, windUpM: 0.2, windFwdM: 0.15, windOutM: 0.04, liftM: 0.06, chopS: 0.18, thruDownM: 0.5, thruOutM: 0.22, thruFwdM: 0.35, mps: 10, skimM: 0.1 } },
+  knock: { ...HANDS_V3.knock!, m: 0.3, s: 0.15, carry: { mps: 9 } },
+  refit: { ...HANDS_V3.refit!, path: { s: 0.17, bowM: 0.06, mps: 10 } },
+};
+
+/** Plan 16 (p51): a man's level frame at one shoulder (`BlockController.levelAt`): the shoulder (world), his heading and his left (horizontal), and out on that side. */
+export interface LevelFrame {
+  sh: Vec3;
+  fwd: Vec3;
+  left: Vec3;
+  out: Vec3;
+}
+
+/** Plan 16 (p51): a world point in a level frame (x his left, y up, z his heading; m from the shoulder), and back. */
+export const levelLocal = (L: LevelFrame, p: Vec3): Vec3 => {
+  const d = sub(p, L.sh);
+  return v3(dot(d, L.left), d.y, dot(d, L.fwd));
+};
+export const levelWorld = (L: LevelFrame, l: Vec3): Vec3 => add(addScaled(addScaled(L.sh, L.left, l.x), L.fwd, l.z), v3(0, l.y, 0));
+
+/** Plan 16 (p51, `SwipeArc`): the wind-up's load and the follow-through's end in a level frame at the swinging shoulder (world). */
+export const arcWind = (L: LevelFrame, A: SwipeArc): Vec3 => add(addScaled(addScaled(L.sh, L.out, A.windOutM), L.fwd, A.windFwdM), v3(0, A.windUpM, 0));
+export const arcThrough = (L: LevelFrame, A: SwipeArc): Vec3 => add(addScaled(addScaled(L.sh, L.out, A.thruOutM), L.fwd, A.thruFwdM), v3(0, -A.thruDownM, 0));
+
+/** Plan 16 (p51): the minimum-jerk ease of a move's time `u` (0..1): 0 at 0, 1 at 1, at rest and not accelerating at both ends. */
+export const easeMinJerk = (u: number): number => {
+  const x = clamp(u, 0, 1);
+  return x * x * x * (10 + x * (6 * x - 15));
+};
+
+/** Plan 16 (p51): the point `s` (0..1) of the quadratic curve from `a` to `b` pulled toward `q`. */
+export const curveAt = (a: Vec3, q: Vec3, b: Vec3, s: number): Vec3 => add(add(scale(a, (1 - s) * (1 - s)), scale(q, 2 * s * (1 - s))), scale(b, s * s));
+
+/** Plan 16 (p51): the pull of a quadratic curve from `a` to `b` that passes through `m` at its middle. */
+export const curveThrough = (a: Vec3, m: Vec3, b: Vec3): Vec3 => sub(scale(m, 2), scale(add(a, b), 0.5));
 
 /** Plan 16 (p50): a block profile with the hand fight `H` (`handFight`), under an id that names it. */
 export const withHandFight = (p: BlockProfile, H: BlockHandFight): BlockProfile => ({ ...p, id: `${p.id}+${H.id}`, handFight: H });
@@ -387,6 +474,8 @@ export interface HandIntent {
   swipes?: number;
   swipe?: HandSwipeState;
   knockT?: number;
+  /** Plan 16 (p51, `HandRefit.path`): re-fitting, where his palm was as the re-fit began (his level frame from that shoulder: x his left, y up, z forward; m). */
+  fromL?: Vec3;
 }
 
 /**
@@ -401,6 +490,10 @@ export interface HandSwipeState {
   throughW?: Vec3;
   /** Plan 16 (p50): once the chop met his arm, his palm off that forearm's point as it met it (world): the chop rides his arm down from there. */
   rideW?: Vec3;
+  /** Plan 16 (p51, `SwipeArc`): where his palm was as the swipe began (his level frame from that shoulder, as `HandIntent.fromL`). */
+  fromL?: Vec3;
+  /** Plan 16 (p51, `SwipeArc`): once the chop met his arm, that forearm's point as it met it (world): the arc goes on through it. */
+  hitOnW?: Vec3;
 }
 
 /**
@@ -416,6 +509,9 @@ export interface HandStep {
   throughW?: Vec3;
   /** the chop met his arm: his palm off that forearm's point now (world), to ride it from */
   rideW?: Vec3;
+  /** Plan 16 (p51): his palm now in his level frame from that shoulder (as `HandIntent.fromL`); and swiping, the point on his man's forearm now (world). */
+  palmL?: Vec3;
+  onW?: Vec3;
 }
 
 /**
@@ -429,12 +525,23 @@ export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchStat
   // (p50: knocked, by a knock his state has that he has not taken yet, then for the knock's time)
   if (F?.knock && was?.knock && was.knock.t > (prev?.knockT ?? -Infinity)) return { doing: 'knocked', since: was.knock.t, ...keep, knockT: was.knock.t };
   if (F?.knock && prev?.doing === 'knocked' && t - prev.since < F.knock.s - 1e-9) return { doing: 'knocked', since: prev.since, ...keep };
-  // (p50, `refit`: its knock over, straight back on; on him, or past the re-fit's time, at home)
-  if (F?.refit && prev?.doing === 'knocked') return { doing: 'refitting', since: t, ...keep };
-  if (F?.refit && prev?.doing === 'refitting' && !was?.on && t - prev.since < F.refit.s - 1e-9) return { doing: 'refitting', since: prev.since, ...keep };
+  // (p50, `refit`: its knock over, straight back on; on him, or past the re-fit's time, at home; p51, `refit.path`: from
+  // where the hand is as it begins)
+  if (F?.refit && prev?.doing === 'knocked') return { doing: 'refitting', since: t, ...keep, ...(F.refit.path && H?.palmL ? { fromL: H.palmL } : {}) };
+  if (F?.refit && prev?.doing === 'refitting' && !was?.on && t - prev.since < F.refit.s - 1e-9) return { doing: 'refitting', since: prev.since, ...keep, ...(prev.fromL ? { fromL: prev.fromL } : {}) };
   // (p50: swiping, the raise over his arm then the chop through it; done, at home)
   const S = F?.swipe;
-  if (S && prev?.doing === 'swiping' && prev.swipe) {
+  if (S?.arc && prev?.doing === 'swiping' && prev.swipe) {
+    // (p51, `arc`: the wind-up and the chop each for its time; the forearm's point held once the chop meets it; done,
+    // back on him along the re-fit's path, or at home)
+    const A = S.arc;
+    const w = prev.swipe;
+    if (w.stage === 'raise') return { doing: 'swiping', since: prev.since, ...keep, swipe: t - w.stageT >= A.windS - 1e-9 ? { n: w.n, at: w.at, stage: 'chop', stageT: t, ...(H?.throughW ? { throughW: H.throughW } : {}) } : w };
+    const met = was?.hit !== undefined && was.hit >= prev.since;
+    const sw = met && !w.hitOnW && H?.onW ? { ...w, hitOnW: H.onW } : w;
+    if (t - w.stageT < A.chopS - 1e-9) return { doing: 'swiping', since: prev.since, ...keep, swipe: sw };
+    if (F!.refit?.path) return { doing: 'refitting', since: t, ...keep, ...(H?.palmL ? { fromL: H.palmL } : {}) };
+  } else if (S && prev?.doing === 'swiping' && prev.swipe) {
     const w = prev.swipe;
     if (w.stage === 'raise') {
       if ((H!.raiseLeftM ?? Infinity) <= S.tolM || t - w.stageT >= S.raiseS - 1e-9) return { doing: 'swiping', since: prev.since, ...keep, swipe: { n: w.n, at: w.at, stage: 'chop', stageT: t, ...(H!.throughW ? { throughW: H!.throughW } : {}) } };
@@ -443,7 +550,7 @@ export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchStat
     const met = was?.hit !== undefined && was.hit >= prev.since;
     const ride = met && !w.rideW && H!.rideW ? { ...w, rideW: H!.rideW } : w;
     if (!((!met && (H!.chopLeftM ?? Infinity) <= S.tolM) || t - w.stageT >= S.chopS - 1e-9)) return { doing: 'swiping', since: prev.since, ...keep, swipe: ride };
-  } else if (S && H?.due) return { doing: 'swiping', since: t, ...keep, swipes: H.due.n + 1, swipe: { n: H.due.n, at: H.due.at, stage: 'raise', stageT: t } };
+  } else if (S && H?.due) return { doing: 'swiping', since: t, ...keep, swipes: H.due.n + 1, swipe: { n: H.due.n, at: H.due.at, stage: 'raise', stageT: t, ...(S.arc && H.palmL ? { fromL: H.palmL } : {}) } };
   const doing: HandDoing = pu?.phase === 'strike' ? 'striking' : 'home';
   return { doing, since: prev && prev.doing === doing ? prev.since : t, ...keep };
 }
@@ -1731,21 +1838,60 @@ export class BlockController implements Controller {
     const F = this.profile.handFight!;
     const R = this.spec.request;
     const S = F.swipe;
-    if (!S) return nextHand(prev, pu, ctx.t, { fight: F });
+    const palm = ctx.observed.arms[ctx.self]?.[side]?.palmContactWorld;
+    // (p51: his palm in his level frame, for a move that starts from where the hand is)
+    const L = (F.refit?.path || S?.arc) && palm ? this.levelAt(ctx, side) : null;
+    const palmL = L && palm ? levelLocal(L, palm) : undefined;
+    if (!S) return nextHand(prev, pu, ctx.t, { fight: F, ...(palmL ? { palmL } : {}) });
     const mineReq = (R.swipes ?? []).filter((w) => w.hand === side).sort((a, b) => a.atS - b.atS);
     const n = prev?.swipes ?? 0;
     const req = mineReq[n];
     const free = phase === 'engaged' && (!this.profile.strike || pu?.phase === 'drive') && (prev?.doing ?? 'home') === 'home';
     const due = req && free && ctx.t + 1e-9 >= req.atS ? { n, at: req.at ?? (side === 'right' ? 'left' : 'right') } : undefined;
     const w = prev?.doing === 'swiping' ? prev.swipe : undefined;
-    const palm = ctx.observed.arms[ctx.self]?.[side]?.palmContactWorld;
     const pts = w ? this.swipePoints(ctx, w.at, dir, mine, his) : null;
+    // (p51, `arc`: the chop's line, for the knock it gives, is toward the follow-through's end)
+    const through = S.arc && L ? arcThrough(L, S.arc) : pts?.through;
     return nextHand(prev, pu, ctx.t, {
       fight: F,
       ...(due ? { due } : {}),
-      ...(w && palm && pts ? { raiseLeftM: len(sub(pts.above, palm)), throughW: pts.through, rideW: sub(palm, pts.on) } : {}),
+      ...(w && palm && pts && through ? { raiseLeftM: len(sub(pts.above, palm)), throughW: through, rideW: sub(palm, pts.on) } : {}),
       ...(w?.throughW && palm ? { chopLeftM: len(sub(w.throughW, palm)) } : {}),
+      ...(palmL ? { palmL } : {}),
+      ...(S.arc && pts ? { onW: pts.on } : {}),
     });
+  }
+
+  /**
+   * Plan 16 (p51): his level frame at his shoulder `side` as observed: the shoulder, his body's heading and his left (both
+   * horizontal), and which of those sideways is out on that side. Null: unobserved.
+   */
+  private levelAt(ctx: ControllerContext, side: ArmSide): LevelFrame | null {
+    const me = ctx.observed.bodies[ctx.self];
+    const o = ctx.observed.arms[ctx.self]?.[side];
+    if (!me || !o) return null;
+    const fwd = levelForwardOf(me.rotation);
+    const left = v3(fwd.z, 0, -fwd.x);
+    return { sh: o.shoulderWorld, fwd, left, out: dot(sub(o.shoulderWorld, me.position), left) >= 0 ? left : scale(left, -1) };
+  }
+
+  /**
+   * Plan 16 (p51, `SwipeArc`): where the swiping hand is asked to be now: the wind-up's curve from where it began to its
+   * load over his shoulder, or the chop's from there through his man's forearm point to the follow-through's end. Null:
+   * unobserved.
+   */
+  private arcTarget(ctx: ControllerContext, side: ArmSide, A: SwipeArc, w: HandSwipeState, dir: Vec3, mine: Vec3, his: Vec3): Vec3 | null {
+    const L = this.levelAt(ctx, side);
+    if (!L) return null;
+    const W = arcWind(L, A);
+    if (w.stage === 'raise') {
+      const P0 = w.fromL ? levelWorld(L, w.fromL) : W;
+      return curveAt(P0, add(scale(add(P0, W), 0.5), v3(0, A.liftM, 0)), W, easeMinJerk((ctx.t - w.stageT) / A.windS));
+    }
+    const T = arcThrough(L, A);
+    const C0 = w.hitOnW ?? this.swipePoints(ctx, w.at, dir, mine, his)?.on;
+    const C = C0 ? addScaled(C0, norm(sub(W, C0), v3(0, 1, 0)), A.skimM) : null;
+    return curveAt(W, C ? curveThrough(W, C, T) : scale(add(W, T), 0.5), T, easeMinJerk((ctx.t - w.stageT) / A.chopS));
   }
 
   /**
@@ -1768,14 +1914,20 @@ export class BlockController implements Controller {
    * Plan 16 (p50): a hand's target while the hand fight has its arm: swiping, the raise's point over his man's arm, then the
    * chop's end; knocked, driven on from where the chop met it along the chop's line (`HandKnock.m`). Null: none observed.
    */
-  private handTarget(ctx: ControllerContext, hi: HandIntent, prev: HandState | undefined, dir: Vec3, mine: Vec3, his: Vec3): Vec3 | null {
+  private handTarget(ctx: ControllerContext, side: ArmSide, hi: HandIntent, prev: HandState | undefined, dir: Vec3, mine: Vec3, his: Vec3): Vec3 | null {
     const F = this.profile.handFight!;
     if (hi.doing === 'knocked') {
       const k = prev?.knock;
-      return k && F.knock ? addScaled(addScaled(k.palmW, k.dirW, F.knock.m), dir, -(F.knock.offM ?? 0)) : null;
+      if (!k || !F.knock) return null;
+      const end = addScaled(addScaled(k.palmW, k.dirW, F.knock.m), dir, -(F.knock.offM ?? 0));
+      // (p51, `carry`: on the way there, fastest as it is struck)
+      if (!F.knock.carry) return end;
+      const u = clamp((ctx.t - k.t) / F.knock.s, 0, 1);
+      return add(k.palmW, scale(sub(end, k.palmW), 1 - (1 - u) ** 3));
     }
     const w = hi.swipe;
     if (!w) return null;
+    if (F.swipe?.arc) return this.arcTarget(ctx, side, F.swipe.arc, w, dir, mine, his);
     // (met: on his forearm's point as it is driven, his palm where it met it, pressed on down the chop's line)
     if (w.stage === 'chop' && w.rideW) {
       const p = this.swipePoints(ctx, w.at, dir, mine, his);
@@ -1933,14 +2085,24 @@ export class BlockController implements Controller {
         this.wasOn[side] = !!o?.pushId;
         const aim = aimOf(side);
         const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
-        arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: HF.refit.extendMps }, ...pole };
+        const aimW = aimPoint(side, aim.depthM);
+        // (p51, `refit.path`: along an eased curve from where it began, bowed out to his side)
+        const RP = HF.refit.path;
+        const L = RP && hi.fromL ? this.levelAt(ctx, side) : null;
+        const from = L && hi.fromL ? levelWorld(L, hi.fromL) : null;
+        // (finishing along the line from his shoulder to the aim, as a punch lands; half the way back along it)
+        const pull = RP && L && from ? addScaled(addScaled(aimW, norm(sub(aimW, L.sh), L.fwd), -0.5 * len(sub(aimW, from))), L.out, RP.bowM) : aimW;
+        const targetWorld = RP && L && from ? curveAt(from, pull, aimW, easeMinJerk((ctx.t - hi.since) / RP.s)) : aimW;
+        arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: HF.refit.extendMps }, ...pole, ...(RP ? { speedMps: RP.mps } : {}) };
         continue;
       }
       if (hi && (hi.doing === 'swiping' || hi.doing === 'knocked')) {
         // (the block's own hands take it back from the ready point once it is done)
         this.punchedAt[side] = null;
         this.wasOn[side] = false;
-        arms[side] = { action: 'reach', targetWorld: this.handTarget(ctx, hi, wasHands?.[side], dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position };
+        // (p51: the arc's and the carried knock's own pace)
+        const mps = hi.doing === 'swiping' ? HF?.swipe?.arc?.mps : HF?.knock?.carry?.mps;
+        arms[side] = { action: 'reach', targetWorld: this.handTarget(ctx, side, hi, wasHands?.[side], dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position, ...(mps !== undefined ? { speedMps: mps } : {}) };
         continue;
       }
       // the strike's load and strike: both arms together (the drive is the block's own hands, below)

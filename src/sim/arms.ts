@@ -840,7 +840,8 @@ export class ArmSystem {
         if (rp && this.rideOff(pl, rp, a)) rp = this.endRide(pl, a, 'rideEnded');
         if (rp) a.wantedLocal = toLocal(ownerPose, toWorld(this.prePose(this.partBody(this.player(rp.targetId)!, rp.part)), rp.wantLocal));
         const clamped = !!a.clamp;
-        const speed = clamped ? P.clamp.stationRateMps : P.maxEndpointSpeedMps;
+        // (plan 16, p51: a request's own top speed, `ArmIntent.speedMps`)
+        const speed = clamped ? P.clamp.stationRateMps : (intent.speedMps ?? P.maxEndpointSpeedMps);
         const targetLocal = a.requestedWorld ? toLocal(ownerPose, a.requestedWorld) : this.restLocal(side);
         // falling owner: the closing/reach reference stays frozen in the owner frame (no active tracking); a kept arm's too
         // (with its ride patch, on the part it holds)
