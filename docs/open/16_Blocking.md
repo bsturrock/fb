@@ -138,6 +138,14 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    - A beaten blocker turns his hips and rides his man past; he is lost for good bent past about 45 deg with his
      hips behind his feet and his hands trailing. A rep ends on separation or with the blocker still on.
    - Moves are requested per scene; choosing them waits for the player brains.
+   - **Space, not a man-lock (user, 2026-11-24).** The defender is trying to get to a point in space (the
+     quarterback's spot, a gap, the ball); the blocker is defending that space from him, staying between him and
+     the point. Engagement follows from that; it is not the premise. A rep is won or lost by whether the defender
+     gets to the point. Every scene today pairs two men on one line with each other as the only target. This comes
+     in with step c ("past him" needs a where; the blocker's mirror footwork) and the pass set after it; the user
+     chose the re-punch (b) first and no pass-protection set before angles exist.
+   - The swipe (user, 2026-11-24, after p50): "a bit robotic and short: more fluid, larger motions". Done in p51;
+     the same bar applies to every later hand move (wind-up, long eased arc, follow-through, the body in it).
    Steps: (a) per-hand states, a swipe and a re-fit, straight on, in a pass-rush scene; (b) the re-punch, the
    inside changing hands; (c) rip and swim around a shoulder (the defender off the blocker's centre line: the
    first of blocking from angles); (d) the beaten blocker's recovery and the final loss. It should also give
