@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V3, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V5, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withHeldByPush, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -356,14 +356,14 @@ export const BL_SCENES: BlockSceneOpts[] = [
   },
   {
     id: 'BL-F12-passRush',
-    title: "Pass rush with the hand fight: A in the two-point set, B in the three-point defense, 2 m apart, the snap at 3.3 s; A holds at effort 0.5, B rushes at 0.55 and swipes at A's arms (his right at A's left at 4.25 s, his left at A's right at 5.55 s), A re-fitting each knocked hand; 8 s",
+    title: "Pass rush with the hand fight: A in the two-point set, B in the three-point defense, 2 m apart, the snap at 3.3 s; A holds at effort 0.5, B rushes at 0.55 and swipes at A's arms (his right at A's left at 4.25 s, his left at A's right at 5.55 s), A re-fitting each knocked hand (p51: each swipe a wound-up chop with the body in it); 8 s",
     A: setIn(hold(0.5, 'under', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'two-point', 'offense', 3.3),
     B: { ...setIn(drive(0.55, 'over', undefined, BLOCK_STRIKE_V5, CONTEST_V2), 'three-point', 'defense', 3.3), swipes: [{ atS: 4.25, hand: 'right' }, { atS: 5.55, hand: 'left' }] },
     sepM: 2,
     durationS: 8,
     ...NEWER_SET,
     toeOut: true,
-    handFight: HANDS_V3,
+    handFight: HANDS_V5,
   },
 ];
 
