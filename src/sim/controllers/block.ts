@@ -55,6 +55,11 @@ export interface BlockRequest {
    * once, in order per hand. Absent: none.
    */
   swipes?: SwipeRequest[];
+  /**
+   * Plan 16 (p52), the re-punch (a profile with `handFight.rePunch`): the re-punches he is asked for (`RePunchRequest`), each
+   * once, in order per hand. Absent: none.
+   */
+  rePunches?: RePunchRequest[];
 }
 
 /**
@@ -66,6 +71,16 @@ export interface SwipeRequest {
   atS: number;
   hand: ArmSide;
   at?: ArmSide;
+}
+
+/**
+ * Plan 16 (p52): a re-punch asked of a blocker (`BlockRequest.rePunches`): from `atS` (s), once he is engaged with his punch
+ * through and that hand at home, his hand `hand` comes off his man, loads low by his ribs and punches back on him inside
+ * his man's arm on that side (`HandRePunch`). Whether it gets inside is the gap's and the arms' own.
+ */
+export interface RePunchRequest {
+  atS: number;
+  hand: ArmSide;
 }
 
 /** Plan 16 (p39): a lineman's pre-snap stance and his side of the ball. */
@@ -259,6 +274,11 @@ export interface BlockHandFight {
   offCut?: number;
   /** Plan 16 (p51): the body in the hand fight (`HandBody`); absent, the hands move alone. */
   body?: HandBody;
+  /**
+   * Plan 16 (p52): the re-punch (`HandRePunch`, asked by `BlockRequest.rePunches`), and with it the inside lane's leverage
+   * counted per hand (`lanesLeverage`); absent, none, and the leverage his own lane's.
+   */
+  rePunch?: HandRePunch;
 }
 
 /**
@@ -413,6 +433,43 @@ export const HANDS_V4: BlockHandFight = {
   refit: { ...HANDS_V3.refit!, path: { s: 0.17, bowM: 0.06, mps: 10 } },
 };
 
+/**
+ * Plan 16 (p52), the re-punch (`BlockHandFight.rePunch`): a hand without the inside taken off his man and punched back on
+ * him inside his man's arm on that side, so the inside is won per hand. The load (`loadS`): the hand leaves his man and is
+ * drawn back and down along an eased curve (minimum jerk) bowed `load.outM` out to his side and `load.backM` back toward
+ * him, to `load.downM` under his shoulder, `load.fwdM` ahead of it and `load.inM` in from it (his level frame at that
+ * shoulder: by his ribs), the elbow's pole `load.pole` (down and back: tight to his ribs). The punch (`punchS`): from where
+ * the hand is, up and in along an eased curve through the point under his man's forearm on that side (`pass`: `alongF`
+ * of the way from its elbow to its wrist, `downM` under it and `inM` toward the two men's middle) onto `aim` (his chest
+ * plate under and inside his arms), its push extending at `extendMps`; on him, the hand is at home and stays on `aim`; not
+ * on him `landS` after the punch's time, it re-fits from where it is (`HandRefit.path`). While it moves the palm's top
+ * speed is `mps`. The gap: as the punch begins, its way (sampled) must keep `clearM` (a palm's and an arm's thickness)
+ * from his man's upper arm on that side (shoulder to elbow; his forearm is what the punch moves) as observed; closed (his
+ * elbow tight in to his chest), the punch goes onto his own lane's aim (the outside) and nothing changes hands. The wash:
+ * the punching palm's ball or forearm coming within `hitTolM` of his man's forearm on that side as shown (the
+ * simulation's `handContacts`), or landing on him, knocks that hand (`HandKnock`: its push ended, carried along `wash`,
+ * up, out to his man's side and back toward his man, a direction: off the puncher's body, so it can go back on him; it
+ * opens nothing, `HandKnockFact.wash`) and its lane is the outside; the punching hand's the inside. While the hand is off
+ * his man it costs him the hand fight's `offCut`. `body` (with `HandBody`): his shoulder on that side `backDeg` back and
+ * his trunk `dipDeg` further over as the hand loads, then through to `thruDeg` by the punch's end, the dip held, both back
+ * to none over the re-fit's path time from when it landed.
+ */
+export interface HandRePunch {
+  /** the punch's aim on his man (`HandAim`, his frame), under and inside his arms: his chest plate as high as the punch reaches */
+  aim: HandAim;
+  loadS: number;
+  load: { downM: number; fwdM: number; inM: number; outM: number; backM: number; pole: Vec3 };
+  punchS: number;
+  pass: { alongF: number; downM: number; inM: number };
+  landS: number;
+  extendMps: number;
+  mps: number;
+  clearM: number;
+  hitTolM: number;
+  wash: { up: number; out: number; back: number };
+  body?: { backDeg: number; thruDeg: number; dipDeg: number };
+}
+
 /** Plan 16 (p51): a man's level frame at one shoulder (`BlockController.levelAt`): the shoulder (world), his heading and his left (horizontal), and out on that side. */
 export interface LevelFrame {
   sh: Vec3;
@@ -453,6 +510,74 @@ export const curveThrough = (a: Vec3, m: Vec3, b: Vec3): Vec3 => sub(scale(m, 2)
 export const HANDS_V5: BlockHandFight = { ...HANDS_V4, id: 'hands-v5', body: { swing: { backDeg: 6, thruDeg: 10, dipDeg: 6, rollDeg: 4 }, knock: { turnDeg: 16, rollDeg: 8 } } };
 
 /**
+ * Plan 16 (p52): HANDS_V5 with the re-punch (`HandRePunch`): the hand drawn back in 0.18 s, bowed 14 cm out and 6 cm back,
+ * to 30 cm under the shoulder, 12 cm ahead and 4 cm in, the elbow down and back; punched in 0.16 s through 12 cm under his
+ * man's forearm's middle and 4 cm in onto his chest plate 46 cm up (the inside lane's 36 is past the reach of a man held
+ * off at arm's length by a pitched man's long arms), its push extending at 3 m/s, at most 9 m/s; landing within 0.12 s
+ * more; the way clear of his upper arm by 10 cm; his man's hand washed up, out and back off him as the arms come within
+ * 4 cm (the forearms meet as the punch arrives: met at contact, the punching forearm went 7 cm into his before his moved);
+ * his shoulder 8 deg back and his trunk 5 deg over as it loads, 12 deg through as it punches, the dip held until it lands.
+ */
+export const HANDS_V6: BlockHandFight = {
+  ...HANDS_V5,
+  id: 'hands-v6',
+  rePunch: {
+    loadS: 0.18,
+    aim: { y: 0.46, x: 0.07, depthM: 0.08, pole: v3(0, -1, 0.1), lengthM: 0.64 },
+    load: { downM: 0.3, fwdM: 0.12, inM: 0.04, outM: 0.14, backM: 0.06, pole: v3(0, -1, -0.5) },
+    punchS: 0.16,
+    pass: { alongF: 0.5, downM: 0.12, inM: 0.04 },
+    landS: 0.12,
+    extendMps: 3,
+    mps: 9,
+    clearM: 0.1,
+    hitTolM: 0.04,
+    wash: { up: 0.5, out: 0.5, back: 0.7 },
+    body: { backDeg: 8, thruDeg: 12, dipDeg: 5 },
+  },
+};
+
+/** Plan 16 (p52, `HandRePunch`): the load's point (world) in a level frame at the loading shoulder. */
+export const rePunchLoad = (L: LevelFrame, RP: HandRePunch): Vec3 => add(addScaled(addScaled(L.sh, L.out, -RP.load.inM), L.fwd, RP.load.fwdM), v3(0, -RP.load.downM, 0));
+
+/** Plan 16 (p52, `HandRePunch`): the load's way from `from` to the load point `to`: its pull, bowed out and back toward him (level frame at that shoulder). */
+export const rePunchLoadPull = (L: LevelFrame, RP: HandRePunch, from: Vec3, to: Vec3): Vec3 => addScaled(addScaled(scale(add(from, to), 0.5), L.out, RP.load.outM), L.fwd, -RP.load.backM);
+
+/**
+ * Plan 16 (p52, `HandRePunch`): the point the punch passes under his man's forearm (elbow `elbowW` to wrist `wristW`):
+ * `pass.alongF` of the way along it, `pass.downM` under it and `pass.inM` along `inW` (toward the two men's middle).
+ */
+export const rePunchPass = (RP: HandRePunch, elbowW: Vec3, wristW: Vec3, inW: Vec3): Vec3 => add(addScaled(addScaled(elbowW, sub(wristW, elbowW), RP.pass.alongF), inW, RP.pass.inM), v3(0, -RP.pass.downM, 0));
+
+/**
+ * Plan 16 (p52, `HandRePunch`): how clear the way `a` (start) through `m` (its middle) to `b` (end) keeps of the arm
+ * segments `segs` (m): the least distance of 16 points along it, past its start, to any of them. The gap is open when this
+ * is at least the re-punch's `clearM`.
+ */
+export function punchClearM(a: Vec3, m: Vec3, b: Vec3, segs: [Vec3, Vec3][]): number {
+  const q = curveThrough(a, m, b);
+  let least = Infinity;
+  for (let i = 1; i <= 16; i++) {
+    const p = curveAt(a, q, b, i / 16);
+    for (const [s0, s1] of segs) {
+      const ab = sub(s1, s0);
+      const u = clamp(dot(sub(p, s0), ab) / Math.max(1e-12, dot(ab, ab)), 0, 1);
+      least = Math.min(least, len(sub(p, addScaled(s0, ab, u))));
+    }
+  }
+  return least;
+}
+
+/**
+ * Plan 16 (p52, `BlockHandFight.rePunch`): the inside lane's leverage `L` (`BlockContest.inside.leverage`) counted per
+ * hand: both of his hands outside, his capacity's share 1/L (the outside man's, as before); one, 1/sqrt(L); none, 1.
+ */
+export function lanesLeverage(H: Record<ArmSide, HandState>, L: number): number {
+  const n = SIDES.filter((s) => H[s].lane === 'outside').length;
+  return n === 2 ? 1 / L : n === 1 ? 1 / Math.sqrt(L) : 1;
+}
+
+/**
  * Plan 16 (p51, `HandBody`): what his hands ask of his body now: his turn (deg; + his right shoulder forward, his heading
  * turned to his left), his trunk's extra hinge (deg) and his lean to his right (deg; + his right side down), from his
  * hands' intents now and their states (a knock his state has that ended a push). Nothing without the body.
@@ -482,6 +607,20 @@ export function handsBody(F: BlockHandFight, hands: Partial<Record<ArmSide, Hand
       out.dipDeg += W.dipDeg * r;
       out.rollDeg += sg * W.rollDeg * r;
     }
+    // (p52, the re-punch: the shoulder back and the trunk over as the hand loads, then through as it punches and up out
+    // of the dip; back to none from when it landed)
+    const RP = F.rePunch;
+    const RB = RP?.body;
+    if (RP && RB && h?.doing === 'repunching' && h.rePunch) {
+      const w = h.rePunch;
+      const e = easeMinJerk((t - w.stageT) / (w.stage === 'load' ? RP.loadS : RP.punchS));
+      out.turnDeg += sg * (w.stage === 'load' ? -RB.backDeg * e : -RB.backDeg + (RB.backDeg + RB.thruDeg) * e);
+      out.dipDeg += RB.dipDeg * (w.stage === 'load' ? e : 1);
+    } else if (RB && h?.punchedT !== undefined && back > 0 && t - h.punchedT < back) {
+      const r = 1 - easeMinJerk((t - h.punchedT) / back);
+      out.turnDeg += sg * RB.thruDeg * r;
+      out.dipDeg += RB.dipDeg * r;
+    }
     // the knock: into the side it left, as the hand is carried, then back to none
     const k = was?.[side]?.knock;
     if (k?.ended && F.knock && t >= k.t) {
@@ -502,7 +641,7 @@ export const withHandFight = (p: BlockProfile, H: BlockHandFight): BlockProfile 
  * hands go), striking with his punch, swiping at his man's arm (`HandSwipe`), knocked off him (`HandKnock`), or going
  * straight back on him after a knock (`HandRefit`).
  */
-export type HandDoing = 'home' | 'striking' | 'swiping' | 'knocked' | 'refitting';
+export type HandDoing = 'home' | 'striking' | 'swiping' | 'knocked' | 'refitting' | 'repunching';
 
 /** Plan 16 (p50): where a hand is on his man (`HandState.where`): on his chest (the inside lane), on his shoulder (the outside). */
 export type HandWhere = 'chest' | 'shoulder';
@@ -536,6 +675,8 @@ export interface HandKnockFact {
   by: PlayerId;
   ended: boolean;
   backT?: number;
+  /** Plan 16 (p52): a re-punch's wash (`HandRePunch`), which opens nothing to the man who washed it (`openedBy`); absent, a swipe's knock. */
+  wash?: true;
 }
 
 /**
@@ -553,6 +694,23 @@ export interface HandIntent {
   fromL?: Vec3;
   /** Plan 16 (p51, `HandBody`): when his last swipe's chop ended (s), kept from then. */
   swungT?: number;
+  /** Plan 16 (p52, `HandRePunch`): how many of its re-punches he has begun (absent none), the re-punch it is in, and when its last one ended (s; with `HandBody`), kept from then. */
+  rePunches?: number;
+  rePunch?: HandRePunchState;
+  punchedT?: number;
+}
+
+/**
+ * Plan 16 (p52): a re-punch under way (`HandIntent.rePunch`): its request (`n`, of this hand's), its stage (the load, the
+ * punch) and since when (s), where his palm was as the stage began (his level frame from that shoulder, as
+ * `HandIntent.fromL`); punching, whether the gap was open as it began (`inside`: the punch goes inside his man's arm).
+ */
+export interface HandRePunchState {
+  n: number;
+  stage: 'load' | 'punch';
+  stageT: number;
+  fromL?: Vec3;
+  inside?: boolean;
 }
 
 /**
@@ -589,6 +747,9 @@ export interface HandStep {
   /** Plan 16 (p51): his palm now in his level frame from that shoulder (as `HandIntent.fromL`); and swiping, the point on his man's forearm now (world). */
   palmL?: Vec3;
   onW?: Vec3;
+  /** Plan 16 (p52): the re-punch due now for it (its request's index; given only when he may begin it), and, loading, whether the punch's gap is open now. */
+  rePunchDue?: { n: number };
+  gapOpen?: boolean;
 }
 
 /**
@@ -596,7 +757,7 @@ export interface HandStep {
  * undefined: none yet) and his punch now: striking while his punch is in its strike, else home. `since` is when it began.
  */
 export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchState | undefined, t: number, H?: HandStep): HandIntent {
-  const keep = { ...(prev?.swipes ? { swipes: prev.swipes } : {}), ...(prev?.knockT !== undefined ? { knockT: prev.knockT } : {}), ...(prev?.swungT !== undefined ? { swungT: prev.swungT } : {}) };
+  const keep = { ...(prev?.swipes ? { swipes: prev.swipes } : {}), ...(prev?.knockT !== undefined ? { knockT: prev.knockT } : {}), ...(prev?.swungT !== undefined ? { swungT: prev.swungT } : {}), ...(prev?.rePunches ? { rePunches: prev.rePunches } : {}), ...(prev?.punchedT !== undefined ? { punchedT: prev.punchedT } : {}) };
   const F = H?.fight;
   const was = prev as HandState | undefined;
   // (p50: knocked, by a knock his state has that he has not taken yet, then for the knock's time)
@@ -606,6 +767,22 @@ export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchStat
   // where the hand is as it begins)
   if (F?.refit && prev?.doing === 'knocked') return { doing: 'refitting', since: t, ...keep, ...(F.refit.path && H?.palmL ? { fromL: H.palmL } : {}) };
   if (F?.refit && prev?.doing === 'refitting' && !was?.on && t - prev.since < F.refit.s - 1e-9) return { doing: 'refitting', since: prev.since, ...keep, ...(prev.fromL ? { fromL: prev.fromL } : {}) };
+  // (p52, `rePunch`: the load for its time, then the punch, inside if its gap is open as it begins; on him, at home; not on
+  // him by the punch's and the landing's time, back on him from where it is)
+  const RP = F?.rePunch;
+  if (RP && prev?.doing === 'repunching' && prev.rePunch) {
+    const w = prev.rePunch;
+    if (w.stage === 'load') {
+      if (t - w.stageT < RP.loadS - 1e-9) return { doing: 'repunching', since: prev.since, ...keep, rePunch: w };
+      return { doing: 'repunching', since: prev.since, ...keep, rePunch: { n: w.n, stage: 'punch', stageT: t, inside: H?.gapOpen ?? false, ...(H?.palmL ? { fromL: H.palmL } : {}) } };
+    }
+    const done = F!.body ? { punchedT: t } : {};
+    if (was?.on) return { doing: 'home', since: t, ...keep, ...done };
+    if (t - w.stageT < RP.punchS + RP.landS - 1e-9) return { doing: 'repunching', since: prev.since, ...keep, rePunch: w };
+    if (F!.refit) return { doing: 'refitting', since: t, ...keep, ...done, ...(F!.refit.path && H?.palmL ? { fromL: H.palmL } : {}) };
+    return { doing: 'home', since: t, ...keep, ...done };
+  }
+  if (RP && H?.rePunchDue) return { doing: 'repunching', since: t, ...keep, rePunches: H.rePunchDue.n + 1, rePunch: { n: H.rePunchDue.n, stage: 'load', stageT: t, ...(H.palmL ? { fromL: H.palmL } : {}) } };
   // (p50: swiping, the raise over his arm then the chop through it; done, at home)
   const S = F?.swipe;
   if (S?.arc && prev?.doing === 'swiping' && prev.swipe) {
@@ -641,7 +818,7 @@ export function nextHand(prev: HandState | HandIntent | undefined, pu: PunchStat
  * back on him: the opening `me` drives into.
  */
 export function openedBy(me: PlayerId, his: Record<ArmSide, HandState> | undefined, F: BlockHandFight | undefined): boolean {
-  return !!F?.knock?.opens && !!his && SIDES.some((s) => !his[s].on && his[s].knock?.by === me && his[s].knock!.ended && his[s].knock!.backT === undefined);
+  return !!F?.knock?.opens && !!his && SIDES.some((s) => !his[s].on && his[s].knock?.by === me && his[s].knock!.ended && his[s].knock!.backT === undefined && !his[s].knock!.wash);
 }
 
 /**
@@ -654,6 +831,11 @@ export function handsLeverage(H: Record<ArmSide, HandState> | undefined, F: Bloc
   let x = 1;
   for (const s of SIDES) {
     const h = H[s];
+    // (p52, `rePunch`: a hand off him to re-punch costs what a hand knocked off him does)
+    if (F.rePunch && h.doing === 'repunching' && !h.on && F.offCut !== undefined) {
+      x *= 1 - F.offCut;
+      continue;
+    }
     if (!h.knock?.ended) continue;
     if (h.doing === 'knocked' && F.knock) x *= 1 - F.knock.cut;
     else if (h.knock.backT === undefined && !h.on && F.offCut !== undefined) x *= 1 - F.offCut;
@@ -1761,6 +1943,8 @@ export interface BlockDebug {
   swipeMisses?: boolean;
   /** Plan 16 (p50) fault, the knock: a knocked hand costs him nothing in the contest (`handsLeverage`) and opens nothing to his man (`openedBy`). */
   knockFree?: boolean;
+  /** Plan 16 (p52) fault, the re-punch: a punch inside washes nothing (`handContacts`): his man's hand stays and no lane changes. */
+  rePunchNoWash?: boolean;
 }
 
 /**
@@ -1921,27 +2105,96 @@ export class BlockController implements Controller {
     const S = F.swipe;
     const palm = ctx.observed.arms[ctx.self]?.[side]?.palmContactWorld;
     // (p51: his palm in his level frame, for a move that starts from where the hand is)
-    const L = (F.refit?.path || S?.arc) && palm ? this.levelAt(ctx, side) : null;
+    const L = (F.refit?.path || S?.arc || F.rePunch) && palm ? this.levelAt(ctx, side) : null;
     const palmL = L && palm ? levelLocal(L, palm) : undefined;
-    if (!S) return nextHand(prev, pu, ctx.t, { fight: F, ...(palmL ? { palmL } : {}) });
+    const free = phase === 'engaged' && (!this.profile.strike || pu?.phase === 'drive') && (prev?.doing ?? 'home') === 'home';
+    // (p52, `rePunch`: the re-punch due for it, and loading, whether its punch's gap is open)
+    const rp = F.rePunch ? this.rePunchStep(ctx, side, prev, free, dir, mine, his) : {};
+    if (!S) return nextHand(prev, pu, ctx.t, { fight: F, ...(palmL ? { palmL } : {}), ...rp });
     const mineReq = (R.swipes ?? []).filter((w) => w.hand === side).sort((a, b) => a.atS - b.atS);
     const n = prev?.swipes ?? 0;
     const req = mineReq[n];
-    const free = phase === 'engaged' && (!this.profile.strike || pu?.phase === 'drive') && (prev?.doing ?? 'home') === 'home';
     const due = req && free && ctx.t + 1e-9 >= req.atS ? { n, at: req.at ?? (side === 'right' ? 'left' : 'right') } : undefined;
     const w = prev?.doing === 'swiping' ? prev.swipe : undefined;
     const pts = w ? this.swipePoints(ctx, w.at, dir, mine, his) : null;
     // (p51, `arc`: the chop's line, for the knock it gives, is toward the follow-through's end)
     const through = S.arc && L ? arcThrough(L, S.arc) : pts?.through;
+    // (a swipe due first)
+    const { rePunchDue, ...rpRest } = rp as Pick<HandStep, 'rePunchDue' | 'gapOpen'>;
     return nextHand(prev, pu, ctx.t, {
       fight: F,
-      ...(due ? { due } : {}),
+      ...(due ? { due } : rePunchDue ? { rePunchDue } : {}),
+      ...rpRest,
       ...(w && palm && pts && through ? { raiseLeftM: len(sub(pts.above, palm)), throughW: through, rideW: sub(palm, pts.on) } : {}),
       ...(w?.throughW && palm ? { chopLeftM: len(sub(w.throughW, palm)) } : {}),
       ...(palmL ? { palmL } : {}),
       ...(S.arc && pts ? { onW: pts.on } : {}),
     });
   }
+
+  /**
+   * Plan 16 (p52, `HandRePunch`): for his hand `side`, the re-punch due now (`BlockRequest.rePunches`, the next of this
+   * hand's once its time has come, given while he may begin one: `free`), and while it loads, whether its punch's gap is
+   * open: the punch's way from where the hand is to the inside aim through the point under his man's forearm keeps the
+   * re-punch's `clearM` of that arm (`punchClearM`).
+   */
+  private rePunchStep(ctx: ControllerContext, side: ArmSide, prev: HandState | undefined, free: boolean, dir: Vec3, mine: Vec3, his: Vec3): Pick<HandStep, 'rePunchDue' | 'gapOpen'> {
+    const RP = this.profile.handFight!.rePunch!;
+    const reqs = (this.spec.request.rePunches ?? []).filter((w) => w.hand === side).sort((a, b) => a.atS - b.atS);
+    const n = prev?.rePunches ?? 0;
+    const req = reqs[n];
+    const out: Pick<HandStep, 'rePunchDue' | 'gapOpen'> = {};
+    if (req && free && ctx.t + 1e-9 >= req.atS) out.rePunchDue = { n };
+    if (prev?.doing === 'repunching' && prev.rePunch?.stage === 'load') {
+      const way = this.punchWay(ctx, side, true, dir, mine, his);
+      const a = ctx.observed.arms[this.spec.request.target]?.[side === 'right' ? 'left' : 'right'];
+      out.gapOpen = !!way && !!a && punchClearM(way.from, way.pass, way.to, [[a.shoulderWorld, a.elbowWorld]]) >= RP.clearM;
+    }
+    return out;
+  }
+
+  /**
+   * Plan 16 (p52, `HandRePunch`): the punch's way for his hand `side` (world): from where the hand is, through the point
+   * under his man's forearm on that side, onto the inside lane's aim (`inside`), or straight onto his own lane's aim. Null:
+   * unobserved.
+   */
+  private punchWay(ctx: ControllerContext, side: ArmSide, inside: boolean, dir: Vec3, mine: Vec3, his: Vec3, from?: Vec3): { from: Vec3; pass: Vec3; to: Vec3 } | null {
+    const RP = this.profile.handFight!.rePunch!;
+    const a = ctx.observed.arms[this.spec.request.target]?.[side === 'right' ? 'left' : 'right'];
+    const o = ctx.observed.arms[ctx.self]?.[side];
+    const f = from ?? o?.palmContactWorld;
+    const to = this.punchAims?.[side][inside ? 'inside' : 'own'];
+    if (!a || !f || !to) return null;
+    if (!inside) return { from: f, pass: scale(add(f, to), 0.5), to };
+    const lat = v3(dir.z, 0, -dir.x);
+    const mid = scale(add(mine, his), 0.5);
+    const at = addScaled(a.elbowWorld, sub(a.wristWorld, a.elbowWorld), RP.pass.alongF);
+    const inW = scale(lat, dot(sub(at, mid), lat) >= 0 ? -1 : 1);
+    return { from: f, pass: rePunchPass(RP, a.elbowWorld, a.wristWorld, inW), to };
+  }
+
+  /**
+   * Plan 16 (p52, `HandRePunch`): where the re-punching hand is asked to be now: loading, along the load's curve from where it
+   * began to the load point by his ribs; punching, along the punch's curve from where it began (through the point under his
+   * man's forearm when inside) onto its aim. Null: unobserved.
+   */
+  private rePunchTarget(ctx: ControllerContext, side: ArmSide, w: HandRePunchState, dir: Vec3, mine: Vec3, his: Vec3): Vec3 | null {
+    const RP = this.profile.handFight!.rePunch!;
+    const L = this.levelAt(ctx, side);
+    if (!L) return null;
+    const from = w.fromL ? levelWorld(L, w.fromL) : undefined;
+    if (w.stage === 'load') {
+      const W = rePunchLoad(L, RP);
+      const F0 = from ?? W;
+      return curveAt(F0, rePunchLoadPull(L, RP, F0, W), W, easeMinJerk((ctx.t - w.stageT) / RP.loadS));
+    }
+    const way = this.punchWay(ctx, side, !!w.inside, dir, mine, his, from ?? rePunchLoad(L, RP));
+    if (!way) return null;
+    return curveAt(way.from, curveThrough(way.from, way.pass, way.to), way.to, easeMinJerk((ctx.t - w.stageT) / RP.punchS));
+  }
+
+  /** Plan 16 (p52): this decision's aims on his man for each hand (world): the re-punch's (`inside`) and its own lane's, set by `decide`. */
+  private punchAims: Record<ArmSide, { inside: Vec3; own: Vec3 }> | null = null;
 
   /**
    * Plan 16 (p51): his level frame at his shoulder `side` as observed: the shoulder, his body's heading and his left (both
@@ -2074,11 +2327,11 @@ export class BlockController implements Controller {
     // (p50, `handFight`: each hand's own state from the snapshot, and its aim by its own lane)
     const HF = P.handFight;
     const wasHands = HF && ctx.observed.block?.[ctx.self]?.target === R.target ? ctx.observed.block[ctx.self].hands : undefined;
-    const aimOf = (side: ArmSide): HandAim => (HF && P.lanes ? P.lanes[wasHands?.[side]?.lane ?? 'inside'] : aim);
+    // (p52, `rePunch`: a hand that won the inside by a re-punch kept on the re-punch's aim)
+    const aimOf = (side: ArmSide): HandAim => (HF?.rePunch && wasHands?.[side]?.lane === 'inside' && wasHands[side].rePunches ? HF.rePunch.aim : HF && P.lanes ? P.lanes[wasHands?.[side]?.lane ?? 'inside'] : aim);
     // a palm's aim on him (world): my right hand on his left side (his frame), the side across from it, `depth` into his chest
     // (p45, `aimThrough`: the point on his chest, `depth` on beyond it along the line from my shoulder)
-    const aimPoint = (side: ArmSide, depth: number): Vec3 => {
-      const aim = aimOf(side);
+    const aimPointOf = (side: ArmSide, aim: HandAim, depth: number): Vec3 => {
       const hx = sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x;
       const front = frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1));
       if (!P.aimThrough) return add(him.position, qRot(him.rotation, v3(hx, aim.y, front - depth)));
@@ -2087,6 +2340,11 @@ export class BlockController implements Controller {
       const line = sh ? sub(at, sh) : v3();
       return addScaled(at, len(line) > 1e-6 ? norm(line) : qRot(him.rotation, v3(0, 0, -1)), depth);
     };
+    const aimPoint = (side: ArmSide, depth: number): Vec3 => aimPointOf(side, aimOf(side), depth);
+    // (p52, `rePunch`: a punch's aim, the inside lane's or its own)
+    const RPa = HF?.rePunch?.aim;
+    const aims = (side: ArmSide) => ({ inside: aimPointOf(side, RPa!, RPa!.depthM), own: aimPointOf(side, aimOf(side), aimOf(side).depthM) });
+    this.punchAims = RPa ? { left: aims('left'), right: aims('right') } : null;
     let pu: PunchState | undefined;
     const reachM = SIDES.reduce((m, side) => m + (obs?.[side] ? len(sub(aimPoint(side, 0), obs[side]!.shoulderWorld)) : Infinity), 0) / SIDES.length;
     if (K) {
@@ -2160,6 +2418,25 @@ export class BlockController implements Controller {
       const out = sideSignX(myBody, side);
       const o = obs?.[side];
       const hi = handIntents?.[side];
+      if (hi?.doing === 'repunching' && HF?.rePunch && hi.rePunch) {
+        // (p52, the re-punch: loading, off him and drawn back low, the elbow tight; punching, a push along its way onto its
+        // aim, the block's own hands counting its punch from the punch)
+        const RP = HF.rePunch;
+        const w = hi.rePunch;
+        const T = this.rePunchTarget(ctx, side, w, dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position;
+        if (w.stage === 'load') {
+          this.punchedAt[side] = null;
+          this.wasOn[side] = false;
+          arms[side] = { action: 'reach', targetWorld: T, poleLocal: v3(out * RP.load.pole.x, RP.load.pole.y, RP.load.pole.z), speedMps: RP.mps };
+          continue;
+        }
+        if (this.punchedAt[side] === null) this.punchedAt[side] = ctx.t;
+        this.wasOn[side] = !!o?.pushId;
+        const aim = w.inside ? RP.aim : aimOf(side);
+        const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
+        arms[side] = { action: 'push', targetWorld: T, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: RP.extendMps }, ...pole, speedMps: RP.mps };
+        continue;
+      }
       if (hi?.doing === 'refitting' && HF?.refit) {
         // (straight back on at its aim; the block's own hands count its punch from the re-fit)
         if (this.punchedAt[side] === null) this.punchedAt[side] = ctx.t;
@@ -2184,7 +2461,14 @@ export class BlockController implements Controller {
         // (p51: the arc's and the carried knock's own pace; the arc's own twist rate)
         const mps = hi.doing === 'swiping' ? HF?.swipe?.arc?.mps : HF?.knock?.carry?.mps;
         const arc = hi.doing === 'swiping' ? HF?.swipe?.arc : undefined;
-        arms[side] = { action: 'reach', targetWorld: this.handTarget(ctx, side, hi, wasHands?.[side], dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position, ...(mps !== undefined ? { speedMps: mps } : {}), ...(arc ? { twistRadPs: arc.twistRadPs } : {}) };
+        // (p52: a washed hand's elbow turned from the inside lane's to its new lane's over the carry, so neither the wash nor
+        // the re-fit onto that lane swings it round at once)
+        const wk = hi.doing === 'knocked' ? wasHands?.[side]?.knock : undefined;
+        const p0 = P.lanes?.inside.pole;
+        const p1 = aimOf(side).pole;
+        const wu = wk?.wash && HF?.knock ? easeMinJerk((ctx.t - wk.t) / HF.knock.s) : 0;
+        const wp = wk?.wash && p0 && p1 ? add(scale(p0, 1 - wu), scale(p1, wu)) : undefined;
+        arms[side] = { action: 'reach', targetWorld: this.handTarget(ctx, side, hi, wasHands?.[side], dir, me.position, him.position) ?? o?.palmContactWorld ?? me.position, ...(mps !== undefined ? { speedMps: mps } : {}), ...(arc ? { twistRadPs: arc.twistRadPs } : {}), ...(wp ? { poleLocal: v3(out * wp.x, wp.y, wp.z) } : {}) };
         continue;
       }
       // the strike's load and strike: both arms together (the drive is the block's own hands, below)

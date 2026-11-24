@@ -6,7 +6,7 @@ import type {
 import type { Controller } from './controllers/base';
 import { makeController } from './controllers/index';
 import type { FixtureDef, PlayerSetup } from './fixture';
-import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, isSupportedLeg, PhysicsWorld, RAPIER, solvedImpulses, type MassReport, type ProxyBody } from './physics';
+import { cullGeom, FLOOR_HALF_M, geomNear, initPhysics, isSupportedLeg, PhysicsWorld, RAPIER, segmentDistanceSq, solvedImpulses, type MassReport, type ProxyBody } from './physics';
 import {
   ARM_G2, BALANCE_G3, DEFAULT_POSE_PROFILE, SUPPORT_LEGACY, hipLocal, sideSignX, torsoHalf, validateMotorBraking, withJointRange, type ArmProfile, type BalanceProfile, type BodyProfile, type MotorProfile, type RagdollProfile,
   type SupportProfile, type SuspensionSupport,
@@ -43,7 +43,7 @@ import type { AuditPrev, TransitionDelta } from './transition-audit';
 import { observeRules } from './rule-wiring';
 import { applySupport, prepDropM, supportTargets, updateProbes } from './support-runtime';
 import { advanceHinge, legOmega, legRotation, type HingeState } from './hinge';
-import { advanceBlockState, advanceHands, decideLane, type BlockState, type HandState, type LaneTouch } from './controllers/block';
+import { advanceBlockState, advanceHands, decideLane, type BlockState, type HandRePunch, type HandState, type LaneTouch } from './controllers/block';
 import { bornHeld, convertPlayers, releaseBornPairs, separateBornPairs, takedownHold } from './conversion';
 import { observeContacts } from './contact-observation';
 import type { Part } from './free-ground';
@@ -1065,7 +1065,7 @@ export class Simulation {
       this.idleSway(pl);
     }
     // plan 16 (p50), the hand fight: a swipe's chop meeting his man's arm as the two are shown, after every man's decision
-    if (this.players.some((p) => p.block?.hands && p.intent.block?.profile.handFight?.swipe)) this.handContacts();
+    if (this.players.some((p) => p.block?.hands && (p.intent.block?.profile.handFight?.swipe || p.intent.block?.profile.handFight?.rePunch))) this.handContacts();
     // 4. clear application-owned force/torque accumulators (once, before any contribution)
     for (const pl of this.players)
       for (const b of this.activeBodies(pl)) {
@@ -1268,6 +1268,10 @@ export class Simulation {
         const w = was?.[s];
         if (h.doing === 'swiping' && w?.doing !== 'swiping') this.emit('handSwipe', pl.id, { hand: s, at: h.swipe!.at, n: h.swipe!.n, target: tid ?? null });
         if (w?.doing === 'swiping' && h.doing !== 'swiping') this.emit('handSwipeEnd', pl.id, { hand: s, at: w.swipe!.at, n: w.swipe!.n, hit: w.hit !== undefined && w.hit >= w.since, heldS: round(this.t - w.since, 4) });
+        // (p52, the re-punch: begun, its punch thrown (inside: its gap open), ended (landed: on him))
+        if (h.doing === 'repunching' && w?.doing !== 'repunching') this.emit('handRePunch', pl.id, { hand: s, n: h.rePunch!.n, target: tid ?? null });
+        if (h.rePunch?.stage === 'punch' && w?.rePunch?.stage === 'load') this.emit('handRePunchThrown', pl.id, { hand: s, n: h.rePunch.n, inside: !!h.rePunch.inside });
+        if (w?.doing === 'repunching' && h.doing !== 'repunching') this.emit('handRePunchEnd', pl.id, { hand: s, n: w.rePunch!.n, landed: h.doing === 'home', lane: h.lane ?? null, heldS: round(this.t - w.since, 4) });
       }
     }
     if (r.st) pl.block = r.st;
@@ -1288,12 +1292,18 @@ export class Simulation {
     for (const p of [...this.players].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
       const H = p.block?.hands;
       const S = p.intent.block?.profile.handFight?.swipe;
+      const RP = p.intent.block?.profile.handFight?.rePunch;
       const him = p.block ? this.players.find((o) => o.id === p.block!.target) : undefined;
-      if (!H || !S || !p.pose || p.rag || !him?.pose || him.rag) continue;
+      if (!H || (!S && !RP) || !p.pose || p.rag || !him?.pose || him.rag) continue;
       const L = p.pose.jointLandmarksWorld;
       const M = him.pose.jointLandmarksWorld;
       for (const side of ['left', 'right'] as ArmSide[]) {
         const h = H[side];
+        if (RP && h.doing === 'repunching') {
+          this.rePunchContact(p, him, side, RP, R);
+          continue;
+        }
+        if (!S) continue;
         const w = h.swipe;
         if (h.doing !== 'swiping' || !w || w.stage !== 'chop' || (h.hit !== undefined && h.hit >= h.since)) continue;
         const palm = armShapes(R, side, L[`${side}Shoulder`], L[`${side}Elbow`], L[`${side}Wrist`], L[`${side}Palm`])[2];
@@ -1313,6 +1323,47 @@ export class Simulation {
         this.emit('handKnock', p.id, { hand: side, target: him.id, at: w.at, n: w.n, pushEnded: ended, gapM: round(gapM, 4) });
       }
     }
+  }
+
+  /**
+   * Plan 16 (p52, `HandRePunch`): p's re-punch on hand `side`, punching inside, against his man as both are shown: his palm's
+   * ball or his forearm within `hitTolM` of his man's forearm on that side (my right at his left), or his push on him
+   * (landed), washes that arm once: its push ends (`ArmSystem.knock`) and its hand takes the knock (`HandKnockFact`, along
+   * `wash`: up, out to his side and back toward him; `wash: true`, opening nothing), its lane the outside; the punching
+   * hand's lane the inside. Fault (`BlockDebug.rePunchNoWash`): the punch meets the arm and washes nothing.
+   */
+  private rePunchContact(p: PlayerRuntime, him: PlayerRuntime, side: ArmSide, RP: HandRePunch, R: RagdollProfile): void {
+    const h = p.block!.hands![side];
+    const w = h.rePunch;
+    if (!w || w.stage !== 'punch' || !w.inside || (h.hit !== undefined && h.hit >= h.since)) return;
+    const at: ArmSide = side === 'right' ? 'left' : 'right';
+    const L = p.pose!.jointLandmarksWorld;
+    const M = him.pose!.jointLandmarksWorld;
+    const landed = this.arms?.pushOf(p.id, side)?.targetId === him.id;
+    const palm = armShapes(R, side, L[`${side}Shoulder`], L[`${side}Elbow`], L[`${side}Wrist`], L[`${side}Palm`])[2];
+    const fa = armShapes(R, at, M[`${at}Shoulder`], M[`${at}Elbow`], M[`${at}Wrist`], M[`${at}Palm`])[1];
+    // (his forearm against my palm's ball and my forearm, as shown)
+    const mf = armShapes(R, side, L[`${side}Shoulder`], L[`${side}Elbow`], L[`${side}Wrist`], L[`${side}Palm`])[1];
+    let gapM = Infinity;
+    if (fa.kind === 'capsule') {
+      if (palm.kind === 'ball') gapM = Math.sqrt(segmentDistanceSq(palm.c, palm.c, fa.a, fa.b)) - palm.r - fa.r;
+      if (mf.kind === 'capsule') gapM = Math.min(gapM, Math.sqrt(segmentDistanceSq(mf.a, mf.b, fa.a, fa.b)) - mf.r - fa.r);
+    }
+    if (!landed && gapM > RP.hitTolM) return;
+    h.hit = this.t;
+    if (this.opts.debug?.block?.rePunchNoWash) return;
+    h.lane = 'inside';
+    const root = vc(him.proxy.body.translation());
+    const outH = horiz(sub(M[`${at}Shoulder`], root));
+    const back = norm(horiz(sub(root, vc(p.proxy.body.translation()))), v3(0, 0, 1));
+    const dirW = norm(add(addScaled(scale(norm(outH, v3(1, 0, 0)), RP.wash.out), back, RP.wash.back), v3(0, RP.wash.up, 0)), v3(0, 1, 0));
+    const ended = this.arms?.knock(him.id, at) ?? false;
+    const k = him.block?.hands?.[at];
+    if (k && him.block?.target === p.id) {
+      k.knock = { t: this.t, dirW, palmW: { ...M[`${at}Palm`] }, by: p.id, ended, wash: true };
+      k.lane = 'outside';
+    }
+    this.emit('handWash', p.id, { hand: side, target: him.id, at, n: w.n, pushEnded: ended, landed, gapM: Number.isFinite(gapM) ? round(gapM, 4) : null });
   }
 
   /**

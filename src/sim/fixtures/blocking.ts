@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V5, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V5, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type RePunchRequest, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withHeldByPush, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -31,6 +31,8 @@ export interface BlockMan {
   stance?: PreSnapStance;
   /** Plan 16 (p50): the swipes asked of him (`BlockRequest.swipes`; under the scene's `handFight` with a swipe). */
   swipes?: SwipeRequest[];
+  /** Plan 16 (p52): the re-punches asked of him (`BlockRequest.rePunches`; under the scene's `handFight` with a re-punch). */
+  rePunches?: RePunchRequest[];
 }
 
 /**
@@ -188,7 +190,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
     arms: { enabled: { left: true, right: true }, mode: { left: 'forearmClamp', right: 'forearmClamp' }, acquisition: false, closeEffortScale: 1 },
     controller: {
       kind: 'block',
-      request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}), ...(m.swipes ? { swipes: m.swipes } : {}) },
+      request: { target: id === 'A' ? 'B' : 'A', effort: m.effort, intent: m.intent, ...(m.hands ? { hands: m.hands } : {}), ...(m.stance ? { stance: m.stance } : {}), ...(m.swipes ? { swipes: m.swipes } : {}), ...(m.rePunches ? { rePunches: m.rePunches } : {}) },
       ...(m.fromS ? { fromS: m.fromS } : {}),
       ...(m.profile || m.athletic || m.leanIn || o.aimThrough || o.followThrough || o.lanes || o.insideLeverage || o.stayLow || o.armsGive || o.burstTaper || o.lowUnheld || o.frame || o.heldByPush || o.strikeAtLoadGap || o.toeOut || o.handFight ? { profile: P } : {}),
     },

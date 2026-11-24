@@ -7,7 +7,7 @@ import { availableBalanceTorque, combineSupportTorque, computeBalanceTorque, des
 import { add, v3, vc, len, cross, norm, qFromAxisAngle, qRot, upOf, dot, clamp, forwardOf, scale, sub, UP, levelForwardOf, qFromUnitVectors } from './vec';
 import type { Simulation, AppliedRecord } from './simulation';
 import { bracePosture } from './brace';
-import { handsLeverage, openedBy } from './controllers/block';
+import { handsLeverage, lanesLeverage, openedBy } from './controllers/block';
 import { shoulderLocal } from './profiles';
 import { hingeBalanceTorque, hipTorque } from './hinge';
 import { advanceContest, advanceGive, baseCeiling, baseMoments, contestCapacity, contestFeet, contestForce, copBounds, hitPair, limitToBase, nextBeaten, SOLE_TOUCH_M, soleContacts, type BaseMoments } from './block-base';
@@ -281,7 +281,8 @@ function contestDrive(host: MotorHost, pl: MotorHost['players'][number], drive: 
   if ((K.hit && palmOn) || opening) burstN = Infinity;
   const effort = dbg?.contestEffortBlind ? 1 : (pl.intent.block?.request.effort ?? pl.intent.locomotion.effort);
   // (p45, `inside`: the outside man's part lost)
-  if (K.inside) st.leverage = blk.lane === 'outside' ? 1 / K.inside.leverage : 1;
+  // (p52, the hand fight's `rePunch`: counted per hand, by each hand's lane)
+  if (K.inside) st.leverage = blk.hands && pl.intent.block?.profile.handFight?.rePunch ? lanesLeverage(blk.hands, K.inside.leverage) : blk.lane === 'outside' ? 1 / K.inside.leverage : 1;
   // (p50, the hand fight: what his hands off his man cost him)
   if (blk.hands && !dbg?.knockFree) {
     st.leverage = (K.inside ? st.leverage : 1) * handsLeverage(blk.hands, pl.intent.block?.profile.handFight);
