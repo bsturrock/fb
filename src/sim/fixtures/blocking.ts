@@ -4,7 +4,7 @@
 // ragdoll and the family base profiles); `registered` (fixtures/index.ts) names the layers the family takes on top.
 // A is at -z facing +z, B at +z facing -z (B's lateral offset on world x).
 import type { FixtureDef, PlayerSetup } from '../fixture';
-import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V5, HANDS_V7, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type RePunchRequest, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
+import { BLOCK_STRIKE_V1, BLOCK_STRIKE_V2, BLOCK_STRIKE_V5, GAZE_V1, RUN_IN_V1, withRunIn, LEAN_IN_V2, LEAN_IN_V5, LEAN_IN_V6, BLOCK_V1, chestShiftM, preSnapKey, withAimThrough, withAthletic, withFollowThrough, withFrame, withLanes, LANES_V1, LANES_TOPS, LANES_ARM, SHOULDER_TOPS_HIGH_M, LANE_TIE_V1, withLaneTie, withLaneOnStrike, withStrikeAtLoadGap, STRIKE_AT_LOAD_GAP_M, withToeOut, TOE_OUT_DEG, withHandFight, HANDS_V1, HANDS_V5, HANDS_V7, withUnder, UNDER_V1, withBase, withContest, withGaze, withLeanIn, withStrike, type AthleticStance, type BlockHandFight, type BlockHands, type RePunchRequest, type SwipeRequest, type BlockIntent, type BlockProfile, type BlockStrike, type LeanGeometry, type LeanInStance, type PreSnapStance } from '../controllers/block';
 import { BASE_V2, CONTEST_V1, CONTEST_V2, INSIDE_LEVERAGE, BURST_TAPER_BEATEN, withArmsGive, withBurstTaper, withHeldByPush, withInsideLeverage, withLegsHold, withLowUnheld, type BlockContest } from '../block-base';
 import { PALM_PUSH_V1, withUpperArmClearance, type PalmPushProfile } from '../profiles';
 import { v3 } from '../vec';
@@ -92,6 +92,11 @@ export interface BlockSceneOpts {
   stayLow?: boolean;
   /** Plan 16 (p46): with `lanes`, the outside palms on the tops of his shoulders (LANES_TOPS), the palm push's band raised to them (SHOULDER_TOPS_HIGH_M). */
   shoulderTops?: boolean;
+  /**
+   * Plan 16 (p54): with `lanes`, the outside palms on the outside of the inside man's upper arms (LANES_ARM, in place of
+   * LANES_TOPS or LANES_V1), the palm push held there (`PalmPushProfile.onArm`, ON_ARM).
+   */
+  outsideOnArm?: boolean;
   /** Plan 16 (p46): a palm push folded past its collapse kept on, at no force, to FOLD_KEEPS_DEG (`PalmPushProfile.foldKeeps`). */
   foldKeeps?: boolean;
   /** Plan 16 (p46): both men's arms giving as they are stood up (`BlockContest.armsGive`, `withArmsGive`). */
@@ -130,6 +135,11 @@ export const FOLD_KEEPS_DEG = 130;
  * which V1 refuses: a palm come off could not go back on (p31).
  */
 export const PALM_PUSH_BLOCK: PalmPushProfile = { ...PALM_PUSH_V1, bornFacingDot: 0.6, keepFacingDot: 0.45 };
+/**
+ * Plan 16 (p54): a palm push onto his upper arm (`PalmPushProfile.onArm`): born as the palm ball comes within 3 cm of
+ * resting at its place there.
+ */
+export const ON_ARM: NonNullable<PalmPushProfile['onArm']> = { bornTolM: 0.03 };
 
 /**
  * The palm push of a scene (p35): PALM_PUSH_BLOCK, its arm line cone widened (born and kept) by however much deeper the
@@ -141,7 +151,7 @@ const palmWidenDeg = (o: BlockSceneOpts): number =>
 const setTrunkOf = (o: BlockSceneOpts): number => Math.min(...[o.A, o.B].map((m) => setTrunkDeg(m) ?? (m.profile ?? BLOCK_V1).stance.leanDeg + (m.profile ?? BLOCK_V1).stance.hingeDeg));
 function palmPushOf(o: BlockSceneOpts): PalmPushProfile {
   const more = palmWidenDeg(o);
-  const P = { ...PALM_PUSH_BLOCK, ...(o.seat ? { seat: true } : {}), ...(o.upperArm ? { ownBodyKeeps: true } : {}), ...(o.stanceCone ? { stanceCone: { refDeg: setTrunkOf(o) } } : {}), ...(o.shoulderTops ? { band: { ...PALM_PUSH_BLOCK.band, highM: SHOULDER_TOPS_HIGH_M } } : {}), ...(o.foldKeeps ? { foldKeeps: { maxFlexDeg: FOLD_KEEPS_DEG } } : {}), ...(o.palmSlide ? { slide: PALM_SLIDE } : {}) };
+  const P = { ...PALM_PUSH_BLOCK, ...(o.seat ? { seat: true } : {}), ...(o.upperArm ? { ownBodyKeeps: true } : {}), ...(o.stanceCone ? { stanceCone: { refDeg: setTrunkOf(o) } } : {}), ...(o.shoulderTops ? { band: { ...PALM_PUSH_BLOCK.band, highM: SHOULDER_TOPS_HIGH_M } } : {}), ...(o.foldKeeps ? { foldKeeps: { maxFlexDeg: FOLD_KEEPS_DEG } } : {}), ...(o.palmSlide ? { slide: PALM_SLIDE } : {}), ...(o.outsideOnArm ? { onArm: ON_ARM } : {}) };
   if (more <= 0) return P;
   const wider = (dot: number) => Math.cos(Math.acos(dot) + (more * Math.PI) / 180);
   return { ...P, bornFacingDot: wider(P.bornFacingDot), keepFacingDot: wider(P.keepFacingDot) };
@@ -156,7 +166,7 @@ function man(id: 'A' | 'B', o: BlockSceneOpts, m: BlockMan, template: PlayerSetu
   const P1 = o.aimThrough ? withAimThrough(P0) : P0;
   const P2f = o.followThrough ? withFollowThrough(P1) : P1;
   const P2 = o.frame ? withFrame(P2f) : P2f;
-  const L0 = o.shoulderTops ? LANES_TOPS : LANES_V1;
+  const L0 = o.outsideOnArm ? LANES_ARM : o.shoulderTops ? LANES_TOPS : LANES_V1;
   const L1 = o.laneTie ? withLaneTie(L0, LANE_TIE_V1) : L0;
   const P3 = o.lanes ? withLanes(P2, o.laneOnStrike ? withLaneOnStrike(L1) : L1) : P2;
   const P4 = o.insideLeverage && P3.contest ? { ...P3, id: `${P3.id}+inside-x${INSIDE_LEVERAGE}`, contest: withInsideLeverage(P3.contest, INSIDE_LEVERAGE) } : P3;
@@ -223,7 +233,7 @@ export function blockScene(o: BlockSceneOpts, base: FixtureDef = source()): Fixt
     title: o.title,
     notes: 'Plan 16 blocking: two defenders on the player model, the block controller (block-v1, on a base when its profile has one) and the palm push (palm-push-v1, its arm line cone widened for a pitched chest); no ball, no rules.',
     // the arm profile's id names the widened cone, the seat and the hold over his own body (one id, one set of values)
-    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}${o.upperArm ? '+own-body-keeps' : ''}${o.stanceCone ? `+stance-cone${setTrunkOf(o)}` : ''}${o.shoulderTops ? `+band-top${SHOULDER_TOPS_HIGH_M}` : ''}${o.foldKeeps ? `+fold-keeps${FOLD_KEEPS_DEG}` : ''}${o.palmSlide ? `+slide${PALM_SLIDE.mps}` : ''}`, palmPush: palmPushOf(o) },
+    armProfile: { ...base.armProfile!, id: `${base.armProfile!.id}+palm-push-block${palmWidenDeg(o) > 0 ? `+wider${Math.round(palmWidenDeg(o) * 10) / 10}` : ''}${o.seat ? '+seat' : ''}${o.upperArm ? '+own-body-keeps' : ''}${o.stanceCone ? `+stance-cone${setTrunkOf(o)}` : ''}${o.shoulderTops ? `+band-top${SHOULDER_TOPS_HIGH_M}` : ''}${o.foldKeeps ? `+fold-keeps${FOLD_KEEPS_DEG}` : ''}${o.palmSlide ? `+slide${PALM_SLIDE.mps}` : ''}${o.outsideOnArm ? '+on-arm' : ''}`, palmPush: palmPushOf(o) },
     ...(o.upperArm ? { selfClearance: withUpperArmClearance(rest.selfClearance!) } : {}),
     durationS: o.durationS,
     area: { halfX: 8, halfZ: 8 },

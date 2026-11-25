@@ -1,6 +1,6 @@
 // Versioned physical/control profiles. All numbers are authored engineering starting values, not athlete measurements.
 import type { ColliderRegion } from './contracts';
-import { v3, type Vec3 } from './vec';
+import { add, addScaled, dot, norm, qRot, rad, scale, sub, v3, type Quat, type Vec3 } from './vec';
 
 export const SCHEMA_VERSION = 'tackling-v1.1';
 
@@ -242,6 +242,20 @@ export function sideSignX(b: BodyProfile, side: 'left' | 'right'): number {
 }
 export function shoulderLocal(b: BodyProfile, side: 'left' | 'right'): Vec3 {
   return side === 'right' ? { ...b.shoulderRight } : mirrorX(b.shoulderRight);
+}
+/**
+ * Plan 16 (p54, a palm on his upper arm, `PushRequest.onArm`): where the palm ball's centre rests on a man's upper arm from
+ * his shoulder `S` to his elbow `E` (world), his body turned `q`, the arm on his side `outSign` of his midline (his
+ * `sideSignX`): `seatM` from the arm's line, `t` of the way along it, turned `angDeg` from straight out toward his up about
+ * the arm; and the arm's outward normal there.
+ */
+export function armSeatWorld(S: Vec3, E: Vec3, q: Quat, outSign: number, on: { t: number; angDeg: number; seatM: number }): { ball: Vec3; normal: Vec3 } {
+  const ax = norm(sub(E, S), qRot(q, v3(0, 0, 1)));
+  const out = qRot(q, v3(outSign, 0, 0));
+  const a = rad(on.angDeg);
+  const d0 = add(scale(out, Math.cos(a)), scale(qRot(q, v3(0, 1, 0)), Math.sin(a)));
+  const normal = norm(sub(d0, scale(ax, dot(d0, ax))), out);
+  return { ball: addScaled(addScaled(S, sub(E, S), on.t), normal, on.seatM), normal };
 }
 export function hipLocal(b: BodyProfile, side: 'left' | 'right'): Vec3 {
   return side === 'right' ? { ...b.hipRight } : mirrorX(b.hipRight);
@@ -776,6 +790,17 @@ export interface PalmPushProfile {
   stanceCone?: { refDeg: number };
   foldKeeps?: { maxFlexDeg: number };
   slide?: { mps: number; seatTolM: number };
+  /**
+   * Plan 16 (p54, on his arm): a push asked onto his upper arm (`PushRequest.onArm`) is born when the free palm ball comes
+   * within `bornTolM` of resting at its place there, his arm on that side itself asked to push, the arm line going into the
+   * arm's surface, within reach and not collapsed. It is held on his arm as his arm moves, at the request's place along
+   * it, and pushes as on his body (on his body's part, at the palm), with no facing taper or slip; it ends as on his body
+   * (unreachable, the line not into the surface, the pose, folded) and when the request is no longer on that arm
+   * (`voluntary`) or his arm is no longer asked to push (`armLeft`: loading a re-punch, swiping, knocked). His arm is read
+   * as it was when the substep began, so the order the players are stepped in does not matter. Absent: a request's
+   * `onArm` is unread, and the palm lands where it touches his body.
+   */
+  onArm?: { bornTolM: number };
 }
 
 /**

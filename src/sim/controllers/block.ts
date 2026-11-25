@@ -9,9 +9,9 @@
 // and what holds between him and his man (a palm push either way, or their bodies touching), with hysteresis: it enters
 // at once and leaves only after `engage.lostS` with nothing holding. The feet regime and the hip hinge read it, so neither
 // follows a flickering contact.
-import type { ArmIntent, ArmSide, FlatStance, HeadGaze, HeadUp, PlayerId, PlayerIntent, StanceRequest } from '../contracts';
+import type { ArmIntent, ArmSide, FlatStance, HeadGaze, HeadUp, PlayerId, PlayerIntent, PushRequest, StanceRequest } from '../contracts';
 import type { BodyProfile, MotorProfile } from '../profiles';
-import { shoulderLocal, sideSignX } from '../profiles';
+import { armSeatWorld, shoulderLocal, sideSignX } from '../profiles';
 import type { PlayerSetup } from '../fixture';
 import type { HingeLimits } from '../hinge';
 import { legForThigh, legShape, newContest, withBeaten, type BlockBase, type BlockContest, type ContestState, type GiveGround, type GiveState } from '../block-base';
@@ -172,6 +172,15 @@ export interface HandAim {
   pole?: Vec3;
   /** The arm's length for this placement (shoulder to palm, m; default the profile's `lengthM`). */
   lengthM?: number;
+  /**
+   * Plan 16 (p54): the palm on his upper arm on his side across from it (my right hand on his left arm), not on his body:
+   * its ball's centre `seatM` from the arm's line, `t` of the way from his shoulder to his elbow, turned `angDeg` from
+   * straight out from his midline toward his up about the arm (`armSeatWorld`), aimed `depthM` on beyond it along the line
+   * from my shoulder (the palm's contact point is ahead of its ball); the push asks to stay there (`PushRequest.onArm`; the
+   * arm profile's `PalmPushProfile.onArm`). His arm unobserved, and for the strike's range, `y` and `x` on his body as
+   * without it.
+   */
+  onArm?: { t: number; angDeg: number; seatM: number };
 }
 
 /** How a block closes, punches, holds and stands (`BlockSpec.profile`). */
@@ -1408,6 +1417,17 @@ export const LANES_V1: BlockLanes = {
 export const LANES_TOPS: BlockLanes = { ...LANES_V1, id: 'lanes-tops-v1', outside: { ...LANES_V1.outside, y: 0.65, x: 0.13 } };
 /** Plan 16 (p46): the palm push's band top for LANES_TOPS (m above his origin): the outside patch lands 0.62-0.63 m up, under the torso box's top (0.69). */
 export const SHOULDER_TOPS_HIGH_M = 0.66;
+/**
+ * Plan 16 (p54): LANES_V1 with the outside palms on the outside of the inside man's upper arms near his elbows (`onArm`,
+ * 0.85 of the way from his shoulder, turned 30 deg up from straight out, the palm ball resting on the drawn arm 13.5 cm
+ * from its line), the elbows out. On the tops of his shoulders (LANES_TOPS) they rest beside his neck under his facemask:
+ * in profile a hand in the facemask (the palm 3 cm into to 6 cm clear of his helmet, facemask and neck, the median of a
+ * scene), and a foul. His elbows cannot come in far enough to clear the front of his shoulders for them (his arms near
+ * straight to his man's chest, the upper arm level, the elbow within 11 cm of where it is). The arm at 0.54 m, the palms
+ * resting there at about no force: longer, they push down on his arms and pitch both heads down onto the hands (0.57 m)
+ * and throw him forward past his feet (0.6 m).
+ */
+export const LANES_ARM: BlockLanes = { ...LANES_V1, id: 'lanes-arm-v1', outside: { ...LANES_V1.outside, depthM: 0.04, lengthM: 0.54, onArm: { t: 0.85, angDeg: 30, seatM: 0.135 } } };
 
 /**
  * Plan 16 (p46): the call's tie (`BlockLanes.tie`): palms within 2 cm of each other (half a palm ball: neither is there
@@ -2515,6 +2535,14 @@ export class BlockController implements Controller {
     // a palm's aim on him (world): my right hand on his left side (his frame), the side across from it, `depth` into his chest
     // (p45, `aimThrough`: the point on his chest, `depth` on beyond it along the line from my shoulder)
     const aimPointOf = (side: ArmSide, aim: HandAim, depth: number): Vec3 => {
+      // (p54, `onArm`: the seat on his upper arm as observed, `depth` on beyond it along the line from my shoulder)
+      const hs: ArmSide = side === 'right' ? 'left' : 'right';
+      const ha = aim.onArm ? ctx.observed.arms[R.target]?.[hs] : undefined;
+      if (aim.onArm && ha) {
+        const seat = armSeatWorld(ha.shoulderWorld, ha.elbowWorld, him.rotation, sideSignX(hisBody, hs), aim.onArm);
+        const sh = obs?.[side]?.shoulderWorld;
+        return addScaled(seat.ball, sh ? norm(sub(seat.ball, sh), scale(seat.normal, -1)) : scale(seat.normal, -1), depth);
+      }
       const hx = sideSignX(hisBody, side === 'right' ? 'left' : 'right') * aim.x;
       const front = frontOf(hisBody, { x: 0, y: 0, z: 0, w: 1 }, v3(0, 0, 1));
       if (!P.aimThrough) return add(him.position, qRot(him.rotation, v3(hx, aim.y, front - depth)));
@@ -2524,12 +2552,15 @@ export class BlockController implements Controller {
       return addScaled(at, len(line) > 1e-6 ? norm(line) : qRot(him.rotation, v3(0, 0, -1)), depth);
     };
     const aimPoint = (side: ArmSide, depth: number): Vec3 => aimPointOf(side, aimOf(side), depth);
+    // (p54, `onArm`: the push asked onto his arm on his side across from mine)
+    const onArmOf = (side: ArmSide, aim: HandAim): Pick<PushRequest, 'onArm'> => (aim.onArm ? { onArm: { target: R.target, side: side === 'right' ? 'left' : 'right', ...aim.onArm } } : {});
     // (p52, `rePunch`: a punch's aim, the inside lane's or its own)
     const RPa = HF?.rePunch?.aim;
     const aims = (side: ArmSide) => ({ inside: aimPointOf(side, RPa!, RPa!.depthM), own: aimPointOf(side, aimOf(side), aimOf(side).depthM) });
     this.punchAims = RPa ? { left: aims('left'), right: aims('right') } : null;
     let pu: PunchState | undefined;
-    const reachM = SIDES.reduce((m, side) => m + (obs?.[side] ? len(sub(aimPoint(side, 0), obs[side]!.shoulderWorld)) : Infinity), 0) / SIDES.length;
+    // (p54: the strike's range to his body, an aim on his arm as its point on his body)
+    const reachM = SIDES.reduce((m, side) => m + (obs?.[side] ? len(sub(aimPointOf(side, { ...aimOf(side), onArm: undefined }, 0), obs[side]!.shoulderWorld)) : Infinity), 0) / SIDES.length;
     if (K) {
       const was = ctx.observed.block?.[ctx.self];
       const armOf = (side: ArmSide) => (obs?.[side] ? len(sub(obs[side]!.palmContactWorld, obs[side]!.shoulderWorld)) : 0);
@@ -2617,7 +2648,7 @@ export class BlockController implements Controller {
         this.wasOn[side] = !!o?.pushId;
         const aim = w.inside ? RP.aim : aimOf(side);
         const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
-        arms[side] = { action: 'push', targetWorld: T, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: RP.extendMps }, ...pole, speedMps: RP.mps };
+        arms[side] = { action: 'push', targetWorld: T, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: RP.extendMps, ...onArmOf(side, aim) }, ...pole, speedMps: RP.mps };
         continue;
       }
       if (hi?.doing === 'refitting' && HF?.refit) {
@@ -2634,7 +2665,7 @@ export class BlockController implements Controller {
         // (finishing along the line from his shoulder to the aim, as a punch lands; half the way back along it)
         const pull = RP && L && from ? addScaled(addScaled(aimW, norm(sub(aimW, L.sh), L.fwd), -0.5 * len(sub(aimW, from))), L.out, RP.bowM) : aimW;
         const targetWorld = RP && L && from ? curveAt(from, pull, aimW, easeMinJerk((ctx.t - hi.since) / RP.s)) : aimW;
-        arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: HF.refit.extendMps }, ...pole, ...(RP ? { speedMps: RP.mps } : {}) };
+        arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, extendMps: HF.refit.extendMps, ...onArmOf(side, aim) }, ...pole, ...(RP ? { speedMps: RP.mps } : {}) };
         continue;
       }
       if (hi && (hi.doing === 'swiping' || hi.doing === 'knocked')) {
@@ -2668,7 +2699,7 @@ export class BlockController implements Controller {
         this.wasOn[side] = !!o?.pushId;
         const aim = aimOf(side);
         const pole = aim.pole ? { poleLocal: v3(out * aim.pole.x, aim.pole.y, aim.pole.z) } : {};
-        arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort: pushEffort, extendMps: Math.max(K.strike.extendMps, this.hitMps[side]) }, ...pole };
+        arms[side] = { action: 'push', targetWorld: aimPoint(side, aim.depthM), push: { effort: pushEffort, extendMps: Math.max(K.strike.extendMps, this.hitMps[side]), ...onArmOf(side, aim) }, ...pole };
         continue;
       }
       // ready: in front of his own chest
@@ -2691,7 +2722,7 @@ export class BlockController implements Controller {
       // push's effort)
       const HH = HF?.sides?.hold;
       const held = HH && wasHands?.[side]?.hold ? { hold: { capN: HH.tensionN * pushEffort, slackM: HH.slackM } } : {};
-      arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, ...held }, ...pole };
+      arms[side] = { action: 'push', targetWorld, push: { effort: pushEffort, lengthM: aim.lengthM ?? P.lengthM, ...held, ...onArmOf(side, aim) }, ...pole };
     }
     // (p42, `strike.riseOnLand`: striking, he stays in the load's stance until a palm lands; the rise is from the landing)
     const low = !!K?.strike.riseOnLand && pu?.phase === 'strike' && pu.onT === undefined;

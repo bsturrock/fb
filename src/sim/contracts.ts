@@ -189,6 +189,13 @@ export interface PushRequest {
    * its spring and damper in tension, at most `capN` (N). Absent: it never pulls.
    */
   hold?: { capN: number; slackM: number };
+  /**
+   * Plan 16 (p54, on his arm, controllers/block.ts `HandAim.onArm`; the arm profile's `PalmPushProfile.onArm`): the palm
+   * rests on player `target`'s upper arm `side` instead of his body: its ball's centre `seatM` from the arm's line, `t` of
+   * the way from his shoulder to his elbow, turned `angDeg` from straight out from his midline toward his up about the
+   * arm. Absent: on his body where the palm touches it.
+   */
+  onArm?: { target: PlayerId; side: ArmSide; t: number; angDeg: number; seatM: number };
 }
 
 /** Gate 3 balance observation (radians; displayed degrees are derived separately). */

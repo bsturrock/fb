@@ -10,11 +10,11 @@
 //    Maximum unchecked displacement: palm 0.02 m; segments are only skipped if the relative body motion exceeds the
 //    thinnest obstacle (~0.26 m) in one substep (> 15 m/s at 1/60 s), outside every fixture.
 import RAPIER from '@dimforge/rapier3d-compat';
-import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, SegmentId } from './contracts';
+import type { ArmIntent, ArmSide, BodyPartId, ColliderRegion, ContactRec, PlayerId, PushRequest, SegmentId } from './contracts';
 import type { ArmProfile, ArmSetup, BodyProfile, FallLinkProfile, JointRangeProfile, PalmPushProfile, RagdollProfile, RetentionMode, RideHoldProfile, SelfClearanceProfile } from './profiles';
 import type { ArmDebug } from './debug';
 import { landmarkWorld, poseOfRb, type BornPair, type Ragdoll } from './ragdoll';
-import { shoulderLocal, sideSignX } from './profiles';
+import { armSeatWorld, shoulderLocal, sideSignX } from './profiles';
 import { armSelfShapes, twoBone } from './pose';
 import { armAnatomicalTwistRad, armTwistRad, fitElbowTwist, swingExcess, twistWindow } from './joint-cone';
 import { cullGeom, geomNear, isSupportedLeg, trunkContact, trunkPieces, type TrunkHit, type TrunkPiece } from './physics';
@@ -216,6 +216,11 @@ interface ArmRt {
   /** Plan 16 (p51): the request's own top twist rate (`ArmIntent.twistRadPs`); absent without one. */
   twistRadPs?: number;
   prevElbowLocal: Vec3;
+  /**
+   * Plan 16 (p54, `PalmPushProfile.onArm`): the elbow as this substep began (his body's frame), the arm a palm may rest
+   * on; absent with no solve or as a ragdoll.
+   */
+  elbowAt?: Vec3;
   prevWristLocal: Vec3;
   prevWantedElbowLocal: Vec3;
   prevWantedWristLocal: Vec3;
@@ -286,7 +291,8 @@ interface FallLink {
 
 /**
  * Plan 16, the palm push: the patch on the pushed player's body part (point and outward normal in that part's frame), the
- * arm's rest length now and at the push's birth (m), when it began and its largest force so far.
+ * arm's rest length now and at the push's birth (m), when it began and its largest force so far; p54, on his upper arm
+ * (`PalmPushProfile.onArm`): the place on it (`arm`; the point and normal then the seat's, as his arm is).
  */
 interface PushPatch {
   id: string;
@@ -298,7 +304,11 @@ interface PushPatch {
   bornM: number;
   since: number;
   peakN: number;
+  arm?: ArmRest;
 }
+
+/** Plan 16 (p54): a palm's place on his upper arm (`PushRequest.onArm` less its target). */
+type ArmRest = Omit<NonNullable<PushRequest['onArm']>, 'target'>;
 
 interface RidePatch {
   targetId: PlayerId;
@@ -667,6 +677,12 @@ export class ArmSystem {
       this.prePoses.set(pl.rb.handle, poseOfRb(pl.rb));
       if (pl.ragdoll) for (const rb of Object.values(pl.ragdoll.bodies)) this.prePoses.set(rb.handle, poseOfRb(rb));
     }
+    // (p54, `onArm`: the arms a palm may rest on, as they were before any player's arms move this substep)
+    if (P.palmPush?.onArm)
+      for (const pl of players) {
+        const rec = this.arms.get(pl.id);
+        if (rec) for (const side of SIDES) rec[side].elbowAt = !pl.ragdoll && rec[side].solve ? { ...rec[side].prevElbowLocal } : undefined;
+      }
     const order = players; // already reversed by the simulation when reverseOrder is set
     const sides = host.reverseOrder ? [...SIDES].reverse() : SIDES;
     for (const pl of order) {
@@ -919,7 +935,10 @@ export class ArmSystem {
           }
         }
         // ---------------- plan 16, the palm push's birth (a `push` request, an arm profile with `palmPush`)
-        if (P.palmPush && !frozen && !this.ended && intent.action === 'push' && a.armed && !a.push && sol.valid && sol.palmHit && sol.palmHit.distance <= tol) this.pushBirth(pl, a, sol, ownerPose, prevAction !== intent.action);
+        // (p54, `onArm`: a push asked onto his arm is born there, not where the palm touches his body)
+        const onArm = P.palmPush?.onArm ? intent.push?.onArm : undefined;
+        if (P.palmPush && !frozen && !this.ended && intent.action === 'push' && a.armed && !a.push && sol.valid && !onArm && sol.palmHit && sol.palmHit.distance <= tol) this.pushBirth(pl, a, sol, ownerPose, prevAction !== intent.action);
+        if (onArm && !frozen && !this.ended && intent.action === 'push' && a.armed && !a.push && sol.valid) this.armBirth(pl, a, sol, ownerPose, onArm, prevAction !== intent.action);
         // ---------------- forearm clamp (forearmClamp mode, closing, actual contact)
         const effort = (pl.arms?.closeEffortScale ?? 1) * clamp(falling ? 1 : intent.closeEffort ?? 1, 0, 1);
         let fh = sol.forearmHit;
@@ -2159,6 +2178,73 @@ export class ArmSystem {
   }
 
   /**
+   * Plan 16 (p54, `PalmPushProfile.onArm`): the seat of a palm on player `tgt`'s upper arm (`on`), his body as `tp` and his
+   * elbow as the substep began (`ArmRt.elbowAt`): the palm ball's centre `seatM` from the arm's line `t` of the way from his
+   * shoulder to his elbow, turned `angDeg` from straight out from his midline toward his up about the arm; the arm's
+   * outward normal there; and the palm-contact landmark on the ball as the hand points (`hand`, world). Null: his arm unknown.
+   */
+  private armSeat(tgt: ArmHostPlayer, tp: Pose, on: ArmRest, hand: Vec3): { point: Vec3; ball: Vec3; normal: Vec3 } | null {
+    const his = this.armOf(tgt, tp, on.side);
+    if (!his) return null;
+    const { ball, normal } = armSeatWorld(his.S, his.E, tp.q, sideSignX(tgt.body, on.side), on);
+    return { point: addScaled(ball, norm(hand, scale(normal, -1)), this.profile.palmRadiusM), ball, normal };
+  }
+
+  /** Plan 16 (p54): the way an arm's hand points as last solved (wrist to palm, world; zero with no solve). */
+  private handOf(a: ArmRt): Vec3 {
+    return a.solve ? norm(sub(a.solve.palm, a.solve.wrist), v3()) : v3();
+  }
+
+  /**
+   * Plan 16 (p54, `PalmPushProfile.onArm`): his upper arm `side` as the substep began, his body as `tp` (shoulder and elbow,
+   * world). Null: unknown.
+   */
+  private armOf(tgt: ArmHostPlayer, tp: Pose, side: ArmSide): { S: Vec3; E: Vec3 } | null {
+    const r = this.arms.get(tgt.id)?.[side];
+    // (fault `pushOnArmLive`: as the players stepped before this one left it)
+    const eL = this.debug?.pushOnArmLive ? (r?.solve ? r.prevElbowLocal : undefined) : r?.elbowAt;
+    return eL ? { S: toWorld(tp, shoulderLocal(tgt.body, side)), E: toWorld(tp, eL) } : null;
+  }
+
+  /**
+   * Plan 16 (p54, `PalmPushProfile.onArm`): a push asked onto his upper arm (`on`), born at its seat (`armSeat`) once the
+   * free palm ball is within `bornTolM` of resting there: his arm on that side asked to push, the arm line going into the
+   * arm's surface there, within reach and not collapsed. The rest length is the shoulder's distance from it. A refusal is
+   * an event (`pushRejected`) when the request is new and every 30 substeps.
+   */
+  private armBirth(pl: ArmHostPlayer, a: ArmRt, sol: ArmPoseSolve, ownerPose: Pose, on: NonNullable<PushRequest['onArm']>, changed: boolean): void {
+    const P = this.profile;
+    const PP = P.palmPush!;
+    const tgt = this.player(on.target);
+    if (!tgt || tgt.ragdoll) return;
+    const tp = this.prePose(tgt.rb);
+    const { target: _t, ...arm } = on;
+    const st = this.armSeat(tgt, tp, arm, norm(sub(sol.palm, sol.wrist), v3()));
+    if (!st) return;
+    const gap = len(sub(this.palmCenter(sol.palm, sol.wrist), st.ball));
+    if (gap > PP.onArm!.bornTolM) return;
+    const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
+    const L = len(sub(st.point, sW));
+    const el = elbowOf(sW, sol.elbow, sol.palm);
+    const yLocal = toLocal(tp, st.point).y;
+    const why: string[] = [];
+    if (tgt.armIntent?.[on.side]?.action !== 'push') why.push('armNotPushing');
+    if (L > P.maxReachM + P.hold.reachTolM) why.push('unreachable');
+    if (dot(st.normal, sub(sW, st.point)) <= 0) why.push('farSide');
+    if (el.flexRad >= rad(PP.collapseFlexDeg)) why.push('collapsed');
+    if (why.length) {
+      if (changed || this.host.steps % 30 === 0) this.host.emit('pushRejected', pl.id, { arm: a.side, target: tgt.id, region: 'arm', onArm: on.side, reasons: why.join(','), point: rv(st.point), yLocal: round(yLocal, 3) });
+      return;
+    }
+    const id = `${pl.id}:${a.side}:p${this.host.steps}`;
+    a.push = { id, targetId: tgt.id, part: 'core', pointLocal: toLocal(tp, st.point), normalLocal: qInvRot(tp.q, st.normal), restM: L, bornM: L, since: this.host.t, peakN: 0, arm };
+    a.phase = 'push';
+    a.palmLocal = toLocal(ownerPose, st.point);
+    a.wantedLocal = { ...a.palmLocal };
+    this.host.emit('pushBegin', pl.id, { arm: a.side, push: id, target: tgt.id, region: 'arm', onArm: on.side, point: rv(st.point), lengthM: round(L, 4), yLocal: round(yLocal, 3), flexDeg: round((el.flexRad * 180) / Math.PI, 2), palmGap: round(gap, 4) });
+  }
+
+  /**
    * A held palm push at the substep's start: its end rules, then the strut's force (`PalmPushProfile`) with the palm
    * shown on the patch. Returns the force (N, + pushes the target away along `n`, the unit line from the shoulder to the
    * patch) or null when it ended (the arm is then a free arm this substep).
@@ -2177,15 +2263,34 @@ export class ArmSystem {
     }
     const rbT = this.partBody(tgt, c.part);
     const tp = this.prePose(rbT);
+    // (p54, on his arm: at the request's place on it, the patch its seat as his arm is; it ends when the request leaves that
+    // arm or his arm is no longer asked to push)
+    if (c.arm) {
+      const on = intent.push?.onArm;
+      const left = !on || on.target !== c.targetId || on.side !== c.arm.side ? 'voluntary' : !this.debug?.pushOnArmKeeps && tgt.armIntent?.[on.side]?.action !== 'push' ? 'armLeft' : null;
+      if (left || !on) {
+        this.endPush(pl, a, left ?? 'voluntary', ownerPose);
+        return null;
+      }
+      const { target: _t, ...arm } = on;
+      const st = this.armSeat(tgt, tp, arm, this.handOf(a));
+      if (!st) {
+        this.endPush(pl, a, 'lostTarget', ownerPose);
+        return null;
+      }
+      c.arm = arm;
+      c.pointLocal = toLocal(tp, st.point);
+      c.normalLocal = qInvRot(tp.q, st.normal);
+    }
     const nW = qRot(tp.q, c.normalLocal);
     const sW = toWorld(ownerPose, shoulderLocal(pl.body, a.side));
     // (p47, `slide`: the patch slides on his surface toward where the arm's line to its target meets it)
-    if (PP.slide && intent.targetWorld) this.slidePatch(PP, c, tp, tgt, sW, intent.targetWorld, obstacles, dt);
+    if (PP.slide && intent.targetWorld && !c.arm) this.slidePatch(PP, c, tp, tgt, sW, intent.targetWorld, obstacles, dt);
     const pW = toWorld(tp, c.pointLocal);
     const L = len(sub(pW, sW));
     const n = norm(sub(pW, sW), v3(0, 0, 1));
-    // (p45, `stanceCone`: against his surface as it stands at the cone's stance pitch)
-    const facing = -dot(n, PP.stanceCone ? this.stanceNormal(this.prePose(tgt.rb), nW) : nW);
+    // (p45, `stanceCone`: against his surface as it stands at the cone's stance pitch; p54, on his arm: no facing rule)
+    const facing = c.arm ? 1 : -dot(n, PP.stanceCone ? this.stanceNormal(this.prePose(tgt.rb), nW) : nW);
     // the rest length moves toward the request's
     const want = clamp(intent.push?.lengthM ?? P.maxReachM, P.minReachM, P.maxReachM);
     const rate = intent.push?.extendMps ?? PP.extendMps;
@@ -2275,6 +2380,12 @@ export class ArmSystem {
       return false;
     }
     const tp = poseOfRb(this.partBody(tgt, c.part));
+    // (p54, on his arm: its seat as his body now is, his arm as the substep began)
+    const st = c.arm ? this.armSeat(tgt, tp, c.arm, this.handOf(a)) : null;
+    if (st) {
+      c.pointLocal = toLocal(tp, st.point);
+      c.normalLocal = qInvRot(tp.q, st.normal);
+    }
     const pW = toWorld(tp, c.pointLocal);
     const sW = toWorld(ownerPost, shoulderLocal(pl.body, a.side));
     let end: string | null = null;

@@ -154,6 +154,10 @@ export interface ArmDebug {
   pushNoBudget?: boolean;
   /** Fault (the palm on the surface): the held palm is shown at the rest length along the arm line (inside the chest by the compression), its pose's validity unread. */
   pushPalmAtRest?: boolean;
+  /** Fault (p54, his arm as the substep began): a palm on his arm reads his arm as the players stepped before it this substep left it, not as the substep began. */
+  pushOnArmLive?: boolean;
+  /** Fault (p54, the end on his arm): a palm on his arm is kept on it when his arm is no longer asked to push. */
+  pushOnArmKeeps?: boolean;
 }
 
 /** Ladder 18: one separating force of a born pair (`BornOverlapProfile.separation`), before the solve. */
