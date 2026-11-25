@@ -83,7 +83,8 @@ describe('plan 16 (p51), the body in the hand fight', () => {
   const END_S = 5.15;
   const scene = (H: BlockHandFight): FixtureDef => {
     const s = BL_SCENES.find((x) => x.id === 'BL-F12-passRush')!;
-    return blockScene({ ...s, id: 'BL-T-swipeBody', durationS: END_S + 0.1, B: { ...s.B, swipes: [{ atS: SWIPE_S, hand: 'right' }] }, handFight: H }, FIX('L3-F6-hold'));
+    // (p54: the outside palms on the shoulder tops, as p51's scene ran)
+    return blockScene({ ...s, id: 'BL-T-swipeBody', durationS: END_S + 0.1, outsideOnArm: false, B: { ...s.B, swipes: [{ atS: SWIPE_S, hand: 'right' }] }, handFight: H }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

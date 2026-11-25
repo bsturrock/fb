@@ -90,7 +90,8 @@ describe('plan 16 (p52), the re-punch', () => {
   const scene = (H: BlockHandFight): FixtureDef => {
     // (p52's BL-F13: BL-F10 on the hand fight, B re-punching)
     const s = BL_SCENES.find((x) => x.id === 'BL-F10-twoPointVsThree')!;
-    return blockScene({ ...s, id: 'BL-T-rePunch', durationS: END_S + 0.1, handFight: H, B: { ...s.B, rePunches: [{ atS: RE_S, hand: 'right' }] } }, FIX('L3-F6-hold'));
+    // (p54: the outside palms on the shoulder tops, as p52's scene ran)
+    return blockScene({ ...s, id: 'BL-T-rePunch', durationS: END_S + 0.1, outsideOnArm: false, handFight: H, B: { ...s.B, rePunches: [{ atS: RE_S, hand: 'right' }] } }, FIX('L3-F6-hold'));
   };
   let cap: StateCapture | undefined;
   async function captured(): Promise<StateCapture> {

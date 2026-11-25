@@ -287,8 +287,9 @@ const runningIn = (m: BlockMan, fromS: number): BlockMan => ({ ...m, profile: wi
  * Plan 16 (p49): the set the newer scenes run (BL-F9-threePoint, BL-F10-twoPointVsThree, BL-F11-runIn: every flag of p44 to
  * p48), and the older scenes as each is turned onto it: the palm seated, aimed through, judged at the stance, followed
  * through; the inside lane, its leverage and its tie, called on the strike; the winner low, the outside palms on the
- * shoulder tops, the beaten man's arms giving and kept on, the knock-back ended, the held palms sliding; the folded arms a
- * frame, the hit held only while the palms push, the strike from the load's gap; the upper arm in the self-clearance.
+ * shoulder tops (from p54 on the outside of his upper arms, `outsideOnArm`; the band still raised for the tops), the
+ * beaten man's arms giving and kept on, the knock-back ended, the held palms sliding; the folded arms a frame, the hit
+ * held only while the palms push, the strike from the load's gap; the upper arm in the self-clearance.
  */
 export const NEWER_SET = {
   seat: true,
@@ -299,6 +300,7 @@ export const NEWER_SET = {
   insideLeverage: true,
   stayLow: true,
   shoulderTops: true,
+  outsideOnArm: true,
   foldKeeps: true,
   armsGive: true,
   laneTie: true,
@@ -324,7 +326,9 @@ export const NEWER_SET = {
  * and the lane's call with a tie (`laneTie`), the knock-back ended (`burstTaper`, `lowUnheld`), from p47 the held palms sliding on to
  * their aim (`palmSlide`), from p48 the lane called only once a strike is thrown (`laneOnStrike`), from p49 the folded arms against
  * his man a frame (`frame`), the hit held only while the palms push (`heldByPush`) and the strike from the load's gap
- * (`strikeAtLoadGap`) and, set, their plants toed out (`toeOut`): `NEWER_SET` but the toe-out, from p49 on BL-F1-even, BL-F2-walkIn, BL-F5-offCentre (so BL-F6), BL-F7-hard and BL-F8-hardNoHinge too; from p44
+ * (`strikeAtLoadGap`) and, set, their plants toed out (`toeOut`): `NEWER_SET` but the toe-out, from p49 on BL-F1-even, BL-F2-walkIn, BL-F5-offCentre (so BL-F6), BL-F7-hard and BL-F8-hardNoHinge too; from p54 the outside
+ * palms on the outside of the inside man's upper arms (`outsideOnArm`) but in BL-F13 (on the tops: on his arms the
+ * rusher's first re-punch overpowers the blocker, who falls at 5.7 s, and the scene's later exchanges are lost); from p44
  * every scene with the upper arm in the arms' self-clearance and a held push kept over his own body (`upperArm`); p42 on BLOCK_STRIKE_V4, the hit
  * taken by the hands; before p42 on BLOCK_STRIKE_V3 and CONTEST_V1). Before p39 on the tall lean-in LEAN_IN_V1, before p38 on the athletic stance ATHLETIC_V2 with flat feet, before p37 on BASE_V2 (`based`) with no athletic stance.
  */
@@ -387,6 +391,8 @@ export const BL_SCENES: BlockSceneOpts[] = [
     ...NEWER_SET,
     toeOut: true,
     handFight: HANDS_V7,
+    // (p54: on the tops of his shoulders; on his arms the blocker falls at 5.7 s, overpowered after the rusher's strike)
+    outsideOnArm: false,
   },
 ];
 
