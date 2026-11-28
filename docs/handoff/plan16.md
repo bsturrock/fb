@@ -2,7 +2,19 @@
 
 Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `model-integration`, both pushed.
 
-## Now (2026-11-24, after p53)
+## Now (2026-11-28, after p54)
+
+- **p54 (`6822ed5`, `6b3f4cd`): the outside man's palms on the inside man's upper arms** (`LANES_ARM`,
+  `outsideOnArm` in `NEWER_SET`) in `-F1`, `-F2`, `-F5` to `-F12`, in place of the shoulder tops beside his neck:
+  5-15 cm clear of helmet, facemask and neck in profile, never under 5 cm. The hands carry almost no force there
+  (1-9 N against 60-130), so the outside man moves a little less in the standing scenes and 15-30 cm further after
+  a snap; the inside lane goes to the same man everywhere and nobody falls. The inside man's elbows were not
+  changed (the route p52 proposed); the arm aim made it unnecessary. `-F13` stays on the shoulder tops: see defect
+  2. Numbers per scene are in the two commit messages. 720 tests; check `.scratch/p54/b-flip` (compare against
+  `a-flag` PASS: only those ten BL summaries changed). Not yet seen by the user.
+
+The bullets below are as of p53 (2026-11-24) except where p54 is named.
+
 
 - **What a block is.** Thirteen `BL` scenes. A man sets (two-point, three-point offense or defense, or runs in),
   loads, fires out low and strikes; the inside lane goes to whoever gets there with a strike; the inside man wins the
@@ -17,7 +29,7 @@ Plan: `docs/open/16_Blocking.md` (what is left). Branches `prereq-ladder` and `m
 - **What runs where.** `NEWER_SET` (`fixtures/blocking.ts`) on `-F1`, `-F2`, `-F5` to `-F13`; `-F3`/`-F4` (mismatch)
   on the older set, their flip parked (p49). The hand fight `HANDS_V5` only in `-F12`, `HANDS_V7` (the re-punch with
   sides: holds, strikes) only in `-F13`; `HANDS_V6` (p52's symmetric re-punch) is flag-only, read by one test.
-- **Baseline:** main checkout `.scratch/p53/b-scene`, 714 tests. All non-BL fixtures byte-identical to before
+- **Baseline:** main checkout `.scratch/p54/b-flip`, 720 tests. All non-BL fixtures byte-identical to before
   the plan.
 - **Waiting on the user:** his look at the p53 sides in `-F13` (links below). Open questions with him: what a
   beaten inside man's hands do when held off past his reach (`-F11`); whether a truly overpowered man in a mismatch
@@ -546,6 +558,8 @@ The numbered entries below are the history of each step, oldest first; the lates
 Lab (`cam=front` is the profile view of two men facing each other; `cam=side` shows a back; `&order=rev` runs the
 players in reversed order):
 
+- `?fixture=BL-F10-twoPointVsThree&cam=front&speed=0.25&t=5.5` p54: the outside palms on his upper arms, clear of
+  the facemask (`BL-F12-passRush&t=7.5` the end of a rep; `BL-F1-even&t=3` a standing scene)
 - `?fixture=BL-F13-rePunch&cam=front&speed=0.25&t=4.9` (B on the left) B attacks: load (5.1), through A's left
   arm onto his chest (5.3), A stood up and driven back (5.5-6.3); `&t=5.6` A restores: his right inside (load 5.8,
   lands 6.0), his left (6.3-6.6), B stopped (7.0); `&t=7.1` the second exchange (B's strike 7.5, A's left 8.2,
@@ -667,8 +681,11 @@ cover plus lead whatever the speed; a planted foot cannot step while the other s
 1. The swipe costs little: the knocked shoulder gives (8 deg) but no ground follows, B gains 0.5 cm on the second
    swipe; the swiper's trunk never visibly loads back (p51). A re-punch stops a drive but cannot turn it back
    (p52's held `beaten`; p53's restore stops the rusher and pushes him back 6 cm; step d).
-2. The outside palm on the top of the other man's shoulder beside his neck reads as a hand at the facemask in
-   profile (`LANES_TOPS`, p46). The aim alone cannot fix it (p52, parked); the inside man's elbows in first.
+2. The outside palm beside the neck (a hand at the facemask in profile, and a foul): fixed in p54 by resting it on
+   his upper arm, except in `-F13`, which stays on the shoulder tops. With the arm aim there the rusher's first
+   re-punch overpowers the blocker, who falls at 5.7 s; a twin from 4.95 s shows the fall follows the state
+   reached by then, not the arm push after it. So: an existing overpower mechanism reached by a moved trajectory.
+   Owed: a capture-based test of that state and its own fix step, then `-F13` onto the arms.
 3. Hands that come off past reach and never return: `-F11`'s beaten inside man; `-F12` above rusher effort 0.55
    (the outside man's longer arms hold the other's chest out of reach). The hold does not change it (p53).
 4. `-F3`/`-F4` on the newer set: a steady 2.4 m drive with no anchor (parked, p49; the contest has no time
@@ -746,8 +763,8 @@ the L2 traces.
 - Probes and stills (worktree): `.scratch/p29/` (before), `.scratch/p30/` (palm push in the probe scenes),
   `.scratch/p31/` (BL), `.scratch/p32/` (the base; `stills/`, and `lab/vite.probe.config.ts` for the harder-push and
   feet-together scenes). Unregistered scenes can be viewed with `.scratch/p29/vite.probe.config.ts` and `stills.mjs`.
-- Full checks p34-p53 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
-  `.scratch/p53/b-scene`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
+- Full checks p34-p54 (main checkout): `.scratch/pNN/`, each step's dirs named in its entry above; latest baseline
+  `.scratch/p54/b-flip`. Parked patches: `.scratch/p36/parked/`, `p40/parked/`, `p48/parked/d-knee-out/`
   (superseded by p49's toe-out), `p49/parked/c-mismatch/`, `p52/parked/part1/` (evidence only).
 - Main checkout `.scratch` was 219 MB after pruning plan 15's check results; prune p33-p45 check dirs once p50 is
   accepted (keep the latest baseline and parked patches).

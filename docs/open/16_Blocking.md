@@ -175,6 +175,39 @@ Nobody falls unless genuinely overpowered. Not yet: shed moves, getting round, p
    blocker's recovery and the final loss. It should also give `-F11`'s beaten inside man and `-F2`'s folded arms
    something to do, and the mismatch drive (`-F3`/`-F4`, parked in p49) its time structure.
 
+   **Step c design (2026-11-28; the user is away and gave the go to build it unseen and judge it in the lab:
+   rip before swim, the point a quarterback's spot about 7 yd behind the blocker, the rusher shaded outside, one
+   scene the rusher wins and one he loses, falls shown to him).** What the code assumes today (mapped at
+   `6b3f4cd`): each man's facing, drive, strike gap, lane and contest line are all the centre-to-centre line to
+   his man; the only sideways motion is matching the other man's sideways speed; a target is a player, never a
+   place; `squareInFront` cannot fail while both men turn to face each other; a lost block has the man chase his
+   man again; there is no result of a rep.
+   - *c1, the point.* A block request may carry a ground point. The rusher (defense) with a point drives at the
+     point, not at the blocker's centre: the blocker is what is in his way. The blocker (offense) with a point
+     keeps himself on the line from the rusher to the point, at his set depth off the rusher, by sliding
+     (a position servo across the line, committed flat lateral steps, no crossing feet, no skate), facing the
+     rusher. The centre-to-centre contest line stays; it is the sideways part that is new. Two facts per pair,
+     read against the blocker-to-point line: how far the rusher is *off the blocker's centre* (half-man is about
+     a shoulder's half width) and whether he is *past* (his hips level with the blocker's along that line). A
+     hold's front rule reads them: off the centre or past, the hold is given up within its 0.12 s or counts as
+     holding. A rusher who is past or free runs to the point and stops there; he does not turn back to chase the
+     blocker. The summary gets the rep's result when a point is set: when the rusher was past, when he reached
+     the point (within 1 m), his closest approach. Scene `BL-F14-edgeRush`: no hand moves; the rusher works the
+     outside edge at speed, the blocker mirrors and stays in front.
+   - *c2, the rip.* A per-scene request like the swipe and the re-punch, thrown from half-man: the far hand
+     chops or clubs the blocker's near arm (the existing swipe), the near shoulder dips under his pad level, the
+     near arm drives low to high up through his armpit (the path built on the blocker's seen shoulder and elbow,
+     wound up, eased, followed through, the body turning toward the point: the p51 bar), lifting his arm: that
+     push ends and its hold breaks. Then the rusher's shoulder goes past the blocker's and he runs to the point.
+     Fails against a blocker still square on him (no half-man: the arm has no armpit to go through) or one who
+     re-fits inside and slides in front again. Scenes: `BL-F15-rip` (the blocker's slide is late; the rusher
+     clears and reaches the point; `holding` near 0) and `BL-F16-ripStopped` (the blocker mirrors, re-fits, the
+     rusher is still in front at the end).
+   - *c3, the swim,* the same over the shoulder after a chop that drops the near arm; costs the rusher his
+     low position while his arm is up.
+   - Not in c: what a beaten blocker does about it (turn and ride, step d); choosing a move from the blocker's
+     state (brains); a pass set; more than two men.
+
 Later (user, 2026-11-22): blocking from angles, not always straight on (every scene now has the two men square to
 each other on one line). And, from an earlier version of the sim: a blocker engaged on one man reaches a hand out
 to another defender who comes near; double teams; switching off one man to block another. These need angles and
